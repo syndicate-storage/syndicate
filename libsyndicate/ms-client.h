@@ -55,7 +55,7 @@
 
 using namespace std;
 
-typedef map<long, struct md_update> update_set;
+typedef map<long, struct md_update> ms_client_update_set;
 
 // status responses from the MS on a locally cached metadata record
 #define MS_LISTING_NEW          ms::ms_listing::NEW             // new entry
@@ -207,14 +207,6 @@ struct ms_client {
    
    pthread_rwlock_t lock;       // structure lock
    
-   CURL* ms_read;       // read file metadata
-   CURL* ms_write;      // write file metadata
-   CURL* ms_view;       // read/write Volume control plane state
-   
-   // benchmarking
-   struct ms_client_timing read_times;
-   struct ms_client_timing write_times;
-
    char* url;                 // MS URL
    char* userpass;            // HTTP username:password string.  Username is the gateway ID; password is the session password
    
@@ -223,14 +215,9 @@ struct ms_client {
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
    int portnum;               // port we listen on
 
-   bool running;        // set to true if the uploader thread is running
-   bool downloading;    // set to true if we're downloading something on ms_read
-   bool downloading_view;       // set to true if we're downloading something on ms_view
-   bool downloading_certs;      // set to true if we're downloading something on ms_certs
-   bool uploading;      // set to true if we're uploading something on ms_write
-   bool more_work;      // set to true if more work arrives while we're working
-   bool uploader_running;  // set to true if the uploader is running
-   sem_t uploader_sem;  // uploader thread waits on this until signaled to reload 
+   bool running;              // set to true if the uploader thread is running
+   bool uploader_running;     // set to true if the uploader is running
+   sem_t uploader_sem;        // uploader thread waits on this until signaled to reload 
    
    // gateway view-change structures (represents a consistent view of the Volume control state)
    pthread_t view_thread;
@@ -238,27 +225,25 @@ struct ms_client {
    struct ms_volume* volume;        // Volume we're bound to
    ms_client_view_change_callback view_change_callback;         // call this function when the Volume gets reloaded
    void* view_change_callback_cls;                              // user-supplied argument to the above callbck
-   pthread_rwlock_t view_lock;
+   pthread_rwlock_t view_lock;          // lock governing the above
 
    // session information
    int64_t session_expires;                 // when the session password expires
-   char* session_password;
+   char* session_password;                  // session password (used as HTTP Authentication: header)
 
-   // key information
-   // NOTE: this field does not change over the course of the ms_client structure's lifetime.
-   // you can use it without locking, as long as you don't destroy it.
+   // key information (read-only, never changes)
    EVP_PKEY* my_key;
    EVP_PKEY* my_pubkey;
    
-   // raw private key
+   // raw private key (read-only, never changes)
    char* my_key_pem;
    size_t my_key_pem_len;
-   bool my_key_pem_mlocked;
+   bool my_key_pem_mlocked;     // if true, then my_key_pem is mlock'ed and needs to be munlock'ed before being freed
 
-   // reference to syndicate config 
+   // reference to syndicate config (read-only, never changes)
    struct md_syndicate_conf* conf;
    
-   // syndicate public key 
+   // syndicate public key (read-only, never changes)
    EVP_PKEY* syndicate_public_key;
    char* syndicate_public_key_pem;
    
@@ -339,6 +324,12 @@ int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume
 int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 
+// low-level I/O
+int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx );
+int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len );
+
+int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct ms_client_timing* timing );
+int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen );
 
 // get information about the volume
 uint64_t ms_client_volume_version( struct ms_client* client );

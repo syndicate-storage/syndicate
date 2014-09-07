@@ -28,7 +28,7 @@ static void* ms_client_view_thread( void* arg );
 int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
-static int ms_client_send_updates( struct ms_client* client, update_set* all_updates, ms::ms_reply* reply, bool verify_response );
+static int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_updates, ms::ms_reply* reply, bool verify_response );
 int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify );
 
 static void ms_client_cert_bundles( struct ms_volume* volume, ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1] ) {
@@ -231,13 +231,6 @@ int ms_client_start_threads( struct ms_client* client ) {
       return -errno;  
    }
    
-   int rc = md_downloader_start( &client->dl );
-   if( rc != 0 ) {
-      client->running = false;
-      errorf("Failed to start downloader, rc = %d\n", rc );
-      return rc;
-   }
-   
    return 0;
 }
 
@@ -259,10 +252,9 @@ int ms_client_stop_threads( struct ms_client* client ) {
       
       dbprintf("%s", "wait for view change thread to finish...\n");
       
-      if( client->view_thread != 0 )
+      if( client->view_thread != 0 ) {
          pthread_join( client->view_thread, NULL );
-      
-      md_downloader_stop( &client->dl );
+      }
    }
    
    return 0;
@@ -326,38 +318,26 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    }
    
    memset( client, 0, sizeof(struct ms_client) );
+   
+   // set up downloader so we can register
+   md_downloader_init( &client->dl, "ms-client" );
+   
+   int rc = md_downloader_start( &client->dl );
+   if( rc != 0 ) {
+      client->running = false;
+      errorf("Failed to start downloader, rc = %d\n", rc );
+      return rc;
+   }
 
    client->gateway_type = gateway_type;
-   
-   // configure the HTTPS streams to the MS
-   client->ms_read = curl_easy_init();
-   client->ms_write = curl_easy_init();
-   client->ms_view = curl_easy_init();
    
    client->url = strdup( conf->metadata_url );
    
    // clear the / at the end...
-   if( client->url[ strlen(client->url)-1 ] == '/' )
+   if( client->url[ strlen(client->url)-1 ] == '/' ) {
       client->url[ strlen(client->url)-1 ] = 0;
-
-   // will change URL once we know the Volume ID
-   ms_client_init_curl_handle( conf, client->ms_read, "https://localhost" );
-   ms_client_init_curl_handle( conf, client->ms_write, "https://localhost" );
-   ms_client_init_curl_handle( conf, client->ms_view, "https://localhost" );
+   }
    
-   curl_easy_setopt( client->ms_write, CURLOPT_POST, 1L);
-   curl_easy_setopt( client->ms_write, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
-
-   curl_easy_setopt( client->ms_read, CURLOPT_HEADERFUNCTION, ms_client_header_func );
-   curl_easy_setopt( client->ms_write, CURLOPT_HEADERFUNCTION, ms_client_header_func );
-
-   curl_easy_setopt( client->ms_read, CURLOPT_WRITEHEADER, &client->read_times );
-   curl_easy_setopt( client->ms_write, CURLOPT_WRITEHEADER, &client->write_times );
-   
-   curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-   curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-   curl_easy_setopt( client->ms_view, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-
    client->userpass = NULL;
 
    pthread_rwlock_init( &client->lock, NULL );
@@ -368,8 +348,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    // uploader thread 
    sem_init( &client->uploader_sem, 0, 0 );
    
-   int rc = 0;
-
    rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
    if( rc != 0 ) {
       errorf("ms_client_try_load_key rc = %d\n", rc );
@@ -396,8 +374,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    client->view_change_callback = ms_client_view_change_callback_default;
    client->view_change_callback_cls = NULL;
    
-   md_downloader_init( &client->dl, "ms-client" );
-
    client->inited = true;               // safe to destroy later
    
    return rc;
@@ -418,14 +394,11 @@ int ms_client_destroy( struct ms_client* client ) {
    
    ms_client_stop_threads( client );
    
+   md_downloader_stop( &client->dl );
+   
    ms_client_wlock( client );
    
    client->inited = false;
-
-   // clean up CURL
-   curl_easy_cleanup( client->ms_read );
-   curl_easy_cleanup( client->ms_write );
-   curl_easy_cleanup( client->ms_view );
 
    // clean up view
    pthread_rwlock_wrlock( &client->view_lock );
@@ -439,33 +412,35 @@ int ms_client_destroy( struct ms_client* client ) {
    sem_destroy( &client->uploader_sem );
    
    // clean up our state
-   if( client->userpass )
+   if( client->userpass ) {
       free( client->userpass );
-
-   if( client->url )
-      free( client->url );
-
-   if( client->session_password )
-      free( client->session_password );
-
-   if( client->my_key )
-      EVP_PKEY_free( client->my_key );
- 
-   if( client->my_pubkey )
-      EVP_PKEY_free( client->my_pubkey );
+   }
    
+   if( client->url ) {
+      free( client->url );
+   }
+   if( client->session_password ) {
+      free( client->session_password );
+   }
+   if( client->my_key ) {
+      EVP_PKEY_free( client->my_key );
+   }
+   if( client->my_pubkey ) {
+      EVP_PKEY_free( client->my_pubkey );
+   }
    if( client->my_key_pem ) {
       // NOTE: was mlock'ed
-      if( client->my_key_pem_mlocked )
+      if( client->my_key_pem_mlocked ) {
          munlock( client->my_key_pem, client->my_key_pem_len );
-      
+      }
       free( client->my_key_pem );
    }
-   if( client->syndicate_public_key_pem )
+   if( client->syndicate_public_key_pem ) {
       free( client->syndicate_public_key_pem );
-   
-   if( client->syndicate_public_key )
+   }
+   if( client->syndicate_public_key ) {
       EVP_PKEY_free( client->syndicate_public_key );
+   }
    
    md_downloader_shutdown( &client->dl );
    
@@ -781,7 +756,6 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
    //dbprintf("header: %s\n", data_str );
 
    // is this one of our headers?  Find each of them
-   
    off_t off = md_header_value_offset( data_str, len, HTTP_VOLUME_TIME );
    if( off > 0 ) {
       times->volume_time = md_parse_header_uint64( data_str, off, len );
@@ -812,6 +786,11 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 
    off = md_header_value_offset( data_str, len, HTTP_CREATE_TIMES );
    if( off > 0 ) {
+      
+      if( times->create_times != NULL ) {
+         free( times->create_times );
+      }
+      
       times->create_times = md_parse_header_uint64v( data_str, off, len, &times->num_create_times );
       free( data_str );
       return len;
@@ -819,6 +798,11 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 
    off = md_header_value_offset( data_str, len, HTTP_UPDATE_TIMES );
    if( off > 0 ) {
+      
+      if( times->update_times != NULL ) {
+         free( times->update_times );
+      }
+      
       times->update_times = md_parse_header_uint64v( data_str, off, len, &times->num_update_times );
       free( data_str );
       return len;
@@ -826,6 +810,11 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 
    off = md_header_value_offset( data_str, len, HTTP_DELETE_TIMES );
    if( off > 0 ) {
+      
+      if( times->delete_times != NULL ) {
+         free( times->delete_times );
+      }
+      
       times->delete_times = md_parse_header_uint64v( data_str, off, len, &times->num_delete_times );
       free( data_str );
       return len;
@@ -836,182 +825,267 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 }
 
 
-// exponential back-off
-// TODO: use a semaphore; properly queue up threads instead of making them spin
-static void ms_client_wlock_backoff( struct ms_client* client, bool* downloading ) {
-   // if another download is pending, wait, using random exponential back-off
-   ms_client_wlock( client );
-   uint64_t delay = random() % 1000;
-   while( *downloading ) {
-      ms_client_unlock( client );
+// extract and print out benchmark data after a write 
+// ms_client must not be locked
+int ms_client_timing_log( struct ms_client_timing* times ) {
+   
+   if( times->create_times != NULL ) {
+      print_timings( times->create_times, times->num_create_times, HTTP_CREATE_TIMES );
+   }
+   
+   if( times->update_times != NULL ) {
+      print_timings( times->update_times, times->num_update_times, HTTP_UPDATE_TIMES );
+   }
+   
+   if( times->delete_times != NULL ) {
+      print_timings( times->delete_times, times->num_delete_times, HTTP_DELETE_TIMES );
+   }
+   
+   return 0;
+}
 
-      dbprintf("sleep for %" PRIu64 "\n", delay);
+
+// free timing data 
+int ms_client_timing_free( struct ms_client_timing* times ) {
+   
+   if( times->create_times != NULL ) {
+      free( times->create_times );
+   }
+   
+   if( times->update_times != NULL ) {
+      free( times->update_times );
+   }
+   
+   if( times->delete_times != NULL ) {
+      free( times->delete_times );
+   }
+   
+   memset( times, 0, sizeof(struct ms_client_timing) );
+   
+   return 0;
+}
+
+// open a metadata connection to the MS
+int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct ms_client_timing* times ) {
+   
+   // set up a cURL handle to the MS 
+   // TODO: conection pool
+   CURL* curl = curl_easy_init();
+   ms_client_init_curl_handle( client->conf, curl, url );
+   
+   int rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
+   if( rc != 0 ) {
+      errorf("md_download_context_init(%s) rc = %d\n", url, rc );
       
-      usleep( delay );
-      delay += random() % 1000;
-      delay <<= 1;
-
-      ms_client_wlock( client );
+      // TODO: connection pool 
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      return rc;
    }
-}
-
-
-int ms_client_begin_downloading( struct ms_client* client, char const* url, struct curl_slist* headers ) {
-   ms_client_wlock_backoff( client, &client->downloading );
-
-   client->downloading = true;
-
-   curl_easy_setopt( client->ms_read, CURLOPT_URL, url );
-   curl_easy_setopt( client->ms_read, CURLOPT_HTTPHEADER, headers );
-
-   ms_client_unlock( client );
-
-   return 0;
-}
-
-
-int ms_client_end_downloading( struct ms_client* client ) {
-   long http_response = 0;
-
-   ms_client_wlock( client );
    
-   DATA( HTTP_VOLUME_TIME, (double)client->read_times.volume_time / 1e9 );
-   DATA( HTTP_GATEWAY_TIME, (double)client->read_times.ug_time / 1e9 );
-   DATA( HTTP_TOTAL_TIME, (double)client->read_times.total_time / 1e9 );
-
-   // not downloading anymore
-   client->downloading = false;
-
-   curl_easy_setopt( client->ms_read, CURLOPT_URL, NULL );
-   curl_easy_setopt( client->ms_read, CURLOPT_HTTPHEADER, NULL );
-   curl_easy_getinfo( client->ms_read, CURLINFO_RESPONSE_CODE, &http_response );
-
-   ms_client_unlock( client );
-
-   return (int)(http_response);
-}
-
-
-int ms_client_begin_downloading_view( struct ms_client* client, char const* url, struct curl_slist* headers ) {
-   ms_client_wlock_backoff( client, &client->downloading_view );
-
-   client->downloading_view = true;
-
-   curl_easy_setopt( client->ms_view, CURLOPT_FOLLOWLOCATION, 1L );
-   curl_easy_setopt( client->ms_view, CURLOPT_URL, url );
-   curl_easy_setopt( client->ms_view, CURLOPT_HTTPHEADER, headers );
-
-   ms_client_unlock( client );
-
-   return 0;
-}
-
-
-int ms_client_end_downloading_view( struct ms_client* client ) {
-   long http_response = 0;
-
-   ms_client_wlock( client );
-
-   DATA( HTTP_VOLUME_TIME, (double)client->read_times.volume_time / 1e9 );
-   DATA( HTTP_GATEWAY_TIME, (double)client->read_times.ug_time / 1e9 );
-   DATA( HTTP_TOTAL_TIME, (double)client->read_times.total_time / 1e9 );
-
-   // not downloading anymore
-   client->downloading_view = false;
-
-   curl_easy_setopt( client->ms_view, CURLOPT_URL, NULL );
-   curl_easy_setopt( client->ms_view, CURLOPT_HTTPHEADER, NULL );
-   curl_easy_getinfo( client->ms_view, CURLINFO_RESPONSE_CODE, &http_response );
-
-   ms_client_unlock( client );
-
-   return (int)(http_response);
-}
-
-int ms_client_begin_uploading( struct ms_client* client, char const* url, response_buffer_t* rb, struct curl_httppost* forms ) {
-   // lock, but back off if someone else is uploading
-   ms_client_wlock_backoff( client, &client->uploading );
-
-   client->uploading = true;
-
-   curl_easy_setopt( client->ms_write, CURLOPT_URL, url );
-   curl_easy_setopt( client->ms_write, CURLOPT_WRITEDATA, (void*)rb );
-   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, forms );
-
-   memset( &client->write_times, 0, sizeof(client->write_times) );
-
-   ms_client_unlock( client );
-
-   return 0;
-}
-
-
-int ms_client_end_uploading( struct ms_client* client ) {
-   // not uploading anymore, reaquire
-   ms_client_wlock( client );
-
-   print_timings( client->write_times.create_times, client->write_times.num_create_times, HTTP_CREATE_TIMES );
-   print_timings( client->write_times.update_times, client->write_times.num_update_times, HTTP_UPDATE_TIMES );
-   print_timings( client->write_times.delete_times, client->write_times.num_delete_times, HTTP_DELETE_TIMES );
-
-   if( client->write_times.create_times ) {
-      free( client->write_times.create_times );
-      client->write_times.create_times = NULL;
-   }
-
-   if( client->write_times.update_times ) {
-      free( client->write_times.update_times );
-      client->write_times.update_times = NULL;
-   }
-
-   if( client->write_times.delete_times ) {
-      free( client->write_times.delete_times );
-      client->write_times.delete_times = NULL;
-   }
-
-   DATA( HTTP_VOLUME_TIME, (double)client->write_times.volume_time / 1e9 );
-   DATA( HTTP_GATEWAY_TIME, (double)client->write_times.ug_time / 1e9 );
-   DATA( HTTP_TOTAL_TIME, (double)client->write_times.total_time / 1e9 );
-
-   client->uploading = false;
-
-
-   // get the results
-   long http_response = 0;
-   curl_easy_getinfo( client->ms_write, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_setopt( client->ms_write, CURLOPT_URL, NULL );
-   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, NULL );
-
-   ms_client_unlock( client );
-
-   return http_response;
-}
-
-
-// download metadata from the MS for a Volume.
-// metadata_path should be an absolute directory path (like /VOLUME/, or /UG/, or /RG/)
-// returns the HTTP response on success, or negative on error
-int ms_client_download_volume_metadata( struct ms_client* client, char const* url, char** buf, ssize_t* buflen ) {
+   curl_easy_setopt( curl, CURLOPT_URL, url );
+   curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
    
-   char* bits = NULL;
-   ssize_t len = 0;
-   int http_response = 0;
-
-   ms_client_begin_downloading_view( client, url, NULL );
-
-   // do the download
-   memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file( client->ms_view, &bits );
-
-   http_response = ms_client_end_downloading_view( client );
-
-   if( len < 0 ) {
-      errorf("md_download_file(%s) rc = %zd\n", url, len );
-      return (int)len;
+   if( times != NULL ) {
+      // benchmark
+      curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_header_func );
+      curl_easy_setopt( curl, CURLOPT_WRITEHEADER, times );   
    }
+   
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
+   
+   // start to download
+   rc = md_download_context_start( &client->dl, dlctx, NULL, url );
+   if( rc != 0 ) {
+      errorf("md_download_context_start(%s) rc = %d\n", url, rc );
+      
+      // TODO: connection pool 
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      return rc;
+      
+   }
+      
+   return 0;
+}
 
+// shut down a metadata connection to the MS
+// return the HTTP status on success, negative on failure
+int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len ) {
+   
+   // wait for the download to finish 
+   int rc = md_download_context_wait( dlctx, client->conf->transfer_timeout * 1000 );
+   if( rc != 0 ) {
+      
+      dbprintf("md_download_context_wait(%p) rc = %d\n", dlctx, rc );
+      
+      // timed out.  cancel 
+      md_download_context_cancel( &client->dl, dlctx );
+      
+      // TODO: connection pool 
+      CURL* curl = NULL;
+      md_download_context_free( dlctx, &curl );
+      
+      if( curl != NULL ) {
+         curl_easy_cleanup( curl );
+      }
+      
+      return rc;
+   }
+   
+   // get data 
+   char* url = NULL;
+   int os_errno = md_download_context_get_errno( dlctx );
+   int http_status = md_download_context_get_http_status( dlctx );
+   int curl_rc = md_download_context_get_curl_rc( dlctx );
+   md_download_context_get_effective_url( dlctx, &url );
+   
+   // curl error?
+   if( curl_rc != 0 || http_status != 200 ) {
+      
+      errorf("Download of %p %s errno = %d, CURL rc = %d, HTTP status = %d\n", dlctx, url, os_errno, curl_rc, http_status );
+      
+      if( os_errno != 0 ) {
+         rc = -abs(os_errno);
+      }
+      else if( http_status != 0 ) {
+         rc = http_status;
+      }
+      else {
+         rc = curl_rc;
+      }
+   }
+   else {
+      // get the response 
+      off_t len = 0;
+      rc = md_download_context_get_buffer( dlctx, response_buf, &len );
+      
+      if( rc != 0 ) {
+         errorf("md_download_context_get_buffer(%p url=%s) rc = %d\n", dlctx, url, rc );
+      }
+      else {
+         *response_buf_len = len;
+      }
+   }
+   
+   // TODO: connection pool 
+   CURL* curl = NULL;
+   md_download_context_free( dlctx, &curl );
+   
+   if( curl != NULL ) {
+      curl_easy_cleanup( curl );
+   }
+   
+   if( url != NULL ) {
+      free( url );
+   }
+   
+   if( rc == 0 ) {
+      rc = http_status;
+   }
+   
+   return rc;
+}
+
+// begin uploading to the MS
+// return 0 on success; negative on failure
+int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct ms_client_timing* timing ) {
+   
+   int rc = 0;
+   
+   // set up a cURL handle to the MS 
+   // TODO: conection pool
+   CURL* curl = curl_easy_init();
+   ms_client_init_curl_handle( client->conf, curl, url );
+   
+   rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
+   if( rc != 0 ) {
+      errorf("md_download_context_init(%s) rc = %d\n", url, rc );
+      
+      // TODO: connection pool 
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+   
+   curl_easy_setopt( curl, CURLOPT_POST, 1L);
+   curl_easy_setopt( curl, CURLOPT_HTTPPOST, forms );
+   
+   curl_easy_setopt( curl, CURLOPT_URL, url );
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
+   
+   if( timing ) {
+      curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_header_func );
+      curl_easy_setopt( curl, CURLOPT_WRITEHEADER, timing );      
+   }
+   
+   ms_client_rlock( client );
+   
+   // start to download
+   rc = md_download_context_start( &client->dl, dlctx, NULL, url );
+   
+   ms_client_unlock( client );
+   
+   if( rc != 0 ) {
+      errorf("md_download_context_start(%s) rc = %d\n", url, rc );
+      
+      // TODO: connection pool 
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      return rc;
+      
+   }
+   
+   return rc;
+}
+
+
+// finish uploading from the MS.  Get back the HTTP status and response buffer 
+// return the HTTP response on success; negative on error
+int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen ) {
+   
+   // logically, this is the same as ending a download 
+   int rc = ms_client_download_end( client, dlctx, buf, buflen );
+   if( rc != 200 ) {
+      errorf("ms_client_download_end(%p) rc = %d\n", dlctx, rc );
+   }
+   return rc;
+}
+
+
+// synchronously download metadata from the MS for a volume.
+// return the HTTP response on success; negative on error
+int ms_client_download_volume_metadata( struct ms_client* client, char const* url, char** buf, size_t* buflen ) {
+   
+   struct md_download_context dlctx;
+   memset( &dlctx, 0, sizeof(struct md_download_context) );
+   
+   struct ms_client_timing times;
+   memset( &times, 0, sizeof(struct ms_client_timing) );
+   
+   // start downloading
+   int rc = ms_client_download_begin( client, url, NULL, &dlctx, &times );
+   if( rc != 0 ) {
+      errorf("ms_client_download_begin(%s) rc = %d\n", url, rc );
+      return rc;
+   }
+   
+   // finish downloading 
+   int http_response = ms_client_download_end( client, &dlctx, buf, buflen );
+
+   if( http_response < 0 ) {
+      errorf("ms_client_download_end rc = %d\n", http_response );
+      
+      ms_client_timing_free( &times );
+      return http_response;
+   }
+   
    if( http_response != 200 ) {
-      errorf("md_download_file(%s) HTTP status = %d\n", url, http_response );
+      errorf("ms_client_download_end HTTP response = %d\n", http_response );
 
       if( http_response == 0 ) {
          // really bad--MS bug
@@ -1019,25 +1093,24 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* ur
          http_response = 500;
       }
 
+      ms_client_timing_free( &times );
       return -http_response;
    }
-
-   *buf = bits;
-   *buflen = len;
    
-   return 0;
+   ms_client_timing_log( &times );
+   ms_client_timing_free( &times );
+   
+   return http_response;
 }
 
-// download a cert bundle manifest
+
+// synchronously download a cert bundle manfest
 int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, Serialization::ManifestMsg* mmsg ) {
+   
    char* url = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + strlen("manifest.") + 21 + 1 );
    sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, client->url, volume_id, volume_cert_version );
    
-   ms_client_begin_downloading_view( client, url, NULL );
-   
-   int rc = md_download_manifest( client->conf, &client->dl, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache_impl, client->conf, NULL, NULL );
-   
-   int http_response = ms_client_end_downloading_view( client );
+   int rc = md_download_manifest( client->conf, &client->dl, url, client->volume->cache_closure, ms_client_connect_cache_impl, client->conf, mmsg, NULL, NULL );
    
    if( rc != 0 ) {
       errorf("md_download_manifest(%s) rc = %d\n", url, rc );
@@ -1045,22 +1118,10 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
       return rc;
    }
    
-   if( http_response != 200 ) {
-      errorf("md_download_manifest(%s) HTTP status = %d\n", url, http_response );
-      
-      if( http_response == 0 ) {
-         // really bad--MS bug
-         errorf("%s", "!!! likely an MS bug !!!\n");
-         http_response = 500;
-      }
-      
-      free( url );
-      return -http_response;
-   }
-   
    free( url );
    return rc;
 }
+
 
 
 // calculate which certs are new, and which are stale, given a manifest of them.
@@ -1187,7 +1248,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    ssize_t buf_len = 0;
    int http_status = 0;
    
-   int rc = md_download( client->conf, &client->dl, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache_impl, client->conf );
+   int rc = md_download( client->conf, &client->dl, url, MS_MAX_CERT_SIZE, client->volume->cache_closure, ms_client_connect_cache_impl, client->conf, &http_status, &buf, &buf_len );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );
@@ -1438,19 +1499,20 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
 int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
-   ssize_t len = 0;
+   size_t len = 0;
    int rc = 0;
+   int http_status = 0;
 
    char* volume_url = ms_client_volume_url_by_name( client, volume_name );
 
-   rc = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
+   http_status = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
 
    free( volume_url );
    
-   if( rc != 0 ) {
-      errorf("ms_client_download_volume_metadata rc = %d\n", rc );
+   if( http_status != 200 ) {
+      errorf("ms_client_download_volume_metadata rc = %d\n", http_status );
 
-      return rc;
+      return -abs(http_status);
    }
 
    // extract the message
@@ -1475,11 +1537,13 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
 // reload volume metadata
 // client must NOT be locked.
 int ms_client_reload_volume( struct ms_client* client ) {
+   
    int rc = 0;
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
-   ssize_t len = 0;
-
+   size_t len = 0;
+   int http_status = 0;
+   
    ms_client_view_rlock( client );
  
    struct ms_volume* vol = client->volume;
@@ -1497,14 +1561,14 @@ int ms_client_reload_volume( struct ms_client* client ) {
 
    ms_client_view_unlock( client );
 
-   rc = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
+   http_status = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
 
    free( volume_url );
    
-   if( rc != 0 ) {
-      errorf("ms_client_download_volume_metadata rc = %d\n", rc );
+   if( http_status != 200 ) {
+      errorf("ms_client_download_volume_metadata rc = %d\n", http_status );
 
-      return rc;
+      return -abs(http_status);
    }
 
    // extract the message
@@ -1729,15 +1793,18 @@ int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* 
    
    vol->root = root;
    
-   if( vol->UG_certs == NULL )
+   if( vol->UG_certs == NULL ) {
       vol->UG_certs = new ms_cert_bundle();
+   }
    
-   if( vol->RG_certs == NULL )
+   if( vol->RG_certs == NULL ) {
       vol->RG_certs = new ms_cert_bundle();
+   }
    
-   if( vol->AG_certs == NULL )
+   if( vol->AG_certs == NULL ) {
       vol->AG_certs = new ms_cert_bundle();
-
+   }
+   
    vol->volume_cert_version = volume_md->cert_version();
    vol->volume_id = volume_md->volume_id();
    vol->volume_owner_id = volume_md->owner_id();
@@ -1745,9 +1812,12 @@ int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* 
    vol->volume_version = volume_md->volume_version();
    vol->num_files = volume_md->num_files();
    
-   if( vol->name == NULL )
+   if( vol->name == NULL ) {
       vol->name = strdup( volume_md->name().c_str() );
-
+   }
+   
+   vol->cache_closure = NULL;
+   
    if( volume_md->has_cache_closure_text() ) {
       char const* method = NULL;
       
@@ -1758,7 +1828,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* 
          rc = md_closure_init( client, vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(), false, false );
       }
       else {
-         method = "md_closure_init";
+         method = "md_closure_reload";
          
          rc = md_closure_reload( client, vol->cache_closure, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size() );
       }
@@ -1767,8 +1837,13 @@ int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* 
          errorf("%s rc = %d\n", method, rc );
          return rc;
       }
+      else {
+         dbprintf("(Re)initialized CDN closure %p for Volume %s\n", vol->cache_closure, vol->name );
+      }
    }
-   
+   else {
+      errorf("WARN: no CDN closure for Volume %s\n", vol->name );
+   }
    return 0;
 }
 
@@ -1891,10 +1966,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms_client_wlock( client );
    
    // new session password
-   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
-   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
-   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, NULL );
-
    if( client->userpass ) {
       free( client->userpass );
    }
@@ -1915,10 +1986,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    client->userpass = CALLOC_LIST( char, strlen(gateway_id_str) + 1 + strlen(gateway_type_str) + 1 + strlen(client->session_password) + 1 );
    sprintf( client->userpass, "%s_%s:%s", gateway_type_str, gateway_id_str, client->session_password );
-
-   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
-   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
-   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, client->userpass );
 
    client->owner_id = cert.user_id;
    client->gateway_id = cert.gateway_id;
@@ -1979,36 +2046,30 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    
 // get the Syndicate public key and load it 
 static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client, char** syndicate_public_key_pem ) {
+   
    char* url = ms_client_syndicate_pubkey_url( client );
    
    char* bits = NULL;
-   ssize_t len = 0;
+   size_t len = 0;
    
-   ms_client_begin_downloading_view( client, url, NULL );
-   
-   // do the download
-   memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file( client->ms_view, &bits );
-
-   int http_status = ms_client_end_downloading_view( client );
-   
-   if( len < 0 ) {
-      errorf("md_download_file(%s) rc = %zd, HTTP status = %d\n", url, len, http_status );
-      len = -ENODATA;
+   int http_status = ms_client_download_volume_metadata( client, url, &bits, &len );
+   if( http_status != 200 ) {
+      
+      errorf("ms_client_download_volume_metadata(%s) rc = %d\n", url, http_status );
+      return -abs(http_status);
    }
-   else {
-      // add a \0 at the end...
-      char* tmp = (char*) realloc( bits, len + 1 );
-      if( tmp == NULL ) {
-         free( bits );
-         free( url );
-         return -ENOMEM;
-      }
-
-      bits = tmp;
-      bits[len] = 0;
-      *syndicate_public_key_pem = bits;
+   
+   // add a \0 at the end...
+   char* tmp = (char*) realloc( bits, len + 1 );
+   if( tmp == NULL ) {
+      free( bits );
+      free( url );
+      return -ENOMEM;
    }
+
+   bits = tmp;
+   bits[len] = 0;
+   *syndicate_public_key_pem = bits;
    
    free( url );
    return len;
@@ -2017,11 +2078,13 @@ static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client
 
 // download and install the syndicate public key into the ms_client 
 static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
+   
    char* syndicate_public_key_pem = NULL;
    ssize_t pubkey_len = ms_client_download_syndicate_public_key( client, &syndicate_public_key_pem );
    
    if( pubkey_len < 0 ) {
       errorf("ms_client_download_syndicate_public_key rc = %zd\n", pubkey_len );
+      return (int)pubkey_len;
    }
    
    EVP_PKEY* new_public_key = NULL;
@@ -2175,13 +2238,9 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    ms_client_wlock( client );
    
    // fill in sane defaults
-   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
-   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
-   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, NULL );
-
-   if( client->session_password )
+   if( client->session_password ) {
       free( client->session_password );
-   
+   }
    client->session_password = NULL;
    client->session_expires = -1;
    client->gateway_type = client->conf->gateway_type;
@@ -2552,40 +2611,59 @@ int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int 
 
 // post data
 static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
+   
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
-   response_buffer_t* rb = new response_buffer_t();
-
+   int http_response = 0;
+   struct md_download_context dlctx;
+   struct ms_client_timing times;
+   char* buf = NULL;
+   size_t buflen = 0;
+   
+   memset( &dlctx, 0, sizeof(struct md_download_context) );
+   memset( &times, 0, sizeof(struct ms_client_timing) );
+   
    // send as multipart/form-data file
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-metadata-updates", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, data, CURLFORM_BUFFERLENGTH, len, CURLFORM_END );
 
-   ms_client_begin_uploading( client, url, rb, post );
-   
    // do the upload
    struct timespec ts, ts2;
    BEGIN_TIMING_DATA( ts );
 
-   rc = curl_easy_perform( client->ms_write );
-
+   rc = ms_client_upload_begin( client, url, post, &dlctx, &times );
+   if( rc != 0 ) {
+      errorf("ms_client_upload_begin(%s) rc = %d\n", url, rc );
+      
+      ms_client_timing_free( &times );
+      curl_formfree( post );
+      return rc;
+   }
+   
+   // wait for it...
+   http_response = ms_client_upload_end( client, &dlctx, &buf, &buflen );
+   
+   if( http_response != 200 ) {
+      errorf("ms_client_upload_end(%s) rc = %d\n", url, http_response );
+      
+      ms_client_timing_free( &times );
+      curl_formfree( post );
+      return http_response;
+   }
+   
+   ms_client_timing_log( &times );
+   
    END_TIMING_DATA( ts, ts2, "MS send" );
-
-   int http_response = ms_client_end_uploading( client );
+   
+   ms_client_timing_free( &times );
    
    // what happened?
-   if( rc != 0 ) {
-      // curl failed
-      errorf( "curl_easy_perform rc = %d\n", rc );
-   }
-   else if( http_response == 200 ) {
+   if( http_response == 200 ) {
       // got something!
-      rc = 0;
-      if( rb->size() > 0 ) {
+      if( buflen > 0 ) {
+         
          // this should be an ms_reply structure
+         rc = ms_client_parse_reply( client, reply, buf, buflen, verify );
          
-         char* ret = response_buffer_to_string( rb );
-         size_t ret_len = response_buffer_size( rb );
-         
-         rc = ms_client_parse_reply( client, reply, ret, ret_len, verify );
          if( rc != 0 ) {
             // failed to parse--bad message
             errorf("ms_client_parse_reply rc = %d\n", rc );
@@ -2598,22 +2676,16 @@ static int ms_client_send( struct ms_client* client, char const* url, char const
                errorf("MS reply error %d\n", rc );
             }
          }
-         
-         free( ret );
       }
       else {
          // no response...
          rc = -ENODATA;
       }
    }
-   else {
-      // protocol error
-      errorf("curl_easy_perform HTTP status %d\n", http_response );
-      rc = -EREMOTEIO;
+   
+   if( buf != NULL ) {
+      free( buf );
    }
-
-   response_buffer_free( rb );
-   delete rb;
    
    curl_formfree( post );
    
@@ -2637,9 +2709,9 @@ static int ms_client_md_entry_sanity_check( struct md_entry* ent ) {
 }
 
 // convert an update_set into a protobuf
-static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* ms_updates ) {
+static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms_updates* ms_updates ) {
    // populate the protobuf
-   for( update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
+   for( ms_client_update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
 
       struct md_update* update = &itr->second;
       
@@ -2769,7 +2841,7 @@ static int ms_client_populate_update( struct md_update* up, int op, int flags, s
 }
 
 // add an update to an update set
-static int ms_client_add_update( update_set* updates, struct md_update* up ) {
+static int ms_client_add_update( ms_client_update_set* updates, struct md_update* up ) {
    (*updates)[ ms_client_hash( up->ent.volume, up->ent.file_id ) ] = *up;
    return 0;
 }
@@ -2778,7 +2850,7 @@ static int ms_client_add_update( update_set* updates, struct md_update* up ) {
 static int ms_client_file_post( struct ms_client* client, struct md_update* up, ms::ms_reply* reply ) {
    
    // put it into the update set
-   update_set updates;
+   ms_client_update_set updates;
    ms_client_add_update( &updates, up );
    
    return ms_client_send_updates( client, &updates, reply, true );
@@ -2786,16 +2858,13 @@ static int ms_client_file_post( struct ms_client* client, struct md_update* up, 
 
 // random 64-bit number
 uint64_t ms_client_make_file_id() {
-   uint64_t lower = CMWC4096();
-   uint64_t upper = CMWC4096();
-   
-   uint64_t ret = (upper) << 32 | lower;
-   return ret;
+   return (uint64_t)md_random64();
 }
 
 
 // create a file record on the MS, synchronously
 int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
+   
    ent->type = MD_ENTRY_FILE;
    
    uint64_t file_id = ms_client_make_file_id();
@@ -2848,7 +2917,7 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* w
    ms_client_populate_update( &up, ms::ms_update::CREATE, 0, ent );
 
    // put it into the update set
-   update_set updates;
+   ms_client_update_set updates;
    ms_client_add_update( &updates, &up );
    
    // reply buffer
@@ -3001,7 +3070,7 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 
 // send a batch of updates.
 // client must NOT be locked in any way.
-static int ms_client_send_updates( struct ms_client* client, update_set* all_updates, ms::ms_reply* reply, bool verify_response ) {
+static int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_updates, ms::ms_reply* reply, bool verify_response ) {
 
    int rc = 0;
    
@@ -3013,7 +3082,7 @@ static int ms_client_send_updates( struct ms_client* client, update_set* all_upd
 
    // pack the updates into a protobuf
    ms::ms_updates ms_updates;
-   ms_client_serialize_update_set( all_updates, &ms_updates );
+   ms_client_update_set_serialize( all_updates, &ms_updates );
 
    // sign it
    rc = ms_client_sign_updates( client->my_key, &ms_updates );
@@ -3369,7 +3438,7 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
          }
          
          // some other error?
-         else if( http_status != 200 || curl_rc != 0 || os_err != 0 ) {
+         else if( http_status != 200 || curl_rc != 0 ) {
             
             errorf("Path download %s failed, HTTP status = %d, cURL rc = %d, errno = %d\n", final_url, http_status, curl_rc, os_err );
             
@@ -4046,28 +4115,38 @@ int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
 }
 
 
-// synchronously fetch data from the MS 
+// asynchronously start fetching data from the MS 
 // client cannot be locked
-static int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply ) {
+static int ms_client_read_begin( struct ms_client* client, uint64_t volume_id, char const* url, struct md_download_context* dlctx, struct ms_client_timing* times ) {
    
    int rc = 0;
-   ssize_t len = 0;
+   
+   rc = ms_client_download_begin( client, url, NULL, dlctx, times );
+   if( rc != 0 ) {
+      errorf("ms_client_download_begin(%s) rc = %d\n", url, rc );
+   }
+   
+   return rc;
+}
+ 
+ 
+// wait for an asynchronously-started MS read to finish.
+// client cannot be locked 
+static int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct md_download_context* dlctx ) {
+   
+   int rc = 0;
+   size_t len = 0;
    char* buf = NULL;
    
-   ms_client_begin_downloading( client, url, NULL );
+   int http_response = ms_client_download_end( client, dlctx, &buf, &len );
    
-   memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file( client->ms_read, &buf );
-   
-   int http_response = ms_client_end_downloading( client );
-   
-   if( len <= 0 ) {
-      errorf("md_download_file rc = %zd\n", len );
+   if( http_response <= 0 ) {
+      errorf("ms_client_download_end rc = %d\n", http_response );
       
-      if( buf )
+      if( buf != NULL ) {
          free( buf );
-      
-      return (int)len;
+      }
+      return http_response;
    }
    
    if( http_response == 200 ) {
@@ -4075,7 +4154,7 @@ static int ms_client_read( struct ms_client* client, uint64_t volume_id, char co
       // parse and verify
       rc = ms_client_parse_reply( client, reply, buf, len, true );
       if( rc != 0 ) {
-         errorf("ms_client_read(%s) rc = %d\n", url, rc );
+         errorf("ms_client_read rc = %d\n", rc );
          free( buf );
          return -ENODATA;
       }
@@ -4085,18 +4164,20 @@ static int ms_client_read( struct ms_client* client, uint64_t volume_id, char co
       // check errors
       int err = reply->error();
       if( err != 0 ) {
-         errorf("ms_client_read(%s) reply error %d\n", url, err );
+         errorf("MS reply error %d\n", err );
          return err;
       }
       
-      // extract versioning information from the reply
-      ms_client_process_header( client, volume_id, reply->volume_version(), reply->cert_version() );
+      else {
+         // extract versioning information from the reply
+         ms_client_process_header( client, volume_id, reply->volume_version(), reply->cert_version() );
       
-      return 0;
+         return 0;
+      }
    }
    else {
       // error 
-      errorf("MS HTTP status %d\n", http_response );
+      errorf("ms_client_download_end rc = %d\n", http_response );
       
       if( http_response == 0 ) {
          errorf("%s", "MS bug: HTTP response is zero!\n");
@@ -4104,11 +4185,38 @@ static int ms_client_read( struct ms_client* client, uint64_t volume_id, char co
          http_response = -EIO;
       }
       
-      if( buf )
+      if( buf != NULL ) {
          free( buf );
-      
+      }
       return -http_response;
    }
+}
+
+// synchronous wrapper around read_begin and read_end 
+int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply ) {
+   
+   struct md_download_context dlctx;
+   memset( &dlctx, 0, sizeof(struct md_download_context) );
+   
+   struct ms_client_timing timing;
+   memset( &timing, 0, sizeof(struct ms_client_timing) );
+   
+   int rc = ms_client_read_begin( client, volume_id, url, &dlctx, &timing );
+   if( rc != 0 ) {
+      errorf("ms_client_read_begin(%s) rc = %d\n", url, rc );
+      return rc;
+   }
+   
+   rc = ms_client_read_end( client, volume_id, reply, &dlctx );
+   if( rc != 0) {
+      errorf("ms_client_read_end(%s) rc = %d\n", url, rc );
+      return rc;
+   }
+   
+   ms_client_timing_log( &timing );
+   ms_client_timing_free( &timing );
+   
+   return rc;
 }
 
 // get an xattr value.
