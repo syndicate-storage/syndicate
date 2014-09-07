@@ -1510,7 +1510,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    
    do {
       
-      err = fs_entry_revalidate_manifest( core, fs_path, fent );
+      err = fs_entry_revalidate_manifest_once( core, fs_path, fent );
       
       if( err != -EAGAIN ) {
          break;
@@ -1519,7 +1519,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       // try again 
       num_manifest_requests++;
       
-      dbprintf("fs_entry_revalidate_manifest(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
+      dbprintf("fs_entry_revalidate_manifest_once(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
       
       struct timespec ts;
       ts.tv_sec = core->conf->retry_delay_ms / 1000;
