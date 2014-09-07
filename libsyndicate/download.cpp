@@ -227,7 +227,7 @@ int md_downloader_insert_pending( struct md_downloader* dl, struct md_download_c
    
    dl->has_pending = true;
    
-   dbprintf("Start context %p\n", dlctx );
+   dbprintf("Start download context %p\n", dlctx );
    
    return 0;
 }
@@ -249,18 +249,18 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
    
    if( dlctx->pending || dlctx->cancelling ) {
       md_downloader_cancelling_unlock( dl );
-      return -EINVAL;
+      return -EINPROGRESS;
    }
    
    dlctx->cancelling = true;
    
    dl->cancelling->insert( dlctx );
    
-   md_downloader_cancelling_unlock( dl );
-   
    dl->has_cancelling = true;
    
-   dbprintf("Cancel context %p\n", dlctx );
+   md_downloader_cancelling_unlock( dl );
+   
+   dbprintf("Cancel download context %p\n", dlctx );
    
    return 0;
 }
@@ -303,8 +303,9 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
          
          struct md_download_context* dlctx = *itr;
          
-         if( dlctx == NULL )
+         if( dlctx == NULL ) {
             continue;
+         }
          
          curl_multi_remove_handle( dl->curlm, dlctx->curl );
          
@@ -407,6 +408,9 @@ size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void
 // * CURLOPT_WRITEDATA
 // * CURLOPT_WRITEFUNCTION
 int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_cache_connector_func cache_func, void* cache_func_cls, off_t max_len ) {
+   
+   dbprintf("Initialize download context %p\n", dlctx );
+   
    memset( dlctx, 0, sizeof(struct md_download_context) );
    
    dlctx->brb.max_size = max_len;
@@ -465,7 +469,7 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
       return -EAGAIN;
    }
    
-   dbprintf("Free context %p\n", dlctx );
+   dbprintf("Free download context %p\n", dlctx );
    
    if( dlctx->brb.rb ) {
       response_buffer_free( dlctx->brb.rb );
@@ -549,6 +553,8 @@ int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
 // return the result of waiting, NOT the result of the download 
 int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout_ms ) {
    
+   dbprintf("Wait on download context %p\n", dlctx );
+   
    int rc = md_download_sem_wait( &dlctx->sem, timeout_ms );
    
    if( rc != 0 ) {
@@ -561,6 +567,8 @@ int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout
 // wait for a download to finish within a download set, either in error or not.
 // return the result of waiting, NOT the result of the download 
 int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout_ms ) {
+   
+   dbprintf("Wait on download set %p\n", dlset );
    
    int rc = 0;
    
@@ -576,6 +584,9 @@ int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout
 
 // set up a download set 
 int md_download_set_init( struct md_download_set* dlset ) {
+   
+   dbprintf("Initialize download set %p\n", dlset );
+   
    dlset->waiting = new md_pending_set_t();
    
    sem_init( &dlset->sem, 0, 0 );
@@ -586,6 +597,8 @@ int md_download_set_init( struct md_download_set* dlset ) {
 
 // free a download set 
 int md_download_set_free( struct md_download_set* dlset ) {
+   
+   dbprintf("Free download set %p\n", dlset );
    
    if( dlset->waiting ) {
       delete dlset->waiting;
@@ -608,6 +621,8 @@ int md_download_set_add( struct md_download_set* dlset, struct md_download_conte
       dlset->waiting->insert( dlctx );
       
       dlctx->dlset = dlset;
+      
+      dbprintf("Add download context %p to download set %p\n", dlctx, dlset );
    }
    
    return 0;
@@ -660,23 +675,22 @@ struct md_download_context* md_download_set_iterator_get_context( const md_downl
 
 
 // connect a donwload context to the caches 
-static int md_download_context_connect_cache( struct md_downloader* dl, struct md_download_context* dlctx, struct md_closure* cache_closure, char const* base_url ) {
+static int md_download_context_connect_cache( struct md_download_context* dlctx, struct md_closure* cache_closure, char const* base_url ) {
    
    int rc = 0;
    
    // connect to the cache 
-   if( dlctx->cache_func != NULL ) {
-      // no closure?
-      if( cache_closure == NULL ) {
-         return -EINVAL;
-      }
+   if( dlctx->cache_func != NULL && cache_closure != NULL ) {
       
       // connect to the cache
       rc = (*dlctx->cache_func)( cache_closure, dlctx->curl, base_url, dlctx->cache_func_cls );
       if( rc != 0 ) {
-         errorf("%s: cache connect on %s rc = %d\n", dl->name, base_url, rc );
+         errorf("cache connect on %s rc = %d\n", base_url, rc );
          return rc;
       }
+   }
+   else if( dlctx->cache_func != NULL ) {
+      dbprintf("WARN: CDN closure is NULL, but cache_func = %p\n", dlctx->cache_func );
    }
    
    return rc;
@@ -686,7 +700,7 @@ static int md_download_context_connect_cache( struct md_downloader* dl, struct m
 // begin downloading something 
 int md_download_context_start( struct md_downloader* dl, struct md_download_context* dlctx, struct md_closure* cache_closure, char const* base_url ) {
    
-   int rc = md_download_context_connect_cache( dl, dlctx, cache_closure, base_url );
+   int rc = md_download_context_connect_cache( dlctx, cache_closure, base_url );
    if( rc != 0 ) {
       errorf("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
       return rc;
@@ -699,23 +713,37 @@ int md_download_context_start( struct md_downloader* dl, struct md_download_cont
 
 // cancel downloading something 
 int md_download_context_cancel( struct md_downloader* dl, struct md_download_context* dlctx ) {
-   if( dlctx->cancelled || dlctx->finalized )
+   
+   if( dlctx->cancelled || dlctx->finalized ) {
       return 0;
+   }
    
-   md_downloader_insert_cancelling( dl, dlctx );
+   int rc = md_downloader_insert_cancelling( dl, dlctx );
+   if( rc != 0 ) {
+      errorf("md_downloader_insert_cancelling(%p) rc = %d\n", dlctx, rc );
+      return rc;
+   }
    
-   return md_download_context_wait( dlctx, -1 );
+   rc = md_download_context_wait( dlctx, -1 );
+   if( rc != 0 ) {
+      errorf("md_download_context_wait(%p) rc = %d\n", dlctx, rc );
+   }
+   return rc;
 }
 
 
 // release a waiting context set, given one of its now-finished entries.
-int md_download_set_wakeup( struct md_download_context* dlctx ) {
+int md_download_set_wakeup( struct md_download_set* dlset ) {
+   
+   dbprintf("Wake up download set %p\n", dlset );
    
    int rc = 0;
    
-   if( dlctx->dlset != NULL ) {
-      sem_post( &dlctx->dlset->sem );
+   if( dlset == NULL ) {
+      return -EINVAL;
    }
+   
+   sem_post( &dlset->sem );
    
    return rc;
 }
@@ -817,10 +845,13 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    dlctx->http_status = (int)http_status;
    dlctx->transfer_errno = (int)os_errno;
    dlctx->finalized = true;
+   dlctx->effective_url = NULL;
    
    if( url != NULL ) {
       dlctx->effective_url = strdup( url );
    }
+   
+   dbprintf("Finalized download context %p (%s)\n", dlctx, url );
    
    // release waiting thread
    sem_post( &dlctx->sem );
@@ -871,6 +902,9 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
                curl_multi_remove_handle( dl->curlm, dlctx->curl );
             }
             
+            // get the download set from this dlctx, so we can awaken it later
+            struct md_download_set* dlset = dlctx->dlset;
+            
             // finalize the download context
             rc = md_downloader_finalize_download_context( dlctx, result );
             if( rc != 0 ) {
@@ -878,7 +912,9 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
             }
             
             // wake up the set waiting on this dlctx 
-            md_download_set_wakeup( dlctx );
+            if( dlset != NULL ) {
+               md_download_set_wakeup( dlset );
+            }
          }
       } 
       
@@ -1062,91 +1098,179 @@ off_t md_download_file( CURL* curl_h, char** buf ) {
 }
 
 
-// download data from one or more CDNs.
-// cache_func will initialize the curl handle.
-// return 0 on success.
-// return negative on error.
-// fill in the HTTP satus code
-int md_download_from_caches( struct md_downloader* dl, struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code,
-                             md_cache_connector_func cache_func, void* cache_func_cls ) {
-   int rc = 0;
-
-   struct md_download_context dlctx;
-   md_download_context_init( &dlctx, curl, cache_func, cache_func_cls, max_len );
+// start downloading data from zero or more CDNs
+// pass NULL for cache_closure, cache_func, and cache_func_cls if you want to avoid CDNs
+// return 0 on success
+// return negative on error
+int md_download_begin( struct md_syndicate_conf* conf,
+                       struct md_downloader* dl,
+                       char const* url, off_t max_len,
+                       struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                       struct md_download_context* dlctx ) {
    
-   // connect to cache...
-   rc = md_download_context_connect_cache( dl, &dlctx, closure, base_url );
+   int rc = 0;
+   
+   // TODO: connection pool 
+   CURL* curl = curl_easy_init();
+   md_init_curl_handle( conf, curl, url, conf->connect_timeout );
+   
+   md_download_context_init( dlctx, curl, cache_func, cache_func_cls, max_len );
+   
+   // connect to the cache 
+   rc = md_download_context_connect_cache( dlctx, cache_closure, url );
    if( rc != 0 ) {
-      errorf("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
-      md_download_context_free( &dlctx, NULL );
+      
+      errorf("md_download_context_connect_cache(%s) rc = %d\n", url, rc );
+      
+      // TODO: connection pool
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      
       return rc;
    }
    
-   // run the download 
-   rc = curl_easy_perform( curl );
-   md_downloader_finalize_download_context( &dlctx, rc );
-   
-   // check for errors 
-   rc = md_download_context_get_curl_rc( &dlctx );
+   // start downloading 
+   rc = md_download_context_start( dl, dlctx, cache_closure, url );
    if( rc != 0 ) {
-      int errsv = md_download_context_get_errno( &dlctx );
+      errorf("md_download_context_start(%s) rc = %d\n", url, rc );
       
-      errorf("%s: md_download_context_wait(%s) CURL rc = %d, errno = %d\n", dl->name, base_url, rc, errsv );
+      // TODO: connection pool 
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
       
-      if( errsv == 0 ) {
-         if( rc == CURLE_COULDNT_CONNECT ) {
-            errsv = -ECONNREFUSED;
-         }
-         else {
-            errsv = -EINVAL;       // CURL was not properly set up
-         }
-      }
-      md_download_context_free( &dlctx, NULL );
-      return errsv;
+      return rc;
    }
-   
-   // give back the data 
-   rc = md_download_context_get_buffer( &dlctx, bits, ret_len );
-   if( rc != 0 ) {
-      errorf("%s: md_download_context_get_buffer(%s) rc = %d\n", dl->name, base_url, rc );
-      
-      md_download_context_free( &dlctx, NULL );
-      return -ENODATA;
-   }
-   
-   *status_code = md_download_context_get_http_status( &dlctx );
-   
-   md_download_context_free( &dlctx, NULL );
    
    return 0;
 }
 
 
+// finish downloading data, freeing up the download context
+// return 0 on success, and allocate and fill bits, ret_len, and http_status
+// return negative on error 
+int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx, int timeout, int* http_status, char** bits, size_t* ret_len ) {
+   
+   int rc = 0;
+   char* base_url = NULL;
+   
+   // wait for download
+   rc = md_download_context_wait( dlctx, timeout );
+   if( rc != 0 ) {
+      errorf("md_download_context_wait rc = %d\n", rc );
+      
+      rc = md_download_context_cancel( dl, dlctx );
+      
+      if( rc != 0 ) {
+         if( rc == -EPERM ) {
+            // downloader isn't running.  Try again 
+            return rc;
+         }
+         else if( rc == -EINPROGRESS ) {
+            // already in the process of getting cancelled.  Wait for it
+            dbprintf("Waiting for %p to get cancelled\n", dlctx );
+            md_download_context_wait( dlctx, -1 );
+            
+            rc = 0;
+         }
+         else if( rc == -EINVAL ) {
+            // otherwise, it was already finalized
+            rc = 0;
+         }
+         else {
+            // unknown error 
+            errorf("md_download_cancel(%p) rc = %d\n", dlctx, rc );
+            return rc;
+         }
+      }
+   }
+   
+   else {
+      
+      // check for errors 
+      md_download_context_get_effective_url( dlctx, &base_url );
+      rc = md_download_context_get_curl_rc( dlctx );
+      
+      if( rc != 0 ) {
+         int errsv = md_download_context_get_errno( dlctx );
+      
+         errorf("md_download_context_get_errno(%s) CURL rc = %d, errno = %d\n", base_url, rc, errsv );
+      
+         if( errsv == 0 ) {
+            if( rc == CURLE_COULDNT_CONNECT ) {
+               errsv = -ECONNREFUSED;
+            }
+            else {
+               errsv = -EINVAL;       // CURL was not properly set up
+            }
+         }
+      }
+      
+      else {
+         
+         // give back the data 
+         off_t len = 0;
+         rc = md_download_context_get_buffer( dlctx, bits, &len );
+         if( rc != 0 || len < 0 ) {
+            errorf("md_download_context_get_buffer(%s) rc = %d, len = %jd\n", base_url, rc, len );
+            rc = -ENODATA;
+         }
+         
+         else {
+            
+            // success! get the status
+            *ret_len = (size_t)len;
+            *http_status = md_download_context_get_http_status( dlctx );
+         }
+      }
+   }
+   
+   // clean up
+   // TODO: connection pool 
+   CURL* old_curl = NULL;
+   md_download_context_free( dlctx, &old_curl );
+   
+   curl_easy_cleanup( old_curl );
+   
+   if( base_url != NULL ) {
+      free( base_url );
+   }
+   
+   return rc;
+}
+
+
 // download data from one or more CDNs, and then fall back to a direct download if that fails.
-// return 0 on success.
+// return 0 on success (which means "the server responded with some data")
 // return negative on error.
 // fill in the HTTP status code 
-int md_download( struct md_syndicate_conf* conf, struct md_downloader* dl, struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code,
-                 md_cache_connector_func cache_func, void* cache_func_cls ) {
+// NOTE: the http code can be an error code (i.e. 40x, 50x), which the caller should check
+int md_download( struct md_syndicate_conf* conf,
+                 struct md_downloader* dl,
+                 char const* base_url, off_t max_len,
+                 struct md_closure* closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                 int* http_code, char** bits, off_t* ret_len ) {
+   
    int rc = 0;
    
-   if( cache_func ) {
-      rc = md_download_from_caches( dl, closure, curl, base_url, bits, ret_len, max_len, status_code, cache_func, cache_func_cls );
-      if( rc == 0 ) {
-         return 0;
-      }
-      else {
-         errorf("WARN: md_download_from_caches(%s) rc = %d, falling back to direct download\n", base_url, rc);
-      }
-   }
+   struct md_download_context dlctx;
+   memset( &dlctx, 0, sizeof(struct md_download_context) );
    
-   // download directly if we get here...
-   md_init_curl_handle( conf, curl, base_url, conf->connect_timeout );
-   
-   rc = md_download_from_caches( dl, NULL, curl, base_url, bits, ret_len, max_len, status_code, NULL, NULL );
+   // start the download
+   rc = md_download_begin( conf, dl, base_url, max_len, closure, cache_func, cache_func_cls, &dlctx );
    if( rc != 0 ) {
-      errorf("md_download_from_caches(%s) rc = %d, HTTP status = %d\n", base_url, rc, *status_code );
+      errorf( "md_download_begin(%s) rc = %d\n", base_url, rc );
+      return rc;
    }
+   
+   // finish the download 
+   size_t len = 0;
+   rc = md_download_end( dl, &dlctx, conf->transfer_timeout * 1000, http_code, bits, &len );
+   if( rc != 0 ) {
+      errorf("md_download_end(%s) rc = %d\n", base_url, rc );
+      return rc;
+   }
+   
+   *ret_len = len;
    
    return rc;
 }
@@ -1170,76 +1294,142 @@ static int md_HTTP_status_code_to_error_code( int status_code ) {
    return status_code;
 }
 
-// download a manifest and parse it.
-// Do not attempt to check it for errors, or verify its authenticity
-int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* dl, struct md_closure* closure,
-                          CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
-                          md_cache_connector_func cache_func, void* cache_func_cls,
-                          md_manifest_processor_func manifest_func, void* manifest_func_cls ) {
 
-   char* manifest_data = NULL;
-   int status_code = 0;
-   off_t manifest_data_len = 0;
-   int rc = 0;
-
-   rc = md_download( conf, dl, closure, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code, cache_func, cache_func_cls );
+// start downloading a manifest 
+// return 0 on success; negative on error
+int md_download_manifest_begin( struct md_syndicate_conf* conf,
+                                struct md_downloader* dl,
+                                char const* manifest_url, 
+                                struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                                struct md_download_context* dlctx ) {
    
+   int rc = md_download_begin( conf, dl, manifest_url, SYNDICATE_MAX_MANIFEST_LEN, cache_closure, cache_func, cache_func_cls, dlctx );
+   
+   if( rc != 0) {
+      errorf("md_download_begin(%s) rc = %d\n", manifest_url, rc );
+   }
+   
+   return rc;
+}
+
+// finish donwloading a manifest, and parse it.
+// return 0 on success, with the parsed data.
+// return negative on error.
+// NOTE: no authenticity checks will be performed on the manifest!  The caller *MUST* do this itself!
+int md_download_manifest_end( struct md_syndicate_conf* conf,
+                              struct md_downloader* dl,
+                              Serialization::ManifestMsg* mmsg,
+                              struct md_closure* closure, md_manifest_processor_func manifest_func, void* manifest_func_cls,
+                              struct md_download_context* dlctx ) {
+
+   int rc = 0;
+   int http_status = 0;
+   char* manifest_bits = NULL;
+   size_t manifest_len = 0;
+   
+   // finish up 
+   rc = md_download_end( dl, dlctx, conf->transfer_timeout * 1000, &http_status, &manifest_bits, &manifest_len );
    if( rc != 0 ) {
-      errorf( "md_download(%s) rc = %d\n", manifest_url, rc );
+      errorf("md_download_end rc = %d\n", rc );
+      
+      if( manifest_bits != NULL ) {
+         free( manifest_bits );
+      }
+      
       return rc;
    }
    
-   if( status_code != 200 ) {
-      // bad HTTP status
-      errorf( "md_download(%s) HTTP status %d\n", manifest_url, status_code );
+   if( http_status != 200 ) {
+      errorf("md_download_end HTTP status = %d\n", http_status );
       
-      if( manifest_data )
-         free( manifest_data );
+      if( manifest_bits != NULL ) {
+         free( manifest_bits );
+      }
       
-      int err = md_HTTP_status_code_to_error_code( status_code );
-      if( err == 0 || err == status_code ) {
-         return -EREMOTEIO;
-      }
-      else {
-         return err;
-      }
+      return md_HTTP_status_code_to_error_code( http_status );
    }
    
-   // process the manifest...
-   if( manifest_func ) {
-      char* processed_manifest_data = NULL;
-      size_t processed_manifest_data_len = 0;
-      
-      rc = (*manifest_func)( closure, manifest_data, manifest_data_len, &processed_manifest_data, &processed_manifest_data_len, manifest_func_cls );
-      if( rc != 0 ) {
-         errorf("manifest_func rc = %d\n", rc );
-         
-         free( manifest_data );
-         return rc;
-      }
-      
-      if( processed_manifest_data != NULL && processed_manifest_data != manifest_data ) {
-         // driver transformed the data
-         free( manifest_data );
-         manifest_data = NULL;
-      
-         manifest_data = processed_manifest_data;
-         manifest_data_len = processed_manifest_data_len;
-      }
-   }
-
-   rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_data, manifest_data_len );
-   if( rc != 0 ) {
-      errorf("md_parse rc = %d\n", rc );
-      
-      if( manifest_data )
-         free( manifest_data );
+   if( manifest_bits == NULL ) {
+      errorf("No data received from download context %p\n", dlctx );
       
       return -ENODATA;
    }
    
-   if( manifest_data )
-      free( manifest_data );
-
+   // post-processing
+   if( manifest_func != NULL ) {
+      
+      char* processed_manifest_data = NULL;
+      size_t processed_manifest_data_len = 0;
+      
+      rc = (*manifest_func)( closure, manifest_bits, manifest_len, &processed_manifest_data, &processed_manifest_data_len, manifest_func_cls );
+      if( rc != 0 ) {
+         
+         errorf("manifest_func rc = %d\n", rc );
+         
+         if( manifest_bits != NULL ) {
+            free( manifest_bits );
+         }
+         
+         return rc;
+      }
+      
+      // move data over
+      if( manifest_bits != NULL ) {
+         free( manifest_bits );
+      }
+      
+      manifest_bits = processed_manifest_data;
+      manifest_len = processed_manifest_data_len;
+   }
+   
+   // parse it
+   rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_bits, manifest_len );
+   if( rc != 0 ) {
+      
+      errorf("md_parse rc = %d\n", rc );
+      
+      if( manifest_bits != NULL ) {
+         free( manifest_bits );
+      }
+      
+      return rc;
+   }
+   
+   if( manifest_bits != NULL ) {
+      free( manifest_bits );
+   }
+   
    return rc;
+}
+
+
+// synchronously download and parse a manifest 
+// return 0 on success; negative on error
+// NOTE: does not check the authenticity!
+int md_download_manifest( struct md_syndicate_conf* conf,
+                          struct md_downloader* dl, 
+                          char const* manifest_url,
+                          struct md_closure* closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                          Serialization::ManifestMsg* mmsg, md_manifest_processor_func manifest_func, void* manifest_func_cls ) {
+                          
+   int rc = 0;
+   struct md_download_context dlctx;
+   
+   memset( &dlctx, 0, sizeof(struct md_download_context) );
+   
+   rc = md_download_manifest_begin( conf, dl, manifest_url, closure, cache_func, cache_func_cls, &dlctx );
+   if( rc != 0 ) {
+      
+      errorf("md_download_manifest_begin(%s) rc = %d\n", manifest_url, rc );
+      return rc;
+   }
+   
+   rc = md_download_manifest_end( conf, dl, mmsg, closure, manifest_func, manifest_func_cls, &dlctx );
+   if( rc != 0 ) {
+      
+      errorf("md_download_manifest_end(%s) rc = %d\n", manifest_url, rc );
+      return rc;
+   }
+   
+   return 0;
 }
