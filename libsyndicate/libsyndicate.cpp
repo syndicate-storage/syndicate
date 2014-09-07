@@ -1277,8 +1277,9 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    // how many commas?
    int num_values = 1;
    for( size_t i = offset; i < size; i++ ) {
-      if( hdr[i] == ',' )
+      if( hdr[i] == ',' ) {
          num_values++;
+      }
    }
    
    char* tmp = value_str;
@@ -1289,9 +1290,10 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    
    while( 1 ) {
       char* tok = strtok_r( tmp, ", \r\n", &tmp2 );
-      if( tok == NULL )
+      if( tok == NULL ) {
          break;
-
+      }
+      
       tmp = NULL;
 
       uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
