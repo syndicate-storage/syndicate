@@ -17,7 +17,6 @@
 #include "network.h"
 #include "manifest.h"
 #include "url.h"
-#include "cache.h"
 #include "replication.h"
 #include "driver.h"
 #include "syndicate.h"
@@ -25,7 +24,6 @@
 // download and verify a manifest
 // fent must be at least read-locked
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
-   CURL* curl = curl_easy_init();
    
    // connect to the cache...
    struct driver_connect_cache_cls driver_cls;
@@ -40,15 +38,12 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    manifest_cls.manifest_mtime_sec = manifest_mtime_sec;
    manifest_cls.manifest_mtime_nsec = manifest_mtime_nsec;
    
-   int rc = md_download_manifest( core->conf, &core->state->dl, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
+   int rc = md_download_manifest( core->conf, &core->state->dl, manifest_url, core->closure, driver_connect_cache, &driver_cls, mmsg, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
       errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
-      curl_easy_cleanup( curl );
       return rc;
    }
-   
-   curl_easy_cleanup( curl );
    
    uint64_t origin = mmsg->coordinator_id();
    
