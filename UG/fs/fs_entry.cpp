@@ -17,7 +17,6 @@
 #include "fs_entry.h"
 #include "manifest.h"
 #include "url.h"
-#include "ms-client.h"
 #include "consistency.h"
 #include "replication.h"
 #include "driver.h"

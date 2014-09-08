@@ -124,7 +124,7 @@ int AG_get_spec_file_text( struct ms_client* client, char** out_specfile_text, s
    }
    
    // extract from json 
-   rc = md_closure_load_AG_specfile( client, specfile_text_json, specfile_text_json_len, &specfile_text, &specfile_text_len );
+   rc = md_closure_load_AG_specfile( specfile_text_json, specfile_text_json_len, &specfile_text, &specfile_text_len );
    free( specfile_text_json );
    
    if( rc != 0 ) {

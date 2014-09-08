@@ -46,7 +46,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/cache.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 using namespace std;
 

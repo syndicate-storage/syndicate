@@ -223,7 +223,7 @@ libsyndicate_out = "build/out/lib/libsyndicate"
 libsyndicate_driver_out = "build/out/lib/syndicate-drivers/volume"
 libsyndicate_driver_install = os.path.join( lib_install_dir, "syndicate-drivers/volume" )
 
-libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_ms_client_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_drivers = SConscript( "libsyndicate/drivers/SConscript", variant_dir=libsyndicate_driver_out )
 
 # all libsyndicate targets depends on protobufs
@@ -235,6 +235,8 @@ for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header
 # alias installation targets for libsyndicate
 libsyndicate_install_headers = env.Install( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
 libsyndicate_install_scrypt_headers = env.Install( os.path.join( inc_install_dir, "scrypt" ), libsyndicate_scrypt_header_paths )
+libsyndicate_install_ms_client_headers = env.Install( os.path.join( inc_install_dir, "ms" ), libsyndicate_ms_client_header_paths )
+
 libsyndicate_install_library = env.Install( lib_install_dir, [libsyndicate] ) 
 libsyndicate_install_drivers = env.Install( libsyndicate_driver_install, [libsyndicate_drivers] )
 
@@ -247,7 +249,7 @@ if libsyndicate_nacl is not None:
 
 # main targets...
 env.Alias( 'libsyndicate', [libsyndicate] )
-env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers] )
+env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers, libsyndicate_install_ms_client_headers] )
 
 env.Alias( 'libsyndicate-drivers', [libsyndicate_drivers] )
 env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )

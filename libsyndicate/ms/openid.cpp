@@ -14,9 +14,8 @@
    limitations under the License.
 */
 
-#include "openid.h"
-#include "crypt.h"
-
+#include "libsyndicate/ms/openid.h"
+#include "libsyndicate/crypt.h"
 
 // set a CURL handle's HTTP method, as well as its URL and query string
 int ms_client_set_method( CURL* curl, char const* method, char const* url, char const* qs ) {

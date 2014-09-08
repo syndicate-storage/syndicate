@@ -19,6 +19,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/download.h"
+#include "libsyndicate/ms/ms-client.h"
 #include "fs_entry.h"
 #include "replication.h"
 

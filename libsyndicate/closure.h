@@ -70,13 +70,19 @@ int md_closure_wlock( struct md_closure* closure );
 int md_closure_unlock( struct md_closure* closure );
 
 // initialization, reload, and shutdown 
-int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific, bool ignore_stubs );
+int md_closure_init( struct md_closure* closure,
+                     struct md_syndicate_conf* conf,
+                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
+                     struct md_closure_callback_entry* prototype,
+                     char const* closure_text, size_t closure_text_len,
+                     bool gateway_specific, bool ignore_stubs );
+
 int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* driver_prototype, bool ignore_stubs );
-int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len );
+int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* conf, EVP_PKEY* pubkey, EVP_PKEY* privkey, char const* closure_text, size_t closure_text_len );
 int md_closure_shutdown( struct md_closure* closure );
 
 // AG-specific 
-int md_closure_load_AG_specfile( struct ms_client* client, char* specfile_json_str, size_t specfile_json_str_len, char** specfile_text, size_t* specfile_text_len );
+int md_closure_load_AG_specfile( char* specfile_json_str, size_t specfile_json_str_len, char** specfile_text, size_t* specfile_text_len );
 
 // closure config API 
 int md_closure_get_config( struct md_closure* closure, char const* key, char** value, size_t* len );

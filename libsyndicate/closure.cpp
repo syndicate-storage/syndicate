@@ -16,8 +16,6 @@
 
 #include "closure.h"
 #include "crypt.h"
-#include "ms-client.h"
-
 
 
 // duplicate a callback table 
@@ -288,9 +286,8 @@ static int md_parse_json_b64_string( struct json_object* toplevel_obj, char cons
 
 
 // parse the MS-supplied closure.
-static int md_parse_closure( struct ms_client* client,
-                             md_closure_conf_t* closure_conf,
-                             md_closure_secrets_t* closure_secrets,
+static int md_parse_closure( md_closure_conf_t* closure_conf,
+                             EVP_PKEY* pubkey, EVP_PKEY* privkey, md_closure_secrets_t* closure_secrets,
                              char** driver_bin, size_t* driver_bin_len,
                              char const* closure_text, size_t closure_text_len ) {
       
@@ -326,7 +323,7 @@ static int md_parse_closure( struct ms_client* client,
       
       if( json_b64 != NULL || json_b64_len != 0 ) {
          // load it 
-         rc = md_parse_closure_secrets( client->my_pubkey, client->my_key, closure_secrets, json_b64, json_b64_len );
+         rc = md_parse_closure_secrets( pubkey, privkey, closure_secrets, json_b64, json_b64_len );
          if( rc != 0 ) {
             errorf("md_parse_closure_config rc = %d\n", rc );
          }
@@ -366,7 +363,13 @@ static int md_parse_closure( struct ms_client* client,
 // initialize a UG or RG closure.
 // if gateway_specific is true, then this closure is specific to a gateway, and we should try to obtain the closure's secrets using the gateway's public key.
 // otherwise, it's volume-wide, and no secrets will be processed.
-int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* driver_prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific, bool ignore_stubs ) {
+int md_closure_init( struct md_closure* closure,
+                     struct md_syndicate_conf* conf,
+                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
+                     struct md_closure_callback_entry* driver_prototype,
+                     char const* closure_text, size_t closure_text_len,
+                     bool gateway_specific, bool ignore_stubs ) {
+   
    memset( closure, 0, sizeof(struct md_closure) );
    
    md_closure_conf_t* closure_conf = new md_closure_conf_t();
@@ -379,7 +382,7 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;
    
-   int rc = md_parse_closure( client, closure_conf, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
+   int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
       errorf("md_parse_closure rc = %d\n", rc );
       
@@ -405,7 +408,7 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
    closure->callbacks = md_closure_callback_table_from_prototype( driver_prototype );
    
    // initialize the driver
-   rc = md_closure_driver_reload( client->conf, closure, driver_bin, driver_bin_len );
+   rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
       errorf("md_closure_driver_reload rc = %d\n", rc );
       
@@ -423,7 +426,7 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
 
 
 // parse an AG's specfile, given its json-encoded form.
-int md_closure_load_AG_specfile( struct ms_client* client, char* specfile_json, size_t specfile_json_len, char** specfile_text, size_t* specfile_text_len ) {
+int md_closure_load_AG_specfile( char* specfile_json, size_t specfile_json_len, char** specfile_text, size_t* specfile_text_len ) {
    
    struct json_object* toplevel_obj = NULL;
    
@@ -690,7 +693,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
 
 
 // reload the closure 
-int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len ) {
+int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* conf, EVP_PKEY* pubkey, EVP_PKEY* privkey, char const* closure_text, size_t closure_text_len ) {
    md_closure_wlock( closure );
    
    // attempt to reload the essentials...
@@ -704,7 +707,7 @@ int md_closure_reload( struct ms_client* client, struct md_closure* closure, cha
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;
    
-   int rc = md_parse_closure( client, closure_conf, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
+   int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
       errorf("md_parse_closure rc = %d\n", rc );
       
@@ -723,7 +726,7 @@ int md_closure_reload( struct ms_client* client, struct md_closure* closure, cha
    closure->closure_secrets = closure_secrets;
    
    // attempt to reload the driver...
-   rc = md_closure_driver_reload( client->conf, closure, driver_bin, driver_bin_len );
+   rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
       errorf("md_closure_driver_reload rc = %d\n", rc );
       

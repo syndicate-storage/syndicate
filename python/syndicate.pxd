@@ -1,6 +1,6 @@
 
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ cdef extern from "openssl/ssl.h":
    ctypedef EVP_PKEY_TAG EVP_PKEY
 
 # ------------------------------------------
-cdef extern from "ms-client.h":
+cdef extern from "ms/ms-client.h":
    cdef struct ms_client:
       EVP_PKEY* my_key
       uint64_t gateway_id
