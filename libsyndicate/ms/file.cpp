@@ -663,7 +663,7 @@ void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)( vo
 }
 
 // free a path
-void ms_client_free_path( path_t* path, void (*free_cls)(void*) ) {
+void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) ) {
    for( unsigned int i = 0; i < path->size(); i++ ) {
       ms_client_free_path_ent( &path->at(i), free_cls );
    }
@@ -710,7 +710,7 @@ static int ms_client_cancel_path_downloads( struct ms_client* client, struct md_
 
 
 // set up a path download 
-static int ms_client_set_up_path_downloads( struct ms_client* client, path_t* path, struct md_download_context** ret_path_downloads ) {
+static int ms_client_set_up_path_downloads( struct ms_client* client, ms_path_t* path, struct md_download_context** ret_path_downloads ) {
    
    unsigned int num_downloads = path->size();
    
@@ -898,7 +898,7 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
 
 // run the path downloads in the download set, retrying any that fail due to timeouts
 // on success, put the finalized download contexts into ret_path_downloads
-static int ms_client_download_path_listing( struct ms_client* client, path_t* path, struct md_download_context** ret_path_downloads ) {
+static int ms_client_download_path_listing( struct ms_client* client, ms_path_t* path, struct md_download_context** ret_path_downloads ) {
    
    int rc = 0;
    unsigned int num_downloads = path->size();
@@ -940,7 +940,7 @@ static int ms_client_download_path_listing( struct ms_client* client, path_t* pa
 
 // get a set of metadata entries.
 // on succes, populate ms_response with ms_listing structures for each path entry that needed to be downloaded, as indicated by the stale flag.
-int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response ) {
+int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_response_t* ms_response ) {
 
    unsigned int num_downloads = path->size();
 

@@ -25,7 +25,7 @@
 #include "vacuumer.h"
 #include "syndicate.h"
 
-static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent );
+static char* fs_entry_ms_path_to_string( ms_path_t* ms_path, struct fs_entry* fent );
 
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
@@ -350,14 +350,14 @@ static size_t fs_entry_split_path( char const* _path, vector<char*>* ret_vec ) {
 
    // tokenize and count up
    char* tmp = NULL;
-   char* path_tok = path;
+   char* ms_path_tok = path;
    char* tok = NULL;
    
    ret_vec->push_back( strdup("/") );
 
    do {
-      tok = strtok_r( path_tok, "/", &tmp );
-      path_tok = NULL;
+      tok = strtok_r( ms_path_tok, "/", &tmp );
+      ms_path_tok = NULL;
 
       if( tok == NULL )
          break;
@@ -392,7 +392,7 @@ static void fs_entry_free_listing_cls( void* _cls ) {
 
 static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    // build up the ms_path as we traverse our cached path
-   path_t* ms_path = (path_t*)ms_path_cls;
+   ms_path_t* ms_path = (ms_path_t*)ms_path_cls;
 
    struct fs_entry_listing_cls* cls = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
 
@@ -438,7 +438,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
 
 
 
-static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_t* ms_path ) {
+static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_path_t* ms_path ) {
    // build up an ms_path from the actual path
    vector<char*> path_parts;
    size_t path_len = fs_entry_split_path( path, &path_parts );
@@ -488,7 +488,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_
    return rc;
 }
 
-static int fs_entry_zip_path_listing( path_t* ms_path, ms_response_t* ms_response ) {
+static int fs_entry_zip_path_listing( ms_path_t* ms_path, ms_response_t* ms_response ) {
    // merge an ms_response's into the path, via our path cls.
    for( unsigned int i = 0; i < ms_path->size(); i++ ) {
 
@@ -515,7 +515,7 @@ static int fs_entry_ensure_vacuumed( struct fs_entry_consistency_cls* consistenc
    
    if( FS_ENTRY_LOCAL( consistency_cls->core, fent ) && fent->ftype == FTYPE_FILE && !fs_entry_vacuumer_is_vacuuming( fent ) && !fs_entry_vacuumer_is_vacuumed( fent ) ) {
       
-      char* fs_path = fs_entry_path_to_string( consistency_cls->path, fent );
+      char* fs_path = fs_entry_ms_path_to_string( consistency_cls->path, fent );
       
       fs_entry_vacuumer_write_bg_fent( &consistency_cls->core->state->vac, fs_path, fent );
       
@@ -841,7 +841,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
 }
 
 
-static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
+static int fs_entry_path_find( ms_path_t* ms_path, uint64_t file_id ) {
 
    // find this directory along the path
    unsigned int i = 0;
@@ -865,7 +865,7 @@ static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
 }
 
 
-static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
+static int fs_entry_path_find_by_name( ms_path_t* ms_path, char const* name ) {
 
    // find this directory along the path
    unsigned int i = 0;
@@ -889,9 +889,9 @@ static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
 }
 
 
-// convert a path_t to a string, appending fent to the end if ms_path is its parent directory (otherwise ignoring it)
+// convert a ms_path_t to a string, appending fent to the end if ms_path is its parent directory (otherwise ignoring it)
 // return -ENOENT if not found 
-static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent ) {
+static char* fs_entry_ms_path_to_string( ms_path_t* ms_path, struct fs_entry* fent ) {
    
    if( ms_path->size() == 0 ) {
       errorf("No path given, size = %zu\n", ms_path->size() );
@@ -1000,7 +1000,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
    // reload this particular directory
    struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
    
-   path_t* ms_path = consistency_cls->path;
+   ms_path_t* ms_path = consistency_cls->path;
 
    // find this directory along the path
    int i = fs_entry_path_find( ms_path, fent->file_id );
@@ -1064,7 +1064,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
 
 
 // get listings and merge them into a path
-static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_download ) {
+static int fs_entry_download_path_listings( struct fs_core* core, ms_path_t* to_download ) {
 
    ms_response_t listings;
    
@@ -1089,7 +1089,7 @@ static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_dow
 
 // given the list of path entries that exist locally, reload them.
 // if one of them no longer exists on the MS, then unlink all of the children beneath it.
-static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, path_t* ms_path ) {
+static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, ms_path_t* ms_path ) {
 
    struct fs_core* core = cls->core;
 
@@ -1140,7 +1140,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
    struct fs_core* core = consistency_cls->core;
    int rc = 0;
-   path_t* ms_path = consistency_cls->path;
+   ms_path_t* ms_path = consistency_cls->path;
 
    // find this directory along the path
    int idx = fs_entry_path_find_by_name( ms_path, fent->name );
@@ -1198,7 +1198,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    // get the child's children.  Populate child_path_ent with the child's data
    // (it will be unpopulated, since before the call to fs_entry_revalidate_path
    // it did not exist locally).
-   path_t child_path;
+   ms_path_t child_path;
    
    struct fs_entry_listing_cls* child_listing_cls2 = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
    fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
@@ -1257,7 +1257,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
 
 // make a pass through a path and download any listings that are not local.
 // Path is populated with entries that are fresh if present, and is built with fs_entry_build_ms_path
-static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, path_t* path ) {
+static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, ms_path_t* path ) {
 
    dbprintf("%s", "Begin downloading remote entries\n");
    
@@ -1316,8 +1316,8 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    dbprintf("Revalidate %s\n", path );
    
    // path entires to send to the MS for resolution
-   path_t ms_path;
-   path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
+   ms_path_t ms_path;
+   ms_path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
    ms_response_t stale_listings;    // listings for stale directories
 
    // consistency closure

@@ -85,7 +85,7 @@ cdef extern from "libsyndicate/libsyndicate.h":
 
 
 # ------------------------------------------
-cdef extern from "util.h":
+cdef extern from "libsyndicate/util.h":
 
    cdef struct mlock_buf:
       void* ptr

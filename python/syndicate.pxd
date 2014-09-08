@@ -31,7 +31,7 @@ cdef extern from "openssl/ssl.h":
    ctypedef EVP_PKEY_TAG EVP_PKEY
 
 # ------------------------------------------
-cdef extern from "ms/ms-client.h":
+cdef extern from "libsyndicate/ms/ms-client.h":
    cdef struct ms_client:
       EVP_PKEY* my_key
       uint64_t gateway_id
@@ -46,7 +46,7 @@ cdef extern from "ms/ms-client.h":
    int ms_client_get_portnum( ms_client* client )
 
 # ------------------------------------------
-cdef extern from "libsyndicate.h":
+cdef extern from "libsyndicate/libsyndicate.h":
 
    cdef struct md_syndicate_conf:
       char* local_sd_dir

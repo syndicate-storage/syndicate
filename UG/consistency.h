@@ -52,7 +52,7 @@ struct fs_entry_listing_cls {
 // extra information to be stored along with consistency processing
 struct fs_entry_consistency_cls {
    struct fs_core* core;
-   path_t* path;
+   ms_path_t* path;
    struct timespec query_time;
    int err;
    

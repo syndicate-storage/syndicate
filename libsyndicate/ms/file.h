@@ -46,7 +46,7 @@ struct ms_path_ent {
 
 typedef map<long, struct md_update> ms_client_update_set;
 
-typedef vector< struct ms_path_ent > path_t;
+typedef vector< struct ms_path_ent > ms_path_t;
 
 typedef map< uint64_t, struct ms_listing > ms_response_t;
 
@@ -63,12 +63,12 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
 int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest );
 
 // path resolution 
-int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );
+int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_response_t* ms_response );
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 
 // memory management
 void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)(void*) );
-void ms_client_free_path( path_t* path, void (*free_cls)(void*) );
+void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
 
