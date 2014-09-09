@@ -18,8 +18,12 @@
 #include "iFuseLib.Logging.h"
 #include "iFuseLib.Http.h"
 
+// helpful macros
+#define strdup_or_default( s, d ) ((s) != NULL ? strdup(s) : ((d) != NULL ? strdup(d) : NULL))
+
+
 /* some global variables */
-FILE* LOGFILE = NULL;
+struct log_context* LOGCTX = NULL;
 
 extern rodsEnv MyRodsEnv;
 
@@ -144,7 +148,7 @@ irodsOper.flush = irodsFlush;
     irodsOper.fsync = irodsFsync;
     irodsOper.flush = irodsFlush;
 #endif
-    optStr = "hdo:l:";
+    optStr = "hdo:";
 
     status = parseCmdLineOpt (argc, argv, optStr, 0, &myRodsArgs);
 
@@ -156,8 +160,6 @@ irodsOper.flush = irodsFlush;
        usage();
        exit(0);
     }
-    
-    char* logfile_path = log_make_path();
     
     status = getRodsEnv (&MyRodsEnv);
 
@@ -177,66 +179,74 @@ irodsOper.flush = irodsFlush;
     initConn();
     initFileCache();
     
-    LOGFILE = log_init( logfile_path );
-    logmsg( LOGFILE, "%s", "fuse_main\n");
-
-    // force foreground 
-    char** fuse_argv = (char**)calloc( (argc + 2) * sizeof(char*), 1 );
-    for( int i = 0; i < argc - 1; i++ ) {
-       fuse_argv[i] = argv[i];
-    }
-    fuse_argv[argc-1] = "-f";
-    fuse_argv[argc] = argv[argc-1];
-
-    status = fuse_main (argc+1, fuse_argv, &irodsOper, NULL);
-
-    logmsg( LOGFILE, "fuse_main rc = %d\n", status);
-
-    disconnectAll ();
+    // get logging environment variables, or use defaults 
+    char* http_host = strdup_or_default( getenv("IRODSFS_LOG_SERVER_HOSTNAME"), HTTP_LOG_SERVER_HOSTNAME );
+    char* http_port_str = strdup_or_default( getenv("IRODSFS_LOG_SERVER_PORTNUM"), HTTP_LOG_SERVER_PORTNUM_STR );
+    char* sync_delay_str = strdup_or_default( getenv("IRODSFS_LOG_SERVER_SYNC_DELAY"), HTTP_LOG_SYNC_TIMEOUT_STR );
+    char* log_path_salt = strdup_or_default( getenv("IRODSFS_LOG_PATH_SALT"), LOG_FILENAME_SALT );
     
-    log_shutdown( LOGFILE );
-
-    char* compressed_logfile_path = log_compress( logfile_path );
-    if( compressed_logfile_path == NULL ) {
-       fprintf(stderr, "failed to compress %s\n", logfile_path );
+    // parse!
+    char* tmp = NULL;
+    int portnum = 0;
+    int sync_delay = 0;
+    
+    portnum = (int)strtoll( http_port_str, &tmp, 10 );
+    if( tmp == NULL || portnum < 0 || portnum >= 65535 ) {
+       
+       fprintf(stderr, "WARN: invalid port number %d.  Using default %d\n", portnum, HTTP_LOG_SERVER_PORTNUM );
+       portnum = HTTP_LOG_SERVER_PORTNUM;
     }
-    else {
-       // send the log off 
-       int soc = http_connect( HTTP_LOG_SERVER_HOSTNAME, HTTP_LOG_SERVER_PORTNUM );
-       if( soc < 0 ) {
-          fprintf(stderr, "failed to connect to %s:%d, rc = %d\n", HTTP_LOG_SERVER_HOSTNAME, HTTP_LOG_SERVER_PORTNUM, soc );
-       }
-       else {
-          FILE* compressed_logfile_f = fopen( compressed_logfile_path, "r" );
-          if( compressed_logfile_f == NULL ) {
-             fprintf(stderr, "failed to open %s\n", compressed_logfile_path );
-          }
-          else {
-             int fd = fileno( compressed_logfile_f );
-             struct stat sb;
-             
-             int rc = stat( compressed_logfile_path, &sb );
-             if( rc != 0 ) {
-                rc = -errno;
-                fprintf(stderr, "failed to stat %s, rc = %d\n", compressed_logfile_path, rc );
-             }
-             else {
-                rc = http_upload( soc, fd, sb.st_size );
-                if( rc < 0 ) {
-                   fprintf(stderr, "failed to upload, rc = %d\n", rc );
-                }
-                if( rc != 200 ) {
-                   fprintf(stderr, "failed to upload, HTTP status = %d\n", rc );
-                }
-             }
-
-             fclose( compressed_logfile_f );
-          }
-          close( soc );
-       }
-       free( compressed_logfile_path );
+    
+    sync_delay = (int)strtoll( sync_delay_str, &tmp, 10 );
+    if( tmp == NULL || sync_delay <= 0 ) {
+       
+       fprintf(stderr, "WARN: invalid sync delay of %d seconds.  Using default of %d seconds\n", sync_delay, HTTP_LOG_SYNC_TIMEOUT );
+       sync_delay = HTTP_LOG_SYNC_TIMEOUT;
     }
-    free( logfile_path );
+    
+    // set up logging 
+    LOGCTX = log_init( http_host, portnum, sync_delay, log_path_salt );
+    
+    if( LOGCTX == NULL ) {
+       // OOM
+       fprintf(stderr, "FATAL: out of memory\n");
+       exit(4);  
+    }
+    
+    // start up logging 
+    int rc = log_start_threads( LOGCTX );
+    if( rc != 0 ) {
+       fprintf(stderr, "FATAL: log_start_threads rc = %d\n", rc );
+       exit(5);
+    }
+    
+    logmsg( LOGCTX, "%s", "fuse_main\n");
+    
+    status = fuse_main (argc, argv, &irodsOper, NULL);
+
+    logmsg( LOGCTX, "fuse_main rc = %d\n", status);
+
+    // stop the threads 
+    rc = log_stop_threads( LOGCTX );
+    if( rc != 0 ) {
+       fprintf(stderr, "log_stop_threads rc = %d\n", rc );
+       exit(6);
+    }
+    
+    // sync the last of the logs 
+    rc = log_rollover( LOGCTX );
+    if( rc != 0 ) {
+       fprintf(stderr, "ERR: log_rollover rc = %d\n", rc );
+       exit(7);
+    }
+    
+    // upload the last of the logs 
+    rc = http_sync_all_logs( LOGCTX );
+    if( rc != 0 ) {
+       fprintf(stderr, "WARN: http_sync_all_logs rc = %d\n", rc );
+    }
+    
+    disconnectAll ();
      
     if (status < 0) {
         exit (3);
@@ -248,14 +258,28 @@ irodsOper.flush = irodsFlush;
 void
 usage ()
 {
+   
    char *msgs[]={
-   "Usage : irodsFs [-hd] [-l LOGFILE] [-o opt,[opt...]]",
-"Single user iRODS/Fuse server",
+   "Usage : irodsFs [-hd] [-o opt,[opt...]]",
+"Single user iRODS/Fuse server, with logging support",
 "Options are:",
 " -h  this help",
 " -d  FUSE debug mode",
-" -l  Log file path",
 " -o  opt,[opt...]  FUSE mount options",
+" ",
+"Special environment variables that override built-in defaults:",
+" IRODSFS_LOG_PATH_SALT            A string to be used to salt path hashes when logging.",
+"                                  It is best to make this at least 256 random characters.",
+" ",
+" IRODSFS_LOG_SERVER_HOSTNAME      The hostname of the log server that will receive access",
+"                                  traces from this filesystem.  The built-in default is",
+"                                  " HTTP_LOG_SERVER_HOSTNAME,
+" ",
+" IRODSFS_LOG_SERVER_PORTNUM       The port number of said log server.  The built-in",
+"                                  default is " HTTP_LOG_SERVER_PORTNUM_STR,
+" ",
+" IRODSFS_LOG_SERVER_SYNC_DELAY    The number of seconds to wait between uploading snapshots",
+"                                  of access traces to the log server.  The default is " HTTP_LOG_SYNC_TIMEOUT_STR,
 ""};
     int i;
     for (i=0;;i++) {

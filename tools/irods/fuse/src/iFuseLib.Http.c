@@ -1,4 +1,5 @@
 #include "iFuseLib.Http.h"
+#include "iFuseLib.Logging.h"
 
 // get the public IP address of this host, and put the address into addr.  return 0 on success; negative on failure
 static int http_get_addr( char const* hostname, int portnum, struct sockaddr* addr ) {
@@ -226,4 +227,151 @@ int http_connect( char const* hostname, int portnum ) {
    return socket_fd;
 }
 
+
+// sync all log data 
+int http_send_log( char const* hostname, int portnum, char const* compressed_logfile_path ) {
+   
+   int rc = 0;
+   
+   // send the log off 
+   int soc = http_connect( hostname, portnum );
+   if( soc < 0 ) {
+      
+      rc = -errno;
+      fprintf(stderr, "failed to connect to %s:%d, rc = %d\n", hostname, portnum, soc );
+   }
+   else {
+      
+      FILE* compressed_logfile_f = fopen( compressed_logfile_path, "r" );
+      if( compressed_logfile_f == NULL ) {
+         
+         rc = -errno;
+         fprintf(stderr, "failed to open %s\n", compressed_logfile_path );
+      }
+      else {
+         
+         // get the size
+         int fd = fileno( compressed_logfile_f );
+         
+         struct stat sb;
+         int rc = stat( compressed_logfile_path, &sb );
+         if( rc != 0 ) {
+            
+            rc = -errno;
+            fprintf(stderr, "failed to stat %s, rc = %d\n", compressed_logfile_path, rc );
+         }
+         else {
+            
+            rc = http_upload( soc, fd, sb.st_size );
+            if( rc < 0 ) {
+               
+               fprintf(stderr, "failed to upload, rc = %d\n", rc );
+            }
+            if( rc != 200 ) {
+               
+               fprintf(stderr, "failed to upload, HTTP status = %d\n", rc );
+            }
+         }
+
+         fclose( compressed_logfile_f );
+      }
+      
+      close( soc );
+   }
+   
+   return rc;
+}
+
+
+// sync all logs to the log server 
+// remove from the sync_buf all logs that were successfully uploaded, and preserve the ones that were not.
+// return 0 on success, -EAGAIN if some logs failed to be uploaded
+int http_sync_all_logs( struct log_context* ctx ) {
+
+   int rc = 0;
+   
+   // get the list of paths we're going to sync 
+   pthread_rwlock_wrlock( &ctx->lock );
+   
+   log_sync_buf_t* compressed_logs = ctx->sync_buf;
+   ctx->sync_buf = new log_sync_buf_t();
+   
+   pthread_rwlock_unlock( &ctx->lock );
+   
+   // keep track of failed logs, so we can try again 
+   log_sync_buf_t failed;
+   
+   for( unsigned int i = 0; i < compressed_logs->size(); i++ ) {
+      
+      // next log...
+      char* compressed_logfile_path = compressed_logs->at(i);
+   
+      // remove from our listing (so we don't free it)
+      (*compressed_logs)[i] = NULL;
+      
+      // sync the log 
+      rc = http_send_log( ctx->hostname, ctx->portnum, compressed_logfile_path );
+      if( rc != 0 ) {
+         
+         fprintf(stderr, "http_send_log(%s:%d, %s) rc = %d\n", ctx->hostname, ctx->portnum, compressed_logfile_path, rc );
+         
+         failed.push_back( compressed_logfile_path );
+         continue;
+      }
+      
+      // sent!  we're done with this!
+      unlink( compressed_logfile_path );
+      free( compressed_logfile_path );
+   }
+   
+   delete compressed_logs;
+   
+   rc = 0;
+   if( failed.size() > 0 ) {
+      
+      // try these again 
+      pthread_rwlock_wrlock( &ctx->lock );
+      
+      for( unsigned int i = 0; i < failed.size(); i++ ) {
+         
+         ctx->sync_buf->push_back( failed[i] );
+      }
+      
+      pthread_rwlock_unlock( &ctx->lock );
+      
+      rc = -EAGAIN;
+   }
+   
+   return rc;
+}
+
+
+// thread to continuously sync log data 
+void* http_sync_log_thread( void* arg ) {
+   
+   struct log_context* ctx = (struct log_context*)arg;
+   int rc = 0;
+   
+   // since we don't hold any resources between uploads, simply cancel immediately
+   pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
+   
+   while( ctx->running ) {
+      
+      // wait for new logs to appear 
+      sem_wait( &ctx->sync_sem );
+      
+      // upload, but don't allow for interruption 
+      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      
+      rc = http_sync_all_logs( ctx );
+      if( rc != 0 ) {
+         fprintf(stderr, "WARN: http_sync_all_logs rc = %d\n", rc );
+      }
+      
+      // re-enable interrupts
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
+   }
+   
+   return NULL;
+}
 
