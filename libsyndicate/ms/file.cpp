@@ -33,52 +33,53 @@ static long ms_client_hash( uint64_t volume_id, uint64_t file_id ) {
 }
 
 
-// post file data
-static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
+// begin posting file data
+// return 0 on success, negative on error
+static int ms_client_send_begin( struct ms_client* client, char const* url, char const* data, size_t len, struct ms_client_network_context* nctx ) {
    
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
-   int http_response = 0;
-   struct md_download_context dlctx;
-   struct ms_client_timing times;
-   char* buf = NULL;
-   size_t buflen = 0;
-   
-   memset( &dlctx, 0, sizeof(struct md_download_context) );
-   memset( &times, 0, sizeof(struct ms_client_timing) );
    
    // send as multipart/form-data file
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-metadata-updates", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, data, CURLFORM_BUFFERLENGTH, len, CURLFORM_END );
 
-   // do the upload
-   struct timespec ts, ts2;
-   BEGIN_TIMING_DATA( ts );
-
-   rc = ms_client_upload_begin( client, url, post, &dlctx, &times );
+   // initialize the context 
+   ms_client_network_context_upload_init( nctx, url, post );
+   
+   // start the upload
+   rc = ms_client_network_context_begin( client, nctx );
    if( rc != 0 ) {
       errorf("ms_client_upload_begin(%s) rc = %d\n", url, rc );
       
-      ms_client_timing_free( &times );
-      curl_formfree( post );
+      ms_client_network_context_free( nctx );
       return rc;
    }
    
+   return rc;
+}
+
+
+
+// finish posting file data 
+// return 0 on success, negative on parse error, positive HTTP response on HTTP error
+// NOTE: does not check the error value in reply--a return of 0 only indicates that we got a reply structure back.
+static int ms_client_send_end( struct ms_client* client, ms::ms_reply* reply, bool verify, struct ms_client_network_context* nctx ) {
+                               
+   int rc = 0;
+   int http_response = 0;
+   char* buf = NULL;
+   size_t buflen = 0;
+   
    // wait for it...
-   http_response = ms_client_upload_end( client, &dlctx, &buf, &buflen );
+   http_response = ms_client_network_context_end( client, nctx, &buf, &buflen );
    
    if( http_response != 200 ) {
-      errorf("ms_client_upload_end(%s) rc = %d\n", url, http_response );
+      errorf("ms_client_upload_end rc = %d\n", http_response );
       
-      ms_client_timing_free( &times );
-      curl_formfree( post );
+      ms_client_network_context_free( nctx );
       return http_response;
    }
    
-   ms_client_timing_log( &times );
-   
-   END_TIMING_DATA( ts, ts2, "MS send" );
-   
-   ms_client_timing_free( &times );
    
    // what happened?
    if( http_response == 200 ) {
@@ -93,13 +94,6 @@ static int ms_client_send( struct ms_client* client, char const* url, char const
             errorf("ms_client_parse_reply rc = %d\n", rc );
             rc = -EBADMSG;
          }
-         else {
-            // check for errors
-            rc = reply->error();
-            if( rc != 0 ) {
-               errorf("MS reply error %d\n", rc );
-            }
-         }
       }
       else {
          // no response...
@@ -111,10 +105,53 @@ static int ms_client_send( struct ms_client* client, char const* url, char const
       free( buf );
    }
    
-   curl_formfree( post );
+   // record benchmark information
+   ms_client_timing_log( nctx->timing );
+   
+   ms_client_network_context_free( nctx );
    
    return rc;
 }
+
+/*
+// send file data, synchronously
+// return 0 on success and populate the ms_reply; return negative on error
+static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
+   
+   int rc = 0;
+   struct ms_client_network_context nctx;
+   
+   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
+   
+   // start the upload
+   struct timespec ts, ts2;
+   BEGIN_TIMING_DATA( ts );
+
+   rc = ms_client_send_begin( client, url, data, len, &nctx );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_send_begin(%s) rc = %d\n", url, rc );
+      
+      END_TIMING_DATA( ts, ts2, "MS send (error)" );
+   
+      return rc;
+   }
+   
+   rc = ms_client_send_end( client, reply, verify, &nctx );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_send_end(%s) rc = %d\n", url, rc );
+      
+      END_TIMING_DATA( ts, ts2, "MS send (error)" );
+      
+      return rc;
+   }
+   
+   END_TIMING_DATA( ts, ts2, "MS send" );
+   
+   return 0;
+}
+*/
 
 
 // fill serializable char* fields in an ent, if they aren't there already.  Emit warnings if they aren't 
@@ -270,159 +307,422 @@ static int ms_client_add_update( ms_client_update_set* updates, struct md_update
    return 0;
 }
 
-// post a record on the MS, synchronously.
-int ms_client_file_post( struct ms_client* client, struct md_update* up, ms::ms_reply* reply ) {
-   
-   // put it into the update set
-   ms_client_update_set updates;
-   ms_client_add_update( &updates, up );
-   
-   return ms_client_send_updates( client, &updates, reply, true );
-}
-
 // random 64-bit number
 uint64_t ms_client_make_file_id() {
    return (uint64_t)md_random64();
 }
 
+// extract file IDs and write nonces from an ms_reply 
+// return 0 on success, -EBADMSG on invalid reply structure, -EINVAL on invalid input
+// if there is no data, then return the reply's error code.
+static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_multi_result* results ) {
+   
+   int last_item = 0;
+   int num_items = 0;
+   int error = 0;
+   
+   uint64_t* file_ids = NULL;
+   int64_t* write_nonces = NULL;
+   uint64_t* coordinator_ids = NULL;
+   
+   size_t num_file_ids = 0;
+   size_t num_write_nonces = 0;
+   size_t num_coordinator_ids = 0;
+   
+   if( results == NULL ) {
+      return -EINVAL;
+   }
+   
+   // sanity check 
+   if( !reply->has_last_item() ) {
+      errorf("%s", "MS reply is missing last_item\n");
+      return -EBADMSG;
+   }
+   
+   last_item = reply->last_item();
+   num_items = last_item + 1;
+   
+   // sanity check--any data at all?
+   if( reply->listing().entries_size() == 0 ) {
+      return reply->error();
+   }
+   
+   // sanity check--did we get back that many replies?
+   if( reply->listing().entries_size() < num_items ) {
+      errorf("MS reply has %d items, but the last item was %d\n", reply->listing().entries_size(), last_item );
+      return -EBADMSG;
+   }
+   
+   error = reply->error();
+   
+   file_ids = CALLOC_LIST( uint64_t, num_items );
+   write_nonces = CALLOC_LIST( int64_t, num_items );
+   coordinator_ids = CALLOC_LIST( uint64_t, num_items );
+   
+   num_file_ids = num_items;
+   num_write_nonces = num_items;
+   num_coordinator_ids = num_items;
+   
+   for( int i = 0; i < num_items; i++ ) {
+      
+      uint64_t file_id = reply->listing().entries(i).file_id();
+      int64_t write_nonce = reply->listing().entries(i).write_nonce();
+      uint64_t coordinator_id = reply->listing().entries(i).coordinator();
+      
+      file_ids[i] = file_id;
+      write_nonces[i] = write_nonce;
+      coordinator_ids[i] = coordinator_id;
+      
+      dbprintf("%s: output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", reply->listing().entries(i).name().c_str(), file_id, write_nonce, coordinator_id );
+   }
+   
+   // fill in the structure
+   results->reply_error = error;
+   results->last_item = last_item;
+   results->file_ids = file_ids;
+   results->num_file_ids = num_file_ids;
+   results->write_nonces = write_nonces;
+   results->num_write_nonces = num_write_nonces;
+   results->coordinator_ids = coordinator_ids;
+   results->num_coordinator_ids = num_coordinator_ids;
+   
+   return 0;
+}
 
-// create a file record on the MS, synchronously
-int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
+
+// free a multi-result 
+int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
    
-   ent->type = MD_ENTRY_FILE;
+   if( result->file_ids != NULL ) {
+      free( result->file_ids );
+      
+      result->file_ids = NULL;
+      result->num_file_ids = 0;
+   }
    
-   uint64_t file_id = ms_client_make_file_id();
-   uint64_t old_file_id = ent->file_id;
-   ent->file_id = file_id;
+   if( result->write_nonces != NULL ) {
+      free( result->write_nonces );
+      
+      result->write_nonces = NULL;
+      result->num_write_nonces = 0;
+   }
    
-   dbprintf("desired file_id: %" PRIX64 "\n", file_id );
+   if( result->coordinator_ids != NULL ) {
+      free( result->coordinator_ids );
+      
+      result->coordinator_ids = NULL;
+      result->num_coordinator_ids = 0;
+   }
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::CREATE, 0, ent );
+   return 0;
+}
+
+// network context information for creating/updating/deleting entries 
+struct ms_client_multi_cls {
+   ms_client_update_set* updates;
+   char* serialized_updates;
+};
+
+// start performing multiple instances of a single operation over a set of file and/or directory records on the MS 
+// ms_op should be one of the ms::ms_update::* values
+// ms_op_flags only really applies to ms::ms_update::SETXATTR
+// return 0 on success, negative on failure
+int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx ) {
    
-   // reply buffer
+   int rc = 0;
+   
+   ms_client_update_set* updates = new ms_client_update_set();
+   
+   for( unsigned int i = 0; i < num_reqs; i++ ) {
+      
+      struct md_entry* ent = reqs[i].ent;
+      
+      
+      // generate our update
+      struct md_update up;
+      memset( &up, 0, sizeof(struct md_update) );
+      
+      ms_client_populate_update( &up, ms_op, ms_op_flags, ent );
+      
+      // affected blocks? shallow-copy them over
+      if( reqs[i].affected_blocks != NULL ) {
+         
+         up.affected_blocks = reqs[i].affected_blocks;
+         up.num_affected_blocks = reqs[i].num_affected_blocks;
+      }
+      
+      // destination?  i.e. due to a RENAME?
+      // shallow-copy it over
+      if( reqs[i].dest != NULL ) {
+         memcpy( &up.dest, reqs[i].dest, sizeof(struct md_entry) );
+      }
+      
+      ms_client_add_update( updates, &up );
+   }
+   
+   char* serialized_updates = NULL;
+   
+   // start posting 
+   rc = ms_client_send_updates_begin( client, updates, &serialized_updates, nctx );
+   if( rc != 0 ) {
+      errorf("ms_client_send_updates_begin rc = %d\n", rc );
+      
+      return rc;
+   }
+   
+   struct ms_client_multi_cls* creates_cls = CALLOC_LIST( struct ms_client_multi_cls, 1 );
+   creates_cls->updates = updates;
+   creates_cls->serialized_updates = serialized_updates;
+   
+   // remember the updates between calls 
+   ms_client_network_context_set_cls( nctx, creates_cls );
+   
+   return rc;
+}
+
+// finish performing multiple instances of an operation over a set of file and director records on the MS 
+// return 0 on success (means that there were not protocol or message formatting errors), negative on failure 
+// if there were no network or formatting errors, populate results with the results of successful operations.
+int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result* results, struct ms_client_network_context* nctx ) {
+   
+   int rc = 0;
    ms::ms_reply reply;
    
-   int rc = ms_client_file_post( client, &up, &reply );
+   // restore context 
+   ms_client_update_set* updates = NULL;
+   char* serialized_updates = NULL;
    
-   if( rc == 0 ) {
-      // did we get back a file_id and write_nonce?
-      if( reply.listing().entries_size() > 0 ) {
+   struct ms_client_multi_cls* creates_cls = (struct ms_client_multi_cls*)ms_client_network_context_get_cls( nctx );
+   
+   if( creates_cls == NULL ) {
+      return -EINVAL;
+   }
+   
+   updates = creates_cls->updates;
+   serialized_updates = creates_cls->serialized_updates;
+   
+   // done with this
+   free( creates_cls );
+   
+   // finish sending 
+   rc = ms_client_send_updates_end( client, &reply, true, nctx );
+   
+   // done with this
+   if( serialized_updates != NULL ) {
+      free( serialized_updates );
+   }
+   
+   if( rc != 0 ) {
+      
+      errorf("ms_client_send_updates_end rc = %d\n", rc );
+   }
+   
+   else {
+      // if requested, get back at least partial data
+      rc = ms_client_get_partial_results( &reply, results );
+      if( rc != 0 ) {
          
-         *file_id_ret = reply.listing().entries(0).file_id();
-         *write_nonce_ret = reply.listing().entries(0).write_nonce();
-         
-         dbprintf("output file_id: %" PRIX64 " write_nonce: %" PRId64 "\n", *file_id_ret, *write_nonce_ret );
-      }
-      else {
-         rc = -ENODATA;
+         errorf("ms_client_get_partial_results rc = %d\n", rc );
       }
    }
-
-   ent->file_id = old_file_id;
+   
+   // free updates (shallow-copied, so no further action needed)
+   delete updates;
    
    return rc;
 }
 
 
-// make a directory on the MS, synchronously
-int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {   
-   ent->type = MD_ENTRY_DIR;
+// perform a single operation on the MS, synchronously 
+// return 0 on success, negative on error.  This method is considered failed if there is a protocol error, a message formatting error, or an RPC error
+// allocate and populate the ms_client_multi_result field 
+int ms_client_single_rpc( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* request, struct ms_client_multi_result* result ) {
    
-   uint64_t file_id = ms_client_make_file_id();
-   uint64_t old_file_id = ent->file_id;
-   ent->file_id = file_id;
+   int rc = 0;
+   struct ms_client_network_context nctx;
    
-   dbprintf("desired file_id: %" PRIX64 "\n", file_id );
+   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::CREATE, 0, ent );
+   // start creating 
+   rc = ms_client_multi_begin( client, ms_op, ms_op_flags, request, 1, &nctx );
+   if( rc != 0 ) {
+      errorf("ms_client_multi_begin rc = %d\n", rc );
+      return rc;
+   }
+   
+   // finish creating 
+   rc = ms_client_multi_end( client, result, &nctx );
+   if( rc != 0 ) {
+      errorf("ms_client_multi_end rc = %d\n", rc );
+      return rc;
+   }
+   
+   // any errors?
+   if( result->reply_error != 0 ) {
+      errorf("MS reply error = %d\n", result->reply_error );
+      rc = result->reply_error;
+   }
+   
+   return rc;
+}
 
-   // put it into the update set
+
+// perform one update rpc with the MS, synchronously
+// return 0 on success, negative on error (be it protocol, formatting, or RPC error)
+int ms_client_update_rpc( struct ms_client* client, struct md_update* up ) {
+   
+   int rc = 0;
    ms_client_update_set updates;
-   ms_client_add_update( &updates, &up );
-   
-   // reply buffer
    ms::ms_reply reply;
    
-   int rc = ms_client_file_post( client, &up, &reply );
+   ms_client_add_update( &updates, up );
    
-   if( rc == 0 ) {
-      // did we get back a file_id and write_nonce?
-      if( reply.listing().entries_size() > 0 ) {
-         
-         *file_id_ret = reply.listing().entries(0).file_id();
-         *write_nonce_ret = reply.listing().entries(0).write_nonce();
-         
-         dbprintf("output file_id: %" PRIX64 " write_nonce: %" PRId64 "\n", *file_id_ret, *write_nonce_ret );
+   // perform the RPC 
+   rc = ms_client_send_updates( client, &updates, &reply, true );
+   if( rc != 0 ) {
+      errorf("ms_client_send_updates rc = %d\n", rc );
+      return rc;
+   }
+   else if( reply.error() != 0 ) {
+      errorf("MS reply error = %d\n", reply.error() );
+      return reply.error();
+   }
+   
+   return 0;
+}
+
+
+// create a single file or directory record on the MS, synchronously
+// assert that the entry's type (MD_ENTRY_FILE or MD_ENTRY_DIRECTORY) matches a given type (return -EINVAL if it doesn't)
+// return 0 on success, negative on error
+static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, int type, struct md_entry* ent ) {
+   
+   // sanity check 
+   if( ent->type != type ) {
+      errorf("Entry '%s' has type %d; expected type %d\n", ent->name, ent->type, type );
+      return EINVAL;
+   }
+   
+   int rc = 0;
+   struct ms_client_multi_result result;
+   struct ms_client_request req;
+   
+   memset( &req, 0, sizeof( struct ms_client_request ) );
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
+   
+   // remember the old file ID
+   uint64_t old_file_id = ent->file_id;
+   
+   // temporarily request a new file ID
+   ent->file_id = ms_client_make_file_id();
+   
+   dbprintf("desired file_id: %" PRIX64 "\n", ent->file_id );
+   
+   // populate the request 
+   req.ent = ent;
+   
+   // perform the operation 
+   rc = ms_client_single_rpc( client, ms::ms_update::CREATE, 0, &req, &result );
+   
+   // restore 
+   ent->file_id = old_file_id;
+   
+   if( rc != 0 ) {
+      
+      errorf("ms_client_single_rpc(CREATE) rc = %d\n", rc );
+   }
+   else {
+      
+      // get data
+      if( result.last_item != 0 ) {
+         errorf("ERR: created %d entries\n", result.last_item );
       }
       else {
-         rc = -ENODATA;
+         // got data too!
+         *file_id_ret = result.file_ids[0];
+         *write_nonce_ret = result.write_nonces[0];
       }
    }
-
-   ent->file_id = old_file_id;
+   
+   ms_client_multi_result_free( &result );
    
    return rc;
 }
 
-// delete a record on the MS, synchronously
+
+// create a single file on the MS, synchronously.
+// unlike ms_client_create_or_mkdir, this only works for files
+int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
+   return ms_client_create_or_mkdir( client, file_id_ret, write_nonce_ret, MD_ENTRY_FILE, ent );
+}
+
+// create a single directory on the MS, synchronously 
+// unlike ms_client_create_or_mkdir, this only works for diretories 
+int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
+   return ms_client_create_or_mkdir( client, file_id_ret, write_nonce_ret, MD_ENTRY_DIR, ent );
+}
+
+
+// delete a record from the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::DELETE, 0, ent );
+   int rc = 0;
+   struct ms_client_multi_result result;
+   struct ms_client_request req;
    
-   return ms_client_file_post( client, &up, NULL );
+   memset( &req, 0, sizeof( struct ms_client_request ) );
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
+   
+   // populate the request 
+   req.ent = ent;
+   
+   // perform the operation 
+   rc = ms_client_single_rpc( client, ms::ms_update::DELETE, 0, &req, &result );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_single_rpc(DELETE) rc = %d\n", rc );
+   }
+   
+   ms_client_multi_result_free( &result );
+   
+   return 0;
 }
 
-// update a record on the MS, synchronously, due to a write()
-int ms_client_update_write( struct ms_client* client, int64_t* write_nonce_ret, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
+
+// update a record on the MS, synchronously
+int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::UPDATE, 0, ent );
+   int rc = 0;
+   struct ms_client_multi_result result;
+   struct ms_client_request req;
    
-   uint64_t* affected_blocks = NULL;
+   memset( &req, 0, sizeof(struct ms_client_request) );
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
    
-   // add affected blocks 
-   if( in_affected_blocks != NULL ) {
+   // populate the request 
+   req.ent = ent;
+   req.affected_blocks = in_affected_blocks;
+   req.num_affected_blocks = num_affected_blocks;
+   
+   // perform the operation 
+   rc = ms_client_single_rpc( client, ms::ms_update::UPDATE, 0, &req, &result );
+   if( rc != 0 ) {
       
-      affected_blocks = CALLOC_LIST( uint64_t, num_affected_blocks );
-      memcpy( affected_blocks, in_affected_blocks, num_affected_blocks * sizeof(uint64_t) );
-      
-      up.affected_blocks = affected_blocks;
+      errorf("ms_client_single_rpc(UPDATE) rc = %d\n", rc );
    }
-   
-   up.num_affected_blocks = num_affected_blocks;
-   
-   ms::ms_reply reply;
-   
-   int rc = ms_client_file_post( client, &up, &reply );
-   
-   if( rc == 0 ) {
-      // did we get back a write_nonce?
-      if( reply.listing().entries_size() > 0 ) {
-         
-         *write_nonce_ret = reply.listing().entries(0).write_nonce();
-         
-         dbprintf("updated write_nonce: %" PRId64 "\n", *write_nonce_ret );
+   else {
+      if( result.last_item != 0 ) {
+         errorf("ERR: updated %d entries\n", result.last_item );
       }
       else {
-         rc = -ENODATA;
+         // got data too!
+         *write_nonce = result.write_nonces[0];
       }
    }
    
-   // clean up
-   if( affected_blocks != NULL ) {
-      free( affected_blocks );
-      up.affected_blocks = NULL;
-      up.num_affected_blocks = 0;
-   }
+   ms_client_multi_result_free( &result );
    
-   return rc;
+   return 0;
 }
 
 // update a record on the MS, synchronously, NOT due to a write()
@@ -431,77 +731,104 @@ int ms_client_update( struct ms_client* client, int64_t* write_nonce_ret, struct
 }
 
 // change coordinator ownership of a file on the MS, synchronously
+// return 0 on success, and give back the write nonce and new coordinator ID of the file
+// return negative on error
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, int64_t* write_nonce, struct md_entry* ent ) {
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::CHCOORD, 0, ent );
+   int rc = 0;
+   struct ms_client_multi_result result;
+   struct ms_client_request req;
    
-   // reply buffer 
-   ms::ms_reply reply;
+   memset( &req, 0, sizeof(struct ms_client_request) );
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
    
-   int rc = ms_client_file_post( client, &up, &reply );
+   // populate the request 
+   req.ent = ent;
    
-   if( rc == 0 ) {
-      // got back a coordinator?
-      if( reply.listing().entries_size() > 0 ) {
-         
-         *new_coordinator = reply.listing().entries(0).coordinator();
-         *write_nonce = reply.listing().entries(0).write_nonce();
-         
-         dbprintf("New coordinator of %" PRIX64 " is %" PRIu64 ", write_nonce = %" PRId64 "\n", ent->file_id, *new_coordinator, *write_nonce );
+   // perform the operation 
+   rc = ms_client_single_rpc( client, ms::ms_update::CHCOORD, 0, &req, &result );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_single_rpc(CHCOORD) rc = %d\n", rc );
+   }
+   else {
+      if( result.last_item != 0 ) {
+         errorf("ERR: updated %d entries\n", result.last_item );
       }
       else {
-         rc = -ENODATA;
+         // got data too!
+         *write_nonce = result.write_nonces[0];
+         *new_coordinator = result.coordinator_ids[0];
       }
    }
+   
+   ms_client_multi_result_free( &result );
    
    return rc;
 }
 
-// rename from src to dest 
+// rename from src to dest, synchronously
 int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest ) {
-   if( src->volume != dest->volume )
+   
+   // sanity check
+   if( src->volume != dest->volume ) {
       return -EXDEV;
+   }
    
-   if( dest == NULL )
+   // sanity check
+   if( dest == NULL ) {
       return -EINVAL;
+   }
    
-   // generate our update
-   struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::RENAME, 0, src );
-   memcpy( &up.dest, dest, sizeof(struct md_entry) );
-
-   ms::ms_reply reply;
+   int rc = 0;
+   struct ms_client_multi_result result;
+   struct ms_client_request req;
    
-   int rc = ms_client_file_post( client, &up, &reply );
+   memset( &req, 0, sizeof(struct ms_client_request) );
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
    
-   if( rc == 0 ) {
-      // got back a write nonce??
-      if( reply.listing().entries_size() > 0 ) {
-         
-         *write_nonce = reply.listing().entries(0).write_nonce();
-         
-         dbprintf("New write_nonce of %" PRIx64 " is %" PRId64 "\n", src->file_id, *write_nonce );
+   // populate the request 
+   req.ent = src;
+   req.dest = dest;
+   
+   // perform the operation 
+   rc = ms_client_single_rpc( client, ms::ms_update::RENAME, 0, &req, &result );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_single_rpc(RENAME) rc = %d\n", rc );
+   }
+   else {
+      if( result.last_item != 0 ) {
+         errorf("ERR: updated %d entries\n", result.last_item );
       }
       else {
-         rc = -ENODATA;
+         // got data too!
+         *write_nonce = result.write_nonces[0];
+         
+         dbprintf("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, *write_nonce );
       }
    }
+   
+   ms_client_multi_result_free( &result );
    
    return rc;
 }
 
-// send a batch of updates.
-// client must NOT be locked in any way.
-int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_updates, ms::ms_reply* reply, bool verify_response ) {
 
+// serialize and begin sending a batch of updates.
+// put the allocated serialized updates bufer into serialized_updates, which the caller must free after the transfer finishes.
+// client must not be locked
+// return 0 on success, and allocate *serialized_updates to hold the serialized update set (which the caller must free once the transfer finishes)
+// return 1 if we didn't have an error, but had nothing to send.
+// return negative on error 
+int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx ) {
+   
    int rc = 0;
    
    // don't do anything if we have nothing to do
    if( all_updates->size() == 0 ) {
       // nothing to do
-      return 0;
+      return 1;
    }
 
    // pack the updates into a protobuf
@@ -529,27 +856,77 @@ int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_
    // which Volumes are we sending off to?
    char* file_url = ms_client_file_url( client->url, volume_id );
 
-   // send it off
-   if( reply != NULL ) {
-      rc = ms_client_send( client, file_url, update_text, update_text_len, reply, verify_response );
+   // start sending 
+   rc = ms_client_send_begin( client, file_url, update_text, update_text_len, nctx );
+   if( rc != 0 ) {
+      errorf("ms_client_send_begin(%s) rc = %d\n", file_url, rc );
+      free( update_text );
    }
    else {
-      // internal reply buffer 
-      ms::ms_reply internal_reply;
-      rc = ms_client_send( client, file_url, update_text, update_text_len, &internal_reply, verify_response );
+      *serialized_updates = update_text;
    }
-
-   free( update_text );
-
-   if( rc != 0 ) {
-      errorf("ms_client_send(%s) rc = %d\n", file_url, rc );
-      free( file_url );
-      return rc;
-   }
-
+   
    free( file_url );
    
    return rc;
+}
+
+
+// finish sending a batch of updates
+// client must not be locked 
+// return 0 on success
+// return negative on parse error, or positive HTTP status on HTTP error
+int ms_client_send_updates_end( struct ms_client* client, ms::ms_reply* reply, bool verify_response, struct ms_client_network_context* nctx ) {
+   
+   int rc = 0;
+   
+   rc = ms_client_send_end( client, reply, verify_response, nctx );
+   if( rc != 0 ) {
+      errorf("ms_client_send_end rc = %d\n", rc );
+   }
+   
+   return rc;
+}
+
+// send a batch of updates.
+// client must NOT be locked in any way.
+// return 0 on success (or if there are no updates)
+// return negative on error
+int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_updates, ms::ms_reply* reply, bool verify_response ) {
+
+   int rc = 0;
+   struct ms_client_network_context nctx;
+   char* serialized_updates = NULL;
+   
+   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
+   
+   rc = ms_client_send_updates_begin( client, all_updates, &serialized_updates, &nctx );
+   if( rc < 0 ) {
+      
+      errorf("ms_client_send_updates_begin rc = %d\n", rc );
+      
+      return rc;
+   }
+   
+   if( rc == 1 ) {
+      // nothing to do 
+      return 0;
+   }
+   
+   // wait for it to finish 
+   rc = ms_client_send_updates_end( client, reply, verify_response, &nctx );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_send_updates_end rc = %d\n", rc );
+      
+      return rc;
+   }
+   
+   if( serialized_updates ) {
+      free( serialized_updates );
+   }
+   
+   return 0;
 }
 
 

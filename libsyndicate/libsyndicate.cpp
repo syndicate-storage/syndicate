@@ -16,7 +16,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/storage.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 static int _signals = 1;
 

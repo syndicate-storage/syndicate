@@ -99,9 +99,11 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
 // flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
 // fails with -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, mode_t mode, int flags ) {
+   
    // sanity check...can't have both XATTR_CREATE and XATTR_REPLACE
-   if( (flags & (XATTR_CREATE | XATTR_REPLACE)) == (XATTR_CREATE | XATTR_REPLACE) )
+   if( (flags & (XATTR_CREATE | XATTR_REPLACE)) == (XATTR_CREATE | XATTR_REPLACE) ) {
       return -EINVAL;
+   }
    
    // generate our update
    struct md_update up;
@@ -114,7 +116,7 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
    up.xattr_owner = client->owner_id;
    up.xattr_mode = mode;
    
-   return ms_client_file_post( client, &up, NULL );
+   return ms_client_update_rpc( client, &up );
 }
 
 // remove an xattr.
@@ -128,7 +130,7 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
    // add the xattr information (these won't be free'd, so its safe to cast)
    up.xattr_name = (char*)xattr_name;
    
-   return ms_client_file_post( client, &up, NULL );
+   return ms_client_update_rpc( client, &up );
 }
 
 // change the owner of an xattr 
@@ -142,7 +144,7 @@ int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char c
    up.xattr_name = (char*)xattr_name;
    up.xattr_owner = new_owner;
    
-   return ms_client_file_post( client, &up, NULL );
+   return ms_client_update_rpc( client, &up );
 }
 
 // change the mode of an xattr 
@@ -156,5 +158,5 @@ int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char c
    up.xattr_name = (char*)xattr_name;
    up.xattr_mode = new_mode;
    
-   return ms_client_file_post( client, &up, NULL );
+   return ms_client_update_rpc( client, &up );
 }

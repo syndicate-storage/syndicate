@@ -17,7 +17,7 @@
 #ifndef _MS_CLIENT_BENCHMARK_H_
 #define _MS_CLIENT_BENCHMARK_H_
 
-#include "libsyndicate/ms/core.h"
+#include "libsyndicate/libsyndicate.h"
 
 
 // benchmarking HTTP headers

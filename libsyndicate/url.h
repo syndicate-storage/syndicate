@@ -18,7 +18,7 @@
 #define _LIBSYNDICATE_URL_H_
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 // URLs to manifest data in this UG
 char* md_url_local_block_url( char const* data_root, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );

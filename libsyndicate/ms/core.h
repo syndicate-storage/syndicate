@@ -35,6 +35,8 @@
 #include "libsyndicate/closure.h"
 #include "libsyndicate/download.h"
 
+#include "libsyndicate/ms/benchmark.h"
+
 // maximum cert size is 10MB
 #define MS_MAX_CERT_SIZE 10240000
 
@@ -51,6 +53,24 @@ struct ms_volume;
 
 // callback to be alerted when a Volume's metadata changes
 typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
+
+// context for performing network I/O with the MS
+struct ms_client_network_context {
+   
+   bool upload;                                 // if true, then this is an upload 
+   bool ended;                                  // if true, then the transfer has ended (i.e. dlctx will have been freed)
+   
+   struct md_download_context* dlctx;           // upload/download context
+   struct ms_client_timing* timing;             // benchmark information 
+   
+   struct curl_httppost* forms;                 // HTTP forms (optional)
+   struct curl_slist* headers;                  // HTTP headers (optiona)
+   
+   char* url;                                   // target URL
+   
+   void* cls;                                   // app-defined context data
+};
+
 
 // MS client session
 struct ms_client {
@@ -158,10 +178,21 @@ int ms_client_upload_end( struct ms_client* client, struct md_download_context* 
 
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 
+// network contexts
+int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers );
+int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms );
+int ms_client_network_context_free( struct ms_client_network_context* nctx );
+
+int ms_client_network_context_begin( struct ms_client* client, struct ms_client_network_context* nctx );
+int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len );
+
+void ms_client_network_context_set_cls( struct ms_client_network_context* nctx, void* cls );
+void* ms_client_network_context_get_cls( struct ms_client_network_context* nctx );
+
 // higher-level network I/O 
 int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply );
-int ms_client_read_begin( struct ms_client* client, uint64_t volume_id, char const* url, struct md_download_context* dlctx, struct ms_client_timing* times );
-int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct md_download_context* dlctx );
+int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx );
+int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct ms_client_network_context* nctx );
 
 // CDN access closure
 extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];

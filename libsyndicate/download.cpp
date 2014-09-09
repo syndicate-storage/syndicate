@@ -471,18 +471,18 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    
    dbprintf("Free download context %p\n", dlctx );
    
-   if( dlctx->brb.rb ) {
+   if( dlctx->brb.rb != NULL ) {
       response_buffer_free( dlctx->brb.rb );
       delete dlctx->brb.rb;
       dlctx->brb.rb = NULL;
       dlctx->brb.size = 0;
    }
    
-   if( curl ) {
+   if( curl != NULL ) {
       *curl = dlctx->curl;
    }
    
-   if( dlctx->effective_url ) {
+   if( dlctx->effective_url != NULL ) {
       free( dlctx->effective_url );
       dlctx->effective_url = NULL;
    }

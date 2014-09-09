@@ -133,7 +133,7 @@ int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume
    
    ms_client_populate_update( &up, ms::ms_update::VACUUM, 0, &ent );
    
-   int rc = ms_client_file_post( client, &up, NULL );
+   int rc = ms_client_update_rpc( client, &up );
    
    md_entry_free( &ent );
    

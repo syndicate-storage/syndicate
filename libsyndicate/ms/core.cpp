@@ -356,6 +356,7 @@ int ms_client_destroy( struct ms_client* client ) {
 
 
 // open a metadata connection to the MS
+// return 0 on success, negative on error
 int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct ms_client_timing* times ) {
    
    // set up a cURL handle to the MS 
@@ -594,7 +595,150 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, s
 }
 
 
+// set up a download
+int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers ) {
+   
+   memset( nctx, 0, sizeof(struct ms_client_network_context) );
+   
+   nctx->headers = headers;
+   
+   nctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
+   nctx->timing = CALLOC_LIST( struct ms_client_timing, 1 );
+   
+   nctx->upload = false;
+   nctx->url = strdup( url );
+   
+   nctx->ended = false;
+   
+   return 0;
+}
 
+// set up an upload 
+int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms ) {
+   
+   memset( nctx, 0, sizeof(struct ms_client_network_context) );
+   
+   nctx->forms = forms;
+   
+   nctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
+   nctx->timing = CALLOC_LIST( struct ms_client_timing, 1 );
+   
+   nctx->upload = true;
+   nctx->url = strdup( url );
+   
+   nctx->ended = false;
+   
+   return 0;
+}
+
+
+// free a network context 
+int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
+   
+   if( nctx->headers != NULL ) {
+      curl_slist_free_all( nctx->headers );
+      nctx->headers = NULL;
+   }
+   
+   if( nctx->forms != NULL ) {
+      curl_formfree( nctx->forms );
+      nctx->forms = NULL;
+   }
+   
+   if( nctx->dlctx != NULL ) {
+      
+      if( !nctx->ended ) {
+         CURL* curl = NULL;
+         md_download_context_free( nctx->dlctx, &curl );
+         
+         // TODO: connection pool 
+         if( curl != NULL ) {
+            curl_easy_cleanup( curl );
+         }
+      }
+      
+      free( nctx->dlctx );
+      nctx->dlctx = NULL;
+   }
+   
+   if( nctx->timing != NULL ) {
+      ms_client_timing_free( nctx->timing );
+      free( nctx->timing );
+      nctx->timing = NULL;
+   }
+   
+   if( nctx->url ) {
+      free( nctx->url );
+      nctx->url = NULL;
+   }
+   
+   return 0;
+}
+
+// start a context running 
+int ms_client_network_context_begin( struct ms_client* client, struct ms_client_network_context* nctx ) {
+   
+   int rc = 0;
+   char const* method = NULL;
+   
+   if( nctx->upload ) {
+      
+      method = "ms_client_upload_begin";
+      rc = ms_client_upload_begin( client, nctx->url, nctx->forms, nctx->dlctx, nctx->timing );
+   }
+   else {
+      
+      method = "ms_client_download_begin";
+      rc = ms_client_download_begin( client, nctx->url, nctx->headers, nctx->dlctx, nctx->timing );
+   }
+   
+   if( rc != 0 ) {
+      errorf("%s(%s) rc = %d\n", method, nctx->url, rc );
+   }
+   else {
+      nctx->ended = false;
+   }
+   
+   return rc;
+}
+
+
+// wait for and finish a network context
+int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len ) {
+   
+   int http_status = 0;
+   char const* method = NULL;
+   
+   if( nctx->upload ) {
+      
+      method = "ms_client_upload_end";
+      http_status = ms_client_upload_end( client, nctx->dlctx, result_buf, result_len );
+   }
+   else {
+      
+      method = "ms_client_download_end";
+      http_status = ms_client_download_end( client, nctx->dlctx, result_buf, result_len );
+   }
+   
+   if( http_status != 200 ) {
+      errorf("%s(%s) HTTP status = %d\n", method, nctx->url, http_status );
+   }
+   
+   nctx->ended = true;
+   
+   return http_status;
+}
+
+
+// store app-specific context data to a network context 
+void ms_client_network_context_set_cls( struct ms_client_network_context* nctx, void* cls ) {
+   nctx->cls = cls;
+}
+
+// get app-specific context data out of a network context 
+void* ms_client_network_context_get_cls( struct ms_client_network_context* nctx ) {
+   return nctx->cls;
+}
 
 // do a one-off RPC call via OpenID
 // rpc_type can be "json" or "xml"
@@ -862,13 +1006,18 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 
 // asynchronously start fetching data from the MS 
 // client cannot be locked
-int ms_client_read_begin( struct ms_client* client, uint64_t volume_id, char const* url, struct md_download_context* dlctx, struct ms_client_timing* times ) {
+int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx ) {
    
-   int rc = 0;
+   // set up the download 
+   ms_client_network_context_download_init( nctx, url, NULL );
    
-   rc = ms_client_download_begin( client, url, NULL, dlctx, times );
+   // start downloading 
+   int rc = ms_client_network_context_begin( client, nctx );
    if( rc != 0 ) {
-      errorf("ms_client_download_begin(%s) rc = %d\n", url, rc );
+      errorf("ms_client_network_context_begin(%s) rc = %d\n", url, rc );
+      
+      ms_client_network_context_free( nctx );
+      return rc;
    }
    
    return rc;
@@ -877,20 +1026,22 @@ int ms_client_read_begin( struct ms_client* client, uint64_t volume_id, char con
  
 // wait for an asynchronously-started MS read to finish.  Parse and verify the MS reply
 // client cannot be locked 
-int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct md_download_context* dlctx ) {
+int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct ms_client_network_context* nctx ) {
    
    int rc = 0;
    size_t len = 0;
    char* buf = NULL;
    
-   int http_response = ms_client_download_end( client, dlctx, &buf, &len );
+   int http_response = ms_client_network_context_end( client, nctx, &buf, &len );
    
    if( http_response <= 0 ) {
-      errorf("ms_client_download_end rc = %d\n", http_response );
+      errorf("ms_client_network_context_end rc = %d\n", http_response );
       
       if( buf != NULL ) {
          free( buf );
       }
+      
+      ms_client_network_context_free( nctx );
       return http_response;
    }
    
@@ -901,6 +1052,8 @@ int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_rep
       if( rc != 0 ) {
          errorf("ms_client_read rc = %d\n", rc );
          free( buf );
+         
+         ms_client_network_context_free( nctx );
          return -ENODATA;
       }
       
@@ -910,6 +1063,9 @@ int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_rep
       int err = reply->error();
       if( err != 0 ) {
          errorf("MS reply error %d\n", err );
+         
+         
+         ms_client_network_context_free( nctx );
          return err;
       }
       
@@ -917,6 +1073,7 @@ int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_rep
          // extract versioning information from the reply
          ms_client_process_header( client, volume_id, reply->volume_version(), reply->cert_version() );
       
+         ms_client_network_context_free( nctx );
          return 0;
       }
    }
@@ -933,6 +1090,8 @@ int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_rep
       if( buf != NULL ) {
          free( buf );
       }
+      
+      ms_client_network_context_free( nctx );
       return -http_response;
    }
 }
@@ -940,26 +1099,22 @@ int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_rep
 // synchronous wrapper around read_begin and read_end 
 int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply ) {
    
-   struct md_download_context dlctx;
-   memset( &dlctx, 0, sizeof(struct md_download_context) );
+   int rc = 0;
+   struct ms_client_network_context nctx;
+   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
    
-   struct ms_client_timing timing;
-   memset( &timing, 0, sizeof(struct ms_client_timing) );
-   
-   int rc = ms_client_read_begin( client, volume_id, url, &dlctx, &timing );
+   // start reading
+   rc = ms_client_read_begin( client, url, &nctx );
    if( rc != 0 ) {
       errorf("ms_client_read_begin(%s) rc = %d\n", url, rc );
       return rc;
    }
    
-   rc = ms_client_read_end( client, volume_id, reply, &dlctx );
+   // finish reading
+   rc = ms_client_read_end( client, volume_id, reply, &nctx );
    if( rc != 0) {
       errorf("ms_client_read_end(%s) rc = %d\n", url, rc );
-      return rc;
    }
-   
-   ms_client_timing_log( &timing );
-   ms_client_timing_free( &timing );
    
    return rc;
 }
