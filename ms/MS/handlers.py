@@ -561,6 +561,7 @@ class MSFileHandler(webapp2.RequestHandler):
       timing = {}
       
       # carry out the operation(s)
+      index = 0
       for update in update_set.updates:
 
          # these are guaranteed to be non-None...
@@ -570,10 +571,10 @@ class MSFileHandler(webapp2.RequestHandler):
          # run the API call, but benchmark it too
          try:
             rc = benchmark( benchmark_header, timing, lambda: api_call( reply, gateway, volume, update ) )
+            index += 1
          except Exception, e:
             logging.exception(e)
             rc = -errno.EREMOTEIO
-            status = 500
             break
          
          if rc < 0:
@@ -581,6 +582,7 @@ class MSFileHandler(webapp2.RequestHandler):
             reply.error = rc
             break
 
+      reply.last_item = index - 1
       
       # generate the response
       reply_str = file_update_complete_response( volume, reply )

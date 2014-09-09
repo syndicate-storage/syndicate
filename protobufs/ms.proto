@@ -113,6 +113,8 @@ message ms_reply {
    optional int64 manifest_mtime_sec = 11;          
    optional int32 manifest_mtime_nsec = 12;
    repeated uint64 affected_blocks = 13;
+   
+   optional int32 last_item = 14;             // index of the last item in ms_update.updates that was successfully processed
 }
 
 // key/value arguments for replica drivers
