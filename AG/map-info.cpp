@@ -570,7 +570,7 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
 static int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    
    char* fs_path = strdup(path);
-   char* fs_path_tok = fs_path;
+   char* fs_ms_path_tok = fs_path;
    char* tmp = NULL;
    
    vector<char*> prefixes;
@@ -584,8 +584,8 @@ static int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    while( true ) {
       
       // next path part
-      char* path_part = strtok_r( fs_path_tok, "/", &tmp );
-      fs_path_tok = NULL;
+      char* path_part = strtok_r( fs_ms_path_tok, "/", &tmp );
+      fs_ms_path_tok = NULL;
       
       if( path_part == NULL ) {
          // no more path 
@@ -1051,7 +1051,7 @@ static int AG_get_path_metadata( struct ms_client* client, char const* path, AG_
       dbprintf("Deepest known path of '%s' is '%s'; shallowest unknown path is '%s'\n", path, deepest_known_path, shallowest_unknown_path );
       
       // prepare a request for the deepest known info's children, so we can populate the shallowest unknown info
-      path_t ms_requests;
+      ms_path_t ms_requests;
       ms_response_t ms_response;
       struct ms_path_ent path_ent;
       

@@ -18,7 +18,7 @@
 #define _AG_MAP_INFO_H_
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 #include "AG.h"
 

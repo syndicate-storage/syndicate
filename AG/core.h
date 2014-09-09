@@ -19,7 +19,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/httpd.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 #include "libsyndicate/system.h"
 #include "libsyndicate/storage.h"
 #include "libsyndicate/opts.h"

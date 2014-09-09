@@ -19,7 +19,7 @@
 
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 // basic types 
 typedef map<string, string> AG_config_t;
