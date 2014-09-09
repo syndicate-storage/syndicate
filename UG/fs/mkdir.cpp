@@ -134,7 +134,7 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
       err = ms_client_mkdir( core->ms, &child->file_id, &child->write_nonce, &data );
       
       if( err != 0 ) {
-         errorf("ms_client_create(%s) rc = %d\n", path, err );
+         errorf("ms_client_mkdir(%s) rc = %d\n", path, err );
          
          fs_entry_unlock( child );
          rc = fs_entry_detach_lowlevel( core, parent, child );

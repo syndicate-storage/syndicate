@@ -494,6 +494,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       // create synchronously, obtaining the child's file ID and write_nonce
       *err = ms_client_create( core->ms, &child->file_id, &child->write_nonce, &data );
 
+      md_entry_free( &data );
+      
       if( *err != 0 ) {
          errorf("ms_client_create(%s) rc = %d\n", _path, *err );
          *err = -EREMOTEIO;
@@ -510,9 +512,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          fs_entry_unlock( parent );
 
          child = NULL;
-      }
-      
-      md_entry_free( &data );
+      }  
    }
 
    if( *err == 0 ) {
