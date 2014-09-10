@@ -4,12 +4,15 @@ import sys
 import os
 from collections import namedtuple
 
-PackageInfo = namedtuple( "PackageInfo", ["name", "build_target", "install_target", "install_dir", "package_root", "package_script", "package_scripts_root"] )
+class PackageInfo( object ):
+   def __init__(self, **kw):
+      for (k, v) in kw.items():
+         setattr(self, k, v)
 
 BASE_DIR = "/root/syndicate"
 BUILD_ROOT = "/root/syndicate/syndicate"
 PACKAGE_ROOT = "/root/syndicate"
-BUILD_FLAGS = "devel=true"
+BUILD_FLAGS = "devel=true old_boost=true"
 
 PACKAGE_INFO = [
    PackageInfo( name            = "libsyndicate",
@@ -60,13 +63,17 @@ PACKAGE_INFO = [
                 package_script  = "%s/syndicate-MS-clients-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
-   PackageInfo( name            = "syndicated",
+   PackageInfo( name            = "syndicated-opencloud",
                 build_target    = "syndicated",
                 install_target  = "syndicated-install",
-                install_dir     = "%s/syndicated-root/usr" % BASE_DIR,
-                package_root    = "%s/syndicated-root" % BASE_DIR,
-                package_script  = "%s/syndicated-rpm.sh" % BASE_DIR,
-                package_scripts_root = "%s/syndicated-pkg/pkg/opencloud/syndicated" % BASE_DIR ),
+		install_dir     = "%s/syndicated-opencloud-root/usr" % BASE_DIR,
+                config_target   = "syndicated-opencloud-install-etc",
+                config_install_dir = "%s/syndicated-opencloud-root" % BASE_DIR,
+                package_root    = "%s/syndicated-opencloud-root" % BASE_DIR,
+                package_script  = "%s/syndicated-opencloud-rpm.sh" % BASE_DIR,
+                package_scripts_target = "syndicated-opencloud-install-pkg",
+                package_scripts_root = "%s/syndicated-opencloud-pkg/" % BASE_DIR ),
+
 
    PackageInfo( name            = "python-syndicate",
                 build_target    = "python-syndicate",

@@ -1,6 +1,12 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/syndicate-MS-clients-root
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+
+ROOT=$1
 NAME="syndicate-ms-clients"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
@@ -15,5 +21,5 @@ source /usr/local/rvm/scripts/rvm
 
 rm -f $NAME-0*.rpm
 
-fpm --force -s dir -t rpm -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate MS clients.  This includes syntool.py" $(ls $ROOT)
+fpm --force -s dir -t rpm -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University"  --maintainer "Jude Nelson <jcnelson@cs.princeton.edu>" --url "https://github.com/jcnelson/syndicate" --description "Syndicate MS clients.  This includes syntool.py" $(ls $ROOT)
 
