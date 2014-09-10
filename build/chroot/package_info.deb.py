@@ -57,7 +57,7 @@ PACKAGE_INFO = [
                 package_root    = "%s/syndicate-MS-clients-root" % BASE_DIR,
                 package_script  = "%s/syndicate-MS-clients-deb.sh" % BASE_DIR ),
 
-   PackageInfo( name            = "syndicated",
+   PackageInfo( name            = "syndicated-opencloud",
                 build_target    = "syndicated",
                 install_target  = "syndicated-install",
                 install_dir     = "%s/syndicated-opencloud-root/usr" % BASE_DIR,

@@ -10,7 +10,7 @@ ROOT=$1
 NAME="syndicate-rg"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="python-syndicate" 
+DEPS="python-syndicate python-bjoern" 
 
 DEPARGS=""
 for pkg in $DEPS; do
