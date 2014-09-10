@@ -84,7 +84,7 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
 int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    char cwd[PATH_MAX + 1];
-   memset(cwd, PATH_MAX + 1, 0);
+   memset(cwd, 0, PATH_MAX + 1 );
    
    int rc = 0;
    

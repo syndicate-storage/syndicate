@@ -127,7 +127,7 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
  
    if file_data is not None:
       # got data...
-      logging.info("%s has type %s" % (file_data.name, file_data.ftype))
+      logging.info("%s has type %s version %s write_nonce %s" % (file_data.name, file_data.ftype, file_data.version, file_data.write_nonce))
       
       # do we need to actually send this?
       if file_data.version == file_version and file_data.write_nonce == write_nonce:
@@ -253,10 +253,15 @@ def file_update( reply, gateway, volume, update ):
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    affected_blocks = update.affected_blocks[:]
+   log_affected_blocks = True
+   
+   # don't log affected blocks if the writer was an AG, since they don't replicate anything
+   if gateway.gateway_type == GATEWAY_TYPE_AG:
+      log_affected_blocks = False
    
    logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
    
-   rc, ent = MSEntry.Update( gateway.owner_id, volume, affected_blocks, **attrs )
+   rc, ent = MSEntry.Update( gateway.owner_id, volume, log_affected_blocks, affected_blocks, **attrs )
    
    logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
    
@@ -402,9 +407,9 @@ def file_read_auth( gateway, volume ):
       logging.error( "no gateway" )
       return False
 
-   # this must be a User Gateway, if there is a specific gateway
-   if gateway is not None and gateway.gateway_type != GATEWAY_TYPE_UG:
-      logging.error( "not UG" )
+   # this must be a User Gateway or Acquisition Gateway, if there is a specific gateway
+   if gateway is not None and not (gateway.gateway_type == GATEWAY_TYPE_UG or gateway.gateway_type == GATEWAY_TYPE_AG):
+      logging.error( "not UG or AG" )
       return False
    
    # this gateway must be allowed to read metadata

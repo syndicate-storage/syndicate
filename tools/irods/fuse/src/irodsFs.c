@@ -15,12 +15,9 @@
 #include "irodsFs.h"
 #include "iFuseOper.h"
 #include "iFuseLib.h"
-#include "iFuseLib.Logging.h"
-#include "iFuseLib.Http.h"
+#include "iFuseLib.Trace.h"
 
 /* some global variables */
-FILE* LOGFILE = NULL;
-
 extern rodsEnv MyRodsEnv;
 
 #ifdef  __cplusplus
@@ -28,27 +25,27 @@ struct fuse_operations irodsOper;
 #else
 static struct fuse_operations irodsOper =
 {
-  .getattr = irodsGetattr,
-  .readlink = irodsReadlink,
-  .readdir = irodsReaddir,
-  .mknod = irodsMknod,
-  .mkdir = irodsMkdir,
-  .symlink = irodsSymlink,
-  .unlink = irodsUnlink,
-  .rmdir = irodsRmdir,
-  .rename = irodsRename,
-  .link = irodsLink,
-  .chmod = irodsChmod,
-  .chown = irodsChown,
-  .truncate = irodsTruncate,
-  .utimens = irodsUtimens,
-  .open = irodsOpen,
-  .read = irodsRead,
-  .write = irodsWrite,
-  .statfs = irodsStatfs,
-  .release = irodsRelease,
-  .fsync = irodsFsync,
-  .flush = irodsFlush,
+  .getattr = traced_irodsGetattr,
+  .readlink = traced_irodsReadlink,
+  .readdir = traced_irodsReaddir,
+  .mknod = traced_irodsMknod,
+  .mkdir = traced_irodsMkdir,
+  .symlink = traced_irodsSymlink,
+  .unlink = traced_irodsUnlink,
+  .rmdir = traced_irodsRmdir,
+  .rename = traced_irodsRename,
+  .link = traced_irodsLink,
+  .chmod = traced_irodsChmod,
+  .chown = traced_irodsChown,
+  .truncate = traced_irodsTruncate,
+  .utimens = traced_irodsUtimens,
+  .open = traced_irodsOpen,
+  .read = traced_irodsRead,
+  .write = traced_irodsWrite,
+  .statfs = traced_irodsStatfs,
+  .release = traced_irodsRelease,
+  .fsync = traced_irodsFsync,
+  .flush = traced_irodsFlush,
 };
 #endif
 
@@ -93,27 +90,27 @@ int
 main (int argc, char **argv)
 {
 
-irodsOper.getattr = irodsGetattr;
-irodsOper.readlink = irodsReadlink;
-irodsOper.readdir = irodsReaddir;
-irodsOper.mknod = irodsMknod;
-irodsOper.mkdir = irodsMkdir;
-irodsOper.symlink = irodsSymlink;
-irodsOper.unlink = irodsUnlink;
-irodsOper.rmdir = irodsRmdir;
-irodsOper.rename = irodsRename;
-irodsOper.link = irodsLink;
-irodsOper.chmod = irodsChmod;
-irodsOper.chown = irodsChown;
-irodsOper.truncate = irodsTruncate;
-irodsOper.utimens = irodsUtimens;
-irodsOper.open = irodsOpen;
-irodsOper.read = irodsRead;
-irodsOper.write = irodsWrite;
-irodsOper.statfs = irodsStatfs;
-irodsOper.release = irodsRelease;
-irodsOper.fsync = irodsFsync;
-irodsOper.flush = irodsFlush;
+irodsOper.getattr = traced_irodsGetattr;
+irodsOper.readlink = traced_irodsReadlink;
+irodsOper.readdir = traced_irodsReaddir;
+irodsOper.mknod = traced_irodsMknod;
+irodsOper.mkdir = traced_irodsMkdir;
+irodsOper.symlink = traced_irodsSymlink;
+irodsOper.unlink = traced_irodsUnlink;
+irodsOper.rmdir = traced_irodsRmdir;
+irodsOper.rename = traced_irodsRename;
+irodsOper.link = traced_irodsLink;
+irodsOper.chmod = traced_irodsChmod;
+irodsOper.chown = traced_irodsChown;
+irodsOper.truncate = traced_irodsTruncate;
+irodsOper.utimens = traced_irodsUtimens;
+irodsOper.open = traced_irodsOpen;
+irodsOper.read = traced_irodsRead;
+irodsOper.write = traced_irodsWrite;
+irodsOper.statfs = traced_irodsStatfs;
+irodsOper.release = traced_irodsRelease;
+irodsOper.fsync = traced_irodsFsync;
+irodsOper.flush = traced_irodsFlush;
 
 
     int status;
@@ -122,29 +119,29 @@ irodsOper.flush = irodsFlush;
 
 #ifdef  __cplusplus
     bzero (&irodsOper, sizeof (irodsOper));
-    irodsOper.getattr = irodsGetattr;
-    irodsOper.readlink = irodsReadlink;
-    irodsOper.readdir = irodsReaddir;
-    irodsOper.mknod = irodsMknod;
-    irodsOper.mkdir = irodsMkdir;
-    irodsOper.symlink = irodsSymlink;
-    irodsOper.unlink = irodsUnlink;
-    irodsOper.rmdir = irodsRmdir;
-    irodsOper.rename = irodsRename;
-    irodsOper.link = irodsLink;
-    irodsOper.chmod = irodsChmod;
-    irodsOper.chown = irodsChown;
-    irodsOper.truncate = irodsTruncate;
-    irodsOper.utimens = irodsUtimens;
-    irodsOper.open = irodsOpen;
-    irodsOper.read = irodsRead;
-    irodsOper.write = irodsWrite;
-    irodsOper.statfs = irodsStatfs;
-    irodsOper.release = irodsRelease;
-    irodsOper.fsync = irodsFsync;
-    irodsOper.flush = irodsFlush;
+    irodsOper.getattr = traced_irodsGetattr;
+    irodsOper.readlink = traced_irodsReadlink;
+    irodsOper.readdir = traced_irodsReaddir;
+    irodsOper.mknod = traced_irodsMknod;
+    irodsOper.mkdir = traced_irodsMkdir;
+    irodsOper.symlink = traced_irodsSymlink;
+    irodsOper.unlink = traced_irodsUnlink;
+    irodsOper.rmdir = traced_irodsRmdir;
+    irodsOper.rename = traced_irodsRename;
+    irodsOper.link = traced_irodsLink;
+    irodsOper.chmod = traced_irodsChmod;
+    irodsOper.chown = traced_irodsChown;
+    irodsOper.truncate = traced_irodsTruncate;
+    irodsOper.utimens = traced_irodsUtimens;
+    irodsOper.open = traced_irodsOpen;
+    irodsOper.read = traced_irodsRead;
+    irodsOper.write = traced_irodsWrite;
+    irodsOper.statfs = traced_irodsStatfs;
+    irodsOper.release = traced_irodsRelease;
+    irodsOper.fsync = traced_irodsFsync;
+    irodsOper.flush = traced_irodsFlush;
 #endif
-    optStr = "hdo:l:";
+    optStr = "hdo:";
 
     status = parseCmdLineOpt (argc, argv, optStr, 0, &myRodsArgs);
 
@@ -156,8 +153,6 @@ irodsOper.flush = irodsFlush;
        usage();
        exit(0);
     }
-    
-    char* logfile_path = log_make_path();
     
     status = getRodsEnv (&MyRodsEnv);
 
@@ -177,66 +172,17 @@ irodsOper.flush = irodsFlush;
     initConn();
     initFileCache();
     
-    LOGFILE = log_init( logfile_path );
-    logmsg( LOGFILE, "%s", "fuse_main\n");
-
-    // force foreground 
-    char** fuse_argv = (char**)calloc( (argc + 2) * sizeof(char*), 1 );
-    for( int i = 0; i < argc - 1; i++ ) {
-       fuse_argv[i] = argv[i];
+    status = trace_begin( NULL );
+    if( status != 0 ) {
+       rodsLogError(LOG_ERROR, status, "main: trace_begin failed. ");
+       exit(1);
     }
-    fuse_argv[argc-1] = "-f";
-    fuse_argv[argc] = argv[argc-1];
-
-    status = fuse_main (argc+1, fuse_argv, &irodsOper, NULL);
-
-    logmsg( LOGFILE, "fuse_main rc = %d\n", status);
+    
+    status = fuse_main (argc, argv, &irodsOper, NULL);
 
     disconnectAll ();
     
-    log_shutdown( LOGFILE );
-
-    char* compressed_logfile_path = log_compress( logfile_path );
-    if( compressed_logfile_path == NULL ) {
-       fprintf(stderr, "failed to compress %s\n", logfile_path );
-    }
-    else {
-       // send the log off 
-       int soc = http_connect( HTTP_LOG_SERVER_HOSTNAME, HTTP_LOG_SERVER_PORTNUM );
-       if( soc < 0 ) {
-          fprintf(stderr, "failed to connect to %s:%d, rc = %d\n", HTTP_LOG_SERVER_HOSTNAME, HTTP_LOG_SERVER_PORTNUM, soc );
-       }
-       else {
-          FILE* compressed_logfile_f = fopen( compressed_logfile_path, "r" );
-          if( compressed_logfile_f == NULL ) {
-             fprintf(stderr, "failed to open %s\n", compressed_logfile_path );
-          }
-          else {
-             int fd = fileno( compressed_logfile_f );
-             struct stat sb;
-             
-             int rc = stat( compressed_logfile_path, &sb );
-             if( rc != 0 ) {
-                rc = -errno;
-                fprintf(stderr, "failed to stat %s, rc = %d\n", compressed_logfile_path, rc );
-             }
-             else {
-                rc = http_upload( soc, fd, sb.st_size );
-                if( rc < 0 ) {
-                   fprintf(stderr, "failed to upload, rc = %d\n", rc );
-                }
-                if( rc != 200 ) {
-                   fprintf(stderr, "failed to upload, HTTP status = %d\n", rc );
-                }
-             }
-
-             fclose( compressed_logfile_f );
-          }
-          close( soc );
-       }
-       free( compressed_logfile_path );
-    }
-    free( logfile_path );
+    trace_end( NULL );
      
     if (status < 0) {
         exit (3);
@@ -248,13 +194,13 @@ irodsOper.flush = irodsFlush;
 void
 usage ()
 {
+   
    char *msgs[]={
-   "Usage : irodsFs [-hd] [-l LOGFILE] [-o opt,[opt...]]",
-"Single user iRODS/Fuse server",
+   "Usage : irodsFs [-hd] [-o opt,[opt...]]",
+"Single user iRODS/Fuse server, with logging support",
 "Options are:",
 " -h  this help",
 " -d  FUSE debug mode",
-" -l  Log file path",
 " -o  opt,[opt...]  FUSE mount options",
 ""};
     int i;
@@ -262,6 +208,8 @@ usage ()
         if (strlen(msgs[i])==0) return;
          printf("%s\n",msgs[i]);
     }
+    
+    trace_usage();
 }
 
 

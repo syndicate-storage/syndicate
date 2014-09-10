@@ -24,7 +24,7 @@ include $(buildDir)/config/common.mk
 #
 # Directories
 #
-fuseDir =	$(buildDir)/clients/fuse
+fuseDir =	$(buildDir)/clients/fuse.logging
 
 objDir =	$(fuseDir)/obj
 binDir =	$(fuseDir)/bin
@@ -57,8 +57,9 @@ LIB_OBJS =	\
 		$(objDir)/iFuseLib.Desc.o \
 		$(objDir)/iFuseLib.FileCache.o \
 		$(objDir)/iFuseLib.Lock.o \
-		$(objDir)/iFuseLib.Logging.o \
 		$(objDir)/iFuseLib.Http.o \
+		$(objDir)/iFuseLib.Logging.o \
+		$(objDir)/iFuseLib.Trace.o \
 		$(objDir)/iFuseLib.PathCache.o \
 		$(objDir)/iFuseLib.Utils.o \
 		$(reObjDir)/list.o \
@@ -84,9 +85,9 @@ endif
 CFLAGS =	$(CFLAGS_OPTIONS) $(INCLUDES) $(LIB_INCLUDES) $(SVR_INCLUDES) $(MODULE_CFLAGS)
 
 ifeq ($(OS_platform), linux_platform)
-LDFLAGS +=	$(LDADD) $(MODULE_LDFLAGS) -L$(fuseHomeDir)/lib -lfuse -ldl -lrt
+LDFLAGS +=	$(LDADD) $(MODULE_LDFLAGS) -L$(fuseHomeDir)/lib -lfuse -lcrypto -ldl -lrt
 else
-LDFLAGS +=	$(LDADD) $(MODULE_LDFLAGS) -L$(fuseHomeDir)/lib -lfuse -ldl
+LDFLAGS +=	$(LDADD) $(MODULE_LDFLAGS) -L$(fuseHomeDir)/lib -lfuse -lcrypto -ldl
 endif
 
 # for checking memleak
@@ -187,7 +188,7 @@ $(reObjDir)/%.o:	$(reSrcDir)/%.c $(LIBRARY)
 
 $(binDir)/%:	$(objDir)/%.o $(LIB_OBJS)
 	@echo "Link fuse `basename $@`..."
-	@$(LDR) -o $@ $< $(LIB_OBJS) $(LDFLAGS) -lcrypto
+	@$(LDR) -o $@ $< $(LIB_OBJS) $(LDFLAGS)
 
 
 

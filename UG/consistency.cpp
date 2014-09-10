@@ -25,7 +25,7 @@
 #include "vacuumer.h"
 #include "syndicate.h"
 
-static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent );
+static char* fs_entry_ms_path_to_string( ms_path_t* ms_path, struct fs_entry* fent );
 
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
@@ -350,14 +350,14 @@ static size_t fs_entry_split_path( char const* _path, vector<char*>* ret_vec ) {
 
    // tokenize and count up
    char* tmp = NULL;
-   char* path_tok = path;
+   char* ms_path_tok = path;
    char* tok = NULL;
    
    ret_vec->push_back( strdup("/") );
 
    do {
-      tok = strtok_r( path_tok, "/", &tmp );
-      path_tok = NULL;
+      tok = strtok_r( ms_path_tok, "/", &tmp );
+      ms_path_tok = NULL;
 
       if( tok == NULL )
          break;
@@ -392,7 +392,7 @@ static void fs_entry_free_listing_cls( void* _cls ) {
 
 static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    // build up the ms_path as we traverse our cached path
-   path_t* ms_path = (path_t*)ms_path_cls;
+   ms_path_t* ms_path = (ms_path_t*)ms_path_cls;
 
    struct fs_entry_listing_cls* cls = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
 
@@ -438,7 +438,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
 
 
 
-static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_t* ms_path ) {
+static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_path_t* ms_path ) {
    // build up an ms_path from the actual path
    vector<char*> path_parts;
    size_t path_len = fs_entry_split_path( path, &path_parts );
@@ -488,7 +488,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_
    return rc;
 }
 
-static int fs_entry_zip_path_listing( path_t* ms_path, ms_response_t* ms_response ) {
+static int fs_entry_zip_path_listing( ms_path_t* ms_path, ms_response_t* ms_response ) {
    // merge an ms_response's into the path, via our path cls.
    for( unsigned int i = 0; i < ms_path->size(); i++ ) {
 
@@ -515,7 +515,7 @@ static int fs_entry_ensure_vacuumed( struct fs_entry_consistency_cls* consistenc
    
    if( FS_ENTRY_LOCAL( consistency_cls->core, fent ) && fent->ftype == FTYPE_FILE && !fs_entry_vacuumer_is_vacuuming( fent ) && !fs_entry_vacuumer_is_vacuumed( fent ) ) {
       
-      char* fs_path = fs_entry_path_to_string( consistency_cls->path, fent );
+      char* fs_path = fs_entry_ms_path_to_string( consistency_cls->path, fent );
       
       fs_entry_vacuumer_write_bg_fent( &consistency_cls->core->state->vac, fs_path, fent );
       
@@ -529,11 +529,13 @@ static int fs_entry_ensure_vacuumed( struct fs_entry_consistency_cls* consistenc
 // fent should be write-locked
 static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
    // sanity check
-   if( fent->ftype != FTYPE_FILE )
+   if( fent->ftype != FTYPE_FILE ) {
       return -EINVAL;
-
-   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_FILE )
+   }
+   
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_FILE ) {
       return -EINVAL;
+   }
 
    if( listing->entries->size() != 1 ) {
       errorf("Got back %zu listings\n", listing->entries->size() );
@@ -565,9 +567,10 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
 
 
 static int fs_entry_clear_child( fs_entry_set* children, unsigned int i ) {
-   if( i >= children->size() )
+   if( i >= children->size() ) {
       return -EINVAL;
-
+   }
+   
    children->at(i).first = 0;
    children->at(i).second = NULL;
    return 0;
@@ -636,11 +639,13 @@ static int fs_entry_populate_and_sanitize_directory( struct fs_entry_consistency
 // dent must be WRITE-LOCKED
 static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct ms_listing* listing ) {
    // sanity check
-   if( dent->ftype != FTYPE_DIR )
+   if( dent->ftype != FTYPE_DIR ) {
       return -EINVAL;
+   }
 
-   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR )
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR ) {
       return -EINVAL;
+   }
    
    dbprintf("Reload directory %" PRIX64 " (%s) with new data\n", dent->file_id, dent->name );
    
@@ -836,7 +841,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
 }
 
 
-static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
+static int fs_entry_path_find( ms_path_t* ms_path, uint64_t file_id ) {
 
    // find this directory along the path
    unsigned int i = 0;
@@ -860,7 +865,7 @@ static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
 }
 
 
-static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
+static int fs_entry_path_find_by_name( ms_path_t* ms_path, char const* name ) {
 
    // find this directory along the path
    unsigned int i = 0;
@@ -884,9 +889,9 @@ static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
 }
 
 
-// convert a path_t to a string, appending fent to the end if ms_path is its parent directory (otherwise ignoring it)
+// convert a ms_path_t to a string, appending fent to the end if ms_path is its parent directory (otherwise ignoring it)
 // return -ENOENT if not found 
-static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent ) {
+static char* fs_entry_ms_path_to_string( ms_path_t* ms_path, struct fs_entry* fent ) {
    
    if( ms_path->size() == 0 ) {
       errorf("No path given, size = %zu\n", ms_path->size() );
@@ -995,7 +1000,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
    // reload this particular directory
    struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
    
-   path_t* ms_path = consistency_cls->path;
+   ms_path_t* ms_path = consistency_cls->path;
 
    // find this directory along the path
    int i = fs_entry_path_find( ms_path, fent->file_id );
@@ -1059,7 +1064,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
 
 
 // get listings and merge them into a path
-static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_download ) {
+static int fs_entry_download_path_listings( struct fs_core* core, ms_path_t* to_download ) {
 
    ms_response_t listings;
    
@@ -1084,7 +1089,7 @@ static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_dow
 
 // given the list of path entries that exist locally, reload them.
 // if one of them no longer exists on the MS, then unlink all of the children beneath it.
-static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, path_t* ms_path ) {
+static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, ms_path_t* ms_path ) {
 
    struct fs_core* core = cls->core;
 
@@ -1135,7 +1140,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
    struct fs_core* core = consistency_cls->core;
    int rc = 0;
-   path_t* ms_path = consistency_cls->path;
+   ms_path_t* ms_path = consistency_cls->path;
 
    // find this directory along the path
    int idx = fs_entry_path_find_by_name( ms_path, fent->name );
@@ -1193,7 +1198,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    // get the child's children.  Populate child_path_ent with the child's data
    // (it will be unpopulated, since before the call to fs_entry_revalidate_path
    // it did not exist locally).
-   path_t child_path;
+   ms_path_t child_path;
    
    struct fs_entry_listing_cls* child_listing_cls2 = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
    fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
@@ -1252,7 +1257,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
 
 // make a pass through a path and download any listings that are not local.
 // Path is populated with entries that are fresh if present, and is built with fs_entry_build_ms_path
-static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, path_t* path ) {
+static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, ms_path_t* path ) {
 
    dbprintf("%s", "Begin downloading remote entries\n");
    
@@ -1289,14 +1294,18 @@ static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls*
    return rc;
 }
 
+// revalidate a path's metadata.
+// walk down an absolute path and check to see if the directories leading to the requested entries are fresh.
+// for each stale entry, re-download metadata and merge it into their respective inodes.
+// for each entry not found locally, try to download metadata and attach it to the metadata hierarchy.
 int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
    // must be absolute
-   if( _path[0] != '/' )
+   if( _path[0] != '/' ) {
       return -EINVAL;
+   }
    
    // normalize the path first
    int rc = 0;
-   //char* path = md_normalize_url( _path, &rc );
    char* path = md_flatten_path( _path );
 
    if( rc != 0 ) {
@@ -1307,8 +1316,8 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    dbprintf("Revalidate %s\n", path );
    
    // path entires to send to the MS for resolution
-   path_t ms_path;
-   path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
+   ms_path_t ms_path;
+   ms_path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
    ms_response_t stale_listings;    // listings for stale directories
 
    // consistency closure
@@ -1456,8 +1465,8 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
       
       END_TIMING_DATA( ts, ts2, "manifest refresh (error)" );
       
-      if( rc == -ENOENT ) {
-         // not found
+      if( rc == -ENOENT || rc == -EAGAIN ) {
+         // not found or try again
          return rc;
       }
       else {
@@ -1479,9 +1488,9 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    return 0;
 }
 
-// ensure the manifest is fresh
+// ensure the manifest is fresh (but fail-fast if we can't contact the remote gateway)
 // fent should be write-locked
-int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+int fs_entry_revalidate_manifest_once( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
 
    if( fent->manifest == NULL ) {
       errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
@@ -1489,6 +1498,38 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    }
    
    return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, NULL );   
+}
+
+
+// try to fetch a manifest up to core->conf->max_read_retry times 
+// fent must be write-locked 
+int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+   
+   int err = 0;
+   int num_manifest_requests = 0;
+   
+   do {
+      
+      err = fs_entry_revalidate_manifest_once( core, fs_path, fent );
+      
+      if( err != -EAGAIN ) {
+         break;
+      }
+      
+      // try again 
+      num_manifest_requests++;
+      
+      dbprintf("fs_entry_revalidate_manifest_once(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
+      
+      struct timespec ts;
+      ts.tv_sec = core->conf->retry_delay_ms / 1000;
+      ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+      
+      nanosleep( &ts, NULL );
+      
+   } while( num_manifest_requests < core->conf->max_read_retry );  
+   
+   return err;
 }
 
 
@@ -1521,7 +1562,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    // try to become the coordinator
    uint64_t current_coordinator = 0;
-   rc = ms_client_coordinate( core->ms, &current_coordinator, &ent );
+   rc = ms_client_coordinate( core->ms, &current_coordinator, &fent->write_nonce, &ent );
    
    if( rc != 0 ) {
       // failed to contact the MS
@@ -1550,37 +1591,71 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
 }
 
 
-// revalidate a path and the manifest at the end of the path
+// revalidate a path and the manifest at the end of the path.
+// if anywhere along the process we are told to try again (i.e. by the MS, the remote gateway, etc,), do so up to conf->max_read_retry times.
 // fent should NOT be locked
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
    
    struct timespec ts, ts2;
-
+   uint64_t rg_id = 0;
+   int rc = 0;
+   
    BEGIN_TIMING_DATA( ts );
    
-   // reload this path
-   int rc = fs_entry_revalidate_path( core, core->volume, fs_path );
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
-      return rc;
-   }
+   int num_read_retries = 0;
    
-   fs_entry_wlock( fent );
-   
-   // reload this manifest.  If we get this manifest from an RG, remember which one.
-   uint64_t rg_id = 0;
-   
-   if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
-      exit(1);
-   }
-   
-   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, &rg_id );
+   while( true ) {
+      
+      // reload this path
+      rc = fs_entry_revalidate_path( core, core->volume, fs_path );
+      if( rc != 0 ) {
+         errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
+         return rc;
+      }
+      
+      fs_entry_wlock( fent );
+      
+      // reload this manifest.  If we get this manifest from an RG, remember which one.
+      
+      if( fent->manifest == NULL ) {
+         errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+         exit(1);
+      }
+      
+      rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, &rg_id );
 
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
-      fs_entry_unlock( fent );
-      return rc;
+      if( rc == 0 ) {
+         // got it!
+         break;
+      }
+      
+      else if( rc == -EAGAIN ) {
+         // try again 
+         fs_entry_unlock( fent );
+         
+         // should we try again?
+         num_read_retries++;
+         if( num_read_retries >= core->conf->max_read_retry ) {
+            errorf("Maximum download retries exceeded for manifest of %s\n", fs_path );
+            return -ENODATA;
+         }
+         else {
+            errorf("WARN: failed to download manifest of %s; trying again in at most %d milliseconds.\n", fs_path, core->conf->retry_delay_ms);
+            
+            struct timespec ts;
+            ts.tv_sec = core->conf->retry_delay_ms / 1000;
+            ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+            
+            // NOTE: don't care if interrupted
+            nanosleep( &ts, NULL );
+         }
+         continue;
+      }
+      else {
+         errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
+         fs_entry_unlock( fent );
+         return rc;
+      }
    }
 
    if( rg_id_ret != NULL ) {

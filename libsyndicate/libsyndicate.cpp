@@ -16,7 +16,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/storage.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/ms/ms-client.h"
 
 static int _signals = 1;
 
@@ -55,6 +55,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       if( rc != 0 ) {
          // could not get addr info
          errorf("getaddrinfo(%s): %s\n", hostname, gai_strerror( rc ) );
+         freeaddrinfo( result );
          return -abs(rc);
       }
       
@@ -63,12 +64,15 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       rc = getnameinfo( result->ai_addr, result->ai_addrlen, hn, HOST_NAME_MAX, NULL, 0, NI_NAMEREQD );
       if( rc != 0 ) {
          errorf("getnameinfo: %s\n", gai_strerror( rc ) );
+         freeaddrinfo( result );
          return -abs(rc);
       }
       
       dbprintf("canonical hostname is %s\n", hn);
 
       c->hostname = strdup(hn);
+      
+      freeaddrinfo( result );
    #else
       c->hostname = strdup("localhost");
    #endif
@@ -573,18 +577,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->transfer_timeout = strtol( values[0], NULL, 10 );
       }
 
-      else if( strcmp( key, AG_GATEWAY_DRIVER_KEY ) == 0 ) {
-         conf->ag_driver = strdup(values[0]);
-      }
-      
-      else if( strcmp( key, AG_BLOCK_SIZE_KEY ) == 0 ) {
-         long val = 0;
-         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
-         if( rc == 0 ) {
-            conf->ag_block_size = val;
-         }
-      }
-
       else {
          errorf( "WARN: unrecognized key '%s'\n", key );
       }
@@ -622,6 +614,8 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->volume_pubkey,
       (void*)conf->syndicate_pubkey,
       (void*)conf->local_sd_dir,
+      (void*)conf->hostname,
+      (void*)conf->storage_root,
       (void*)conf
    };
    
@@ -913,29 +907,6 @@ void md_sanitize_path( char* path ) {
    }
 }
 
-/*
-// given a URL, is it hosted locally?
-bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
-   char* url_host = md_url_hostname( url );
-   int url_port = md_portnum_from_url( url );
-
-   char* local_host = md_url_hostname( conf->content_url );
-   int local_port = conf->portnum;
-
-   bool ret = false;
-
-   if( strcmp( local_host, url_host ) == 0 ) {
-      if( (local_port <= 0 && url_port <= 0) || local_port == url_port ) {
-         ret = true;
-      }
-   }
-
-   free( local_host );
-   free( url_host );
-   return ret;
-}
-*/
-
 // start a thread
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
 
@@ -1223,21 +1194,6 @@ char* md_flatten_path( char const* path ) {
    return ret;
 }
 
-/*
-// convert the URL into the CDN-ified form
-char* md_cdn_url( char const* cdn_prefix, char const* url ) {
-   // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* host_path = md_strip_protocol( url );
-   if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
-      // no prefix given
-      cdn_prefix = (char*)"http://";
-   }
-   char* update_url = md_fullpath( cdn_prefix, host_path, NULL );
-   free( host_path );
-   return update_url;
-}
-*/
-
 
 // split a url into the url+path and query string
 int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
@@ -1321,8 +1277,9 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    // how many commas?
    int num_values = 1;
    for( size_t i = offset; i < size; i++ ) {
-      if( hdr[i] == ',' )
+      if( hdr[i] == ',' ) {
          num_values++;
+      }
    }
    
    char* tmp = value_str;
@@ -1333,9 +1290,10 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    
    while( 1 ) {
       char* tok = strtok_r( tmp, ", \r\n", &tmp2 );
-      if( tok == NULL )
+      if( tok == NULL ) {
          break;
-
+      }
+      
       tmp = NULL;
 
       uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
@@ -1347,48 +1305,21 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    return ret;
 }
 
-/*
-// Read the path version from a given path.
-// The path version is the number attached to the end of the path by a period.
-// returns a nonnegative number on success.
-// returns negative on error.
-int64_t md_path_version( char const* path ) {
-   // find the last .
-   int i;
-   bool valid = true;
-   for( i = strlen(path)-1; i >= 0; i-- ) {
-      if( path[i] == '.' )
-         break;
-      
-      if( path[i] < '0' || path[i] > '9' ) {
-         valid = false;
-         break;
-      }
-   }
-   if( i <= 0 )
-      return (int64_t)(-1);     // no version can be found
-   
-   if( !valid )
-      return (int64_t)(-2);     // no version in the name
-   
-   char *end;
-   int64_t version = strtoll( path + i + 1, &end, 10 );
-   if( version == 0 && *end != '\0' )
-      return (int64_t)(-3);     // could not parse the version
-
-   return version;
-}
-*/
-
 // Get the offset into a path where the version begins (delimited by a .)
 // Returns nonnegative on success.
 // returns negative on error.
 int md_path_version_offset( char const* path ) {
    int i;
    bool valid = true;
+   bool sign = false;
    for( i = strlen(path)-1; i >= 0; i-- ) {
-      if( path[i] == '.' )
+      if( path[i] == '.' ) {
          break;
+      }
+      if( path[i] == '-' && !sign ) {
+         sign = true;
+         continue;
+      }
       if( path[i] < '0' || path[i] > '9' ) {
          valid = false;
          break;
@@ -1405,29 +1336,12 @@ int md_path_version_offset( char const* path ) {
    
    char *end;
    long version = strtol( path + i + 1, &end, 10 );
-   if( version == 0 && *end != '\0' )
+   if( version == 0 && *end != '\0' ) {
       return -3;     // could not parse the version
+   }
    
    return i;  
 }
-
-/*
-// given two paths, determine if one is the versioned form of the other
-bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path ) {
-   // if this isn't a versioned path, then no
-   int version_offset = md_path_version_offset( versioned_path );
-   if( version_offset <= 0 )
-      return false;
-   
-   if( strlen(vanilla_path) > (unsigned)version_offset )
-      return false;
-   
-   if( strncmp( vanilla_path, versioned_path, version_offset ) != 0 )
-      return false;
-   
-   return true;
-}
-*/
 
 // clear the version of a path
 char* md_clear_version( char* path ) {
@@ -1815,7 +1729,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    }
    
    if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
-      errorf("ERR: This UG is not registered to Volume '%s'\n", conf->volume_name );
+      errorf("ERR: This gateway is not registered to Volume '%s'\n", conf->volume_name );
       free( ms_volume_name );
       return -EINVAL;
    }
@@ -1827,6 +1741,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
+   conf->volume = ms_client_get_volume_id( client );
    ms_client_unlock( client );
    
    // create a public url, now that we know the port number
@@ -1965,8 +1880,6 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    
    conf->num_http_threads = 1;
    
-   conf->ag_block_size = 0;
-   
    conf->debug_lock = false;
 
    conf->connect_timeout = 10;
@@ -1995,8 +1908,8 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
       md_set_hostname( conf, "localhost" );
    }
    else if( gateway_type == SYNDICATE_AG ) {
-      // don't need storage, but do need networkig 
-      conf->need_storage = false;
+      // need both storage and networking to be set up
+      conf->need_storage = true;
       conf->need_networking = true;
    }
 

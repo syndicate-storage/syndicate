@@ -20,8 +20,8 @@
 #include "network.h"
 #include "unlink.h"
 #include "url.h"
-#include "cache.h"
 #include "driver.h"
+#include "trunc.h"
 
 // create a file handle from an fs_entry
 struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {
@@ -40,7 +40,6 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    int gateway_type = ms_client_get_gateway_type( core->ms, ent->coordinator );
    if( gateway_type == SYNDICATE_AG ) {
       fh->is_AG = true;
-      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, ent->coordinator );
    }
    
    pthread_rwlock_init( &fh->lock, NULL );
@@ -58,12 +57,11 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
    return 0;
 }
 
-// create an entry (equivalent to open with O_CREAT|O_WRONLY|O_TRUNC
+// create an entry, re-trying on -EAGAIN from fs_entry_create_once
 struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
    dbprintf( "create %s\n", path );
    return fs_entry_open( core, path, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
-
 
 // make a node (regular files only at this time)
 int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uint64_t user, uint64_t vol ) {
@@ -77,7 +75,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      return -EREMOTEIO;
+      return rc;
    }
    
    int err = 0;
@@ -158,8 +156,8 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
          struct md_entry data;
          fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
          
-         // create the child on the MS, obtaining its file ID
-         err = ms_client_create( core->ms, &child->file_id, &data );
+         // create the child on the MS, obtaining its file ID and write nonce
+         err = ms_client_create( core->ms, &child->file_id, &child->write_nonce, &data );
 
          md_entry_free( &data );
          
@@ -186,8 +184,13 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    return err;
 }
 
-
-// mark an fs_entry as having been opened, and/or create a file
+// Try to open a file, but fail-fast on error.  It behaves as close to POSIX-open as possible, with the following differences:
+// * return -EREMOTEIO if the UG could not contact the MS, or if it could not obtain a fresh manifest.
+// * return -EUCLEAN if the UG was unable to merge metadata from the MS into its metadata hierarchy (usually indicates a bug)
+// * return a driver-specific, non-zero error code given by the driver's create_file() method
+// Side-effects:
+// * re-downloads and updates metadata for all entries along the path that are stale.
+// * re-downloads the manifest for the i-node if it is stale.
 struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
    // first things first: check open mode vs whether or not we're a client and/or have read-only caps 
@@ -366,7 +369,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          }
       }
    }
-   else if( child == NULL ) {
+   else if( child == NULL || child->deletion_in_progress ) {
       // not found
       fs_entry_unlock( parent );
       free( path_basename );
@@ -488,9 +491,11 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       struct md_entry data;
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       
-      // create synchronously, obtaining the child's file ID
-      *err = ms_client_create( core->ms, &child->file_id, &data );
+      // create synchronously, obtaining the child's file ID and write_nonce
+      *err = ms_client_create( core->ms, &child->file_id, &child->write_nonce, &data );
 
+      md_entry_free( &data );
+      
       if( *err != 0 ) {
          errorf("ms_client_create(%s) rc = %d\n", _path, *err );
          *err = -EREMOTEIO;
@@ -507,9 +512,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          fs_entry_unlock( parent );
 
          child = NULL;
-      }
-      
-      md_entry_free( &data );
+      }  
    }
 
    if( *err == 0 ) {

@@ -51,11 +51,11 @@ static int check_current_entries(const char* root) {
     clear_current_entries();
     int root_len = strlen(root); 
     if ( root[root_len - 1] == '/') {
-	   root_len--;
+       root_len--;
     }
     
     if (nftw(root, current_entry_found, MAX_NUM_DIRECTORY_OPENED, flags) == -1) {
-	return -1;
+        return -1;
     }
     return 0;
 }

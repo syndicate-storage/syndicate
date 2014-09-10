@@ -17,6 +17,7 @@
 #ifndef _UNLINK_H_
 #define _UNLINK_H_
 
+#include "libsyndicate/cache.h"
 #include "fs_entry.h"
 
 int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint64_t vol );

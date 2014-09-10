@@ -655,7 +655,7 @@ int server_init( struct syndicate_state* state, struct md_HTTP* http_server ) {
    
    // start HTTP server
    memset( http_server, 0, sizeof( struct md_HTTP ) );
-   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE, &state->conf, state->ms );
+   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE  );
    
    http_server->HTTP_connect = server_HTTP_connect;
    http_server->HTTP_GET_handler = server_HTTP_GET_handler;
@@ -666,7 +666,7 @@ int server_init( struct syndicate_state* state, struct md_HTTP* http_server ) {
    http_server->HTTP_authenticate = server_HTTP_authenticate;
 
    dbprintf( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
-   int rc = md_start_HTTP( http_server, state->conf.portnum );
+   int rc = md_start_HTTP( http_server, state->conf.portnum, &state->conf );
    if( rc < 0 ) {
       errorf( "failed to start HTTP; rc = %d\n", rc );
       return -1;

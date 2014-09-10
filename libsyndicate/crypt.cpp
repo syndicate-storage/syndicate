@@ -827,6 +827,8 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    
    // set up an encryption cipher
    EVP_CIPHER_CTX ctx;
+   memset( &ctx, 0, sizeof(EVP_CIPHER_CTX) );
+   
    EVP_CIPHER_CTX_init( &ctx );
    
    // initialize the cipher and start decrypting
@@ -856,6 +858,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
       
    // finalize 
    int output_written_final = 0;
+   
    rc = EVP_OpenFinal( &ctx, output_buf + output_buf_written, &output_written_final );
    if( rc == 0 ) {
       errorf("EVP_OpenFinal rc = %d\n", rc );
@@ -866,9 +869,14 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
       return -1;
    }
    
+#ifndef _NO_VALGRIND_FIXES
+   VALGRIND_MAKE_MEM_DEFINED( &output_buf_written, sizeof(output_buf_written) );
+   VALGRIND_MAKE_MEM_DEFINED( &output_written_final, sizeof(output_written_final) );
+#endif
+   
    // reply decrypted data
    *plaintext = (char*)output_buf;
-   *plaintext_len = output_buf_written + output_written_final;
+   *plaintext_len = (size_t)(output_buf_written + output_written_final);
    
    EVP_CIPHER_CTX_cleanup( &ctx );
    
@@ -876,6 +884,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    // fflush(stdout);
    
 #ifndef _NO_VALGRIND_FIXES
+   VALGRIND_MAKE_MEM_DEFINED( plaintext_len, sizeof(*plaintext_len) );
    VALGRIND_MAKE_MEM_DEFINED( *plaintext, *plaintext_len );
 #endif
    

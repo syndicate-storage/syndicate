@@ -34,7 +34,6 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/storage.h"
-#include "log.h"
 #include "fs.h"
 #include "url.h"
 

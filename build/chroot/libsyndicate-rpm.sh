@@ -9,7 +9,7 @@ ROOT=$1
 NAME="libsyndicate"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="openssl curl protobuf libmicrohttpd json-c" 
+DEPS="openssl curl protobuf libmicrohttpd json-c zlib" 
 
 DEPARGS=""
 for pkg in $DEPS; do

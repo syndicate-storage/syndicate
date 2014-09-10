@@ -49,14 +49,4 @@ typedef struct IFuseConn {
     /* struct IFuseConn *next; */
 } iFuseConn_t;
 
-#ifdef  __cplusplus
-extern "C" {
-#endif
-
-extern FILE* LOGFILE;
-
-#ifdef  __cplusplus
-}
-#endif
-
 #endif	/* IRODS_FS_H */

@@ -163,14 +163,16 @@ struct md_syndicate_conf {
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
-   size_t cache_soft_limit;                           // soft limit on the size of the cache (in bytes)
-   size_t cache_hard_limit;                           // hard limit on the size of the cache (in bytes)
+   int max_read_retry;                                // maximum number of times to retry a read (i.e. fetching a block or manifest) before considering it failed 
+   int max_write_retry;                               // maximum number of times to retry a write (i.e. replicating a block or manifest) before considering it failed
+   int max_metadata_read_retry;                       // maximum number of times to retry a metadata read before considering it failed 
+   int max_metadata_write_retry;                      // maximum number of times to retry a metadata write before considering it failed
+   int retry_delay_ms;                                // number of milliseconds to wait between retries
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
-   uint64_t ag_block_size;                            // block size for an AG
    
    // debug
    int debug_lock;                                    // print verbose information on locks
@@ -189,9 +191,10 @@ struct md_syndicate_conf {
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
-   uint64_t gateway;                                  // what is the gateway ID in Syndicate?
-   uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
-   char* syndicate_pubkey_path;                       // location on disk where the syndicate public key can be found.
+   uint64_t gateway;                                  // what is our gateway ID?
+   uint64_t volume;                                   // what is our volume ID?
+   uint64_t view_reload_freq;                         // how often do we check for new metadata from the MS?
+   char* syndicate_pubkey_path;                       // location on disk where the MS's public key can be found.
 
    // security fields (loaded at runtime).
    // private keys are all mlock'ed
@@ -216,7 +219,6 @@ struct md_syndicate_conf {
    char* hostname;                                    // what's our hostname?
    
    // misc
-   char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
    int gateway_type;                                  // type of gateway 
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
@@ -251,8 +253,6 @@ struct md_syndicate_conf {
 #define SYNDICATE_PUBKEY_KEY        "SYNDICATE_PUBKEY"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
-
-#define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
 
 #define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
@@ -310,8 +310,6 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
 
 // serialization
-// bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
-// int64_t md_path_version( char const* path );
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
 ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char **buf, vector<struct md_update>* updates );
@@ -331,7 +329,6 @@ char* md_prepend( char const* prefix, char const* str, char* output );
 long md_hash( char const* path );
 int md_path_split( char const* path, vector<char*>* result );
 void md_sanitize_path( char* path );
-// bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 
 // serialization
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
@@ -353,7 +350,7 @@ char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
-// char* md_cdn_url( char const* cdn_prefix, char const* url );
+
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 
 // header parsing
@@ -471,8 +468,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
 
 // gateway HTTP error codes (used by the AG and UG)
-#define GATEWAY_HTTP_TRYAGAIN 204
-#define GATEWAY_HTTP_EOF 210
+#define MD_HTTP_TRYAGAIN    503
 
 #define GATEWAY_CAP_READ_DATA  1
 #define GATEWAY_CAP_WRITE_DATA  2
@@ -484,8 +480,6 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // limits
-#define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
-#define SYNDICATE_MAX_MANIFEST_LEN              1000000         // 1MB
-#define URL_MAX         3000           // maximum length of a URL
+#define SYNDICATE_MAX_MANIFEST_LEN              100000000         // 100MB
 
 #endif

@@ -15,8 +15,8 @@
 */
 
 #include "unlink.h"
+#include "consistency.h"
 #include "storage.h"
-#include "cache.h"
 #include "replication.h"
 #include "network.h"
 #include "vacuumer.h"
@@ -67,7 +67,7 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
       
       // evict blocks, if there is a file to begin with
       if( child->ftype == FTYPE_FILE && child->file_id != 0 ) {
-         rc = fs_entry_cache_evict_file( core, core->cache, child->file_id, child->version );
+         rc = md_cache_evict_file( core->cache, child->file_id, child->version );
          if( rc == -ENOENT ) {
             // not a problem
             rc = 0;
@@ -212,7 +212,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    // make sure the manifest is fresh, so we delete every block
    // only need to worry about this if file has > 0 size
    if( fent->size > 0 ) {
+      
+      // try to get it
       err = fs_entry_revalidate_manifest( core, path, fent );
+            
       if( err != 0 ) {
          errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
          

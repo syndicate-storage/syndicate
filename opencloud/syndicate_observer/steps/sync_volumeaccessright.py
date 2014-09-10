@@ -34,7 +34,7 @@ if __name__ != "__main__":
 
 from syndicate_storage.models import VolumeAccessRight
 
-import syndicate.observer.sync as syndicatelib
+import syndicate.observer.sync as syndicate_observer_sync
 
 class SyncVolumeAccessRight(SyncStep):
     provides=[VolumeAccessRight]
@@ -46,11 +46,17 @@ class SyncVolumeAccessRight(SyncStep):
     def fetch_pending(self):
         return VolumeAccessRight.objects.filter(Q(enacted__lt=F('updated')) | Q(enacted=None))
 
+    def fetch_deleted(self):
+        return VolumeAccessRight.deleted_objects.filter(Q(enacted__lt=F("updated")) | Q(enacted=None)).filter( Q(deleted=True) )
+    
     def sync_record(self, vac):
         """
         Synchronize a volume access right.
         """
-        return syndicatelib.sync_volumeaccessright_record( vac )
+        return syndicate_observer_sync.sync_volumeaccessright_record( vac )
+     
+    def delete_record(self, vac):
+        return syndicate_observer_sync.delete_volumeaccessright_record( vac )
 
 
 if __name__ == "__main__":
@@ -71,3 +77,8 @@ if __name__ == "__main__":
     for rec in recs:
         sv.sync_record( rec )
 
+    
+    delrecs = sv.fetch_deleted()
+
+    for rec in delrecs:
+       sv.delete_record( rec )

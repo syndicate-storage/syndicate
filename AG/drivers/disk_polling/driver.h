@@ -43,7 +43,7 @@ using namespace std;
 #define GATEWAY_REQUEST_TYPE_LOCAL_FILE 1
 #define GATEWAY_REQUEST_TYPE_MANIFEST 2
 
-struct gateway_ctx {
+struct AG_disk_polling_context {
    int request_type;
 
    // data buffer (manifest or remote block data)

@@ -18,6 +18,7 @@
 #include "replication.h"
 #include "network.h"
 #include "sync.h"
+#include "libsyndicate/ms/vacuum.h"
 
 static void* vacuumer_main( void* arg );
 

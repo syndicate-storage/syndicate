@@ -46,7 +46,8 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
 
 
 // create a directory
-int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
+// fail-fast if revalidating the metadata fails
+int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
    
    if( core->gateway == GATEWAY_ANON ) {
       errorf("%s", "Making directories is forbidden for anonymous gateways\n");
@@ -129,11 +130,11 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       free( parent_name );
       
-      // make the directory on the MS, filling in the file ID into the child
-      err = ms_client_mkdir( core->ms, &child->file_id, &data );
+      // make the directory on the MS, filling in the file ID and write nonce into the child
+      err = ms_client_mkdir( core->ms, &child->file_id, &child->write_nonce, &data );
       
       if( err != 0 ) {
-         errorf("ms_client_create(%s) rc = %d\n", path, err );
+         errorf("ms_client_mkdir(%s) rc = %d\n", path, err );
          
          fs_entry_unlock( child );
          rc = fs_entry_detach_lowlevel( core, parent, child );
@@ -153,4 +154,30 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
    free( path_basename );
    free( path_dirname );
    return err;
+}
+
+// mkdir, but try again if revalidation fails
+// return -ENODATA if all attempts fail
+int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
+   
+   int num_attempts = 0;
+   
+   do {
+      
+      int rc = fs_entry_mkdir_once( core, path, mode, user, vol );
+      if( rc != -EAGAIN ) {
+         return rc;
+      }
+      
+      num_attempts++;
+      
+      struct timespec ts;
+      ts.tv_sec = core->conf->retry_delay_ms / 1000;
+      ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+      
+      nanosleep( &ts, NULL );
+      
+   } while( num_attempts < core->conf->max_read_retry );
+   
+   return -ENODATA;
 }

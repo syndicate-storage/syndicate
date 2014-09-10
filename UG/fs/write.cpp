@@ -15,10 +15,10 @@
 */
 
 #include "write.h"
+#include "manifest.h"
 #include "replication.h"
 #include "read.h"
 #include "consistency.h"
-#include "cache.h"
 #include "driver.h"
 
 // does a previous version of the block exist within a file?
@@ -74,7 +74,7 @@ static int fs_entry_clear_bufferred_blocks( struct fs_entry* fent, modification_
 // This updates the manifest's last-mod time, but not the fs_entry's
 // return a cache_block_future for it.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-struct cache_block_future* fs_entry_flush_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block_data, size_t block_len, int* _rc ) {
+struct md_cache_block_future* fs_entry_flush_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block_data, size_t block_len, int* _rc ) {
    
    int64_t new_block_version = fs_entry_next_block_version();
    
@@ -102,7 +102,7 @@ struct cache_block_future* fs_entry_flush_block_async( struct fs_core* core, cha
    memcpy( prefix, processed_block, MIN( 20, processed_block_len ) );
    
    // cache the new block.  Get back the future (caller will manage it).
-   struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
+   struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
    if( f == NULL ) {
       errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
@@ -322,8 +322,8 @@ int fs_entry_put_write_holes( struct fs_core* core, struct fs_entry* fent, off_t
 // if there is an old block, store it to binfo_old and return 1.  Otherwise, return 0 via ret.
 // store the new block info to binfo_new.
 // fent must be write-locked--we'll update the manifest
-struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
-                                                       struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret ) {
+struct md_cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
+                                                          struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret ) {
 
    *ret = 0;
    
@@ -343,7 +343,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
    
    // write the data and update the manifest...
    int rc = 0;
-   struct cache_block_future* block_fut = fs_entry_flush_block_async( core, fs_path, fent, block_id, block, block_len, &rc );
+   struct md_cache_block_future* block_fut = fs_entry_flush_block_async( core, fs_path, fent, block_id, block, block_len, &rc );
    
    if( block_fut == NULL ) {
       errorf("ERR: fs_entry_flush_block_async(%s/%" PRId64 ", block_len=%zu) failed, rc = %d\n", fs_path, block_id, block_len, rc );
@@ -432,7 +432,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
 // return negative and fail fast otherwise
 // fent must be write-locked--we'll update the manifest, and clear out bufferred blocks
 static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, fs_entry_whole_block_list_t* whole_blocks,
-                                             modification_map* old_blocks, modification_map* new_blocks, vector<struct cache_block_future*>* block_futs ) {
+                                             modification_map* old_blocks, modification_map* new_blocks, vector<struct md_cache_block_future*>* block_futs ) {
    
    int rc = 0;
    
@@ -451,7 +451,7 @@ static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* f
       struct fs_entry_whole_block* blk = &(*itr);
       
       // flush it 
-      struct cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, blk->block_id, blk->buf_ptr, core->blocking_factor, &old_binfo, &new_binfo, &rc );
+      struct md_cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, blk->block_id, blk->buf_ptr, core->blocking_factor, &old_binfo, &new_binfo, &rc );
       if( rc < 0 || fut == NULL ) {
          errorf("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, blk->block_id, rc );
          break;
@@ -496,10 +496,10 @@ int fs_entry_cache_evict_blocks_async( struct fs_core* core, struct fs_entry* fe
    for( modification_map::iterator itr = blocks->begin(); itr != blocks->end(); itr++ ) {
       
       // do the eviction
-      int evict_rc = fs_entry_cache_evict_block_async( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
+      int evict_rc = md_cache_evict_block_async( core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
       
       if( evict_rc != 0 && evict_rc != -ENOENT ) {
-         errorf("fs_entry_cache_evict_block_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, itr->first, itr->second.version, evict_rc );
+         errorf("md_cache_evict_block_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, itr->first, itr->second.version, evict_rc );
       }
    }
    
@@ -726,13 +726,13 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    }
    
    // accumulate cache write futures
-   vector<struct cache_block_future*> futs;
+   vector<struct md_cache_block_future*> futs;
    
    // process and flush them to disk, if we have any.  This updates the manifest.
    int write_rc = fs_entry_write_full_blocks_async( core, fs_path, fent, &overwritten, old_blocks, &new_blocks, &futs );
    
    // wait for each cache write to complete
-   int wait_rc = fs_entry_flush_cache_writes( &futs );
+   int wait_rc = md_cache_flush_writes( &futs );
    
    if( write_rc != 0 || wait_rc != 0 ) {
       
@@ -742,7 +742,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
       }
       
       if( wait_rc != 0 ) {
-         errorf("fs_entry_flush_cache_writes( %s ) rc = %d\n", fs_path, wait_rc );
+         errorf("md_cache_flush_writes( %s ) rc = %d\n", fs_path, wait_rc );
          
          if( rc == 0 )
             rc = wait_rc;
@@ -758,7 +758,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    }
    
    // free all cache futures
-   fs_entry_cache_block_future_free_all( &futs, false );
+   md_cache_block_future_free_all( &futs, false );
    
    // clear all flushed bufferred blocks 
    fs_entry_clear_bufferred_blocks( fent, &new_blocks );
@@ -1196,7 +1196,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       
       fs_entry_list_write_message_blocks( write_msg, &affected_blocks, &num_affected_blocks );
       
-      err = ms_client_update_write( core->ms, &data, affected_blocks, num_affected_blocks );
+      err = ms_client_update_write( core->ms, &fent->write_nonce, &data, affected_blocks, num_affected_blocks );
       
       if( err != 0 ) {
          errorf("%ms_client_update(%s) rc = %d\n", fs_path, err );

@@ -51,6 +51,7 @@ CONFIG_OPTIONS = {
    "pidfile":           ("-i", 1, "Path to the desired PID file."),
    "mountpoint":        ("-m", 1, "Mountpoint to monitor."),
    "volume":            ("-v", 1, "Volume to monitor."),
+   "debug":             ("-d", 0, "Print/log debugging information."),
    "UG_binary":         ("-b", 1, "Name or path to the UG binary."),
    "UG_argv":           ("-C", 1, "Arguments to the UG binary (excluding the binary's name).")
 }
@@ -101,15 +102,15 @@ def fuse_umount( mountpoint ):
 def check_mounted( mountpoint, binary_name ):
    """
    Verify that nothing is mounted at mountpoint.
-   NOTE: Linux-specific; uses /proc/mounts
+   NOTE: Linux-specific; uses /proc/self/mounts
    """
    
    try:
-      fd = open("/proc/mounts", "r")
+      fd = open("/proc/self/mounts", "r")
       mount_data = fd.read()
       fd.close()
    except:
-      log.error("Failed to read /proc/mounts")
+      log.error("Failed to read /proc/self/mounts")
       return -errno.ENODATA
    
    # find our mountpoint....
@@ -242,7 +243,12 @@ def spawn_ug( config, old_exit_status ):
    command_list = shlex.split( command_str )
    
    binary = command_list[0]
-   argv = [binary, '-d2', '-R', '-v', config['volume'], config['mountpoint']]
+   required_args = ['-R', '-v', config['volume'], config['mountpoint']]
+   
+   if config['debug']:
+      required_args = ['-d2'] + required_args 
+      
+   argv = [binary] + required_args
    
    # exec the binary 
    try:

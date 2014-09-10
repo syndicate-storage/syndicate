@@ -15,10 +15,9 @@
 */
 
 #include "AG.h"
-#include "util.h"
+#include "core.h"
 
 int main( int argc, char** argv ) {
-   //block_all_signals();
    int rc = AG_main( argc, argv );
    return rc;
 }

@@ -14,7 +14,6 @@
    limitations under the License.
 */
 
-#include "cache.h"
 #include "read.h"
 #include "manifest.h"
 #include "network.h"
@@ -121,14 +120,59 @@ ssize_t fs_entry_read_block_local( struct fs_core* core, char const* fs_path, ui
    }
 }
 
-// verify the integrity of a block, given the fent (and its manifest).
+
+// parse and verify an AG block 
+// fent must be at least read-locked
+static int fs_entry_parse_verify_AG_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* serialized_msg, size_t serialized_msg_len, char** block_bits, size_t* block_len ) {
+   
+   // don't bother with !AGs
+   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
+   if( !is_AG ) {
+      return -EINVAL;
+   }
+   
+   int rc = 0;
+   
+   // load the block 
+   Serialization::AG_Block ag_block;
+   rc = md_parse< Serialization::AG_Block >( &ag_block, serialized_msg, serialized_msg_len );
+   if( rc != 0 ) {
+      errorf("Failed to de-serialize AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      return rc;
+   }
+   
+   // verify the block 
+   rc = ms_client_verify_gateway_message< Serialization::AG_Block >( core->ms, core->volume, SYNDICATE_AG, fent->coordinator, &ag_block );
+   if( rc != 0 ) {
+      errorf("Failed to verify the signature of AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      return rc;
+   }
+   
+   // sanity check 
+   if( ag_block.data().size() > core->blocking_factor ) {
+      errorf("AG served block of size %zu, but the volume block size is %zu\n", ag_block.data().size(), core->blocking_factor );
+      return -EBADMSG;
+   }
+   
+   // extract the contents! 
+   char* ret = CALLOC_LIST( char, ag_block.data().size() );
+   memcpy( ret, ag_block.data().data(), ag_block.data().size() );
+   
+   *block_bits = ret;
+   *block_len = ag_block.data().size();
+   
+   return 0;
+}
+
+// verify the integrity of a UG/RG-originated block, given the fent (and its manifest).
 // fent must be at least read-locked
 static int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
-   // TODO: get hash from AG, somehow.  But for now, ignore
-   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
-   if( is_AG )
-      return 0;
    
+   // don't bother with AGs
+   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
+   if( is_AG ) {
+      return -EINVAL;
+   }
    
    unsigned char* block_hash = BLOCK_HASH_DATA( block_bits, block_len );
    
@@ -181,18 +225,33 @@ int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fu
 // detach the read handle from the core downloader
 int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_block_future* block_fut ) {
    
-   md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
-   
    sem_destroy( &block_fut->sem );
    
    if( block_fut->has_dlctx ) {
+      
+      // cancel it if it's still running
+      if( !md_download_context_finalized( &block_fut->dlctx ) ) {
+         
+         int rc = md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
+         if( rc != 0 ) {
+            if( rc == -EINPROGRESS ) {
+               // already getting cancelled.  wait for it 
+               dbprintf("Waiting for download context %p to cancel\n", &block_fut->dlctx );
+               md_download_context_wait( &block_fut->dlctx, -1 );
+            }
+         }
+      }
+      
       CURL* conn = NULL;
       
       // get back the cls 
       struct driver_connect_cache_cls* cache_cls = (struct driver_connect_cache_cls*) md_download_context_get_cache_cls( &block_fut->dlctx );
       
       // TODO: recycle connection
-      md_download_context_free( &block_fut->dlctx, &conn );
+      int rc = md_download_context_free( &block_fut->dlctx, &conn );
+      if( rc == -EAGAIN ) {
+         errorf("BUG: tried to free context %p, which is still in use!\n", (void*)&block_fut->dlctx );
+      }
       curl_easy_cleanup( conn );
       
       free( cache_cls );
@@ -280,32 +339,32 @@ static int fs_entry_try_cache_block_read( struct fs_core* core, char const* fs_p
    int rc = 0;
    
    // lookaside: if this block is being written, then we can't read it 
-   rc = fs_entry_cache_is_block_readable( core->cache, fent->file_id, fent->version, block_id, block_version );
+   rc = md_cache_is_block_readable( core->cache, fent->file_id, fent->version, block_id, block_version );
    if( rc == -EAGAIN ) {
       // not available in the cache 
       return -ENOENT;
    }
    
    // stored in local cache?
-   int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
+   int block_fd = md_cache_open_block( core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
    
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
-         errorf("WARN: fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
+         errorf("WARN: md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
       }
       else {
          rc = -ENOENT;
       }
    }
    else {
-      read_len = fs_entry_cache_read_block( block_fd, &block_buf );
+      read_len = md_cache_read_block( block_fd, &block_buf );
       if( read_len < 0 ) {
-         errorf("fs_entry_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
+         errorf("md_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
          rc = read_len;
       }
       else {
          // success! promote!
-         fs_entry_cache_promote_block( core, core->cache, fent->file_id, fent->version, block_id, block_version );
+         md_cache_promote_block( core->cache, fent->file_id, fent->version, block_id, block_version );
          
          dbprintf("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
       }
@@ -502,7 +561,7 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
       return rc;
    }
    
-   if( block_fut->curr_URL ) {
+   if( block_fut->curr_URL != NULL ) {
       free( block_fut->curr_URL );
    }
    
@@ -565,7 +624,7 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
          return rc;
       }
       
-      if( block_fut->curr_URL ) {
+      if( block_fut->curr_URL != NULL ) {
          free( block_fut->curr_URL );
       }
       
@@ -638,6 +697,38 @@ static int fs_entry_read_block_future_start_next_download( struct fs_core* core,
    }
    
    return rc;
+}
+
+
+// restart a block download, so it can be tried again.
+// fent must be read-locked
+static int fs_entry_read_block_future_try_again( struct fs_core* core, struct fs_entry_read_block_future* block_fut, struct fs_entry* fent ) {
+   
+   // what state are we in?
+   if( block_fut->status == READ_PRIMARY ) {
+      
+      // roll back one state...
+      block_fut->status = READ_DOWNLOAD_NOT_STARTED;
+      
+      // ...and advance to it again 
+      return fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+   }
+   else if( block_fut->status == READ_REPLICA ) {
+      
+      // roll back one state...
+      block_fut->curr_RG --;
+      
+      if( block_fut->curr_RG == 0 ) {
+         block_fut->status = READ_PRIMARY;
+      }
+      
+      // ...and advance to it again 
+      return fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+   }
+   else {
+      // can't be tried again 
+      return -EINVAL;
+   }
 }
 
 // does a read context have any downloads pending?
@@ -755,20 +846,52 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       
          return 0;
       }
+      // do we need to try again?
       else {
-         // some other error--e.g. the gateway is offline, or the connection took too long
-         errorf("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
-                 block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
          
-         // try again 
-         // track this block future 
-         fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
-      
-         rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+         char const* method = NULL;
+         
+         // try the same gateway again?
+         if( md_download_context_succeeded( dlctx, MD_HTTP_TRYAGAIN ) && block_fut->retry_count < core->conf->max_read_retry ) {
+         
+            // try again 
+            block_fut->retry_count++;
+            
+            dbprintf("Download of %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] failed with HTTP status %d.  Trying again in at most %d milliseconds.\n",
+                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, MD_HTTP_TRYAGAIN, core->conf->retry_delay_ms );
+            
+            
+            // wait for a bit between retries
+            struct timespec wait_ts;
+            wait_ts.tv_sec = core->conf->retry_delay_ms / 1000;
+            wait_ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+            
+            // NOTE: don't care if interrupted
+            nanosleep( &wait_ts, NULL );
+            
+            // re-track this block future 
+            fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
+         
+            method = "fs_entry_read_block_future_try_again";
+            rc = fs_entry_read_block_future_try_again( core, block_fut, fent );
+         }
+         else {
+            // some other error--e.g. the gateway is offline, or the connection took too long
+            errorf("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
+                  block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
+            
+            // try a different gateway 
+            // re-track this block future 
+            fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
+         
+            method = "fs_entry_read_block_future_start_next_download";
+            rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+         }
          
          if( rc != 0 ) {
+            
             // out of options here 
-            errorf("fs_entry_read_block_future_prepare_next_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            errorf("%s( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", method,
                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize in error 
@@ -794,22 +917,53 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       
       dbprintf("Downloaded data for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n", fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, prefix);
       
+      rc = 0;
+      
       // verify the block's integrity 
-      rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
-      if( rc != 0 ) {
-         errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
-                  block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+      if( !block_fut->is_AG ) {
          
-         // finalize error 
-         fs_entry_read_block_future_finalize_error( block_fut, rc );
+         // verify from fent's manifest
+         rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
+         if( rc != 0 ) {
+            
+            errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                  block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+            
+            // finalize error 
+            fs_entry_read_block_future_finalize_error( block_fut, rc );
+         }
+      }
+      else {
+         
+         char* actual_buf = NULL;
+         size_t actual_buf_len = 0;
+         
+         // parse and verify the block bits, since the AG serves Serialization::AG_Block structures 
+         rc = fs_entry_parse_verify_AG_block( core, fent, block_fut->block_id, buf, buflen, &actual_buf, &actual_buf_len );
+         if( rc != 0 ) {
+         
+            errorf("fs_entry_parse_verify_AG_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+            
+            // finalize error 
+            fs_entry_read_block_future_finalize_error( block_fut, rc );
+         }
+         else {
+            
+            // use the actual bits, not the serialized message 
+            free( buf );
+            buf = actual_buf;
+            buflen = actual_buf_len;
+         }
       }
       
       // block is valid
-      else {
+      if( rc == 0 ) {
             
          // process the block through the driver 
          ssize_t processed_len = driver_read_block_postdown( core, core->closure, block_fut->fs_path, fent, block_fut->block_id, block_fut->block_version, buf, buflen, block_fut->result, block_fut->result_len );
          if( processed_len < 0 ) {
+            
             errorf("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
@@ -856,8 +1010,17 @@ static int fs_entry_read_context_cancel_downloads( struct fs_core* core, struct 
             // get the download context 
             struct md_download_context* dlctx = &block_fut->dlctx;
             
+            dbprintf("Cancel download of %s at [%" PRIu64 ".%" PRId64 "]\n",
+                      block_fut->fs_path, block_fut->block_id, block_fut->block_version );
+            
             // cancel it 
-            md_download_context_cancel( &core->state->dl, dlctx );
+            int rc = md_download_context_cancel( &core->state->dl, dlctx );
+            if( rc != 0 ) {
+               if( rc == -EINPROGRESS ) {
+                  dbprintf("Waiting for download %p to get cancelled\n", dlctx );
+                  md_download_context_wait( dlctx, -1 );
+               }
+            }
             
             // untrack the block
             fs_entry_read_context_untrack_downloading_block( read_ctx, dlctx );
@@ -935,8 +1098,9 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                fs_entry_read_context_untrack_downloading_block_itr( read_ctx, curr_itr );
                
                // lock this so we can access it in processing the next download step
-               if( !write_locked )
+               if( !write_locked ) {
                   fs_entry_rlock( fent );
+               }
                
                // do internal processing of the future (finalizing it, or re-tracking it)
                rc = fs_entry_read_block_future_process_download( core, fent, read_ctx, block_fut );
@@ -985,6 +1149,9 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                // did we find EOF?
                if( rc == 0 && block_fut->eof ) {
                   // cancel all blocks after this one, since they are EOF
+                  errorf("EOF on %s at [%" PRIu64 ".%" PRId64 "]\n",
+                          block_fut->fs_path, block_fut->block_id, block_fut->block_version );
+                  
                   do_cancel = true;
                   do_eof = true;
                   cancel_after = block_fut->block_id;
@@ -1021,17 +1188,17 @@ int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* 
 static int fs_entry_read_block_future_finalizer_cache_async( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_block_future* block_fut, void* cls ) {
    
    // argument: pointer to a vector of cache futures 
-   vector<struct cache_block_future*>* cache_futs = (vector<struct cache_block_future*>*) cls;
+   vector<struct md_cache_block_future*>* cache_futs = (vector<struct md_cache_block_future*>*) cls;
    
    // cache if we succeeded in getting something cacheable
    if( block_fut->err == 0 && !block_fut->eof ) {
       
       // cache this!
       int rc = 0;
-      struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
-                                                                       block_fut->result, block_fut->result_len, false, &rc );
+      struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
+                                                                    block_fut->result, block_fut->result_len, false, &rc );
       if( rc != 0 || f == NULL ) {
-         errorf("fs_entry_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+         errorf("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       }
       else {
@@ -1082,7 +1249,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
    rc = fs_entry_has_bufferred_block( fent, block_id );
    if( rc > 0 ) {
       // have a bufferred block.  Read the appropriate part of it 
-      rc = fs_entry_read_bufferred_block( fent, block_id, block_fut->result, block_fut->result_start, block_fut->result_end - block_fut->result_start );
+      rc = fs_entry_read_bufferred_block( fent, block_id, block_fut->result + block_fut->result_start, block_fut->result_start, block_fut->result_end - block_fut->result_start );
       if( rc != 0 ) {
          errorf("fs_entry_read_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
          
@@ -1092,7 +1259,6 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
       else {
          // got it!
          dbprintf("bufferred block HIT on %" PRIu64 "\n", block_id );
-         
          fs_entry_read_block_future_finalize( block_fut );
          return block_fut->result_len;
       }
@@ -1195,13 +1361,13 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
    bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
    
    // does the read start within the file?
-   if( start_id > last_block_id ) {
+   if( start_id > last_block_id && !is_AG ) {
       // we're EOF 
       return 0;
    }
    
    // does the read go past the end of the file?
-   if( end_id > last_block_id ) {
+   if( end_id > last_block_id && !is_AG ) {
       // don't read past the last block
       end_id = last_block_id;
    }
@@ -1216,12 +1382,16 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       int64_t block_version = fent->manifest->get_block_version( block_id );
       uint64_t gateway_id = fent->manifest->get_block_host( core, block_id );
       
+      if( gateway_id == 0 && is_AG ) {
+         gateway_id = fent->coordinator;
+      }
+      
       off_t block_read_start = (offset % core->blocking_factor);
       off_t block_read_end = MIN( ((offset) % core->blocking_factor) + real_count, core->blocking_factor );
       
       // if we're reading from an AG, then we don't know the size in advance.
       // Otherwise, we do, and we should not read past it.
-      if( !is_AG && last_block_id == start_id ) {
+      if( fent->size >= 0 && last_block_id == start_id ) {
          
          // only read up to the end of the file (even if the reader asked for more).
          block_read_end = MIN( (unsigned)block_read_end, fent->size % core->blocking_factor );
@@ -1250,6 +1420,10 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       uint64_t block_id = end_id;
       int64_t block_version = fent->manifest->get_block_version( block_id );
       uint64_t gateway_id = fent->manifest->get_block_host( core, block_id );
+      
+      if( gateway_id == 0 ) {
+         gateway_id = fent->coordinator;
+      }
       
       off_t block_read_end = ((offset + real_count) % core->blocking_factor);
       
@@ -1424,7 +1598,7 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
 // find the latest block downloaded.
 // if fail_if_eof is true, then this fails if *any* block was EOF'ed.
 // if fail_if_error is true, then this fails if *any* block encountered an error.
-static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_read_block_future_set_t* reads, bool fail_if_eof, bool fail_if_error ) {
+static struct fs_entry_read_block_future* fs_entry_find_last_finalized_block( fs_entry_read_block_future_set_t* reads, bool fail_if_eof, bool fail_if_error ) {
    
    // Find the last block read
    struct fs_entry_read_block_future* last_block_fut = NULL;
@@ -1434,6 +1608,10 @@ static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_r
       
       // get the block future 
       struct fs_entry_read_block_future* block_fut = *itr;
+      
+      if( block_fut->status != READ_FINISHED ) {
+         continue;
+      }
       
       // EOF?
       if( block_fut->eof && fail_if_eof ) {
@@ -1463,15 +1641,13 @@ static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_r
 static int fs_entry_update_bufferred_block_read( struct fs_core* core, struct fs_entry* fent, fs_entry_read_block_future_set_t* reads ) {
    
    // Find the last block read, and if there wasn't an EOF or error, cache it in RAM.
-   struct fs_entry_read_block_future* last_block_fut = fs_entry_find_latest_block( reads, true, true );
+   struct fs_entry_read_block_future* last_block_fut = fs_entry_find_last_finalized_block( reads, true, true );
    
    if( last_block_fut != NULL ) {
       // we expect that a client reader will read blocks sequentially, for the most part.
       // so, cache the last read block to RAM so we can hit it on the next read.
       int has_block = fs_entry_has_bufferred_block( fent, last_block_fut->block_id );
       if( has_block == -ENOENT ) {
-         // this block is not cached, so do so.
-         dbprintf("block %" PRIu64 " will be bufferred in RAM\n", last_block_fut->block_id );
          fs_entry_replace_bufferred_block( core, fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len, false );
       }
    }
@@ -1496,13 +1672,13 @@ static int fs_entry_read_run_cleanup( struct fs_core* core, struct fs_entry_read
 
 // clean up cache futures.
 // don't free the cache future's internal buffer (since it's just a pointer to a block future's internal buffer), but free everything else 
-static void fs_entry_cleanup_cache_future( struct cache_block_future* f, void* cls ) {
+static void fs_entry_cleanup_cache_future( struct md_cache_block_future* f, void* cls ) {
    
    // remove the buffer from the future 
-   fs_entry_cache_block_future_release_data( f );
+   md_cache_block_future_release_data( f );
    
    // clean up everything else 
-   fs_entry_cache_block_future_free( f );
+   md_cache_block_future_free( f );
 }
 
 // service a read request.
@@ -1531,7 +1707,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    file_size = fent->size;
    
    // are we EOF already?
-   if( offset > fent->size ) {
+   if( offset > fent->size && fent->size >= 0 ) {
       // EOF 
       fs_entry_unlock( fent );
       return 0;
@@ -1539,11 +1715,18 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    
    // how many bytes are we actually going to combine into the read buffer?
    size_t real_count = count;
-   if( (signed)(count + offset) >= file_size )
+   if( (signed)(count + offset) >= file_size && file_size >= 0 ) {
       real_count = file_size - offset;
+   }
+   
+   if( real_count == 0 ) {
+      // not actually going to read 
+      fs_entry_unlock( fent );
+      return 0;
+   }
    
    // cache block futures 
-   vector<struct cache_block_future*> cache_futs;
+   vector<struct md_cache_block_future*> cache_futs;
    
    // set up a read context for this request 
    fs_entry_setup_read_context( core, fs_path, fent, buf, real_count, offset, &read_ctx );
@@ -1619,13 +1802,13 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    fs_entry_unlock( fent );
 
    // finish caching all downloaded blocks to disk
-   int cache_rc = fs_entry_flush_cache_writes( &cache_futs );
+   int cache_rc = md_cache_flush_writes( &cache_futs );
    if( cache_rc != 0 ) {
-      errorf("fs_entry_flush_cache_writes( %s ) rc = %d\n", fs_path, cache_rc );
+      errorf("md_cache_flush_writes( %s ) rc = %d\n", fs_path, cache_rc );
    }
    
    // clean up cache futures, releasing their internal buffers (since they point to block future buffers)
-   fs_entry_cache_block_future_apply_all( &cache_futs, fs_entry_cleanup_cache_future, NULL );
+   md_cache_block_future_apply_all( &cache_futs, fs_entry_cleanup_cache_future, NULL );
    
    // free the context
    fs_entry_read_run_cleanup( core, &read_ctx );
@@ -1644,13 +1827,13 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
-
-   // refresh metadata
+   
+   // refresh path metadata and manifest
    int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
-      return -EREMOTEIO;
+      return rc;
    }
    
    fs_entry_rlock( fh->fent );

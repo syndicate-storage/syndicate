@@ -1,5 +1,5 @@
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -17,10 +17,14 @@
 # add additional source files here
 source_files = """
    AG.cpp
-   AG-core.cpp
-   AG-util.cpp
-   map-parser.cpp
-   reversion-daemon.cpp 
+   cache.cpp
+   core.cpp
+   driver.cpp
+   events.cpp
+   http.cpp
+   map-info.cpp
+   map-parser-xml.cpp
+   reversioner.cpp
 """
 
 # add source file search paths here
@@ -72,5 +76,6 @@ env.Append(CPPDEFINES = CPPDEFINES)
 env.Append(LINKFLAGS = ['-Wl,--export-dynamic'])
 	
 AG = env.Program("AG", source=Split(source_files) )
+AG_watchdog = Glob("syndicate-ag")
 
-Return( 'AG' )
+Return( 'AG AG_watchdog' )

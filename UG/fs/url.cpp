@@ -15,7 +15,6 @@
 */
 
 #include "url.h"
-#include "manifest.h"
 
 // split a uint64 into four uint16s.
 // assume i is litte-endian; otherwise convert it

@@ -148,8 +148,6 @@ struct md_HTTP {
 
    pthread_rwlock_t lock;
    
-   struct md_syndicate_conf* conf;
-   struct ms_client* ms;
    struct MHD_Daemon* http_daemon;
    int server_type;   // one of the MHD options
 
@@ -178,6 +176,7 @@ struct md_HTTP {
 
 extern char const MD_HTTP_NOMSG[128];
 extern char const MD_HTTP_200_MSG[128];
+extern char const MD_HTTP_302_MSG[128];
 extern char const MD_HTTP_400_MSG[128];
 extern char const MD_HTTP_401_MSG[128];
 extern char const MD_HTTP_403_MSG[128];
@@ -187,9 +186,13 @@ extern char const MD_HTTP_413_MSG[128];
 extern char const MD_HTTP_422_MSG[128];
 extern char const MD_HTTP_500_MSG[128];
 extern char const MD_HTTP_501_MSG[128];
+extern char const MD_HTTP_502_MSG[128];
+extern char const MD_HTTP_503_MSG[128];
 extern char const MD_HTTP_504_MSG[128];
 
 extern char const MD_HTTP_DEFAULT_MSG[128];
+
+#define MD_HTTP_TRYAGAIN_MSG MD_HTTP_503_MSG
 
 #define MD_HTTP_TYPE_STATEMACHINE   MHD_USE_SELECT_INTERNALLY
 #define MD_HTTP_TYPE_THREAD         MHD_USE_THREAD_PER_CONNECTION
@@ -249,25 +252,35 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
                                        const char *transfer_encoding, const char *data,
                                        uint64_t off, size_t size);
 
-// HTTP server
+// HTTP server responses
 int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
 int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
 int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
 int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size );
 int md_create_HTTP_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb );
 void md_free_HTTP_response( struct md_HTTP_response* resp );
+
+// get/set closure
 void* md_cls_get( void* cls );
 void md_cls_set_status( void* cls, int status );
 struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp );
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client );
-int md_start_HTTP( struct md_HTTP* http, int portnum );
+
+// init/start/stop/shutdown
+int md_HTTP_init( struct md_HTTP* http, int server_type );
+int md_start_HTTP( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf );
 int md_stop_HTTP( struct md_HTTP* http );
 int md_free_HTTP( struct md_HTTP* http );
+
+// headers
 void md_create_HTTP_header( struct md_HTTP_header* header, char const* h, char const* value );
 void md_free_HTTP_header( struct md_HTTP_header* header );
 char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
+
+// path parsing 
 int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, uint64_t* _file_id, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_ts );
+
+// memory management
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
 void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 

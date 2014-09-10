@@ -552,8 +552,6 @@ class Object( Model ):
       
       qry_ret = None
       
-      print qry 
-      
       if query_only:
          # query only, no data
          qry_ret = qry

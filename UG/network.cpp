@@ -17,7 +17,6 @@
 #include "network.h"
 #include "manifest.h"
 #include "url.h"
-#include "cache.h"
 #include "replication.h"
 #include "driver.h"
 #include "syndicate.h"
@@ -25,7 +24,6 @@
 // download and verify a manifest
 // fent must be at least read-locked
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
-   CURL* curl = curl_easy_init();
    
    // connect to the cache...
    struct driver_connect_cache_cls driver_cls;
@@ -40,15 +38,12 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    manifest_cls.manifest_mtime_sec = manifest_mtime_sec;
    manifest_cls.manifest_mtime_nsec = manifest_mtime_nsec;
    
-   int rc = md_download_manifest( core->conf, &core->state->dl, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
+   int rc = md_download_manifest( core->conf, &core->state->dl, manifest_url, core->closure, driver_connect_cache, &driver_cls, mmsg, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
       errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
-      curl_easy_cleanup( curl );
       return rc;
    }
-   
-   curl_easy_cleanup( curl );
    
    uint64_t origin = mmsg->coordinator_id();
    
@@ -148,6 +143,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
 
 
 // get a manifest, either from the coordinator, or from an RG.  If we got it from an RG, remember which one.
+// if we're getting a manifest from an AG, don't try getting it from the RGs (they won't have it)
 // fent must be at least read-locked
 int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                            Serialization::ManifestMsg* manifest_msg, uint64_t* successful_gateway_id ) {
@@ -195,14 +191,13 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          // got it from the coordinator
          *successful_gateway_id = fent->coordinator;
       }
+      else if( rc != 0 ) {
+         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      }
    }
    
    if( gateway_type != SYNDICATE_AG && (rc != 0 || FS_ENTRY_LOCAL( core, fent )) ) {
       // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
-      }
       
       // try the RGs
       uint64_t rg_id = 0;
@@ -227,9 +222,10 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
 
    free( manifest_url );
 
-   if( rc != 0 )
+   if( rc != 0 ) {
       return rc;
-
+   }
+   
    // is this an error code?
    if( manifest_msg->has_errorcode() ) {
       // remote gateway indicates error
@@ -251,7 +247,15 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
              manifest_msg->volume_id(), manifest_msg->file_id(), manifest_msg->file_version(),
              fent->volume, fent->file_id, fent->version );
       
-      return -EBADMSG;
+      // if it's a version mismatch, we're probably stale 
+      if( manifest_msg->volume_id() == fent->volume && manifest_msg->file_id() == fent->file_id ) {
+         fent->manifest->mark_stale();
+         fent->read_stale = false;
+         return -EAGAIN;
+      }
+      else {
+         return -EBADMSG;
+      }
    }
    
    return 0;

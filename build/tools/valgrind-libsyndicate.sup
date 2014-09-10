@@ -1,0 +1,21 @@
+{
+   suppress_openssl_cond
+   Memcheck:Cond
+   ...
+   obj:/usr/lib/*-linux-gnu/libcrypto.so.*
+}
+
+{
+   suppress_openssl_uninit_32
+   Memcheck:Value4
+   ...
+   obj:/usr/lib/*-linux-gnu/libcrypto.so.*
+}
+
+{
+   suppress_openssl_uninit_64
+   Memcheck:Value8
+   ...
+   obj:/usr/lib/*-linux-gnu/libcrypto.so.*
+}
+

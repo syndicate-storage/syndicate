@@ -361,7 +361,7 @@ def ensure_volume_absent( volume_name ):
     """
 
     client = connect_syndicate()
-
+    
     # this is idempotent, and returns True even if the Volume doesn't exist
     return client.delete_volume( volume_name )
     
@@ -443,7 +443,7 @@ def revoke_volume_access( principal_id, volume_name ):
     """
     Revoke access to a Volume for a User.
       * remove the user's Volume Access Right
-      * remove the use'rs gateways
+      * remove the user's gateways
     """
     client = connect_syndicate()
     
@@ -585,8 +585,8 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
     
     creds = generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret,
                                         instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
-                                        instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
-                                        instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
+                                        instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure, RG_global_hostname=RG_global_hostname,
+                                        instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure, AG_global_hostname=AG_global_hostname,
                                         gateway_name_prefix=gateway_name_prefix, existing_user=existing_user, user_pkey_pem=user_pkey_pem )
     ret = None
     
@@ -605,6 +605,22 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
        
     return ret
 
+
+#-------------------------------
+def revoke_slice_credentials( volume_name, slice_name ):
+   """
+   Remove the binding between a volume and a slice.
+   """
+   
+   return observer_storage.delete_volumeslice( volume_name, slice_name )
+
+
+#-------------------------------
+def get_volume_slice_names( volume_name ):
+   """
+   Get the list of the names of slice on which the given volume is mounted.
+   """
+   return observer_storage.get_volumeslice_slice_names( volume_name )
 
 #-------------------------------
 # Begin functional tests.

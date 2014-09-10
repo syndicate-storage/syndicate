@@ -18,6 +18,7 @@
  */
  
 #include "libsyndicate/util.h"
+#include "libsyndicate/libsyndicate.h"
 
 int _DEBUG = 1;
 
@@ -299,12 +300,295 @@ char* load_file( char const* path, size_t* size ) {
    return ret;
 }
 
+// read, but mask EINTR 
+ssize_t md_read_uninterrupted( int fd, char* buf, size_t len ) {
+   
+   ssize_t num_read = 0;
+   while( (unsigned)num_read < len ) {
+      ssize_t nr = read( fd, buf + num_read, len - num_read );
+      if( nr < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nr == 0 ) {
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return num_read;
+}
+
+
+// recv, but mask EINTR 
+ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags ) {
+   
+   ssize_t num_read = 0;
+   while( (unsigned)num_read < len ) {
+      ssize_t nr = recv( fd, buf + num_read, len - num_read, flags );
+      if( nr < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nr == 0 ) {
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return num_read;
+}
+
+// write, but mask EINTR
+ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len ) {
+   
+   ssize_t num_written = 0;
+   while( (unsigned)num_written < len ) {
+      ssize_t nw = write( fd, buf + num_written, len - num_written );
+      if( nw < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nw == 0 ) {
+         break;
+      }
+      
+      num_written += nw;
+   }
+   
+   return num_written;
+}
+
+
+// send, but mask EINTR
+ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) {
+   
+   ssize_t num_written = 0;
+   while( (unsigned)num_written < len ) {
+      ssize_t nw = send( fd, buf + num_written, len - num_written, flags );
+      if( nw < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nw == 0 ) {
+         break;
+      }
+      
+      num_written += nw;
+   }
+   
+   return num_written;
+}
+
+// remove all files and directories within a directory, recursively.
+// return errno if we fail partway through.
+int md_clear_dir( char const* dirname ) {
+   
+   if(dirname == NULL) {
+      return -EINVAL;
+   }
+   
+   DIR *dirp = opendir(dirname);
+   if (dirp == NULL) {
+      int errsv = -errno;
+      errorf("Failed to open %s, errno = %d\n", dirname, errsv);
+      return errsv;
+   }
+   
+   int rc = 0;
+   ssize_t len = offsetof(struct dirent, d_name) + pathconf(dirname, _PC_NAME_MAX) + 1;
+   
+   struct dirent *dentry_dp = NULL;
+   struct dirent *dentry = CALLOC_LIST( struct dirent, len );
+   
+   while(true) {
+      
+      rc = readdir_r(dirp, dentry, &dentry_dp);
+      if( rc != 0 ) {
+         errorf("readdir_r(%s) rc = %d\n", dirname, rc );
+         break;
+      }
+      
+      if( dentry_dp == NULL ) {
+         // no more entries
+         break;
+      }
+      
+      // walk this directory.
+      
+      if(strncmp(dentry->d_name, ".", strlen(".")) == 0 || strncmp(dentry->d_name, "..", strlen("..")) == 0 ) {
+         // ignore . and ..
+         continue;
+      }
+
+      // path to this dir entry 
+      char* path = md_fullpath( dirname, dentry->d_name, NULL );
+      rc = 0;
+      
+      // if this is a dir, then recurse
+      if(dentry->d_type == DT_DIR) {
+         md_clear_dir( path );
+         
+         // blow away this dir 
+         rc = rmdir(path);
+         if( rc != 0 ) {
+            rc = -errno;
+            errorf("rmdir(%s) errno = %d\n", path, rc );
+         }
+      }
+      else {
+         // just unlink files 
+         rc = unlink(path);
+         if( rc != 0 ) {
+            rc = -errno;
+            errorf("unlink(%s) errno = %d\n", path, rc );
+         }
+      }
+   
+      free(path);
+      path = NULL;
+      
+      // if we encountered an error, then abort 
+      if( rc != 0 ) {
+         break;
+      }
+   }
+   
+   // clean up
+   closedir( dirp );
+   free( dentry );
+   
+   return rc;
+}
+
+// create an AF_UNIX local socket 
+// if bind_on is true, then this binds and listens on the socket
+// otherwise, it connects
+int md_unix_socket( char const* path, bool server ) {
+   
+   if( path == NULL ) {
+      return -EINVAL;
+   }
+   
+   struct sockaddr_un addr;
+   int fd = 0;
+   int rc = 0;
+   
+   memset(&addr, 0, sizeof(struct sockaddr_un));
+   
+   // sanity check 
+   if( strlen(path) >= sizeof(addr.sun_path) - 1 ) {
+      errorf("%s is too long\n", path );
+      return -EINVAL;
+   }
+   
+   // create the socket 
+   fd = socket( AF_UNIX, SOCK_STREAM, 0 );
+   if( fd < 0 ) {
+      fd = -errno;
+      errorf("socket(%s) rc = %d\n", path, fd );
+      return fd;
+   }
+   
+   // set up the sockaddr
+   addr.sun_family = AF_UNIX;
+   strncpy(addr.sun_path, path, strlen(path) );
+
+   // server?
+   if( server ) {
+      // bind on it 
+      rc = bind( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
+      if( rc < 0 ) {
+         rc = -errno;
+         errorf("bind(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+      
+      // listen on it
+      rc = listen( fd, 100 );
+      if( rc < 0 ) {
+         errorf("listen(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+   }
+   else {
+      // client 
+      rc = connect( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
+      if( rc < 0 ) {
+         rc = -errno;
+         errorf("connect(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+   }
+   
+   return fd;
+}
+
+
+// dump data to a temporary file.
+// on success, allocate and return the path to the temporary file and return 0
+// on failure, return negative and remove the temporary file that was created
+int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path ) {
+   
+   char* so_path = strdup( tmpfile_fmt );
+   ssize_t rc = 0;
+   
+   int fd = mkstemp( so_path );
+   if( fd < 0 ) {
+      rc = -errno;
+      errorf("mkstemp(%s) rc = %zd\n", so_path, rc );
+      free( so_path );
+      return rc;
+   }
+   
+   // write it out
+   rc = md_write_uninterrupted( fd, buf, buflen );
+   
+   close( fd );
+   
+   if( rc < 0 ) {
+      // failure 
+      unlink( so_path );
+      free( so_path );
+   }
+   else {
+      *tmpfile_path = so_path;
+   }
+   
+   return rc;
+}
+
 //////// courtesy of http://www.geekhideout.com/urlcode.shtml  //////////
 
 
 /* Returns a url-encoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_encode(char const *str, size_t len) {
+char *md_url_encode(char const *str, size_t len) {
   char *pstr = (char*)str;
   char *buf = (char*)calloc(len * 3 + 1, 1);
   char *pbuf = buf;
@@ -330,7 +614,7 @@ char *url_encode(char const *str, size_t len) {
 
 /* Returns a url-decoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_decode(char const *str, size_t* len) {
+char *md_url_decode(char const *str, size_t* len) {
   char *pstr = (char*)str, *buf = (char*)calloc(strlen(str) + 1, 1), *pbuf = buf;
   size_t l = 0;
   while (*pstr) {
@@ -420,22 +704,6 @@ int Base64Encode(char const* message, size_t msglen, char** buffer) { //Encodes 
 
 //////////////////////////////////////////////////////////////////////////
 
-// does a string match a pattern?
-int reg_match(const char *string, char const *pattern) {
-   int status;
-   regex_t re;
-
-   if( regcomp(&re, pattern, REG_EXTENDED|REG_NOSUB) != 0) {
-      return 0;
-   }
-   status = regexec(&re, string, (size_t)0, NULL, 0);
-   regfree(&re);
-   if (status != 0) {
-      return 0;
-   }
-   return 1;
-}
-
 // pseudo random number generator
 static uint32_t Q[4096], c=362436; /* choose random initial c<809430660 and */
                                          /* 4096 random 32-bit integers for Q[]   */
@@ -467,6 +735,17 @@ uint32_t CMWC4096(void) {
    return ret;
 }
 
+uint32_t md_random32(void) {
+   return CMWC4096();
+}
+
+uint64_t md_random64(void) {
+   uint64_t upper = md_random32();
+   uint64_t lower = md_random32();
+   
+   return (upper << 32) | lower;
+}
+
 
 int util_init(void) {
    // pseudo random number init
@@ -488,32 +767,6 @@ int util_init(void) {
    return 0;
 }
 
-void block_all_signals() {
-    sigset_t sigs;
-    sigfillset(&sigs);
-    pthread_sigmask(SIG_SETMASK, &sigs, NULL);
-}
-
-// does NOT work in NaCl
-int install_signal_handler(int signo, struct sigaction *act, sighandler_t handler) {
-    int rc = 0;
-#ifndef _SYNDICATE_NACL_
-    sigset_t sigs;
-    sigemptyset(&sigs);
-    sigaddset(&sigs, signo);
-    act->sa_handler = handler;
-    rc = sigaction(signo, act, NULL);
-    if (rc < 0)
-	return rc;
-    rc = pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
-#endif
-    return rc;
-}
-
-int uninstall_signal_handler(int signo) {
-    return 0;
-}
-
 
 double timespec_to_double( struct timespec* ts ) {
    double ret = (double)ts->tv_sec + ((double)ts->tv_nsec) / 1e9;
@@ -525,6 +778,143 @@ double now_ns(void) {
    clock_gettime( CLOCK_REALTIME, &ts );
    
    return timespec_to_double( &ts );
+}
+
+// sleep for the given timespec amount of time, transparently handing EINTR
+int md_sleep_uninterrupted( struct timespec* ts ) {
+   
+   struct timespec now;
+   int rc = 0;
+   
+   rc = clock_gettime( CLOCK_MONOTONIC, &now );
+   
+   if( rc != 0 ) {
+      rc = -errno;
+      return rc;
+   }
+   
+   struct timespec deadline;
+   deadline.tv_sec = now.tv_sec + ts->tv_sec;
+   deadline.tv_nsec = now.tv_nsec + ts->tv_nsec;
+   
+   while( true ) {
+      
+      rc = clock_nanosleep( CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL );
+      if( rc != 0 ) {
+         
+         rc = -errno;
+         if( rc == -EINTR ) {
+            continue;
+         }
+         else {
+            return rc;
+         }
+      }
+      else {
+         break;
+      }
+   }
+   
+   return 0;
+}
+
+
+// translate zlib error codes 
+static int md_zlib_err( int zerr ) {
+   if( zerr == Z_MEM_ERROR ) {
+      return -ENOMEM;
+   }
+   else if( zerr == Z_BUF_ERROR ) {
+      return -ENOMEM;
+   }
+   else if( zerr == Z_DATA_ERROR ) {
+      return -EINVAL;
+   }
+   return -EPERM;
+}
+
+// compress a string, returning the compressed string.
+int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
+   
+   uint32_t out_buf_len = compressBound( in_len );
+   char* out_buf = CALLOC_LIST( char, out_buf_len );
+   
+   if( out_buf == NULL ) {
+      return -ENOMEM;
+   }
+   
+   uLongf out_buf_len_ul = out_buf_len;
+   
+   int rc = compress2( (unsigned char*)out_buf, &out_buf_len_ul, (unsigned char*)in, in_len, 9 );
+   if( rc != Z_OK ) {
+      errorf("compress2 rc = %d\n", rc );
+      
+      free( out_buf );
+      return md_zlib_err( rc );
+   }
+   
+   *out = (char*)out_buf;
+   *out_len = out_buf_len_ul;
+   
+   dbprintf("compressed %zu bytes down to %zu bytes\n", in_len, *out_len );
+   
+   return 0;
+}
+
+// decompress a string, returning the normal string 
+int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
+   
+   if( *out_len == 0 ) {
+      // guess a minimum size of 1MB
+      *out_len = 1024000;
+   }
+   
+   uLongf out_buf_len = *out_len;
+   char* out_buf = CALLOC_LIST( char, out_buf_len );;
+   
+   if( out_buf == NULL ) {
+      return -ENOMEM;
+   }
+   
+   while( true ) {
+      
+      // try this size
+      int rc = uncompress( (unsigned char*)out_buf, &out_buf_len, (unsigned char*)in, in_len );
+      
+      // not enough space?
+      if( rc == Z_MEM_ERROR ) {
+         
+         // double it and try again 
+         out_buf_len *= 2;
+         
+         char* tmp = (char*)realloc( out_buf, out_buf_len );
+         
+         if( tmp == NULL ) {
+            free( out_buf );
+            return -ENOMEM;
+         }
+         else {
+            out_buf = tmp;
+         }
+         
+         continue;
+      }
+      else if( rc != Z_OK ) {
+         errorf("uncompress rc = %d\n", rc );
+         
+         free( out_buf );
+         return md_zlib_err( rc );
+      }
+      
+      // success!
+      *out = out_buf;
+      *out_len = out_buf_len;
+      break;
+   }
+   
+   dbprintf("decompressed %zu bytes up to %zu bytes\n", in_len, *out_len );
+   
+   return 0;
 }
 
 // alloc and then mlock 

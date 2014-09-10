@@ -180,7 +180,6 @@ int syndicatefs_rename(const char *path, const char *newpath) {
    
    SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
-   //int rc = fs_entry_versioned_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1 );
    int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume );
 
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rename( %s, %s ) rc = %d\n", pthread_self(), path, newpath, rc );
@@ -208,24 +207,21 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
    SYNDICATEFS_DATA->stats->enter( STAT_CHMOD );
    
    int rc = fs_entry_chmod( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, mode );
-   if( rc == 0 ) {
-      // TODO: update the modtime and metadata of this file
-   }
    
    SYNDICATEFS_DATA->stats->leave( STAT_CHMOD, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod rc = %d\n");
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod rc = %d\n", rc);
    return rc;
 }
 
 
 /** Change the owner and group of a file (chown) */
-int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
+int syndicatefs_chown(const char *path, uid_t user_id, gid_t volume_id) {
+   // can't be done here--Syndicate uses 64-bit user_ids and volume_ids
    return -ENOSYS;
 }
 
 
 /** Change the size of a file (truncate) */
-/* only works on local files */
 int syndicatefs_truncate(const char *path, off_t newsize) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate( %s, %ld )\n", pthread_self(), path, newsize );
@@ -248,9 +244,6 @@ int syndicatefs_utime(const char *path, struct utimbuf *ubuf) {
    SYNDICATEFS_DATA->stats->enter( STAT_UTIME );
    
    int rc = fs_entry_utime( SYNDICATEFS_DATA->core, path, ubuf, conf->owner, SYNDICATEFS_DATA->core->volume );
-   if( rc == 0 ) {
-      // TODO: update the modtime of this file
-   }
    
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_utime rc = %d\n", pthread_self(), rc);
    SYNDICATEFS_DATA->stats->leave( STAT_UTIME, rc );
@@ -725,17 +718,12 @@ void syndicatefs_destroy(void *userdata) {
 // handle extra options for FUSE
 static fuse_args g_fargs = FUSE_ARGS_INIT( 0, NULL );
 
-int grab_fuse_opts( int fuse_opt, char* fuse_arg ) {
+int syndicatefs_handle_fuse_opt( int fuse_opt, char* fuse_arg ) {
    int rc = 0;
    dbprintf("Fuse opt: -%c\n", fuse_opt);
    
    switch( fuse_opt ) {
       
-      case 'f': {
-         // run in foreground
-         fuse_opt_add_arg( &g_fargs, "-f" );
-         break;
-      }
       case 's': {
          // single thread mode
          fuse_opt_add_arg( &g_fargs, "-s" );
@@ -756,6 +744,38 @@ int grab_fuse_opts( int fuse_opt, char* fuse_arg ) {
    }
    
    return rc;
+}
+
+
+// combined option parser 
+int syndicatefs_handle_opt( int opt_c, char* opt_s ) {
+   // try to handle internal opt 
+   int rc = UG_handle_opt( opt_c, opt_s );
+   if( rc != 0 ) {
+      // try to handle it as a FUSE opt 
+      rc = syndicatefs_handle_fuse_opt( opt_c, opt_s );
+   }
+   return rc;
+}
+
+
+// syndicatefs-specific usage 
+void syndicatefs_usage() {
+   fprintf(stderr, "\n\
+syndicatefs-specific options:\n\
+   -s\n\
+            Run single-threaded.\n\
+   -o ARG\n\
+            Pass a FUSE option.\n\
+\n");
+}
+
+
+// combined usage 
+void usage( char const* progname ) {
+   md_common_usage( progname );
+   UG_usage();
+   syndicatefs_usage();
 }
 
 // Program execution starts here!
@@ -781,15 +801,21 @@ int main(int argc, char** argv) {
    // skip
 #endif
    
-   struct syndicate_opts syn_opts;
-   syndicate_default_opts( &syn_opts );
+   struct md_opts syn_opts;
+   
+   memset( &syn_opts, 0, sizeof(struct md_opts));
+   UG_opts_init();
    
    // get options
-   rc = syndicate_parse_opts( &syn_opts, argc, argv, &fuse_optind, "fso:", grab_fuse_opts );
+   rc = md_parse_opts( &syn_opts, argc, argv, &fuse_optind, UG_SHORTOPTS "so:", syndicatefs_handle_opt );
    if( rc != 0 ) {
-      syndicate_common_usage( argv[0] );
+      usage( argv[0] );
       exit(1);
    }
+   
+   // get back UG opts 
+   struct UG_opts ug_opts;
+   UG_opts_get( &ug_opts );
    
    // force direct io
    // TODO: investigate kernel_cache, direct_io, atomic_o_truncate, big_writes, splice_*, auto_cache
@@ -798,18 +824,24 @@ int main(int argc, char** argv) {
    // allow other users 
    fuse_opt_add_arg( &g_fargs, "-oallow_other" );
    
-   // we need a mountpoint, and possibly other options
-   if( syn_opts.mountpoint == NULL ) {
-      syndicate_common_usage( argv[0] );
+   // foreground?
+   if( syn_opts.foreground ) {
+      fuse_opt_add_arg( &g_fargs, "-f" );
+   }
+   
+   // we need a mountpoint, and possibly other options.
+   // this should be the first non-opt argument
+   if( syn_opts.first_nonopt_arg == NULL ) {
+      usage( argv[0] );
       fprintf(stderr, "You must give a mountpoint!\n");
       exit(1);
    }
    
    // get absolute path to mountpoint
-   char* mountpoint = realpath( syn_opts.mountpoint, NULL );
+   char* mountpoint = realpath( syn_opts.first_nonopt_arg, NULL );
    if( mountpoint == NULL ) {
       int errsv = errno;
-      fprintf(stderr, "syndicatefs: realpath(%s) rc = %d\n", syn_opts.mountpoint, -errsv );
+      fprintf(stderr, "syndicatefs: realpath(%s) rc = %d\n", syn_opts.first_nonopt_arg, -errsv );
       exit(1);
    }
    
@@ -820,7 +852,7 @@ int main(int argc, char** argv) {
    memset( &syndicate_http, 0, sizeof(struct md_HTTP) );
    
    // start core services
-   rc = syndicate_init( &syn_opts );
+   rc = syndicate_init( &syn_opts, &ug_opts );
    if( rc != 0 ) {
       fprintf(stderr, "Syndicate failed to initialize\n");
       exit(1);
@@ -852,7 +884,7 @@ int main(int argc, char** argv) {
    server_shutdown( &syndicate_http );
 
    int wait_replicas = -1;
-   if( !syn_opts.flush_replicas ) {
+   if( !ug_opts.flush_replicas ) {
       wait_replicas = 0;
    }
    

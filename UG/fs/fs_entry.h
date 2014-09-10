@@ -45,7 +45,8 @@
 #include <math.h>
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/ms-client.h"
+#include "libsyndicate/cache.h"
+#include "libsyndicate/ms/ms-client.h"
 
 using namespace std;
 
@@ -86,7 +87,6 @@ typedef map<string, string> xattr_cache_t;
 // pre-declare these
 class file_manifest;
 struct syndicate_state;
-struct syndicate_cache;
 struct fs_file_handle;
 struct replica_snapshot;
 struct sync_context;
@@ -163,8 +163,7 @@ struct fs_file_handle {
    char* parent_name;         // name of parent directory
    uint64_t parent_id;        // ID of parent directory
 
-   bool is_AG;                // whether or not this file is hosted by an AG
-   uint64_t AG_blocksize;     // blocksize of this AG
+   bool is_AG;                // whether or not this file is hosted by an AG (since it affects how we deal with unknown sizes and EOF)
    
    uint64_t block_id;         // ID of the block we're currently reading
    
@@ -205,7 +204,7 @@ struct fs_core {
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
    struct md_closure* closure;         // UG storage closure
-   struct syndicate_cache* cache;      // index over on-disk cache
+   struct md_syndicate_cache* cache;   // index over on-disk cache
    struct syndicate_state* state;   // state 
    struct fs_entry_view_change_cls* viewchange_cls;     // pass to view change callback
    
@@ -223,7 +222,7 @@ struct fs_core {
 int fs_entry_set_config( struct md_syndicate_conf* conf );
 
 // fs_core operations
-int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct syndicate_cache* cache,
+int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct md_syndicate_cache* cache,
                   uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor );
 int fs_core_destroy(struct fs_core* core);
 
@@ -390,6 +389,8 @@ char* fs_dir_entry_name( struct fs_dir_entry* dirent );
 uint64_t fs_dir_entry_file_id( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_mtime_sec( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_manifest_mtime_sec( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_manifest_mtime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent );

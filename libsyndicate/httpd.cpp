@@ -19,6 +19,7 @@
 
 char const MD_HTTP_NOMSG[128] = "\n";
 char const MD_HTTP_200_MSG[128] = "OK\n";
+char const MD_HTTP_302_MSG[128] = "Redirect\n";
 char const MD_HTTP_400_MSG[128] = "Bad Request\n";
 char const MD_HTTP_401_MSG[128] = "Invalid authorization credentials\n";
 char const MD_HTTP_403_MSG[128] = "Credentials required\n";
@@ -28,6 +29,8 @@ char const MD_HTTP_413_MSG[128] = "Requested entry too big\n";
 char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
 char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
 char const MD_HTTP_501_MSG[128] = "Not implemented\n";
+char const MD_HTTP_502_MSG[128] = "Bad gateway\n";
+char const MD_HTTP_503_MSG[128] = "Service unavailable\n";
 char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 
 char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
@@ -230,8 +233,8 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
    return MHD_YES;
 }
 
-// convert a sockaddr to a string containing the hostname:port
-static int md_sockaddr_to_string( struct sockaddr* addr, char** buf ) {
+// convert a sockaddr to a string containing the hostname and port number
+static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf ) {
    socklen_t addr_len = 0;
    switch( addr->sa_family ) {
       case AF_INET:
@@ -253,7 +256,7 @@ static int md_sockaddr_to_string( struct sockaddr* addr, char** buf ) {
    // prefix with :
    portbuf[0] = ':';
    
-   // write hostname to buf,and portnum to portbuf + 1 (i.e. preserve the colon)
+   // write hostname to buf, and portnum to portbuf + 1 (i.e. preserve the colon)
    int rc = getnameinfo( addr, addr_len, *buf, HOST_NAME_MAX + 1, portbuf + 1, 10, NI_NUMERICSERV );
    if( rc != 0 ) {
       errorf("getnameinfo rc = %d (%s)\n", rc, gai_strerror(rc) );
@@ -381,21 +384,20 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       struct sockaddr* client_addr = con_info->client_addr;
       char* remote_host = NULL;
       
-      int rc = md_sockaddr_to_string( client_addr, &remote_host );
+      int rc = md_sockaddr_to_hostname_and_port( client_addr, &remote_host );
       if( rc != 0 ) {
          
          struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
          free( con_data );
          
-         errorf("md_sockaddr_to_string rc = %d\n", rc );
+         errorf("md_sockaddr_to_hostname_and_port rc = %d\n", rc );
          
          return md_HTTP_send_response( connection, resp );
       }
          
       
       // build up con_data from what we know
-      con_data->conf = http_ctx->conf;
       con_data->http = http_ctx;
       con_data->url_path = md_flatten_path( url );
       con_data->version = strdup(version);
@@ -407,7 +409,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->cls = NULL;
       con_data->status = 200;
       con_data->pp = pp;
-      con_data->ms = http_ctx->ms;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
       if( content_length_str != NULL )
@@ -622,19 +623,15 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type ) {
    memset( http, 0, sizeof(struct md_HTTP) );
-   http->conf = conf;
    http->server_type = server_type;
-   http->ms = client;
    return 0;
 }
 
 
 // start the HTTP thread
-int md_start_HTTP( struct md_HTTP* http, int portnum ) {
-   
-   struct md_syndicate_conf* conf = http->conf;
+int md_start_HTTP( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf ) {
    
    pthread_rwlock_init( &http->lock, NULL );
    
@@ -719,10 +716,12 @@ int md_HTTP_unlock( struct md_HTTP* http ) {
 static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
    uint64_t ret = 0;
    int rc = sscanf( id_str, fmt, &ret );
-   if( rc == 0 )
+   if( rc == 0 ) {
       return -EINVAL;
-   else
+   }
+   else {
       *out = ret;
+   }
    
    return 0;
 }
@@ -732,11 +731,13 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
    long tv_nsec = -1;
    
    int num_read = sscanf( _manifest_str, "manifest.%ld.%ld", &tv_sec, &tv_nsec );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
-
-   if( tv_sec < 0 || tv_nsec < 0 )
+   }
+   
+   if( tv_sec < 0 || tv_nsec < 0 ) {
       return -EINVAL;
+   }
    
    manifest_timestamp->tv_sec = tv_sec;
    manifest_timestamp->tv_nsec = tv_nsec;
@@ -747,15 +748,13 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
 
 static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
    uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-
+   int64_t block_version = 0;
+   
    int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
-
-   if( block_version < 0 )
-      return -EINVAL;
-
+   }
+   
    *_block_id = block_id;
    *_block_version = block_version;
 
@@ -780,16 +779,17 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    }
    ptr++;
    
-   if( ptr == _name_id_and_version_str && num_periods < 2 )
+   if( ptr == _name_id_and_version_str && num_periods < 2 ) {
       return -EINVAL;
+   }
    
    uint64_t file_id = INVALID_FILE_ID;
    int64_t file_version = -1;
    
-   dbprintf("ptr = '%s'\n", ptr );
    int num_read = sscanf( ptr, ".%" PRIX64 ".%" PRId64, &file_id, &file_version );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
+   }
    
    *_file_id = file_id;
    *_file_version = file_version;
@@ -800,8 +800,9 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
 // clear the file ID from a string in the format of file_path.file_id 
 static int md_clear_file_id( char* name_and_id ) {
    char* file_id_ptr = rindex( name_and_id, '.' );
-   if( file_id_ptr == NULL )
+   if( file_id_ptr == NULL ) {
       return -EINVAL;
+   }
    
    *file_id_ptr = '\0';
    return 0;
@@ -953,6 +954,13 @@ int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** 
    *_block_version = block_version;
    _manifest_ts->tv_sec = manifest_timestamp.tv_sec;
    _manifest_ts->tv_nsec = manifest_timestamp.tv_nsec;
+   
+   if( manifest_timestamp.tv_sec > 0 || manifest_timestamp.tv_nsec > 0 ) {
+      dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld\n", volume_id, file_path, file_id, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec );
+   }
+   else {
+      dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", volume_id, file_path, file_id, file_version, block_id, block_version );
+   }
 
    free( parts );
 

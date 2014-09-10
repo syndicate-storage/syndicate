@@ -17,9 +17,18 @@
 #ifndef _AG_H
 #define _AG_H_
 
-#include "AG-core.h"
-#include "ms-client.h"
-#include "libsyndicate.h"
+
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/ms/ms-client.h"
+
+// basic types 
+typedef map<string, string> AG_config_t;
+
+// map query types to drivers
+typedef map<string, struct AG_driver*> AG_driver_map_t;
+
+// map path to AG_map_info 
+typedef map<string, struct AG_map_info*> AG_fs_map_t;
 
 
 #endif

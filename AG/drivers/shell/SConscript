@@ -41,7 +41,6 @@ LIBS = """
     syndicate
     pthread
     rt
-    xerces-c
     m
 """
 

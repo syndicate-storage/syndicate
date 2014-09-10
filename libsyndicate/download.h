@@ -62,6 +62,8 @@ struct md_download_context {
    bool cancelled;      // if true, this was cancelled
    char* effective_url; // stores final URL that resolved to data
    
+   bool pending;        // if true, then this download context is in the process of being started
+   bool cancelling;     // if true, then this download context is in the process of being cancelled
    bool finalized;      // if true, then this download has finished
    
    struct md_download_set* dlset;       // parent group containing this context
@@ -74,7 +76,7 @@ typedef md_pending_set_t::iterator md_download_set_iterator;
 // download set 
 struct md_download_set {
    
-   md_pending_set_t* waiting;           // download context for which we are waiting
+   md_pending_set_t* waiting;           // pointers to download contexts for which we are waiting
    
    sem_t sem;                           // block on this until at least one of waiting has been finalized
 };
@@ -146,15 +148,40 @@ bool md_download_context_finalized( struct md_download_context* dlctx );
 // low-level primitve for waiting on a semaphore (that tries again if interrupted)
 int md_download_sem_wait( sem_t* sem, int64_t timeout_ms );
 
+// asynchronously download 
+int md_download_begin( struct md_syndicate_conf* conf,
+                       struct md_downloader* dl,
+                       char const* url, off_t max_len,
+                       struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                       struct md_download_context* dlctx );
+
+int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx, int timeout, int* http_status, char** bits, size_t* ret_len );
+
+int md_download_manifest_begin( struct md_syndicate_conf* conf,
+                                struct md_downloader* dl,
+                                char const* manifest_url, 
+                                struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                                struct md_download_context* dlctx );
+
+int md_download_manifest_end( struct md_syndicate_conf* conf,
+                              struct md_downloader* dl,
+                              Serialization::ManifestMsg* mmsg,
+                              struct md_closure* closure, md_manifest_processor_func manifest_func, void* manifest_func_cls,
+                              struct md_download_context* dlctx );
+
 // synchronously download
 off_t md_download_file( CURL* curl_h, char** buf );
-int md_download( struct md_syndicate_conf* conf, struct md_downloader* dl, struct md_closure* closure,
-                 CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
+int md_download( struct md_syndicate_conf* conf,
+                 struct md_downloader* dl,
+                 char const* base_url, off_t max_len,
+                 struct md_closure* closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                 int* http_code, char** bits, off_t* ret_len );
 
-int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* dl, struct md_closure* closure,
-                          CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
-                          md_cache_connector_func cache_func, void* cache_func_cls,
-                          md_manifest_processor_func manifest_func, void* manifest_func_cls );
+int md_download_manifest( struct md_syndicate_conf* conf,
+                          struct md_downloader* dl, 
+                          char const* manifest_url,
+                          struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
+                          Serialization::ManifestMsg* mmsg, md_manifest_processor_func manifest_func, void* manifest_func_cls );
 
 // helper functions to initialize curl handles for downloading 
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url, time_t query_time );

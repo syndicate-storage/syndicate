@@ -33,6 +33,14 @@ message BlockInfo {
    required bytes hash = 3;
 }
 
+// block served from an AG.
+// the AG signs blocks on the fly.
+message AG_Block {
+   required bytes data = 1;
+   required int64 size = 2;
+   required string signature = 3;
+}
+
 // truncate a file
 message TruncateRequest {
    required uint64 volume_id = 1;

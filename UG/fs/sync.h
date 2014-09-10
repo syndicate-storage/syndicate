@@ -17,6 +17,7 @@
 #ifndef _SYNC_H_
 #define _SYNC_H_
 
+#include "libsyndicate/cache.h"
 #include "replication.h"
 #include "fs_entry.h"
 

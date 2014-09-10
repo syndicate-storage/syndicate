@@ -223,9 +223,10 @@ libsyndicate_out = "build/out/lib/libsyndicate"
 libsyndicate_driver_out = "build/out/lib/syndicate-drivers/volume"
 libsyndicate_driver_install = os.path.join( lib_install_dir, "syndicate-drivers/volume" )
 
-libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_ms_client_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_drivers = SConscript( "libsyndicate/drivers/SConscript", variant_dir=libsyndicate_driver_out )
 
+# all libsyndicate targets depends on protobufs
 libsyndicate_protobuf_deps = [protobufs, protobuf_cc_files]
 for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_source_paths]:
    if libsyndicate_target is not None:
@@ -234,6 +235,8 @@ for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header
 # alias installation targets for libsyndicate
 libsyndicate_install_headers = env.Install( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
 libsyndicate_install_scrypt_headers = env.Install( os.path.join( inc_install_dir, "scrypt" ), libsyndicate_scrypt_header_paths )
+libsyndicate_install_ms_client_headers = env.Install( os.path.join( inc_install_dir, "ms" ), libsyndicate_ms_client_header_paths )
+
 libsyndicate_install_library = env.Install( lib_install_dir, [libsyndicate] ) 
 libsyndicate_install_drivers = env.Install( libsyndicate_driver_install, [libsyndicate_drivers] )
 
@@ -245,8 +248,8 @@ if libsyndicate_nacl is not None:
    env.Alias( 'libsyndicate-nacl-install', [libsyndicate_install_nacl] )
 
 # main targets...
-env.Alias( 'libsyndicate', [libsyndicate, libsyndicate_drivers] )
-env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers] )
+env.Alias( 'libsyndicate', [libsyndicate] )
+env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers, libsyndicate_install_ms_client_headers] )
 
 env.Alias( 'libsyndicate-drivers', [libsyndicate_drivers] )
 env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )
@@ -311,13 +314,6 @@ ag_driver_disk_polling_install = env.Install( lib_install_dir, libAGdiskpollingd
 env.Alias( 'AG-disk-polling-driver', libAGdiskpollingdriver )
 env.Alias( 'AG-disk-polling-driver-install', [ag_driver_disk_polling_install] )
 
-# AG SQL driver
-libAGSQLdriver_out = "build/out/lib/AG/drivers/sql"
-libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
-ag_driver_sql_install = env.Install( lib_install_dir, libAGSQLdriver )
-env.Alias( 'AG-sql-driver', libAGSQLdriver )
-env.Alias( 'AG-sql-driver-install', [ag_driver_sql_install] )
-
 # AG Shell driver
 libAGshelldriver_out = "build/out/lib/AG/drivers/shell"
 libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
@@ -325,21 +321,25 @@ ag_driver_shell_install = env.Install( lib_install_dir, libAGshelldriver )
 env.Alias( 'AG-shell-driver', libAGshelldriver )
 env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 
-# All drivers
-ag_drivers = [libAGSQLdriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
+# AG curl driver 
+libAGcurldriver_out = "build/out/lib/AG/drivers/curl"
+libAGcurldriver = SConscript( "AG/drivers/curl/SConscript", variant_dir=libAGcurldriver_out )
+ag_driver_curl_install = env.Install( lib_install_dir, libAGcurldriver )
+env.Alias( 'AG-curl-driver', libAGcurldriver )
+env.Alias( 'AG-curl-driver-install', [ag_driver_curl_install] )
 
-# AG Watchdog daemon
-watchdog_daemon_out = "build/out/bin/AG/watchdog"
-watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
-env.Alias( "AG-watchdog", watchdog_daemon )
+# All drivers
+#ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
+ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver]
 
 # installation
-common.install_targets( env, 'AG-install', bin_install_dir, ags )
-common.install_targets( env, 'AG-drivers-install', lib_install_dir, ag_drivers )
+common.install_targets( env, 'AG-bin-install', bin_install_dir, ags )
+common.install_targets( env, 'AG-drivers-install', os.path.join(lib_install_dir, "syndicate/AG"), ag_drivers )
 
 # main targets....
-env.Alias('AG', ags)
+env.Alias('AG', [ags, ag_drivers])
 env.Alias( 'AG-drivers', ag_drivers )
+env.Alias('AG-install', ['AG-bin-install', 'AG-drivers-install'] )
 
 # ----------------------------------------
 # MS build

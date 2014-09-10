@@ -17,8 +17,6 @@
 #include "fs_entry.h"
 #include "manifest.h"
 #include "url.h"
-#include "ms-client.h"
-#include "cache.h"
 #include "consistency.h"
 #include "replication.h"
 #include "driver.h"
@@ -140,7 +138,7 @@ uint64_t fs_entry_block_id( size_t blocksize, off_t offset ) {
 }
 
 // set up the core of the FS
-int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct syndicate_cache* cache,
+int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct md_syndicate_cache* cache,
                   uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor ) {
    
    if( core == NULL ) {
@@ -164,7 +162,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, 0755, 0, 0, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, mode, 0, 0, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       
@@ -295,7 +293,7 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
       if( old_type == FTYPE_FILE || old_type == FTYPE_FIFO ) {
          if( fent->open_count == 0 ) {
             if( FS_ENTRY_LOCAL( core, fent ) && remove_data ) {
-               fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
+               md_cache_evict_file( core->cache, fent->file_id, fent->version );
             }
             
             fs_entry_destroy( fent, false );
@@ -567,13 +565,13 @@ int fs_entry_try_destroy( struct fs_core* core, struct fs_entry* fent ) {
       
       if( fent->ftype == FTYPE_FILE ) {
          // file is unlinked and no one is manipulating it--safe to destroy
-         rc = fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
+         rc = md_cache_evict_file( core->cache, fent->file_id, fent->version );
          if( rc == -ENOENT ) {
             // not a problem
             rc = 0;
          }
          else {
-            errorf("WARN: fs_entry_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+            errorf("WARN: md_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
             rc = 0;
          }
       }
@@ -975,7 +973,10 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
 
       // do we have permission to search this directory?
       if( cur_ent->ftype == FTYPE_DIR && !IS_DIR_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
-
+         
+         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read directory %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+                user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
+         
          // the appropriate read flag is not set
          *err = -EACCES;
          free( fpath );
@@ -1053,6 +1054,10 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
       
       // check readability
       if( !IS_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
+         
+         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read file %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+                user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
+         
          *err = -EACCES;
          fs_entry_unlock( cur_ent );
          return NULL;
@@ -1610,7 +1615,7 @@ int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
 }
 
 
-// read part of a bufferred block 
+// read part of a bufferred block, starting at block_offset
 // return 0 on success
 // return -ENOENT if there is no block.
 // return negative on error
@@ -1979,6 +1984,14 @@ int64_t fs_dir_entry_mtime_sec( struct fs_dir_entry* dirent ) {
 
 int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent ) {
    return dirent->data.mtime_nsec;
+}
+
+int64_t fs_dir_entry_manifest_mtime_sec( struct fs_dir_entry* dirent ) {
+   return dirent->data.manifest_mtime_sec;
+}
+
+int32_t fs_dir_entry_manifest_mtime_nsec( struct fs_dir_entry* dirent ) {
+   return dirent->data.manifest_mtime_nsec;
 }
 
 int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent ) {

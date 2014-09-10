@@ -16,8 +16,6 @@
 
 #include "closure.h"
 #include "crypt.h"
-#include "ms-client.h"
-
 
 
 // duplicate a callback table 
@@ -61,7 +59,6 @@ static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_
    
    // obj_json should be a valid json string that contains a single dictionary.
    struct json_tokener* tok = json_tokener_new();
-   // struct json_object* jobj = json_tokener_parse_ex( tok, obj_json, obj_json_len );
    struct json_object* jobj = json_tokener_parse_ex( tok, tmp, obj_json_len );
    
    json_tokener_free( tok );
@@ -173,6 +170,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    size_t obj_json_len = 0;
    
    rc = md_decrypt( gateway_pubkey, gateway_pkey, obj_ctext, obj_ctext_len, &obj_json, &obj_json_len );
+   
    free( obj_ctext );
    
    if( rc != 0 ) {
@@ -214,7 +212,7 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
       
       // get the value 
       char const* encrypted_value = json_object_get_string( val );
-      size_t encrypted_value_len = strlen(encrypted_value);     // json_object_get_string_len( val );
+      size_t encrypted_value_len = strlen(encrypted_value);
       
       // put it into the config 
       string key_s( key );
@@ -288,13 +286,11 @@ static int md_parse_json_b64_string( struct json_object* toplevel_obj, char cons
 
 
 // parse the MS-supplied closure.
-int md_parse_closure( struct ms_client* client,
-                      md_closure_conf_t* closure_conf,
-                      md_closure_secrets_t* closure_secrets,
-                      char** driver_bin, size_t* driver_bin_len,
-                      char** spec_bin, size_t* spec_bin_len,
-                      char const* closure_text, size_t closure_text_len ) {
-   
+static int md_parse_closure( md_closure_conf_t* closure_conf,
+                             EVP_PKEY* pubkey, EVP_PKEY* privkey, md_closure_secrets_t* closure_secrets,
+                             char** driver_bin, size_t* driver_bin_len,
+                             char const* closure_text, size_t closure_text_len ) {
+      
    // closure_text should be a JSON object...
    struct json_object* toplevel_obj = NULL;
    
@@ -327,29 +323,21 @@ int md_parse_closure( struct ms_client* client,
       
       if( json_b64 != NULL || json_b64_len != 0 ) {
          // load it 
-         rc = md_parse_closure_secrets( client->my_pubkey, client->my_key, closure_secrets, json_b64, json_b64_len );
+         rc = md_parse_closure_secrets( pubkey, privkey, closure_secrets, json_b64, json_b64_len );
          if( rc != 0 ) {
             errorf("md_parse_closure_config rc = %d\n", rc );
          }
       }
    }
    
-   // requested driver?
+   // requested driver (or specfile)?
    if( rc == 0 && driver_bin != NULL && driver_bin_len != NULL ) {
       rc = md_parse_json_b64_string( toplevel_obj, "driver", driver_bin, driver_bin_len );
    
       // not an error if not present...
-      if( rc == -ENOENT )
+      if( rc == -ENOENT ) {
          rc = 0;
-   }
-   
-   // requested spec?
-   if( rc == 0 && spec_bin != NULL && spec_bin_len != NULL ) {
-      rc = md_parse_json_b64_string( toplevel_obj, "spec", spec_bin, spec_bin_len );
-      
-      // not an error if not present..
-      if( rc == -ENOENT )
-         rc = 0;
+      }
    }
    
    if( rc != 0 ) {
@@ -358,11 +346,6 @@ int md_parse_closure( struct ms_client* client,
          free( *driver_bin );
          *driver_bin = NULL;
          *driver_bin_len = 0;
-      }
-      if( *spec_bin ) {
-         free( *spec_bin );
-         *spec_bin = NULL;
-         *spec_bin_len = 0;
       }
       if( closure_conf ) {
          closure_conf->clear();
@@ -377,25 +360,29 @@ int md_parse_closure( struct ms_client* client,
    return rc;
 }
 
-// initialize a gateway's closure.
-// if gateway_specific is true, then this closure is specific to a gateway, and it can contain secrets encrypted with the gateway's public key.
+// initialize a UG or RG closure.
+// if gateway_specific is true, then this closure is specific to a gateway, and we should try to obtain the closure's secrets using the gateway's public key.
 // otherwise, it's volume-wide, and no secrets will be processed.
-int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* driver_prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific ) {
+int md_closure_init( struct md_closure* closure,
+                     struct md_syndicate_conf* conf,
+                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
+                     struct md_closure_callback_entry* driver_prototype,
+                     char const* closure_text, size_t closure_text_len,
+                     bool gateway_specific, bool ignore_stubs ) {
+   
    memset( closure, 0, sizeof(struct md_closure) );
    
    md_closure_conf_t* closure_conf = new md_closure_conf_t();
    md_closure_secrets_t* closure_secrets = NULL;
    
-   if( gateway_specific )
+   if( gateway_specific ) {
       closure_secrets = new md_closure_secrets_t();
+   }
    
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;
    
-   char* spec_bin = NULL;
-   size_t spec_bin_len = 0;
-   
-   int rc = md_parse_closure( client, closure_conf, closure_secrets, &driver_bin, &driver_bin_len, &spec_bin, &spec_bin_len, closure_text, closure_text_len );
+   int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
       errorf("md_parse_closure rc = %d\n", rc );
       
@@ -414,16 +401,14 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
    closure->closure_conf = closure_conf;
    closure->closure_secrets = closure_secrets;
    
-   closure->spec = spec_bin;
-   closure->spec_len = spec_bin_len;
-   
    closure->gateway_specific = gateway_specific;
+   closure->ignore_stubs = ignore_stubs;
    
    // initialize the callbacks from the prototype
    closure->callbacks = md_closure_callback_table_from_prototype( driver_prototype );
    
    // initialize the driver
-   rc = md_closure_driver_reload( client->conf, closure, driver_bin, driver_bin_len );
+   rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
       errorf("md_closure_driver_reload rc = %d\n", rc );
       
@@ -440,53 +425,76 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
 }
 
 
-// write the MS-supplied closure to a temporary file
-// return the path to it on success
-int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char const* driver_text, size_t driver_text_len ) {
-   char* so_path = md_fullpath( conf->data_root, MD_CLOSURE_TMPFILE_NAME, NULL );
-   int rc = 0;
+// parse an AG's specfile, given its json-encoded form.
+int md_closure_load_AG_specfile( char* specfile_json, size_t specfile_json_len, char** specfile_text, size_t* specfile_text_len ) {
    
-   int fd = mkstemp( so_path );
-   if( fd < 0 ) {
-      int rc = -errno;
-      errorf("mkstemp(%s) rc = %d\n", so_path, rc );
-      free( so_path );
-      return rc;
+   struct json_object* toplevel_obj = NULL;
+   
+   int rc = md_parse_json_object( &toplevel_obj, specfile_json, specfile_json_len );
+   if( rc != 0 ) {
+      errorf("md_parse_json_object rc = %d\n", rc );
+      return -EINVAL;
    }
    
-   // write it out
-   off_t nw = 0;
-   off_t w_off = 0;
-   
-   while( nw < (signed)driver_text_len ) {
-      ssize_t w = write( fd, driver_text + w_off, driver_text_len - w_off );
-      if( w < 0 ) {
-         int errsv = -errno;
-         errorf("write(%d) rc = %d\n", fd, errsv);
-         nw = errsv;
-         break;
-      }
-      
-      nw += w;
+   rc = md_parse_json_b64_string( toplevel_obj, "spec", specfile_text, specfile_text_len );
+   if( rc != 0 ) {
+      errorf("md_parse_json_b64_string rc = %d\n", rc );
    }
    
-   close( fd );
-   
-   if( nw < 0 ) {
-      // failure 
-      unlink( so_path );
-      free( so_path );
-      rc = nw;
-   }
-   else {
-      *_so_path_ret = so_path;
-   }
+   json_object_put( toplevel_obj );
    
    return rc;
 }
 
-// read and link MS-supplied closure from the temporary file we created
-int md_load_driver( struct md_closure* closure, char* so_path, struct md_closure_callback_entry* closure_symtable ) {
+
+// initialize a closure from an on-disk .so file.
+// do not bother trying to load configuration or secrets
+int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* driver_prototype, bool ignore_stubs ) {
+   
+   memset( closure, 0, sizeof(struct md_closure));
+   
+   // intialize the closure 
+   pthread_rwlock_init( &closure->reload_lock, NULL );
+   
+   closure->ignore_stubs = ignore_stubs;
+   closure->callbacks = md_closure_callback_table_from_prototype( driver_prototype );
+   closure->so_path = strdup(so_path);
+   closure->on_disk = true;
+   
+   // initialize the driver
+   int rc = md_closure_driver_reload( conf, closure, NULL, 0 );
+   if( rc != 0 ) {
+      errorf("md_closure_driver_reload rc = %d\n", rc );
+      
+      md_closure_shutdown( closure );
+   }
+   else {
+      // ready to roll!
+      closure->running = 1;
+   }
+   
+   return 0;
+}
+
+
+// write the MS-supplied closure to a temporary file
+// return the path to it on success
+int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char const* driver_text, size_t driver_text_len ) {
+   
+   char* so_path = md_fullpath( conf->data_root, MD_CLOSURE_TMPFILE_NAME, NULL );
+   
+   int rc = md_write_to_tmpfile( so_path, driver_text, driver_text_len, _so_path_ret );
+   
+   if( rc != 0 ) {
+      errorf("md_write_to_tmpfile(%s) rc = %d\n", so_path, rc );
+   }
+   
+   free( so_path );
+   return rc;
+}
+
+// read and link MS-supplied closure from a file on disk
+int md_load_driver( struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* closure_symtable ) {
    closure->so_handle = dlopen( so_path, RTLD_LAZY );
    if ( closure->so_handle == NULL ) {
       errorf( "dlopen error = %s\n", dlerror() );
@@ -500,11 +508,17 @@ int md_load_driver( struct md_closure* closure, char* so_path, struct md_closure
       closure_symtable[i].sym_ptr = sym_ptr;
       
       if( closure_symtable[i].sym_ptr == NULL ) {
-         errorf("dlsym(%s) error = %s\n", closure_symtable[i].sym_name, dlerror());
          
-         dlclose( closure->so_handle );
-         closure->so_handle = NULL;
-         return -ENOENT;
+         if( closure->ignore_stubs ) {
+            errorf("WARN: unable to resolve method '%s', error = %s\n", closure_symtable[i].sym_name, dlerror() );
+         }
+         else {
+            errorf("dlsym(%s) error = %s\n", closure_symtable[i].sym_name, dlerror());
+         
+            dlclose( closure->so_handle );
+            closure->so_handle = NULL;
+            return -ENOENT;
+         }
       }
       else {
          dbprintf("Loaded '%s' at %p\n", closure_symtable[i].sym_name, closure_symtable[i].sym_ptr );
@@ -531,41 +545,68 @@ int md_closure_unlock( struct md_closure* closure ) {
 
 // reload the given closure's driver.  Shut it down, get the new code and state, and start it back up again.
 // If we fail to load or initialize the new closure, then keep the old one around.
+// if NULL is passed for driver_text, this method reloads from the closure's so_path member.
+// if driver_text is not NULL, then this method reloads the closure from the text AND sets closure->on_disk to false, meaning that the stored data will be unlinked on shutdown.
 // closure must be write-locked!
 int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure* closure, char const* driver_text, size_t driver_text_len ) {
    int rc = 0;
-   
-   void* shutdown_sym = md_closure_find_callback( closure, "closure_shutdown" );
-   if( shutdown_sym ) {
-      
-      md_closure_shutdown_func shutdown_cb = reinterpret_cast<md_closure_shutdown_func>( shutdown_sym );
-      
-      int closure_shutdown_rc = shutdown_cb( closure->cls );
-      
-      if( closure_shutdown_rc != 0 ) {
-         errorf("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
-      }
-   }
    
    struct md_closure new_closure;
    
    memset( &new_closure, 0, sizeof(struct md_closure) );
    
+   // preserve closure-handling preferences
+   new_closure.ignore_stubs = closure->ignore_stubs;
+   
+   bool stored_to_disk = false;
    char* new_so_path = NULL;
-   rc = md_write_driver( conf, &new_so_path, driver_text, driver_text_len );
-   if( rc != 0 && rc != -ENOENT ) {
-      errorf("Failed to save driver, rc = %d\n", rc);
-      return -ENODATA;
+   
+   if( driver_text != NULL ) {
+      
+      // store to disk    
+      rc = md_write_driver( conf, &new_so_path, driver_text, driver_text_len );
+      if( rc != 0 && rc != -ENOENT ) {
+         errorf("Failed to save driver, rc = %d\n", rc);
+         return -ENODATA;
+      }
+      
+      stored_to_disk = true;
+   }
+   else if( closure->so_path != NULL ) {
+      // reload from disk 
+      new_so_path = strdup( closure->so_path );
+   }
+   else {
+      // invalid arguments 
+      rc = -EINVAL;
    }
    
    if( rc == 0 ) {
+      
+      // shut down the existing closure
+      void* shutdown_sym = md_closure_find_callback( closure, "closure_shutdown" );
+      if( shutdown_sym ) {
+         
+         md_closure_shutdown_func shutdown_cb = reinterpret_cast<md_closure_shutdown_func>( shutdown_sym );
+         
+         int closure_shutdown_rc = shutdown_cb( closure->cls );
+         
+         if( closure_shutdown_rc != 0 ) {
+            errorf("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
+         }
+      }
+      
       // there's closure code to be had...
       new_closure.callbacks = md_closure_callback_table_from_prototype( closure->callbacks );
       
       rc = md_load_driver( &new_closure, new_so_path, new_closure.callbacks );
       if( rc != 0 ) {
          errorf("closure_load(%s) rc = %d\n", new_so_path, rc );
-         unlink( new_so_path );
+         
+         if( stored_to_disk ) {
+            unlink( new_so_path );
+         }
+         
          free( new_so_path );
       }
       else {
@@ -606,7 +647,16 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
             
             // clean up old cached closure code
             if( closure->so_path ) {
-               unlink( closure->so_path );
+               
+               if( stored_to_disk ) {
+                  unlink( closure->so_path );
+                  
+                  if( closure->on_disk ) {
+                     errorf("WARN: Replaced %s with caller-supplied code\n", closure->so_path );
+                  }
+                  
+                  closure->on_disk = false;
+               }
                free( closure->so_path );
             }
             
@@ -628,7 +678,11 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
       }
       
       if( new_closure.so_path ) {
-         unlink( new_closure.so_path );
+         
+         if( stored_to_disk ) {
+            unlink( new_closure.so_path );
+         }
+         
          free( new_closure.so_path );
          new_closure.so_path = NULL;
       }
@@ -639,23 +693,21 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
 
 
 // reload the closure 
-int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len ) {
+int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* conf, EVP_PKEY* pubkey, EVP_PKEY* privkey, char const* closure_text, size_t closure_text_len ) {
    md_closure_wlock( closure );
    
    // attempt to reload the essentials...
    md_closure_conf_t* closure_conf = new md_closure_conf_t();
    md_closure_secrets_t* closure_secrets = NULL;
    
-   if( closure->gateway_specific )
+   if( closure->gateway_specific ) {
       closure_secrets = new md_closure_secrets_t();
+   }
    
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;
    
-   char* spec_bin = NULL;
-   size_t spec_bin_len = 0;
-   
-   int rc = md_parse_closure( client, closure_conf, closure_secrets, &driver_bin, &driver_bin_len, &spec_bin, &spec_bin_len, closure_text, closure_text_len );
+   int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
       errorf("md_parse_closure rc = %d\n", rc );
       
@@ -674,7 +726,7 @@ int md_closure_reload( struct ms_client* client, struct md_closure* closure, cha
    closure->closure_secrets = closure_secrets;
    
    // attempt to reload the driver...
-   rc = md_closure_driver_reload( client->conf, closure, driver_bin, driver_bin_len );
+   rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
       errorf("md_closure_driver_reload rc = %d\n", rc );
       
@@ -726,7 +778,11 @@ int md_closure_shutdown( struct md_closure* closure ) {
    }
    
    if( closure->so_path ) {
-      unlink( closure->so_path );
+      
+      if( !closure->on_disk ) {
+         unlink( closure->so_path );
+      }
+      
       free( closure->so_path );
       closure->so_path = NULL;
    }
@@ -750,11 +806,6 @@ int md_closure_shutdown( struct md_closure* closure ) {
    if( closure->closure_secrets ) {
       delete closure->closure_secrets;
       closure->closure_secrets = NULL;
-   }
-   
-   if( closure->spec ) {
-      free( closure->spec );
-      closure->spec = NULL;
    }
    
    md_closure_unlock( closure );

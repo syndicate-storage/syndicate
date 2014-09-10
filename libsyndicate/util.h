@@ -37,6 +37,7 @@
 #include <stdarg.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <semaphore.h>
 #include <signal.h>
 #include <openssl/sha.h>
@@ -56,6 +57,7 @@
 #include <math.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>        // for gettid()
+#include <zlib.h>
 
 #define WHERESTR "%05d:%05d: [%16s:%04u] %s: "
 #define WHEREARG (int)getpid(), (int)gettid(), __FILE__, __LINE__, __func__
@@ -88,11 +90,13 @@ extern int _ERROR_MESSAGES;
   }
 
 #define CALLOC_LIST(type, count) (type*)calloc( sizeof(type) * (count), 1 )
-#define FREE_LIST(list) do { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { free( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } while(0)
+#define FREE_LIST(list) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { free( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
 #define SIZE_LIST(sz, list) for( *(sz) = 0; (list)[*(sz)] != NULL; ++ *(sz) );
 #define VECTOR_TO_LIST(ret, vec, type) do { ret = CALLOC_LIST(type, ((vec).size() + 1)); for( vector<type>::size_type __i = 0; __i < (vec).size(); ++ __i ) ret[__i] = (vec).at(__i); } while(0)
 #define COPY_LIST(dst, src, duper) do { for( unsigned int __i = 0; (src)[__i] != NULL; ++ __i ) { (dst)[__i] = duper((src)[__i]); } } while(0)
 #define DUP_LIST(type, dst, src, duper) do { unsigned int sz = 0; SIZE_LIST( &sz, src ); dst = CALLOC_LIST( type, sz + 1 ); COPY_LIST( dst, src, duper ); } while(0)
+
+#define strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
 
 // for testing
 #define BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
@@ -130,10 +134,6 @@ struct mlock_buf {
 
 extern "C" {
 
-void block_all_signals();
-int install_signal_handler(int signo, struct sigaction *action, sighandler_t handler);
-int uninstall_signal_handler(int signo);
-
 // debug functions
 void set_debug_level( int d );
 void set_error_level( int e );
@@ -144,6 +144,15 @@ int get_error_level();
 char* dir_path( const char* path );
 char* fullpath( char* root, const char* path );
 mode_t get_umask();
+int md_clear_dir( char const* dirname );
+int md_unix_socket( char const* path, bool server );
+int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path );
+
+// I/O functions 
+ssize_t md_read_uninterrupted( int fd, char* buf, size_t len );
+ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags );
+ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len );
+ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags );
 
 // time functions
 int64_t currentTimeSeconds();
@@ -152,6 +161,12 @@ double currentTimeMono();
 int64_t currentTimeMicros();
 double timespec_to_double( struct timespec* ts );
 double now_ns(void);
+
+int md_sleep_uninterrupted( struct timespec* ts );
+
+// (de)compression, with libz
+int md_deflate( char* in, size_t in_len, char** out, size_t* out_len );
+int md_inflate( char* in, size_t in_len, char** out, size_t* out_len );
 
 // sha256 functions
 size_t sha256_len(void);
@@ -169,20 +184,21 @@ int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 );
 char* load_file( char const* path, size_t* size );
 
 // parser functions
-char* url_encode( char const* str, size_t len );
-char* url_decode( char const* str, size_t* len );
-int reg_match(const char *string, char const *pattern);
+char* md_url_encode( char const* str, size_t len );
+char* md_url_decode( char const* str, size_t* len );
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
-int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
+int Base64Decode(const char* b64message, size_t b64len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
 
 // random number generator
 uint32_t CMWC4096(void);
+uint32_t md_random32(void);
+uint64_t md_random64(void);
 
 // library initialization
 int util_init(void);
 
-// safe allocators 
+// mlock'ed memory allocators 
 int mlock_calloc( struct mlock_buf* buf, size_t len );
 int mlock_free( struct mlock_buf* buf );
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );

@@ -109,6 +109,28 @@ def sync_volume_record( volume ):
 
 
 #-------------------------------
+def delete_volume_record( volume ):
+   """
+   Delete a volume from Syndicate.
+   """
+   
+   logger.info( "Delete Volume =%s\n\n" % volume.name )
+   
+   volume_name = volume.name 
+   config = observer_core.get_config()
+   
+   # delete the Volume on Syndicate.
+   try:
+      rc = observer_core.ensure_volume_absent( volume_name )
+   except Exception, e:
+      traceback.print_exc()
+      logger.error("Failed to delete volume %s", volume_name )
+      raise e
+   
+   return rc
+
+
+#-------------------------------
 def sync_volumeaccessright_record( vac ):
    """
    Synchronize a volume access record 
@@ -156,6 +178,25 @@ def sync_volumeaccessright_record( vac ):
       logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (principal_id, volume_name, syndicate_caps))
       raise e
 
+   return True
+
+
+#-------------------------------
+def delete_volumeaccessright_record( vac ):
+   """
+   Ensure that a principal no longer has access to a particular volume.
+   """
+   
+   principal_id = vac.owner_id.email 
+   volume_name = vac.volume.name 
+   
+   try:
+      observer_core.ensure_volume_access_right_absent( principal_id, volume_name )
+   except Exception, e:
+      traceback.print_exc()
+      logger.error("Failed to revoke access from %s to %s" % (principal_id, volume_name))
+      raise e
+   
    return True
 
 
@@ -235,7 +276,7 @@ def sync_volumeslice_record( vs ):
    try:
       slice_cred = observer_core.save_slice_credentials( observer_pkey_pem, syndicate_url, slice_principal_id, volume_name, slice_name, observer_secret, slice_secret,
                                                          instantiate_UG=True,  run_UG=True,  UG_port=UG_port, UG_closure=None,
-                                                         instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None,
+                                                         instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None, RG_global_hostname="localhost",
                                                          instantiate_AG=None,  run_AG=None,  AG_port=0,       AG_closure=None,
                                                          gateway_name_prefix=gateway_name_prefix,
                                                          existing_user=user )
@@ -258,4 +299,27 @@ def sync_volumeslice_record( vs ):
       raise e
    
    return True
+
+
+#-------------------------------
+def delete_volumeslice_record( vs ):
+   """
+   Unmount a volume from a slice.
+   That is, prevent the slice from mounting it, by revoking the slice's principal's permissions and deleting its gateways.
+   """
+   
+   principal_id = vs.slice_id.creator.email
+   slice_name = vs.slice_id.name
+   volume_name = vs.volume_id.name 
+   
+   slice_principal_id = observer_core.make_slice_principal_id( principal_id, slice_name )
+   
+   try:
+      observer_core.revoke_volume_access( slice_principal_id, volume_name )
+   except Exception, e:
+      traceback.print_exc()
+      logger.error("Failed to remove slice principal %s from %s" % (slice_principal_id, volume_name))
+      raise e
+   
+   return True 
 

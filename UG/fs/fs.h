@@ -27,7 +27,6 @@
 #include "opendir.h"
 #include "read.h"
 #include "readdir.h"
-#include "recover.h"
 #include "rename.h"
 #include "rmdir.h"
 #include "stat.h"

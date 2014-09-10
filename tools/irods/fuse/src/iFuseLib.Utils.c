@@ -11,7 +11,7 @@
 #include "list.h"
 #include "iFuseLib.Lock.h"
 
-fileCache_t *newFileCache(int iFd, char *objPath, char *localPath, char *cacheFilePath, time_t cachedTime, int mode, rodsLong_t fileSize, cacheState_t state) {
+fileCache_t *newFileCache(int iFd, char *objPath, char *localPath, char *cacheFilePath, time_t cachedTime, int mode, cacheState_t state) {
 	fileCache_t *fileCache = (fileCache_t *) malloc(sizeof(fileCache_t));
 	if (fileCache == NULL) return NULL;
 	fileCache->fileCachePath = cacheFilePath == NULL?NULL:strdup(cacheFilePath);
@@ -19,7 +19,7 @@ fileCache_t *newFileCache(int iFd, char *objPath, char *localPath, char *cacheFi
     fileCache->objPath = strdup(objPath);
     fileCache->cachedTime = cachedTime;
     fileCache->mode = mode;
-    fileCache->fileSize = fileSize;
+    fileCache->fileSize = 0;
     fileCache->iFd = iFd;
 	fileCache->state = state;
 	fileCache->status = 0;
