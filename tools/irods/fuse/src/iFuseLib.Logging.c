@@ -172,7 +172,7 @@ int log_compress( FILE* log_input, char const* output_path ) {
 
 
 // set up a log context 
-struct log_context* log_init( char const* http_server, int http_port, int sync_delay, char const* log_path_salt ) {
+struct log_context* log_init( char const* http_server, int http_port, int sync_delay, int timeout, char const* log_path_salt ) {
    
    struct log_context* logctx = (struct log_context*)calloc( sizeof(struct log_context), 1 );
    if( logctx == NULL ) {
@@ -208,14 +208,17 @@ struct log_context* log_init( char const* http_server, int http_port, int sync_d
       return NULL;
    }
    
+   logctx->logfile = logfile;
+   
+   // line bufferring
+   setvbuf( logctx->logfile, NULL, _IOLBF, 0 );
+   
    logctx->logfile_path = log_path;
    
    logctx->portnum = http_port;
    logctx->sync_delay = sync_delay;
    logctx->running = 0;
-   
-   // line bufferring
-   setvbuf( logctx->logfile, NULL, _IOLBF, 0 );
+   logctx->timeout = timeout;
    
    pthread_rwlock_init( &logctx->lock, NULL );
    sem_init( &logctx->sync_sem, 0, 0 );

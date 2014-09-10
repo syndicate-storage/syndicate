@@ -19,7 +19,6 @@
 #include "rodsClient.h"
 #include "parseCommandLine.h"
 #include "rodsPath.h"
-#include "iFuseLib.Logging.h"
 
 #define FILE_BLOCK_SZ	512
 #define DIR_SZ    4096
@@ -54,7 +53,6 @@ typedef struct IFuseConn {
 extern "C" {
 #endif
 
-extern struct log_context* LOGCTX;
 
 #ifdef  __cplusplus
 }

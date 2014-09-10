@@ -130,7 +130,7 @@ int _iFuseFileCacheFlush(fileCache_t *fileCache) {
 	}
 
 
-/*	UNLOCK_STRUCT(*fileCache);
+	UNLOCK_STRUCT(*fileCache);
 
 	pathCache_t *tmpPathCache;
 	if (matchAndLockPathCache (fileCache->localPath, &tmpPathCache) == 1) {
@@ -138,7 +138,7 @@ int _iFuseFileCacheFlush(fileCache_t *fileCache) {
 		UNLOCK_STRUCT(*tmpPathCache);
 	}
 	LOCK_STRUCT(*fileCache);
-*/
+
 	/*	rodsLog (LOG_ERROR,
 				"ifuseClose: IFuseDesc indicated a newly created cache, but does not exist for %s",
 				path);
@@ -202,14 +202,13 @@ int ifuseFileCacheSwapOut (fileCache_t *fileCache) {
 	fileCache->iFd = objFd;
 	fileCache->state = NO_FILE_CACHE;
 
-/*	UNLOCK_STRUCT(*fileCache);
+	UNLOCK_STRUCT(*fileCache);
 
 	pathCache_t *tmpPathCache;
 	if (matchAndLockPathCache (fileCache->localPath, &tmpPathCache) == 1) {
 		tmpPathCache->stbuf.st_size = stbuf.st_size;
 		UNLOCK_STRUCT(*tmpPathCache);
 	}
-	*/
 	/*	rodsLog (LOG_ERROR,
 				"ifuseClose: IFuseDesc indicated a newly created cache, but does not exist for %s",
 				path);
@@ -240,16 +239,16 @@ int ifuseFileCacheClose(fileCache_t *fileCache) {
 	return status;
 }
 
-fileCache_t *addFileCache (int iFd, char *objPath, char *localPath, char *cachePath, int mode, rodsLong_t fileSize, cacheState_t state)
+fileCache_t *addFileCache (int iFd, char *objPath, char *localPath, char *cachePath, int mode, cacheState_t state)
 {
     uint cachedTime = time (0);
     fileCache_t *fileCache, *swapCache;
 
     if(state == NO_FILE_CACHE) {
-    	return newFileCache(iFd, objPath, localPath, cachePath, cachedTime, mode, fileSize, state);
+    	return newFileCache(iFd, objPath, localPath, cachePath, cachedTime, mode, state);
     } else {
 
-		fileCache = newFileCache(iFd, objPath, localPath, cachePath, cachedTime, mode, fileSize, state);
+		fileCache = newFileCache(iFd, objPath, localPath, cachePath, cachedTime, mode, state);
 		LOCK_STRUCT (*FileCacheList);
 
 		if(_listSize(FileCacheList) >= NUM_NEWLY_CREATED_SLOT) {

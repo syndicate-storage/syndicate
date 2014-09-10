@@ -140,7 +140,7 @@ extern concurrentList_t *IFuseDescFreeList;
 		v = NULL; \
 	}
 
-fileCache_t *newFileCache(int iFd, char *objPath, char *localPath, char *cacheFilePath, time_t cachedTime, int mode, rodsLong_t fileCache, cacheState_t state);
+fileCache_t *newFileCache(int iFd, char *objPath, char *localPath, char *cacheFilePath, time_t cachedTime, int mode, cacheState_t state);
 pathCache_t *newPathCache (char *inPath, fileCache_t *fileCache, struct stat *stbuf, time_t cachedTime);
 iFuseConn_t *newIFuseConn(int *status);
 iFuseDesc_t *newIFuseDesc (char *objPath, char *localPath, fileCache_t *fileCache, int *status);
@@ -171,7 +171,7 @@ int _updatePathCacheStatFromFileCache (pathCache_t *tmpPathCache);
 int clearPathFromCache(char *inPath);
 int pathNotExist(char *inPath);
 int pathExist(char *inPath, fileCache_t *fileCache, struct stat *stbuf, pathCache_t **outPathCache);
-fileCache_t *addFileCache (int iFd, char *objPath, char *localPath, char *cachePath, int mode, rodsLong_t fileCache, cacheState_t state);
+fileCache_t *addFileCache (int iFd, char *objPath, char *localPath, char *cachePath, int mode, cacheState_t state);
 int _addFileCacheForPath(pathCache_t *pathCache, fileCache_t *fileCache);
 int _pathNotExist(char *path);
 int _pathReplace(char *inPath, fileCache_t *fileCache, struct stat *stbuf, pathCache_t **outPathCache);

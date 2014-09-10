@@ -15,16 +15,9 @@
 #include "irodsFs.h"
 #include "iFuseOper.h"
 #include "iFuseLib.h"
-#include "iFuseLib.Logging.h"
-#include "iFuseLib.Http.h"
-
-// helpful macros
-#define strdup_or_default( s, d ) ((s) != NULL ? strdup(s) : ((d) != NULL ? strdup(d) : NULL))
-
+#include "iFuseLib.Trace.h"
 
 /* some global variables */
-struct log_context* LOGCTX = NULL;
-
 extern rodsEnv MyRodsEnv;
 
 #ifdef  __cplusplus
@@ -32,27 +25,27 @@ struct fuse_operations irodsOper;
 #else
 static struct fuse_operations irodsOper =
 {
-  .getattr = irodsGetattr,
-  .readlink = irodsReadlink,
-  .readdir = irodsReaddir,
-  .mknod = irodsMknod,
-  .mkdir = irodsMkdir,
-  .symlink = irodsSymlink,
-  .unlink = irodsUnlink,
-  .rmdir = irodsRmdir,
-  .rename = irodsRename,
-  .link = irodsLink,
-  .chmod = irodsChmod,
-  .chown = irodsChown,
-  .truncate = irodsTruncate,
-  .utimens = irodsUtimens,
-  .open = irodsOpen,
-  .read = irodsRead,
-  .write = irodsWrite,
-  .statfs = irodsStatfs,
-  .release = irodsRelease,
-  .fsync = irodsFsync,
-  .flush = irodsFlush,
+  .getattr = traced_irodsGetattr,
+  .readlink = traced_irodsReadlink,
+  .readdir = traced_irodsReaddir,
+  .mknod = traced_irodsMknod,
+  .mkdir = traced_irodsMkdir,
+  .symlink = traced_irodsSymlink,
+  .unlink = traced_irodsUnlink,
+  .rmdir = traced_irodsRmdir,
+  .rename = traced_irodsRename,
+  .link = traced_irodsLink,
+  .chmod = traced_irodsChmod,
+  .chown = traced_irodsChown,
+  .truncate = traced_irodsTruncate,
+  .utimens = traced_irodsUtimens,
+  .open = traced_irodsOpen,
+  .read = traced_irodsRead,
+  .write = traced_irodsWrite,
+  .statfs = traced_irodsStatfs,
+  .release = traced_irodsRelease,
+  .fsync = traced_irodsFsync,
+  .flush = traced_irodsFlush,
 };
 #endif
 
@@ -97,27 +90,27 @@ int
 main (int argc, char **argv)
 {
 
-irodsOper.getattr = irodsGetattr;
-irodsOper.readlink = irodsReadlink;
-irodsOper.readdir = irodsReaddir;
-irodsOper.mknod = irodsMknod;
-irodsOper.mkdir = irodsMkdir;
-irodsOper.symlink = irodsSymlink;
-irodsOper.unlink = irodsUnlink;
-irodsOper.rmdir = irodsRmdir;
-irodsOper.rename = irodsRename;
-irodsOper.link = irodsLink;
-irodsOper.chmod = irodsChmod;
-irodsOper.chown = irodsChown;
-irodsOper.truncate = irodsTruncate;
-irodsOper.utimens = irodsUtimens;
-irodsOper.open = irodsOpen;
-irodsOper.read = irodsRead;
-irodsOper.write = irodsWrite;
-irodsOper.statfs = irodsStatfs;
-irodsOper.release = irodsRelease;
-irodsOper.fsync = irodsFsync;
-irodsOper.flush = irodsFlush;
+irodsOper.getattr = traced_irodsGetattr;
+irodsOper.readlink = traced_irodsReadlink;
+irodsOper.readdir = traced_irodsReaddir;
+irodsOper.mknod = traced_irodsMknod;
+irodsOper.mkdir = traced_irodsMkdir;
+irodsOper.symlink = traced_irodsSymlink;
+irodsOper.unlink = traced_irodsUnlink;
+irodsOper.rmdir = traced_irodsRmdir;
+irodsOper.rename = traced_irodsRename;
+irodsOper.link = traced_irodsLink;
+irodsOper.chmod = traced_irodsChmod;
+irodsOper.chown = traced_irodsChown;
+irodsOper.truncate = traced_irodsTruncate;
+irodsOper.utimens = traced_irodsUtimens;
+irodsOper.open = traced_irodsOpen;
+irodsOper.read = traced_irodsRead;
+irodsOper.write = traced_irodsWrite;
+irodsOper.statfs = traced_irodsStatfs;
+irodsOper.release = traced_irodsRelease;
+irodsOper.fsync = traced_irodsFsync;
+irodsOper.flush = traced_irodsFlush;
 
 
     int status;
@@ -126,27 +119,27 @@ irodsOper.flush = irodsFlush;
 
 #ifdef  __cplusplus
     bzero (&irodsOper, sizeof (irodsOper));
-    irodsOper.getattr = irodsGetattr;
-    irodsOper.readlink = irodsReadlink;
-    irodsOper.readdir = irodsReaddir;
-    irodsOper.mknod = irodsMknod;
-    irodsOper.mkdir = irodsMkdir;
-    irodsOper.symlink = irodsSymlink;
-    irodsOper.unlink = irodsUnlink;
-    irodsOper.rmdir = irodsRmdir;
-    irodsOper.rename = irodsRename;
-    irodsOper.link = irodsLink;
-    irodsOper.chmod = irodsChmod;
-    irodsOper.chown = irodsChown;
-    irodsOper.truncate = irodsTruncate;
-    irodsOper.utimens = irodsUtimens;
-    irodsOper.open = irodsOpen;
-    irodsOper.read = irodsRead;
-    irodsOper.write = irodsWrite;
-    irodsOper.statfs = irodsStatfs;
-    irodsOper.release = irodsRelease;
-    irodsOper.fsync = irodsFsync;
-    irodsOper.flush = irodsFlush;
+    irodsOper.getattr = traced_irodsGetattr;
+    irodsOper.readlink = traced_irodsReadlink;
+    irodsOper.readdir = traced_irodsReaddir;
+    irodsOper.mknod = traced_irodsMknod;
+    irodsOper.mkdir = traced_irodsMkdir;
+    irodsOper.symlink = traced_irodsSymlink;
+    irodsOper.unlink = traced_irodsUnlink;
+    irodsOper.rmdir = traced_irodsRmdir;
+    irodsOper.rename = traced_irodsRename;
+    irodsOper.link = traced_irodsLink;
+    irodsOper.chmod = traced_irodsChmod;
+    irodsOper.chown = traced_irodsChown;
+    irodsOper.truncate = traced_irodsTruncate;
+    irodsOper.utimens = traced_irodsUtimens;
+    irodsOper.open = traced_irodsOpen;
+    irodsOper.read = traced_irodsRead;
+    irodsOper.write = traced_irodsWrite;
+    irodsOper.statfs = traced_irodsStatfs;
+    irodsOper.release = traced_irodsRelease;
+    irodsOper.fsync = traced_irodsFsync;
+    irodsOper.flush = traced_irodsFlush;
 #endif
     optStr = "hdo:";
 
@@ -179,74 +172,17 @@ irodsOper.flush = irodsFlush;
     initConn();
     initFileCache();
     
-    // get logging environment variables, or use defaults 
-    char* http_host = strdup_or_default( getenv("IRODSFS_LOG_SERVER_HOSTNAME"), HTTP_LOG_SERVER_HOSTNAME );
-    char* http_port_str = strdup_or_default( getenv("IRODSFS_LOG_SERVER_PORTNUM"), HTTP_LOG_SERVER_PORTNUM_STR );
-    char* sync_delay_str = strdup_or_default( getenv("IRODSFS_LOG_SERVER_SYNC_DELAY"), HTTP_LOG_SYNC_TIMEOUT_STR );
-    char* log_path_salt = strdup_or_default( getenv("IRODSFS_LOG_PATH_SALT"), LOG_FILENAME_SALT );
-    
-    // parse!
-    char* tmp = NULL;
-    int portnum = 0;
-    int sync_delay = 0;
-    
-    portnum = (int)strtoll( http_port_str, &tmp, 10 );
-    if( tmp == NULL || portnum < 0 || portnum >= 65535 ) {
-       
-       fprintf(stderr, "WARN: invalid port number %d.  Using default %d\n", portnum, HTTP_LOG_SERVER_PORTNUM );
-       portnum = HTTP_LOG_SERVER_PORTNUM;
+    status = trace_begin( NULL );
+    if( status != 0 ) {
+       rodsLogError(LOG_ERROR, status, "main: trace_begin failed. ");
+       exit(1);
     }
-    
-    sync_delay = (int)strtoll( sync_delay_str, &tmp, 10 );
-    if( tmp == NULL || sync_delay <= 0 ) {
-       
-       fprintf(stderr, "WARN: invalid sync delay of %d seconds.  Using default of %d seconds\n", sync_delay, HTTP_LOG_SYNC_TIMEOUT );
-       sync_delay = HTTP_LOG_SYNC_TIMEOUT;
-    }
-    
-    // set up logging 
-    LOGCTX = log_init( http_host, portnum, sync_delay, log_path_salt );
-    
-    if( LOGCTX == NULL ) {
-       // OOM
-       fprintf(stderr, "FATAL: out of memory\n");
-       exit(4);  
-    }
-    
-    // start up logging 
-    int rc = log_start_threads( LOGCTX );
-    if( rc != 0 ) {
-       fprintf(stderr, "FATAL: log_start_threads rc = %d\n", rc );
-       exit(5);
-    }
-    
-    logmsg( LOGCTX, "%s", "fuse_main\n");
     
     status = fuse_main (argc, argv, &irodsOper, NULL);
 
-    logmsg( LOGCTX, "fuse_main rc = %d\n", status);
-
-    // stop the threads 
-    rc = log_stop_threads( LOGCTX );
-    if( rc != 0 ) {
-       fprintf(stderr, "log_stop_threads rc = %d\n", rc );
-       exit(6);
-    }
-    
-    // sync the last of the logs 
-    rc = log_rollover( LOGCTX );
-    if( rc != 0 ) {
-       fprintf(stderr, "ERR: log_rollover rc = %d\n", rc );
-       exit(7);
-    }
-    
-    // upload the last of the logs 
-    rc = http_sync_all_logs( LOGCTX );
-    if( rc != 0 ) {
-       fprintf(stderr, "WARN: http_sync_all_logs rc = %d\n", rc );
-    }
-    
     disconnectAll ();
+    
+    trace_end( NULL );
      
     if (status < 0) {
         exit (3);
@@ -266,26 +202,14 @@ usage ()
 " -h  this help",
 " -d  FUSE debug mode",
 " -o  opt,[opt...]  FUSE mount options",
-" ",
-"Special environment variables that override built-in defaults:",
-" IRODSFS_LOG_PATH_SALT            A string to be used to salt path hashes when logging.",
-"                                  It is best to make this at least 256 random characters.",
-" ",
-" IRODSFS_LOG_SERVER_HOSTNAME      The hostname of the log server that will receive access",
-"                                  traces from this filesystem.  The built-in default is",
-"                                  " HTTP_LOG_SERVER_HOSTNAME,
-" ",
-" IRODSFS_LOG_SERVER_PORTNUM       The port number of said log server.  The built-in",
-"                                  default is " HTTP_LOG_SERVER_PORTNUM_STR,
-" ",
-" IRODSFS_LOG_SERVER_SYNC_DELAY    The number of seconds to wait between uploading snapshots",
-"                                  of access traces to the log server.  The default is " HTTP_LOG_SYNC_TIMEOUT_STR,
 ""};
     int i;
     for (i=0;;i++) {
         if (strlen(msgs[i])==0) return;
          printf("%s\n",msgs[i]);
     }
+    
+    trace_usage();
 }
 
 

@@ -22,16 +22,20 @@
 #define HTTP_LOG_SERVER_PORTNUM  8090
 #endif
 
-#define xstr(s) str(s)
-#define str(s) #s
-
-#define HTTP_LOG_SERVER_PORTNUM_STR xstr(HTTP_LOG_SERVER_PORTNUM)
+#ifndef HTTP_LOG_SERVER_TIMEOUT
+#define HTTP_LOG_SERVER_TIMEOUT 30
+#endif 
 
 #ifndef HTTP_LOG_SYNC_TIMEOUT
 #define HTTP_LOG_SYNC_TIMEOUT 60
 #endif
 
-#define HTTP_LOG_SYNC_TIMEOUT_STR xstr(HTTP_LOG_SYNC_TIMEOUT)
+#define xstr(s) str(s)
+#define str(s) #s
+
+#define HTTP_LOG_SERVER_PORTNUM_STR     xstr(HTTP_LOG_SERVER_PORTNUM)
+#define HTTP_LOG_SERVER_TIMEOUT_STR     xstr(HTTP_LOG_SERVER_TIMEOUT)
+#define HTTP_LOG_SYNC_TIMEOUT_STR       xstr(HTTP_LOG_SYNC_TIMEOUT)
 
 #ifdef  __cplusplus
 extern "C" {

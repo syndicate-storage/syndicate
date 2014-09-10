@@ -1,0 +1,26 @@
+CPP    := g++ -Wall -g -fPIC
+LIB   := -lpthread -lrt -lcrypto
+IRODS_ROOT := /home/jude/irods/trunk/iRODS
+INC   := -I/usr/include -I. -I../../include -I$(IRODS_ROOT)/lib/api/include -I$(IRODS_ROOT)/lib/core/include -I$(IRODS_ROOT)/lib/md5/include -I$(IRODS_ROOT)/lib/sha1/include -I$(IRODS_ROOT)/server/core/include/ -I$(IRODS_ROOT)/server/icat/include -I$(IRODS_ROOT)/server/drivers/include -I$(IRODS_ROOT)/server/re/include
+C_SRCS:= $(wildcard *.c)
+CXSRCS:= $(wildcard *.cpp)
+OBJ   := $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.cpp,%.o,$(CXSRCS))
+DEFS  := -D_REENTRANT -D_THREAD_SAFE -D__STDC_FORMAT_MACROS -D_TEST_TRACE -D_FILE_OFFSET_BITS=64
+TESTS := log
+COMMON_SRC := $(wildcard iFuseLib.*.c)
+COMMON_OBJ := $(patsubst %.c,%.o,$(COMMON_SRC))
+
+all: $(TESTS)
+
+log: $(OBJ)
+	$(CPP) -o log log.o $(COMMON_OBJ) $(LIBINC) $(LIB)
+
+%.o : %.c
+	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+
+%.o : %.cpp
+	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+
+.PHONY: clean
+clean:
+	/bin/rm -f $(OBJ) $(TESTS)

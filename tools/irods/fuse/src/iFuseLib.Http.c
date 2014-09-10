@@ -192,7 +192,7 @@ int http_upload( int socket_fd, int file_fd, size_t num_bytes ) {
 }
 
 // connect via HTTP.  return a socket, or negative error code
-int http_connect( char const* hostname, int portnum ) {
+int http_connect( char const* hostname, int portnum, int timeout ) {
 
    struct sockaddr_storage addr;
    memset( &addr, 0, sizeof(addr) );
@@ -214,7 +214,31 @@ int http_connect( char const* hostname, int portnum ) {
       return rc;
    }
 
-
+   // set timeouts 
+   struct timeval tv;
+   tv.tv_sec = timeout;
+   tv.tv_usec = 0;
+   
+   rc = setsockopt( socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval) );
+   if( rc != 0 ) {
+      
+      rc = -errno;
+      fprintf(stderr, "iFuseLib.Http: setsockopt(%d, SO_RCVTIMEO, %d) errno = %d\n", socket_fd, timeout, rc );
+      
+      close( socket_fd );
+      return rc;
+   }
+   
+   rc = setsockopt( socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(struct timeval) );
+   if( rc != 0 ) {
+      
+      rc = -errno;
+      fprintf(stderr, "iFuseLib.Http: setsockopt(%d, SO_SNDTIMEO, %d) errno = %d\n", socket_fd, timeout, rc );
+      
+      close( socket_fd );
+      return rc;
+   }
+   
    // connect
    rc = connect( socket_fd, (struct sockaddr*)&addr, sizeof(addr) );
    if( rc < 0 ) {
@@ -229,12 +253,12 @@ int http_connect( char const* hostname, int portnum ) {
 
 
 // sync all log data 
-int http_send_log( char const* hostname, int portnum, char const* compressed_logfile_path ) {
+int http_send_log( char const* hostname, int portnum, int timeout, char const* compressed_logfile_path ) {
    
    int rc = 0;
    
    // send the log off 
-   int soc = http_connect( hostname, portnum );
+   int soc = http_connect( hostname, portnum, timeout );
    if( soc < 0 ) {
       
       rc = -errno;
@@ -310,7 +334,7 @@ int http_sync_all_logs( struct log_context* ctx ) {
       (*compressed_logs)[i] = NULL;
       
       // sync the log 
-      rc = http_send_log( ctx->hostname, ctx->portnum, compressed_logfile_path );
+      rc = http_send_log( ctx->hostname, ctx->portnum, ctx->timeout, compressed_logfile_path );
       if( rc != 0 ) {
          
          fprintf(stderr, "http_send_log(%s:%d, %s) rc = %d\n", ctx->hostname, ctx->portnum, compressed_logfile_path, rc );

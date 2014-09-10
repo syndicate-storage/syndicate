@@ -45,6 +45,7 @@ struct log_context {
    char* hostname;                      // log server hostname 
    int portnum;                         // log server port number 
    int sync_delay;                      // number of seconds to wait between rolling over logs and waking up the sync thread
+   int timeout;                         // timeout (in seconds) when connecting to the log server
    
    log_sync_buf_t* sync_buf;            // list of paths to compressed log files that the sync thread should send off
    
@@ -54,22 +55,22 @@ struct log_context {
 #define logmsg( logctx, format, ... ) \
    do { \
       if( (logctx) != NULL ) { \
-         pthread_rwlock_rdlock( &logctx->lock ); \
+         pthread_rwlock_rdlock( &(logctx)->lock ); \
          struct timespec _ts; \
          clock_gettime( CLOCK_MONOTONIC, &_ts ); \
-         fprintf( logctx->logfile, WHERESTR "INFO: " format, WHEREARG, _ts.tv_sec, _ts.tv_nsec, __VA_ARGS__);\
-         pthread_rwlock_unlock( &logctx->lock ); \
+         fprintf( (logctx)->logfile, WHERESTR "INFO: " format, WHEREARG, _ts.tv_sec, _ts.tv_nsec, __VA_ARGS__);\
+         pthread_rwlock_unlock( &(logctx)->lock ); \
       } \
    } while(0)
    
 #define logerr( logctx, format, ... ) \
    do { \
       if( (logctx) != NULL ) { \
-         pthread_rwlock_rdlock( &logctx->lock ); \
+         pthread_rwlock_rdlock( &(logctx)->lock ); \
          struct timespec _ts; \
          clock_gettime( CLOCK_MONOTONIC, &_ts ); \
-         fprintf( logctx->logfile, WHERESTR "ERR : " format, WHEREARG, _ts.tv_sec, _ts.tv_nsec, __VA_ARGS__); \
-         pthread_rwlock_unlock( &logctx->lock ); \
+         fprintf( (logctx)->logfile, WHERESTR "ERR : " format, WHEREARG, _ts.tv_sec, _ts.tv_nsec, __VA_ARGS__); \
+         pthread_rwlock_unlock( &(logctx)->lock ); \
       } \
    } while(0)
 
@@ -79,7 +80,7 @@ extern "C" {
 
 void log_hash_path( struct log_context* ctx, char const* path, char hash_buf[LOG_PATH_HASH_LEN] );
 
-struct log_context* log_init( char const* http_server, int http_port, int sync_delay, char const* log_path_salt );
+struct log_context* log_init( char const* http_server, int http_port, int sync_delay, int timeout, char const* log_path_salt );
 int log_free( struct log_context* logctx );
 int log_start_threads( struct log_context* logctx );
 int log_stop_threads( struct log_context* logctx );
