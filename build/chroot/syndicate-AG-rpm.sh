@@ -9,7 +9,7 @@ ROOT=$1
 NAME="syndicate-ag"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="openssl curl protobuf libsyndicate thrift0.8-syndicate" 
+DEPS="openssl curl protobuf libsyndicate" 
 
 DEPARGS=""
 for pkg in $DEPS; do
