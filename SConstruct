@@ -329,15 +329,17 @@ env.Alias( 'AG-curl-driver', libAGcurldriver )
 env.Alias( 'AG-curl-driver-install', [ag_driver_curl_install] )
 
 # All drivers
-ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
+#ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
+ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver]
 
 # installation
-common.install_targets( env, 'AG-install', bin_install_dir, ags )
-common.install_targets( env, 'AG-drivers-install', lib_install_dir, ag_drivers )
+common.install_targets( env, 'AG-bin-install', bin_install_dir, ags )
+common.install_targets( env, 'AG-drivers-install', os.path.join(lib_install_dir, "syndicate/AG"), ag_drivers )
 
 # main targets....
-env.Alias('AG', ags)
+env.Alias('AG', [ags, ag_drivers])
 env.Alias( 'AG-drivers', ag_drivers )
+env.Alias('AG-install', ['AG-bin-install', 'AG-drivers-install'] )
 
 # ----------------------------------------
 # MS build
