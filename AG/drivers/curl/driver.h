@@ -35,13 +35,7 @@
 #include "AG/driver.h"
 
 
-#define AG_CURL_DRIVER_CONFIG_DEFAULT_MAX_BLOCKS 1024
-
-// curl driver state 
-struct curl_driver_state {
-   
-   char* cache_root;
-};
+#define AG_CURL_DRIVER_CONFIG_BASE_URL "BaseURL"
 
 // curl write context 
 struct curl_write_context {
@@ -55,7 +49,6 @@ struct curl_write_context {
 struct curl_connection_context {
    char* request_path;
    char* url;
-   struct curl_driver_state* state;
 };
 
 extern "C" {

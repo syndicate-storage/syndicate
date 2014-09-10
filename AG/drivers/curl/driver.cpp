@@ -19,9 +19,6 @@
 // start up the driver
 int driver_init( void** driver_state ) {
    
-   struct curl_driver_state* state = CALLOC_LIST( struct curl_driver_state, 1 );
-   
-   *driver_state = state;
    return 0;
 }
 
@@ -29,24 +26,11 @@ int driver_init( void** driver_state ) {
 // shut down the driver 
 int driver_shutdown( void* driver_state ) {
    
-   struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
-   
-   if( state != NULL ) {
-      if( state->cache_root != NULL ) {
-         free( state->cache_root );
-         state->cache_root = NULL;
-      }
-      
-      free( state );
-   }
-   
    return 0;
 }
 
 // connect
 int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
-   
-   struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
    
    char* request_path = AG_driver_get_request_path( ag_ctx );
    char* url = AG_driver_get_query_string( ag_ctx );
@@ -55,7 +39,6 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    
    curl_ctx->request_path = request_path;
    curl_ctx->url = url;
-   curl_ctx->state = state;
    
    *driver_connection_state = curl_ctx;
    
@@ -241,7 +224,7 @@ static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, 
 
 
 // get the publish information for a dataset 
-int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path, char const* url, struct AG_driver_publish_info* pubinfo ) {
+int curl_get_pubinfo( char const* request_path, char const* url, struct AG_driver_publish_info* pubinfo ) {
    
    // maybe we've cached it?
    char* info_path = md_fullpath( request_path, "curl-info", NULL );
@@ -356,8 +339,6 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 // prepare to publish--fill in pub_info
 int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
    
-   struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
-   
    char* url = AG_driver_map_info_get_query_string( map_info );
    
    if( url == NULL ) {
@@ -365,7 +346,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
       return -ENODATA;
    }
    
-   int rc = curl_get_pubinfo( state, path, url, pub_info );
+   int rc = curl_get_pubinfo( path, url, pub_info );
    
    if( rc != 0 ) {
       errorf("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
