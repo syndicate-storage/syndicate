@@ -44,6 +44,7 @@ if __name__ == "__main__":
    parser.add_argument( '-D', "--dir-perm", dest="dir_perm", required=True, help="Permission bits (in octal) to be applied for each directory.")
    parser.add_argument( '-R', "--reval", dest="reval_sec", required=True, help="Length of time to go between revalidating entries.  Formatted as a space-separated list of numbers, with units 's' for seconds, 'm' for minutes, 'h' for hours, and 'd' for days.  For example, '10d 12h 30m' means ten days, twelve hours, and thirty minutes.")
    parser.add_argument( '-G', "--gsutil-path", dest="gsutil_path", help="Path to the gsutil binary.")
+   parser.add_argument( '-L', "--listing", dest="listing_path", help="Compressed dataset listing path.  If not given, it will be downloaded.")
 
    args = parser.parse_args()
 
@@ -74,6 +75,11 @@ if __name__ == "__main__":
    except:
       gsutil_binary_path = GSUTIL_BINARY_PATH
       
+   try:
+      listing_path = args.listing_path 
+   except:
+      listing_path = None
+      
    blacklists, whitelists = AG_acl.load_blacklists_and_whitelists( args.blacklists, args.whitelists )
    
    # make the hierarchy
@@ -85,15 +91,7 @@ if __name__ == "__main__":
                                                              dir_reval_sec_cb  = lambda path: args.reval_sec,
                                                              file_perm_cb      = lambda path: file_perm,
                                                              dir_perm_cb       = lambda path: dir_perm,
-                                                             query_string_cb   = lambda path: os.path.join( args.root_dir, path.strip("/") ) )
+                                                             query_string_cb   = lambda path: gsutil_binary_path + " cat " + AG_mlab.GSUTIL_PROTOCOL + AG_mlab.GSUTIL_ROOT + os.path.join( args.root_dir, path.strip("/") ) )
    
-   hierarchy = AG_mlab.build_hierarchy(args.root_dir, gsutil_binary_path, mlab_include_callback, mlab_specfile_callbacks, 
-                                       num_threads           = num_threads,
-                                       max_retries           = max_retries,
-                                       allow_partial_failure = (not args.fail_fast) )
+   AG_mlab.generate_specfile_from_global_listing( gsutil_binary_path, args.root_dir, mlab_include_callback, mlab_specfile_callbacks, sys.stdout, max_retries=max_retries, compressed_listing_path=listing_path )
    
-   if hierarchy is not None:
-      specfile_text = AG_specfile.generate_specfile( {}, hierarchy )
-   
-      print specfile_text
-      

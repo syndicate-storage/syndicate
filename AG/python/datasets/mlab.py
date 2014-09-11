@@ -26,6 +26,7 @@ import threading
 import time
 import subprocess
 import StringIO
+import tempfile
 
 import syndicate.ag.curation.specfile as AG_specfile
 import syndicate.ag.curation.crawl as AG_crawl
@@ -44,7 +45,7 @@ GSUTIL_ROOT = "m-lab"
 GSUTIL_LISTING_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 # global listing of all datasets available
-ALL_MLAB_DATASETS_URL = "%sm-lab/list/all_mlab_tarfiles.txt.gz" % GSUTIL_PROTOCOL
+GSUTIL_ALL_MLAB_DATASETS_URL = "%s%s/list/all_mlab_tarfiles.txt.gz" % (GSUTIL_PROTOCOL, GSUTIL_ROOT)
 
 
 class gsutil_context(object):
@@ -182,7 +183,7 @@ def gsutil_isdir( context, path ):
    
 
 # build the hierarchy 
-def build_hierarchy( root_dir, gsutil_binary_path, include_cb, gs_specfile_cbs, max_retries=3, num_threads=2, allow_partial_failure=False, ):   
+def build_hierarchy( root_dir, gsutil_binary_path, include_cb, gs_specfile_cbs, max_retries=3, num_threads=2, allow_partial_failure=False ):   
    """
    Build up the directory heirarchy and return it
    """
@@ -202,3 +203,126 @@ def build_hierarchy( root_dir, gsutil_binary_path, include_cb, gs_specfile_cbs, 
    hierarchy = AG_crawl.build_hierarchy( contexts, root_dir, DRIVER_NAME, gs_crawler_cbs, gs_specfile_cbs, allow_partial_failure=allow_partial_failure, max_retries=max_retries )
    
    return hierarchy
+
+
+# get the global dataset 
+def gsutil_download_global_dataset_listing( gsutil_binary_path, dest_path, max_retries=3 ):
+   """
+   Download the global dataset listing to dest_path
+   """
+   log.info("Fetching global listing from %s" % GSUTIL_ALL_MLAB_DATASETS_URL)
+   
+   gs_args = "%s cp %s %s" % (gsutil_binary_path, GSUTIL_ALL_MLAB_DATASETS_URL, dest_path)
+   
+   p = subprocess.Popen( gs_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+   gs_output_buf, gs_error_buf = p.communicate()
+   
+   if p.returncode != 0:
+      raise AGCurationException("gsutil exited with rc = %s, stderr: \"%s\"" % (p.returncode, gs_error_buf))
+   
+   return True
+   
+   
+# decompress and write the downloaded global dataset to a file descriptor
+def gsutil_extract_global_dataset_listing( dataset_path, output_fd ):
+   """
+   Read the compressed dataset listing, and send it to the output file descriptor
+   """
+   
+   log.info("Decompressing global listing %s" % dataset_path )
+   
+   zcat_args = "/bin/zcat %s" % dataset_path 
+   
+   p = subprocess.Popen( zcat_args, stdout=output_fd, stderr=subprocess.PIPE, shell=True )
+   _, zcat_error_buf = p.communicate()
+   
+   if p.returncode != 0:
+      raise AGCurationException("/bin/zcat exited with rc = %s, stderr: \"%s\"" % (p.returncode, zcat_error_buf))
+   
+   return True 
+
+
+
+# build the specfile, using the global listing of all datasets 
+def generate_specfile_from_global_listing( gsutil_binary_path, root_dir, include_cb, specfile_cbs, output_fd, max_retries=3, compressed_listing_path=None ):
+   """
+   Build up the specfile from the global dataset listing.
+   Write the result to output_fd.
+   NOTE: this can be memory intensive, if there are a lot of directories
+   """
+   
+   directories = {}
+   
+   if compressed_listing_path is None:
+      
+      # get the global dataset 
+      compressed_listing_path = tempfile.mktemp()
+      
+      rc = gsutil_download_global_dataset_listing( gsutil_binary_path, compressed_listing_path, max_retries=max_retries )
+      if not rc:
+         log.error("Failed to download listing")
+         return False
+      
+   listing_fd, listing_path = tempfile.mkstemp()
+   listing_file = os.fdopen( listing_fd, "r+" )
+   
+   os.unlink( listing_path )
+   
+   # extract it
+   rc = gsutil_extract_global_dataset_listing( compressed_listing_path, listing_file )
+   if not rc:
+      log.error("Failed to extract listing")
+      
+      listing_file.close()
+      return False
+   
+   listing_file.seek(0)
+   
+   # make the specfile...
+   AG_specfile.generate_specfile_header( output_fd )
+   AG_specfile.generate_specfile_config( {} )
+   
+   # iterate through each line
+   while True:
+      
+      # next line 
+      line = listing_file.readline()
+      if len(line) == 0:
+         break
+      
+      line = line.strip()
+      
+      # extract path 
+      path = gsutil_parse_path( line )
+      if path is None:
+         log.error("Failed to parse '%s'" % line)
+         continue 
+      
+      # is it a child of root_dir?
+      if not path.startswith(root_dir):
+         continue 
+      
+      # add all prefixes
+      new_directories = AG_specfile.add_hierarchy_prefixes( path, DRIVER_NAME, include_cb, specfile_cbs, directories )
+      
+      new_directories.sort()
+      
+      # write all new directories 
+      for new_directory in new_directories:
+         
+         dir_data = directories[new_directory]
+         AG_specfile.generate_specfile_pair( dir_data, output_fd )
+         
+      # add this entry 
+      file_data_dict = {}
+      AG_specfile.add_hierarchy_element( path, False, DRIVER_NAME, include_cb, specfile_cbs, file_data_dict )
+      
+      AG_specfile.generate_specfile_pair( file_data_dict[path], output_fd )
+      
+   AG_specfile.generate_specfile_footer( output_fd )
+   
+   listing_file.close()
+   
+   return True
+   
+   

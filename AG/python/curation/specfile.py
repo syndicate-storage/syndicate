@@ -19,8 +19,7 @@
 
 import collections
 
-import lxml
-import lxml.etree as etree
+import StringIO
 import logging
 
 logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
@@ -197,7 +196,7 @@ def add_hierarchy_element( abs_path, is_directory, driver_name, include_cb, spec
       return False 
    
    # duplicate?
-   if abs_path in hierarchy_dict.keys():
+   if hierarchy_dict.has_key(abs_path):
       log.error("Duplicate entry %s" % abs_path )
       return False
    
@@ -223,81 +222,196 @@ def add_hierarchy_element( abs_path, is_directory, driver_name, include_cb, spec
    return True
 
 
+# generate a list of prefixes for a path 
+def generate_prefixes( path ):
+
+   prefixes = []
+   names = path.strip("/").split("/")
+   p = "/"
+   
+   prefixes.append(p)
+   
+   for name in names:
+      p += name + "/"
+      prefixes.append(p)
+      
+   return prefixes 
+
+
 # add missing prefixes, to complete the hierarchy 
+# this method should be called iteratively to build up the given hierarchy.
+# return the hierarchy prefixes added
 def add_hierarchy_prefixes( root_dir, driver_name, include_cb, specfile_cbs, hierarchy ):
+   
+   added = []
    
    # build up the path to the root directory, if we need to 
    if len(root_dir.strip("/")) > 0:
       
-      prefixes = []
-      names = root_dir.strip("/").split("/")
-      p = "/"
+      prefixes = generate_prefixes(root_dir)
+      prefixes.sort()
+      prefixes.reverse()
       
-      prefixes.append(p)
-      
-      for name in names:
-         p += name + "/"
-         prefixes.append(p)
-         
+      # go from lowest to highest
       for prefix in prefixes:
-         add_hierarchy_element( prefix, True, driver_name, include_cb, specfile_cbs, hierarchy )
+         if hierarchy.has_key( prefix ):
+            # all prior directories added
+            break
          
+         add_hierarchy_element( prefix, True, driver_name, include_cb, specfile_cbs, hierarchy )
+         added.append( prefix )
+         
+   return added
+         
+         
+def generate_specfile_header( output_fd=None ):
+   """
+   Generate the header of a specfile.
+   If output_fd is not None, wirte it to output_fd.
+   Otherwise, return the string.
+   """
+   
+   return_string = False 
+
+   if output_fd is None:
+      return_string = True
+      output_fd = StringIO.StringIO()
+      
+   output_fd.write("<Map>\n")
+   
+   if return_string:
+      return output_fd.getvalue()
+   else:
+      return True
+   
+   
+def generate_specfile_footer( output_fd=None ):
+   """
+   Generate the footer of a specfile.
+   If output_fd is not None, wirte it to output_fd.
+   Otherwise, return the string.
+   """
+   
+   return_string = False 
+
+   if output_fd is None:
+      return_string = True
+      output_fd = StringIO.StringIO()
+      
+   output_fd.write("</Map>\n")
+   
+   if return_string:
+      return output_fd.getvalue()
+   else:
+      return True
+
+
+def generate_specfile_config( config_dict, output_fd=None ):
+   """
+   Generate the <Config> section of the specfile.
+   if output_fd is not None, write it to output_fd
+   otherwise, return the string.
+   """
+   
+   return_string = False 
+
+   if output_fd is None:
+      return_string = True
+      output_fd = StringIO.StringIO()
+   
+   output_fd.write("  <Config>\n")
+
+   for (config_key, config_value) in config_dict.items():
+      output_fd.write("    <%s>%s</%s>\n" % (config_key, config_value, config_key) )
+   
+   output_fd.write("  </Config>\n")
+   
+   if return_string:
+      return output_fd.getvalue()
+   else:
+      return True
+   
+   
+def generate_specfile_pair( data, output_fd=None ):
+   """
+   Generate a <Pair> section of the specfile.
+   If output_fd is not None, write it to output_fd.
+   Otherwise, return the string.
+   """
+   
+   return_string = False 
+
+   if output_fd is None:
+      return_string = True
+      output_fd = StringIO.StringIO()
+   
+   output_fd.write("  <Pair reval=\"%s\">\n" % data.reval_sec )
+   
+   if data.__class__.__name__ == "AG_file_data":
+      # this is a file 
+      output_fd.write("    <File perm=\"%s\">%s</File>\n" % (oct(data.perm), data.path))
+      output_fd.write("    <Query type=\"%s\">%s</Query>\n" % (data.driver, data.query_string))
+                              
+   else:
+      # this is a directory 
+      output_fd.write("    <Dir perm=\"%s\">%s</Dir>\n" % (oct(data.perm), data.path))
+      output_fd.write("    <Query type=\"%s\"></Query>\n" % (data.driver))
+      
+   output_fd.write("  </Pair>\n")
+   
+   if return_string:
+      return output_fd.getvalue()
+   else:
+      return True 
+   
 
 # generate XML output 
-def generate_specfile( config_dict, hierarchy_dict ):
+def generate_specfile( config_dict, hierarchy_dict=None, output_fd=None, hierarchy_cb=None ):
    """
    Generate an AG specfile, given a dictionary that 
    maps file paths to AG_file_data instances and 
    directory paths to AG_dir_data instances, as well 
    as a dictionary that maps driver config keys to values.
    
-   Return a string that contains the specfile.
+   Return a string that contains the specfile, or if output_fd is not None,
+   return True on success (having written the contents to output_fd)
+   
+   If hierarchy_cb is not None, it must be a function with the signature (absolute_path) => {AG_file_data, AG_dir_data}
+   
+   If hierarchy_dict is not None, it must be a dictionary that maps paths to {AG_file_data, AG_dir_data} instances.
+   It will supercede the value of hierarchy_cb.
    
    WARNING: No validation is performed on hierarchy_dict.
    Use validate_hierarchy() for this.
    """
    
-   root = etree.Element("Map")
+   return_string = False 
+
+   if output_fd is None:
+      return_string = True
+      output_fd = StringIO.StringIO()
    
-   # add config 
-   config = etree.Element("Config")
-   
-   for (config_key, config_value) in config_dict.items():
-      ent = etree.Element( config_key )
-      ent.text = config_value
+   if hierarchy_dict is not None:
+      hierarchy_cb = lambda path: hierarchy_dict[path]
       
-      config.append( ent )
-      
-   root.append( config )
+   generate_specfile_header( output_fd=output_fd )
    
+   generate_specfile_config( config_dict, output_fd=output_fd )
+      
    paths = hierarchy_dict.keys()
    paths.sort()
    
    for path in paths:
       
-      h = hierarchy_dict[path]
-      ent = None 
-      query = None
+      h = hierarchy_cb( path )
       
-      if h.__class__.__name__ == "AG_file_data":
-         # this is a file 
-         ent = etree.Element("File", perm=oct(h.perm) )
-         query = etree.Element("Query", type=h.driver )
-         
-         query.text = h.query_string
-                               
-      else:
-         # this is a directory 
-         ent = etree.Element("Dir", perm=oct(h.perm) )
-         query = etree.Element("Query", type=h.driver )
-
-      ent.text = h.path
+      generate_specfile_pair( data, output_fd )
       
-      pair = etree.Element("Pair", reval=h.reval_sec)
-      
-      pair.append( ent )
-      pair.append( query )
-      
-      root.append( pair )
-      
-   return etree.tostring( root, pretty_print=True )
+   generate_specfile_footer( output_fd=output_fd )
+   
+   if return_string:
+      return output_fd.getvalue()
+   
+   else:
+      return True
+   
