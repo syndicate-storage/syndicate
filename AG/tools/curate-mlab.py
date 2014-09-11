@@ -29,34 +29,27 @@ import syndicate.ag.curation.specfile as AG_specfile
 import syndicate.ag.curation.crawl as AG_crawl
 import syndicate.ag.curation.args as AG_args
 import syndicate.ag.curation.acl as AG_acl
-import syndicate.ag.datasets.ftp as AG_ftp
+import syndicate.ag.datasets.mlab as AG_mlab
 
+GSUTIL_BINARY_PATH = "/usr/local/bin/gsutil"
 
 logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
 log.setLevel( logging.ERROR )
    
 if __name__ == "__main__":
-   parser = AG_args.make_arg_parser( "Syndicate Acquisition Gateway FTP dataset curation tool" )
+   parser = AG_args.make_arg_parser( "Syndicate Acquisition Gateway M-Lab dataset curation tool" )
    
    parser.add_argument( '-F', "--file-perm", dest="file_perm", required=True, help="Permission bits (in octal) to be applied for each file.")
    parser.add_argument( '-D', "--dir-perm", dest="dir_perm", required=True, help="Permission bits (in octal) to be applied for each directory.")
    parser.add_argument( '-R', "--reval", dest="reval_sec", required=True, help="Length of time to go between revalidating entries.  Formatted as a space-separated list of numbers, with units 's' for seconds, 'm' for minutes, 'h' for hours, and 'd' for days.  For example, '10d 12h 30m' means ten days, twelve hours, and thirty minutes.")
-   parser.add_argument( '-u', "--username", dest="username", default="anonymous", help="FTP username.")
-   parser.add_argument( '-p', "--password", dest="password", default="", help="FTP password.")
-   parser.add_argument( "hostname", nargs=1, help="Name of the host to be crawled.")
+   parser.add_argument( '-G', "--gsutil-path", dest="gsutil_path", help="Path to the gsutil binary.")
 
    args = parser.parse_args()
 
    if args.debug:
       log.setLevel( logging.DEBUG )
-      
-   # sanity check: only one host
-   if len(args.hostname) > 1:
-      print >> sys.stderr, "ERROR: Only one hostname is allowed"
-      parser.print_help()
-      sys.exit(1)
-      
+   
    # sanity check: octal file perm and dir perm
    file_perm = 0
    dir_perm = 0
@@ -75,24 +68,27 @@ if __name__ == "__main__":
    except:
       parser.print_help()
       sys.exit(1)
+   
+   try:
+      gsutil_binary_path = args.gsutil_path
+   except:
+      gsutil_binary_path = GSUTIL_BINARY_PATH
       
    blacklists, whitelists = AG_acl.load_blacklists_and_whitelists( args.blacklists, args.whitelists )
    
    # make the hierarchy
-   log.info("crawl %s" % "ftp://" + args.hostname[0] + args.root_dir )
+   log.info("crawl gs://m-lab%s" % args.root_dir )
    
-   ftp_include_callback = lambda path, is_directory: AG_acl.include_in_listing( path, is_directory, blacklists, whitelists )
+   mlab_include_callback = lambda path, is_directory: AG_acl.include_in_listing( path, is_directory, blacklists, whitelists )
    
-   ftp_specfile_callbacks = AG_specfile.specfile_callbacks( file_reval_sec_cb = lambda path: args.reval_sec,
-                                                            dir_reval_sec_cb  = lambda path: args.reval_sec,
-                                                            file_perm_cb      = lambda path: file_perm,
-                                                            dir_perm_cb       = lambda path: dir_perm,
-                                                            query_string_cb   = lambda path: "ftp://" + args.hostname[0] + os.path.join( args.root_dir, path.strip("/") ) )
+   mlab_specfile_callbacks = AG_specfile.specfile_callbacks( file_reval_sec_cb = lambda path: args.reval_sec,
+                                                             dir_reval_sec_cb  = lambda path: args.reval_sec,
+                                                             file_perm_cb      = lambda path: file_perm,
+                                                             dir_perm_cb       = lambda path: dir_perm,
+                                                             query_string_cb   = lambda path: os.path.join( args.root_dir, path.strip("/") ) )
    
-   hierarchy = AG_ftp.build_hierarchy( args.hostname[0], args.root_dir, ftp_include_callback, ftp_specfile_callbacks, 
+   hierarchy = AG_mlab.build_hierarchy(args.root_dir, gsutil_binary_path, mlab_include_callback, mlab_specfile_callbacks, 
                                        num_threads           = num_threads,
-                                       ftp_username          = args.username,
-                                       ftp_password          = args.password,
                                        max_retries           = max_retries,
                                        allow_partial_failure = (not args.fail_fast) )
    
