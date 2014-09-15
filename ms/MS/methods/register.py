@@ -171,7 +171,10 @@ def register_complete( gateway ):
    # add sealed private key, if given earlier 
    if gateway.encrypted_gateway_private_key != None:
       registration_metadata.encrypted_gateway_private_key = gateway.encrypted_gateway_private_key
-      
+   
+   # add misc. config data 
+   registration_metadata.resolve_page_size = RESOLVE_MAX_PAGE_SIZE
+   
    # sign and serialize!
    registration_metadata.signature = ""
    

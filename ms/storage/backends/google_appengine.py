@@ -18,6 +18,7 @@
 from google.appengine.ext import ndb
 import google.appengine.api.memcache as google_memcache
 import google.appengine.ext.deferred as google_deferred
+from google.appengine.datastore.datastore_query import Cursor as GoogleCursor
 
 def raise_(ex):
    raise ex
@@ -84,6 +85,7 @@ Key = ndb.KeyProperty
 Boolean = ndb.BooleanProperty
 Json = ndb.JsonProperty
 Blob = ndb.BlobProperty
+Cursor = GoogleCursor
 
 # aliases for keys
 make_key = ndb.Key

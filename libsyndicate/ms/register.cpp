@@ -163,6 +163,12 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    client->gateway_id = cert.gateway_id;
    client->portnum = cert.portnum;
    
+   client->page_size = registration_md->resolve_page_size();
+   if( client->page_size < 0 ) {
+      errorf("Invalid MS page size %d\n", client->page_size );
+      rc = -EINVAL;
+   }
+   
    // sanity check...
    if( client->session_expires > 0 && client->session_expires < currentTimeSeconds() ) {
       errorf("Session password expired at %" PRId64 "\n", client->session_expires );
@@ -170,7 +176,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    }
    
    // possibly received our private key...
-   if( client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
+   if( rc == 0 && client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
       rc = ms_client_unseal_and_load_keys( client, registration_md, key_password );
       if( rc != 0 ) {
          errorf("ms_client_unseal_and_load_keys rc = %d\n", rc );

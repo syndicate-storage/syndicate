@@ -94,6 +94,9 @@ message ms_listing {
    required int32 status = 1;           // cached status (one of the above)
    required int32 ftype = 2;            // was this a file or directory we accessed?
    repeated ms_entry entries = 3;       // if this was a directory, then this contains its children
+   
+   optional bool have_more = 4;         // if set to True, there's more entries to be fetched
+   optional string serialized_cursor = 5;  // if have_more is True, then this is the serialized cursor to use for querying more entries
 }
 
 // metadata information for the entries of a path
@@ -109,7 +112,7 @@ message ms_reply {
    optional string xattr_value = 8;             // getxattr() only 
    repeated string xattr_names = 9;             // listxattrs() only
    
-   optional int64 file_version = 10;            // GCPEEK only
+   optional int64 file_version = 10;            // VACUUM only
    optional int64 manifest_mtime_sec = 11;          
    optional int32 manifest_mtime_nsec = 12;
    repeated uint64 affected_blocks = 13;
@@ -214,7 +217,8 @@ message ms_registration_metadata {
    required int64 session_expires = 3;        // when the session password expires
    required ms_volume_metadata volume = 4;    // the Volume we're subscribed to
    required string signature = 5;               // (base64) signed by Volume public key
-   optional string encrypted_gateway_private_key = 6;   // Gateway's private key, previously sealed on upload
+   required int32 resolve_page_size = 6;                // number of entries we're allowed to ask for at once in a request
+   optional string encrypted_gateway_private_key = 7;   // Gateway's private key, previously sealed on upload
 }
 
 

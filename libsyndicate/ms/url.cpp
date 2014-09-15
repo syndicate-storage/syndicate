@@ -45,7 +45,7 @@ char* ms_client_file_url( char const* ms_url, uint64_t volume_id ) {
 }
 
 // GET url for a file
-char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce ) {
+char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_id, char const* serialized_cursor ) {
 
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
@@ -59,10 +59,39 @@ char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t 
    char write_nonce_str[60];
    sprintf( write_nonce_str, "%" PRId64, write_nonce );
 
+   size_t cursor_len = 0;
+   size_t page_id_len = 0;
    
-   char* volume_file_path = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(version_str) + 1 + strlen(write_nonce_str) + 1 );
+   if( serialized_cursor != NULL ) {
+      cursor_len = strlen(serialized_cursor) + strlen("?page_id=&cursor=");
+   }
+   
+   if( page_id >= 0 ) {
+      page_id_len = 20;
+   }
+   
+   char* volume_file_path = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 +
+                                               strlen(version_str) + 1 + strlen(write_nonce_str) + 1 + cursor_len + 3 + page_id_len + 1 );
 
    sprintf( volume_file_path, "%s/FILE/RESOLVE/%s/%s/%s/%s", ms_url, volume_id_str, file_id_str, version_str, write_nonce_str );
+   
+   if( cursor_len > 0 && page_id_len > 0 ) {
+      
+      char* cursor_buf = CALLOC_LIST( char, cursor_len + 3 + page_id_len + 1 );
+      sprintf( cursor_buf, "?page_id=%d&cursor=%s", page_id, serialized_cursor );
+      
+      strcat( volume_file_path, cursor_buf );
+      
+      free( cursor_buf );
+   }
+   
+   else if( page_id_len > 0 ) {
+      
+      char page_id_buf[50];
+      sprintf( page_id_buf, "?page_id=%d", page_id );
+      
+      strcat( volume_file_path, page_id_buf );
+   }
    
    return volume_file_path;
 }

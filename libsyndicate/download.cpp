@@ -1013,6 +1013,11 @@ int md_download_context_get_effective_url( struct md_download_context* dlctx, ch
    return 0;
 }
 
+// get the download handle's curl handle 
+CURL* md_download_context_get_curl( struct md_download_context* dlctx ) {
+   return dlctx->curl;
+}
+
 // get the cache cls (only in reference)
 void* md_download_context_get_cache_cls( struct md_download_context* dlctx ) {
    return dlctx->cache_func_cls;

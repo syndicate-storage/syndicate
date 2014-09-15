@@ -43,6 +43,7 @@ Key = backend.Key
 Boolean = backend.Boolean
 Json = backend.Json
 Blob = backend.Blob
+Cursor = backend.Cursor         # NOTE: need to have a constructor that takes urlsafe= as an argument for deserialization, and needs a urlsafe() method for serialization
 
 # aliases for keys
 make_key = backend.make_key
@@ -400,6 +401,7 @@ class Object( Model ):
          raise Exception("Missing key attributes %s" % (",".join(missing)))
       else:
          return cls.__name__ + ":" + ",".join( key_parts )
+
 
    @classmethod
    def fill_defaults( cls, attrdict ):

@@ -92,6 +92,7 @@ struct ms_client {
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
    int gateway_type;          // what kind of gateway is this for?
    int portnum;               // port the gateway listens on
+   int page_size;             // when listing files, how many are we allowed to ask for at once?
 
    bool running;              // set to true if threads are running for this ms_client
    sem_t uploader_sem;        // uploader thread waits on this until signaled to reload 

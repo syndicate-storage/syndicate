@@ -962,7 +962,7 @@ int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char con
    return 0;
 }
    
-// parse an MS listing
+// parse an MS listing, initializing the given ms_listing structure
 int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
    
    const ms::ms_listing& src = reply->listing();
@@ -987,6 +987,18 @@ int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
          dst->entries->push_back( ent );
       }
    }
+   
+   if( src.has_have_more() ) {
+      
+      dst->have_more = src.have_more();
+      
+      if( src.has_serialized_cursor() ) {
+         dst->serialized_cursor = strdup( src.serialized_cursor().c_str() );
+      }
+      else {
+         dst->serialized_cursor = NULL;
+      }
+   }
 
    return 0;
 }
@@ -994,13 +1006,18 @@ int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
 
 // free an MS listing
 void ms_client_free_listing( struct ms_listing* listing ) {
-   if( listing->entries ) {
+   if( listing->entries != NULL ) {
       for( unsigned int i = 0; i < listing->entries->size(); i++ ) {
          md_entry_free( &listing->entries->at(i) );
       }
 
       delete listing->entries;
       listing->entries = NULL;
+   }
+   
+   if( listing->serialized_cursor ) {
+      free( listing->serialized_cursor );
+      listing->serialized_cursor = NULL;
    }
 }
 
@@ -1047,23 +1064,80 @@ void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) ) {
 }
 
 
-// free all downloads 
-static int ms_client_free_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
-   
-   for( unsigned int i = 0; i < num_downloads; i++ ) {
-      
-      if( !md_download_context_finalized( &path_downloads[i] ) ) {
-         // wait for it...
-         md_download_context_wait( &path_downloads[i], -1 );
-      }      
+// initialize an ms path download context 
+// NOTE: path_ent will be referenced by pdlctx, so don't free it before freeing pdlctx.
+static int ms_client_path_download_context_init( struct ms_client* client, struct ms_path_download_context* pdlctx, struct ms_path_ent* path_ent ) {
 
+   memset( pdlctx, 0, sizeof(struct ms_path_download_context) );
+   
+   // TODO: connection pool 
+   CURL* curl_handle = curl_easy_init();
+   
+   char* url = ms_client_file_read_url( client->url, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce, 0, NULL );
+   
+   // NOTE: no cache driver for the MS, so we'll do this manually 
+   md_init_curl_handle( client->conf, curl_handle, url, client->conf->connect_timeout );
+   curl_easy_setopt( curl_handle, CURLOPT_USERPWD, client->userpass );
+   curl_easy_setopt( curl_handle, CURLOPT_URL, url );
+   
+   pdlctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
+   
+   int rc = md_download_context_init( pdlctx->dlctx, curl_handle, NULL, NULL, -1 );
+   if( rc != 0 ) {
+      
+      errorf("md_download_context_init( %s ) rc = %d\n", url, rc );
+      free( url );
+      free( pdlctx->dlctx );
+      
+      return rc;
+   }
+   
+   free( url );
+   
+   pdlctx->page_id = 0;
+   pdlctx->path_ent = path_ent;
+   
+   return rc;
+}
+   
+
+// free an ms path download context 
+static int ms_client_path_download_context_free( struct ms_path_download_context* pdlctx ) {
+
+   if( pdlctx->dlctx ) {
+      if( !md_download_context_finalized( pdlctx->dlctx ) ) {
+         // wait for it...
+         md_download_context_wait( pdlctx->dlctx, -1 );
+      }
+      
+      // TODO: connection pool
       CURL* old_handle = NULL;
-      md_download_context_free( &path_downloads[i], &old_handle );
+      md_download_context_free( pdlctx->dlctx, &old_handle );
       
       if( old_handle != NULL ) {
          curl_easy_cleanup( old_handle );
       }
-      memset( &path_downloads[i], 0, sizeof(struct md_download_context) );
+      
+      free( pdlctx->dlctx );
+      pdlctx->dlctx = NULL;
+   }
+   
+   if( pdlctx->serialized_cursor ) {
+      free( pdlctx->serialized_cursor );
+      pdlctx->serialized_cursor = NULL;
+   }
+
+   memset( pdlctx, 0, sizeof(struct ms_path_download_context));
+   
+   return 0;
+}
+
+
+// free all downloads 
+static int ms_client_free_path_downloads( struct ms_client* client, struct ms_path_download_context* path_downloads, unsigned int num_downloads ) {
+   
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+      ms_client_path_download_context_free( &path_downloads[i] );
    }
    
    return 0;
@@ -1071,14 +1145,14 @@ static int ms_client_free_path_downloads( struct ms_client* client, struct md_do
 
 
 // cancel all running downloads
-static int ms_client_cancel_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
+static int ms_client_cancel_path_downloads( struct ms_client* client, struct ms_path_download_context* path_downloads, unsigned int num_downloads ) {
    
    // cancel all downloads
    for( unsigned int i = 0; i < num_downloads; i++ ) {
       
-      if( !md_download_context_finalized( &path_downloads[i] ) ) {
+      if( !md_download_context_finalized( path_downloads[i].dlctx ) ) {
          // cancel this 
-         md_download_context_cancel( &client->dl, &path_downloads[i] );
+         md_download_context_cancel( &client->dl, path_downloads[i].dlctx );
       }
    }
    
@@ -1087,12 +1161,12 @@ static int ms_client_cancel_path_downloads( struct ms_client* client, struct md_
 
 
 // set up a path download 
-static int ms_client_set_up_path_downloads( struct ms_client* client, ms_path_t* path, struct md_download_context** ret_path_downloads ) {
+static int ms_client_set_up_path_downloads( struct ms_client* client, ms_path_t* path, struct ms_path_download_context** ret_path_downloads ) {
    
    unsigned int num_downloads = path->size();
    
    // fetch all downloads concurrently 
-   struct md_download_context* path_downloads = CALLOC_LIST( struct md_download_context, num_downloads );
+   struct ms_path_download_context* path_downloads = CALLOC_LIST( struct ms_path_download_context, num_downloads );
    
    int rc = 0;
    
@@ -1102,18 +1176,7 @@ static int ms_client_set_up_path_downloads( struct ms_client* client, ms_path_t*
       // TODO: use a connection pool for the MS
       struct ms_path_ent* path_ent = &path->at(i);
       
-      CURL* curl_handle = curl_easy_init();
-      
-      // NOTE: no cache driver for the MS, so we'll do this manually 
-      char* url = ms_client_file_read_url( client->url, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce );
-      
-      md_init_curl_handle( client->conf, curl_handle, url, client->conf->connect_timeout );
-      curl_easy_setopt( curl_handle, CURLOPT_USERPWD, client->userpass );
-      curl_easy_setopt( curl_handle, CURLOPT_URL, url );
-      
-      free( url );
-      
-      rc = md_download_context_init( &path_downloads[i], curl_handle, NULL, NULL, -1 );
+      rc = ms_client_path_download_context_init( client, &path_downloads[i], path_ent );
       if( rc != 0 ) {
          break;
       }
@@ -1132,18 +1195,252 @@ static int ms_client_set_up_path_downloads( struct ms_client* client, ms_path_t*
 }
 
 
+// start running path downloads 
+int ms_client_start_path_downloads( struct ms_client* client, struct ms_path_download_context* path_downloads, int num_downloads ) {
+   
+   int rc = 0;
+   
+   // start downloads on the MS downloader
+   for( int i = 0; i < num_downloads; i++ ) {
+      
+      rc = md_download_context_start( &client->dl, path_downloads[i].dlctx, NULL, NULL );
+      if( rc != 0 ) {
+         // shouldn't happen, but just in case 
+         errorf("md_download_context_start(%p (%" PRIX64 ")) rc = %d\n", path_downloads[i].dlctx, path_downloads[i].path_ent->file_id, rc );
+         break;
+      }
+   }
+   
+   return rc;
+}
+
+
+// extract a path listing from a successful download context.
+// Return 0 on success, negative on error:
+// * -EIO if we couldn't get the download buffer from the download context, or if we couldn't unserialize the buffer.
+// * -ENODATA if there is no listing structure in the reply 
+// * -EBADMSG if the reply had inconsistent/incoherent data
+// NOTE: this method has the possible side-effect of waking up the Volume reload thread, since it looks at the versioning information 
+// that piggybacks on MS reply messages to see if we have stale certificates.
+static int ms_client_read_listing_from_path_download_context( struct ms_client* client, struct ms_path_download_context* pdlctx, struct ms_listing* listing ) {
+   
+   if( !md_download_context_finalized( pdlctx->dlctx ) ) {
+      return -EINVAL;
+   }
+   
+   // get the buffer 
+   char* buf = NULL;
+   off_t buf_len = 0;
+   int rc = 0;
+   
+   struct md_download_context* dlctx = pdlctx->dlctx;
+   
+   rc = md_download_context_get_buffer( dlctx, &buf, &buf_len );
+   if( rc != 0 ) {
+      
+      errorf("md_download_context_get_buffer rc = %d\n", rc );
+      rc = -EIO;
+      return rc;
+   }
+   
+   // parse and verify
+   ms::ms_reply reply;
+   rc = ms_client_parse_reply( client, &reply, buf, buf_len, true );
+   if( rc != 0 ) {
+      errorf("ms_client_parse_reply rc = %d\n", rc );
+      rc = -EIO;
+      
+      free( buf );
+      return rc;
+   }
+   
+   // verify that we have the listing 
+   if( !reply.has_listing() ) {
+      
+      errorf("%s", "MS reply does not contain a listing\n" );
+      rc = -ENODATA;
+      
+      free( buf );
+      return rc;
+   }
+   
+   // extract versioning information from the reply,
+   // and possibly trigger a cert reload.
+   uint64_t volume_id = ms_client_get_volume_id( client );
+   ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
+   
+   rc = ms_client_parse_listing( listing, &reply );
+   
+   free( buf );
+   
+   if( rc != 0 ) {
+      
+      errorf("ms_client_parse_listing rc = %d\n", rc );
+      rc = -EIO;
+      
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+// merge two listings.  
+// free the src listing
+static int ms_client_merge_listing_entries( struct ms_listing* dest, struct ms_listing* src ) {
+   
+   for( unsigned int i = 0; i < src->entries->size(); i++ ) {
+      
+      dest->entries->push_back( src->entries->at(i) );
+   }
+   
+   src->entries->clear();
+   
+   return 0;
+}
+
+
+// try to download again
+// NOTE:  dlctx must be finalized
+static int ms_client_retry_path_download( struct ms_client* client, struct md_download_context* dlctx, int attempts ) {
+   
+   if( !md_download_context_finalized( dlctx ) ) {
+      return -EINVAL;
+   }
+   
+   int rc = 0;
+   
+   // try again?
+   if( attempts < client->conf->max_metadata_read_retry ) {
+      
+      md_download_context_reset( dlctx, NULL );
+      
+      rc = md_download_context_start( &client->dl, dlctx, NULL, NULL );
+      if( rc != 0 ) {
+         // shouldn't happen, but just in case 
+         errorf("md_download_context_start(%p) rc = %d\n", dlctx, rc );
+         return rc;
+      }
+   }
+   else {
+      // download failed, and we tried as many times as we could
+      rc = -ENODATA;
+   }
+   
+   return rc;
+}
+
+
+// consume a downloaded listing.  If we have more, indicate it in *have_more, and pass the new cursor to it in *serialized_cursor
+// NOTE:  pdlctx->dlctx should be finalizes
+static int ms_client_consume_listing_page( struct ms_client* client, struct ms_path_download_context* pdlctx, bool* have_more, char** serialized_cursor ) {
+   
+   if( !md_download_context_finalized( pdlctx->dlctx ) ) {
+      return -EINVAL;
+   }
+   
+   
+   struct ms_listing listing;
+   memset( &listing, 0, sizeof(struct ms_listing) );
+   
+   struct md_download_context* dlctx = pdlctx->dlctx;
+   
+   // get the listing
+   int rc = ms_client_read_listing_from_path_download_context( client, pdlctx, &listing );
+   if( rc != 0 ) {
+      
+      errorf("ms_client_read_listing_from_path_download_context(%p) rc = %d\n", dlctx, rc );
+      return rc;
+   }
+   
+   // do we have more entries?
+   if( listing.status == MS_LISTING_NEW ) {
+      
+      *have_more = listing.have_more;
+      
+      if( listing.serialized_cursor != NULL ) {
+         *serialized_cursor = strdup( listing.serialized_cursor );
+      }
+      
+      // is this our first listing?
+      if( !pdlctx->have_listing ) {
+         // shallow-copy it in 
+         pdlctx->listing_buf = listing;
+         pdlctx->have_listing = true;
+      }
+      else {
+         // merge them in to our accumulated listing (shallow-copy; don't free listing)
+         ms_client_merge_listing_entries( &pdlctx->listing_buf, &listing );
+         ms_client_free_listing( &listing );
+      }
+   }
+   else {
+      
+      *have_more = false;
+      *serialized_cursor = NULL;
+      
+      // shouldn't happen...
+      errorf("WARN: listing.status == %d\n", listing.status );
+      ms_client_free_listing( &listing );
+   }
+   
+   return rc;
+}
+
+
+// proceed to download the next page
+// NOTE: pdlctx will become the owner of new_cursor
+static int ms_client_start_next_page( struct ms_client* client, struct ms_path_download_context* pdlctx, char* new_cursor ) {
+      
+   // update page information 
+   if( pdlctx->serialized_cursor ) {
+      free( pdlctx->serialized_cursor );
+   }
+   
+   struct md_download_context* dlctx = pdlctx->dlctx;
+   
+   pdlctx->serialized_cursor = new_cursor;
+   pdlctx->page_id ++;
+   
+   dbprintf("Download %p: download page %d\n", dlctx, pdlctx->page_id );
+   
+   // restart the download, with the updated cursor information 
+   md_download_context_reset( dlctx, NULL );
+   
+   char* new_url = ms_client_file_read_url( client->url, pdlctx->path_ent->volume_id, pdlctx->path_ent->file_id, pdlctx->path_ent->version, pdlctx->path_ent->write_nonce, pdlctx->page_id, pdlctx->serialized_cursor );
+   
+   // set the new URL 
+   CURL* curl = md_download_context_get_curl( dlctx );
+   curl_easy_setopt( curl, CURLOPT_URL, new_url );
+   
+   free( new_url );
+   
+   // start downloading the next page
+   int rc = md_download_context_start( &client->dl, dlctx, NULL, NULL );
+   if( rc != 0 ) {
+      // shouldn't happen, but just in case 
+      errorf("md_download_context_start(%p) rc = %d\n", dlctx, rc );
+   }
+   
+   return rc;
+}
+
+
 // run a set of downloads
 // retry ones that time out, up to conf->max_metadata_read_retry times.
-static int ms_client_run_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
+static int ms_client_run_path_downloads( struct ms_client* client, struct ms_path_download_context* path_downloads, unsigned int num_downloads ) {
    
    int rc = 0;
    int num_running_downloads = num_downloads;
    
-   // associate an attempt counter with each download, to handle timeouts
+   // associate an attempt counter with each download, to handle timeouts and retries
    map< struct md_download_context*, int > attempts;
    
+   // associate with each download context its parent ms_path_download_context
+   map< struct md_download_context*, struct ms_path_download_context* > path_contexts;
+   
    for( unsigned int i = 0; i < num_downloads; i++ ) {
-      attempts[ &path_downloads[i] ] = 0;
+      attempts[ path_downloads[i].dlctx ] = 0;
    }
    
    
@@ -1155,13 +1452,16 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
    // add all downloads to the download set 
    for( unsigned int i = 0; i < num_downloads; i++ ) {
          
-      rc = md_download_set_add( &path_download_set, &path_downloads[i] );
+      rc = md_download_set_add( &path_download_set, path_downloads[i].dlctx );
       if( rc != 0 ) {
          errorf("md_download_set_add rc = %d\n", rc );
          
          md_download_set_free( &path_download_set );
          return rc;
       }
+      
+      // bind the context to its parent 
+      path_contexts[ path_downloads[i].dlctx ] = &path_downloads[i];
    }
    
    while( num_running_downloads > 0 ) {
@@ -1177,7 +1477,10 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
       // re-tally this
       num_running_downloads = 0;
       
+      // list of downloads that succeeded
       vector<struct md_download_context*> succeeded;
+      
+      rc = 0;
       
       // find the one(s) that finished...
       for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
@@ -1199,9 +1502,11 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
          int curl_rc = md_download_context_get_curl_rc( dlctx );
          md_download_context_get_effective_url( dlctx, &final_url );
          
+         struct ms_path_download_context* pdlctx = path_contexts[ dlctx ];
+         
          // serious MS error?
          if( http_status >= 500 ) {
-            errorf("Path download %s HTTP status %d\n", final_url, http_status );
+            errorf("Download %p (%s) HTTP status %d\n", dlctx, final_url, http_status );
             
             rc = -EREMOTEIO;
             
@@ -1212,36 +1517,25 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
          // timed out?
          else if( curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT ) {
             
-            errorf("Path download %s timed out (curl_rc = %d, errno = %d, attempt %d)\n", final_url, curl_rc, os_err, attempts[dlctx] + 1);
+            errorf("Download %p (%s) timed out (curl_rc = %d, errno = %d, attempt %d)\n", dlctx, final_url, curl_rc, os_err, attempts[dlctx] + 1);
+            free( final_url );
             
             attempts[dlctx] ++;
             
-            // try again?
-            if( attempts[dlctx] < client->conf->max_metadata_read_retry ) {
-               
-               md_download_context_reset( dlctx, NULL );
-               
-               rc = md_download_context_start( &client->dl, dlctx, NULL, NULL );
-               if( rc != 0 ) {
-                  // shouldn't happen, but just in case 
-                  errorf("md_download_context_start(%p) rc = %d\n", dlctx, rc );
-                  
-                  free( final_url );
-                  break;
-               }
-            }
-            else {
-               // download failed, and we tried as many times as we could
-               rc = -ENODATA;
-               free( final_url );
+            rc = ms_client_retry_path_download( client, dlctx, attempts[dlctx] );
+            if( rc != 0 ) {
+               errorf("ms_client_retry_path_download(%p) rc = %d\n", dlctx, rc );
                break;
             }
+            
+            // count this one as running
+            num_running_downloads++;
          }
          
          // some other error?
          else if( http_status != 200 || curl_rc != 0 ) {
             
-            errorf("Path download %s failed, HTTP status = %d, cURL rc = %d, errno = %d\n", final_url, http_status, curl_rc, os_err );
+            errorf("Download %p (%s) failed, HTTP status = %d, cURL rc = %d, errno = %d\n", dlctx, final_url, http_status, curl_rc, os_err );
             
             if( os_err != 0 ) {
                rc = os_err;
@@ -1254,15 +1548,67 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
             break;
          }
          
-         // succeeded!
-         free( final_url );
-         succeeded.push_back( dlctx );
+         else {
+            // succeeded!
+            free( final_url );
+            
+            struct ms_listing listing;
+            memset( &listing, 0, sizeof(struct ms_listing) );
+            
+            // more to download?
+            bool have_more = false;
+            char* next_cursor = NULL;
+            
+            // consume the listing
+            int rc = ms_client_consume_listing_page( client, pdlctx, &have_more, &next_cursor );
+            
+            if( rc != 0 ) {
+               errorf("ms_client_consume_listing_page(%p, page=%d) rc = %d\n", dlctx, pdlctx->page_id, rc );
+               break;
+            }
+            
+            // more to download?
+            if( have_more ) {
+               
+               // reset attempt count and get the next page 
+               attempts[dlctx] = 0;
+               
+               rc = ms_client_start_next_page( client, pdlctx, next_cursor );
+               
+               if( rc != 0 ) {
+                  errorf("ms_client_start_next_page(%p) rc = %d\n", dlctx, rc );
+                  break;
+               }
+               
+               // count this one as running
+               num_running_downloads++;
+            }
+            
+            else if( rc == 0 ) {
+               
+               dbprintf("Download %p succeeded!\n", dlctx );
+               
+               // done with this download context
+               succeeded.push_back( dlctx );
+            }
+         }
       }
       
-      // clear the ones that succeeded 
+      // clear the ones that succeeded from the download set 
       for( unsigned int i = 0; i < succeeded.size(); i++ ) {
          
          md_download_set_clear( &path_download_set, succeeded[i] );
+      }
+      
+      if( rc != 0 ) {
+         
+         dbprintf("Cancel %d path downloads on error (rc = %d)\n", num_downloads, rc );
+         
+         // cancel all
+         int cancel_rc = ms_client_cancel_path_downloads( client, path_downloads, num_downloads );
+         if( cancel_rc != 0 ) {
+            errorf("ms_client_cancel_path_downloads rc = %d\n", cancel_rc );
+         }
       }
    }
    
@@ -1275,13 +1621,13 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct md_dow
 
 // run the path downloads in the download set, retrying any that fail due to timeouts
 // on success, put the finalized download contexts into ret_path_downloads
-static int ms_client_download_path_listing( struct ms_client* client, ms_path_t* path, struct md_download_context** ret_path_downloads ) {
+static int ms_client_download_path_listing( struct ms_client* client, ms_path_t* path, struct ms_path_download_context** ret_path_downloads ) {
    
    int rc = 0;
    unsigned int num_downloads = path->size();
    
    // initialize a download set to track these downloads
-   struct md_download_context* path_downloads = NULL;
+   struct ms_path_download_context* path_downloads = NULL;
    
    rc = ms_client_set_up_path_downloads( client, path, &path_downloads );
    if( rc != 0 ) {
@@ -1289,31 +1635,37 @@ static int ms_client_download_path_listing( struct ms_client* client, ms_path_t*
       return rc;
    }
    
-   // start downloads on the MS downloader
-   for( unsigned int i = 0; i < num_downloads; i++ ) {
-      
-      rc = md_download_context_start( &client->dl, &path_downloads[i], NULL, NULL );
-      if( rc != 0 ) {
-         // shouldn't happen, but just in case 
-         errorf("md_download_context_start(%p (%" PRIX64 ")) rc = %d\n", &path_downloads[i], path->at(i).file_id, rc );
-         break;
-      }
-   }
-   
-   // process all downloads 
-   rc = ms_client_run_path_downloads( client, path_downloads, num_downloads );
+   rc = ms_client_start_path_downloads( client, path_downloads, num_downloads );
    
    if( rc != 0 ) {
-      // cancel everything 
+      
+      errorf("ms_client_start_path_downloads rc = %d\n", rc );
+      
+      // stop everything 
       ms_client_cancel_path_downloads( client, path_downloads, num_downloads );
       ms_client_free_path_downloads( client, path_downloads, num_downloads );
       free( path_downloads );
+      
+      *ret_path_downloads = NULL;
+   }
+   else {
+      // process all downloads 
+      rc = ms_client_run_path_downloads( client, path_downloads, num_downloads );
+   }
+   
+   if( rc != 0 ) {
+      
+      ms_client_free_path_downloads( client, path_downloads, num_downloads );
+      free( path_downloads );
+      
+      *ret_path_downloads = NULL;
    }
    else {
       *ret_path_downloads = path_downloads;
    }
    return rc;
 }
+
 
 // get a set of metadata entries.
 // on succes, populate ms_response with ms_listing structures for each path entry that needed to be downloaded, as indicated by the stale flag.
@@ -1326,7 +1678,7 @@ int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_respon
       return 0;
    }
    
-   struct md_download_context* path_downloads = NULL;
+   struct ms_path_download_context* path_downloads = NULL;
    struct timespec ts, ts2;
    
    BEGIN_TIMING_DATA( ts );
@@ -1341,64 +1693,17 @@ int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_respon
       return rc;
    }
 
-   // got data! parse it
-   unsigned int di = 0;
+   // do a sanity check, and consume the listings
    for( unsigned int i = 0; i < path->size(); i++ ) {
       
-      // get the buffer 
-      char* buf = NULL;
-      off_t buf_len = 0;
-      
-      rc = md_download_context_get_buffer( &path_downloads[i], &buf, &buf_len );
-      if( rc != 0 ) {
-         
-         errorf("md_download_context_get_buffer rc = %d\n", rc );
-         rc = -EIO;
-         break;
-      }
-      
-      // parse and verify
-      ms::ms_reply reply;
-      rc = ms_client_parse_reply( client, &reply, buf, buf_len, true );
-      if( rc != 0 ) {
-         errorf("ms_client_parse_reply rc = %d\n", rc );
-         rc = -EIO;
-         ms_client_free_response( ms_response );
-         free( buf );
-         break;
-      }
-      
-      // verify that we have the listing 
-      if( !reply.has_listing() ) {
-         errorf("%s", "MS reply does not contain a listing\n" );
-         rc = -ENODATA;
-         ms_client_free_response( ms_response );
-         free( buf );
-         break;
-      }
-      
-      // extract versioning information from the reply
-      uint64_t volume_id = ms_client_get_volume_id( client );
-      ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
-      
-      // get the listing
-      struct ms_listing listing;
-      
-      rc = ms_client_parse_listing( &listing, &reply );
-      
-      free( buf );
-      
-      if( rc != 0 ) {
-         errorf("ms_client_parse_listing rc = %d\n", rc );
-         rc = -EIO;
-         ms_client_free_response( ms_response );
-         break;
-      }
+      struct ms_listing* listing = &path_downloads[i].listing_buf;
       
       // sanity check: listing[0], if given, must match the ith path element's file ID 
-      if( listing.entries != NULL && listing.entries->size() != 0 ) {
-         if( listing.entries->at(0).file_id != path->at(i).file_id ) {
-            errorf("Invalid MS listing: requested listing of %" PRIX64 ", got listing of %" PRIX64 "\n", path->at(i).file_id, listing.entries->at(0).file_id );
+      if( listing->entries != NULL && listing->entries->size() != 0 ) {
+         
+         if( listing->entries->at(0).file_id != path->at(i).file_id ) {
+            
+            errorf("Invalid MS listing: requested listing of %" PRIX64 ", got listing of %" PRIX64 "\n", path->at(i).file_id, listing->entries->at(0).file_id );
             rc = -EBADMSG;
             ms_client_free_response( ms_response );
             break;
@@ -1406,8 +1711,10 @@ int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_respon
       }
       
       // save
-      (*ms_response)[ path->at(i).file_id ] = listing;
-      di++;
+      // NOTE: shallow-copy the listing; don't free its contents
+      // the ms_response takes ownership.
+      (*ms_response)[ path->at(i).file_id ] = *listing;
+      path_downloads[i].have_listing = false;
    }
 
    ms_client_free_path_downloads( client, path_downloads, num_downloads );

@@ -30,6 +30,9 @@ struct ms_listing {
    int status;       
    int type;         // file or directory?
    vector<struct md_entry>* entries;
+   
+   bool have_more;
+   char* serialized_cursor;
 };
 
 // path entry metadata for getting metadata listings
@@ -41,6 +44,20 @@ struct ms_path_ent {
    char* name;
 
    void* cls;
+};
+
+// download context for performing a path listing 
+struct ms_path_download_context {
+   
+   struct md_download_context* dlctx;
+   
+   int page_id;
+   char* serialized_cursor;
+   
+   struct ms_path_ent* path_ent;
+   
+   bool have_listing;
+   struct ms_listing listing_buf;
 };
 
 // request to manipulate metadata on the MS
@@ -76,6 +93,7 @@ typedef map<long, struct md_update> ms_client_update_set;
 
 typedef vector< struct ms_path_ent > ms_path_t;
 
+// map file IDs to their child listings 
 typedef map< uint64_t, struct ms_listing > ms_response_t;
 
 extern "C" {

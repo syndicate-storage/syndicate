@@ -159,3 +159,8 @@ AUTH_METHOD_NONE = "VERIFY_NONE"
 # activation properties
 PASSWORD_HASH_ITERS = 10000
 PASSWORD_SALT_LENGTH = 32
+
+# rate-limiting 
+# RESOLVE_MAX_PAGE_SIZE = 1024
+RESOLVE_MAX_PAGE_SIZE = 2       # for testing
+

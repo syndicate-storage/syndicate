@@ -410,10 +410,12 @@ class MSFileHandler(webapp2.RequestHandler):
    
    # these return a serialized response
    get_api_calls = {
-      "GETXATTR":       lambda gateway, volume, file_id, args: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
-      "LISTXATTR":      lambda gateway, volume, file_id, args: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
-      "RESOLVE":        lambda gateway, volume, file_id, args: file_resolve( gateway, volume, file_id, *args ),           # args == [file_version_str, write_nonce_str]
-      "VACUUM":         lambda gateway, volume, file_id, args: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
+      "GETXATTR":       lambda gateway, volume, file_id, args, page_id, cursor: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
+      "LISTXATTR":      lambda gateway, volume, file_id, args, page_id, cursor: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
+      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, cursor: file_resolve( gateway, volume, file_id, *args,             # args == [file_version_str, write_nonce]
+                                                                                              page_id=page_id, cursor=cursor ), 
+      
+      "VACUUM":         lambda gateway, volume, file_id, args, page_id, cursor: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
    }
    
    get_benchmark_headers = {
@@ -472,10 +474,12 @@ class MSFileHandler(webapp2.RequestHandler):
    @storagetypes.toplevel 
    def get( self, operation, volume_id_str, file_id_str, *args ):
 
+      # valid operation?
       if operation not in MSFileHandler.get_api_calls.keys():
          response_user_error( self, 401 )
          return 
       
+      # valid file ID?
       file_id = -1
       try:
          file_id = MSEntry.unserialize_id( int( file_id_str, 16 ) )
@@ -483,26 +487,53 @@ class MSFileHandler(webapp2.RequestHandler):
          response_user_error( self, 400 )
          return
       
+      # valid gateway and volume?
       gateway, volume, response_timing = response_begin( self, volume_id_str, fail_if_no_auth_header=False )
       if volume == None:
          return
       
+      # reader allowed?
       allowed = file_read_auth( gateway, volume )
       if not allowed:
          response_user_error( self, 403 )
          return 
       
+      # do we have a requested page size or serialized cursor for this request?
+      page_id = self.request.get('page_id')
+      serialized_cursor = self.request.get('cursor')
+      cursor = None 
+      
+      # validate 
+      if page_id is not None and len(page_id) > 0:
+         try:
+            page_id = int(page_id)
+         except:
+            # needs to be a number 
+            log.error("Invalid page ID '%s'" % page_id)
+            response_user_error( self, 400 )
+            return 
+      
+      if serialized_cursor is not None:
+         
+         cursor = cursor_verify_and_unserialize( volume, serialized_cursor )
+         if cursor is None:
+            response_user_error( self, 400 )
+            return 
+         
       benchmark_header = MSFileHandler.get_benchmark_headers[ operation ]
       api_call = MSFileHandler.get_api_calls[ operation ]
       
       timing = {}
       
+      # run and benchmark the operation
       try:
-         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args ) )
+         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, page_id, cursor ) )
       except Exception, e:
          logging.exception(e)
          response_user_error( self, 500 )
          return
+      
+      # finish the reply 
       
       timing_headers = benchmark_headers( timing )
       timing_headers.update( response_timing )
