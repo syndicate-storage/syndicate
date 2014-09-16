@@ -54,14 +54,17 @@ void AG_fs_map_free( AG_fs_map_t* fs_map ) {
    
    for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
       
-      AG_map_info_free( itr->second );
-      free( itr->second );
+      if( itr->second != NULL ) {
+         AG_map_info_free( itr->second );
+         free( itr->second );
+      }
    }
    
    fs_map->clear();
 }
 
-// merge info from a fresh AG_map_info into an existing AG_map_info, respecting which field(s) are read-only 
+// merge info from a fresh AG_map_info into an existing AG_map_info, respecting which field(s) are read-only.
+// this is preferred to duplicating an AG_map_info with AG_map_info_dup
 void AG_map_info_make_coherent( struct AG_map_info* dest, struct AG_map_info* src ) {
    
    if( !dest->cache_valid && src->cache_valid ) {
@@ -296,7 +299,7 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
    
    AG_fs_wlock( ag_fs );
    
-   if( ag_fs->fs ) {
+   if( ag_fs->fs != NULL ) {
       
       AG_fs_map_free( ag_fs->fs );
       
@@ -678,7 +681,8 @@ int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* pa
 
 
 // merge a tree into an AG_fs_map.  Only merge new data on request (if merge_new is true).
-// if merge_new is false, not_merged must not be NULL.  not_merged will contain pointers to all entries in path data that were not merged
+// if merge_new is false, not_merged must not be NULL.  not_merged will contain pointers to all entries in path data that were not merged.
+// return 0 on success, and -EINVAL on error.
 // NOTE: this consumes data from path_data.  Don't free it after calling this method.
 int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merge_new, AG_fs_map_t* not_merged ) {
    
@@ -700,7 +704,7 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
          // exists
          old_info = itr2->second;
          
-         // make it coherent 
+         // copy over relevant fields
          AG_map_info_make_coherent( old_info, info );
          
          // consumed!
@@ -1833,6 +1837,7 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
          errorf("AG_get_path_metadata(%s) rc = %d\n", dir_path, rc );
          
          AG_fs_map_free( &dir_listing );
+         AG_fs_map_free( &new_info );
          break;
       }
       
