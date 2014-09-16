@@ -173,8 +173,12 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    
    dbprintf("%s stat dataset\n", DRIVER_QUERY_TYPE );
    
+   char* disk_path = AG_driver_get_query_string_mi( map_info );
+   
    // get the absolute path 
-   char* dataset_path = get_request_abspath( path );
+   char* dataset_path = get_request_abspath( disk_path );
+   free( disk_path );
+   
    if( dataset_path == NULL ) {
       errorf("%s", "Could not translate request to absolute path\n" );
       return -EINVAL;
