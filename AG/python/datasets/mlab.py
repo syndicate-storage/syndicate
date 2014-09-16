@@ -302,8 +302,8 @@ def generate_specfile_from_global_listing( gsutil_binary_path, root_dir, include
       if not path.startswith(root_dir):
          continue 
       
-      # add all prefixes
-      new_directories = AG_specfile.add_hierarchy_prefixes( path, DRIVER_NAME, include_cb, specfile_cbs, directories )
+      # add all prefixes up to the parent directory
+      new_directories = AG_specfile.add_hierarchy_prefixes( os.path.dirname( path ), DRIVER_NAME, include_cb, specfile_cbs, directories )
       
       new_directories.sort()
       
