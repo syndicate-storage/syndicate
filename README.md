@@ -9,10 +9,10 @@ Syndicate competes with systems like [Tent](http://tent.io), [Freenet](https://f
 * Syndicate volumes scale in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN accounts to increase storage and bandwidth capacity.
 * Syndicate has a fire-and-forget setup.  Users do not need to provision and manage their own servers to get started.
 * Syndicate seamlessly integrates existing, external data into volumes in a zero-copy manner.
-* Syndicate leverages CDNs and Web caches whenever possible, while providing guaranteed data consistency *regardless of* stale data.
-* Syndicate works with more than just Web applications.  Syndicate volumes are mountable as removable media, allowing *any* application to leverage them.
-* Syndicate volumes have user-programmable storage semantics.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, etc.
-* Users control access on a per-file, per-file-attribute, per-host, and per-user basis.
+* Syndicate leverages CDNs and Web caches whenever possible, while providing guaranteed data consistency *even if caches return stale data.*
+* Syndicate works with more than just Web applications.  Syndicate volumes are locally mountable as removable media, so *any* application can use them.
+* Syndicate volumes have user-programmable storage semantics.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
+* Users have built-in access control on a per-file, per-file-attribute, per-host, and per-user basis.
 
 What can I use Syndicate for?
 -----------------------------
