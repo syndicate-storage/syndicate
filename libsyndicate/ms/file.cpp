@@ -1353,6 +1353,15 @@ static int ms_client_consume_listing_page( struct ms_client* client, struct ms_p
       return rc;
    }
    
+   // remember the listing, if we haven't alread
+   bool have_listing = pdlctx->have_listing;
+   if( !have_listing ) {
+      
+      // shallow-copy it in 
+      pdlctx->listing_buf = listing;
+      pdlctx->have_listing = true;
+   }
+      
    // do we have more entries?
    if( listing.status == MS_LISTING_NEW ) {
       
@@ -1362,44 +1371,59 @@ static int ms_client_consume_listing_page( struct ms_client* client, struct ms_p
          *serialized_cursor = strdup( listing.serialized_cursor );
       }
       
-      // is this our first listing?
-      if( !pdlctx->have_listing ) {
-         // shallow-copy it in 
-         pdlctx->listing_buf = listing;
-         pdlctx->have_listing = true;
-      }
-      else {
+      if( have_listing ) {
+         
          // merge them in to our accumulated listing (shallow-copy; don't free listing)
          ms_client_merge_listing_entries( &pdlctx->listing_buf, &listing );
          ms_client_free_listing( &listing );
       }
    }
-   else {
+   else if( listing.status == MS_LISTING_NOCHANGE ) {
       
       *have_more = false;
       *serialized_cursor = NULL;
       
-      // shouldn't happen...
-      errorf("WARN: listing.status == %d\n", listing.status );
-      ms_client_free_listing( &listing );
+      errorf("%s", "WARN: listing.status == NOCHANGE\n" );
+      
+      if( have_listing ) {
+         
+         // don't need to remember this 
+         ms_client_free_listing( &listing );
+      }
    }
+   else if( listing.status == MS_LISTING_NONE ) {
+      
+      // no data 
+      *have_more = false;
+      *serialized_cursor = NULL;
+      
+      errorf("%s", "ERR: listing.status == NONE\n");
+      
+      if( have_listing ) {
+         
+         // don't need to remember this 
+         ms_client_free_listing( &listing );
+      }
+      
+      rc = -ENOENT;
+   }  
    
    return rc;
 }
 
 
 // proceed to download the next page
-// NOTE: pdlctx will become the owner of new_cursor
 static int ms_client_start_next_page( struct ms_client* client, struct ms_path_download_context* pdlctx, char* new_cursor ) {
       
    // update page information 
-   if( pdlctx->serialized_cursor ) {
+   if( pdlctx->serialized_cursor != NULL ) {
       free( pdlctx->serialized_cursor );
+      pdlctx->serialized_cursor = NULL;
    }
    
    struct md_download_context* dlctx = pdlctx->dlctx;
    
-   pdlctx->serialized_cursor = new_cursor;
+   pdlctx->serialized_cursor = strdup_or_null( new_cursor );
    pdlctx->page_id ++;
    
    dbprintf("Download %p: download page %d\n", dlctx, pdlctx->page_id );
@@ -1590,6 +1614,10 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
                
                // done with this download context
                succeeded.push_back( dlctx );
+            }
+            
+            if( next_cursor != NULL ) {
+               free( next_cursor );
             }
          }
       }
