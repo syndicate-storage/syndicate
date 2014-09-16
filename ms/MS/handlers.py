@@ -412,8 +412,7 @@ class MSFileHandler(webapp2.RequestHandler):
    get_api_calls = {
       "GETXATTR":       lambda gateway, volume, file_id, args, page_id, cursor: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
       "LISTXATTR":      lambda gateway, volume, file_id, args, page_id, cursor: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
-      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, cursor: file_resolve( gateway, volume, file_id, *args,             # args == [file_version_str, write_nonce]
-                                                                                              page_id=page_id, cursor=cursor ), 
+      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, cursor: file_resolve( gateway, volume, page_id, file_id, *args, cursor=cursor ),  # args == [file_version_str, write_nonce]
       
       "VACUUM":         lambda gateway, volume, file_id, args, page_id, cursor: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
    }
@@ -503,16 +502,21 @@ class MSFileHandler(webapp2.RequestHandler):
       serialized_cursor = self.request.get('cursor')
       cursor = None 
       
-      # validate 
-      if page_id is not None and len(page_id) > 0:
-         try:
-            page_id = int(page_id)
-         except:
-            # needs to be a number 
-            log.error("Invalid page ID '%s'" % page_id)
-            response_user_error( self, 400 )
-            return 
+      if page_id is None:
+         log.error("No page ID given")
+         response_user_error( self, 400 )
+         return 
       
+      # validate 
+      try:
+         page_id = int(page_id)
+         assert page_id >= 0, "Invalid page ID value"
+      except:
+         # needs to be a number 
+         log.error("Invalid page ID '%s'" % page_id)
+         response_user_error( self, 400 )
+         return 
+   
       if serialized_cursor is not None:
          
          cursor = cursor_verify_and_unserialize( volume, serialized_cursor )

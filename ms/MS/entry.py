@@ -1984,14 +1984,12 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def ListDir( cls, volume, file_id, owner_id=None, file_ids_only=False, no_check_memcache=False, page_id=None, page_cursor=None ):
+   def ListDir( cls, volume, file_id, page_id, owner_id=None, file_ids_only=False, no_check_memcache=False, page_cursor=None ):
       """
-      Find a page of entries that are immediate children of this one.
-      If page_size is not None, fetch a page of items from the given page_cursor.
-      If page_size is not None or page_cursor is not None, then return a 3-tuple of (ret, next_cursor, have_more), where 
+      Find a page of entries that are immediate children of this one, one page at a time, starting at page_cursor (if given)
+      Return a 3-tuple of (ret, next_cursor, have_more), where 
       * have_more is a bool that indicates whether or not there is more data to fetch, and 
       * next_cursor is the cursor for fetching the next entries.
-      Otherwise, just (ret) is returned.
       
       If file_ids_only is True, then (ret) is just the list of file IDs of the children of the given MSEntry.
       Otherwise, the list of fully-loaded children is returned.
@@ -2019,20 +2017,14 @@ class MSEntry( storagetypes.Object ):
       cache hit, then this method returns no cursor, and assumes that there will be more data by default.
       """
       
-      return_cursor = False
       next_cursor = None
       have_more = True
-      
-      if page_id is not None:
-         # caller will expect a cursor
-         return_cursor = True 
       
       # make sure we're dealing with a file ID as a string
       if not isinstance( file_id, types.StringType ):
          file_id = MSEntry.unserialize_id( file_id )
       
-      if return_cursor:
-         log.info("Request page %s of directory %s" % (page_id, file_id))
+      log.info("Request page %s of directory %s" % (page_id, file_id))
          
       volume_id = volume.volume_id
       
@@ -2049,7 +2041,7 @@ class MSEntry( storagetypes.Object ):
       # this had better be a directory...
       if dirent.ftype != MSENTRY_TYPE_DIR:
          log.error("Not a directory: %s" % file_id)
-         return (None if not return_cursor else (None, None, None))
+         return (None, next_cursor, have_more)
       
       # key to this page's entries
       listing_cache_key = MSEntry.cache_listing_key_name( volume_id, file_id, page_id )
@@ -2081,32 +2073,26 @@ class MSEntry( storagetypes.Object ):
          # cache miss.  Generate file IDs on query 
          # put the query into disjunctive normal form...
          qry_ents = MSEntry.query()
-
+         
+         qry_ents = qry_ents.filter( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id ) )
+         
          if owner_id is not None:
             # owner given
-            qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ),
-                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.is_readable_in_list == True) ) )
+            qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ), MSEntry.is_readable_in_list == True) )
+            qry_ents = qry_ents.order( MSEntry.mode, MSEntry.key )
 
          else:
             # no owner given
-            qry_ents = qry_ents.filter( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.is_readable_in_list == True) )
-            
+            qry_ents = qry_ents.filter( MSEntry.is_readable_in_list == True)
+            qry_ents = qry_ents.order( MSEntry.key )
          
          # get the child file_ids
-         ent_file_ids = []
          
-         if return_cursor:
-            
-            qry_ents.order( MSEntry.key )
-            
-            ent_file_ids, next_cursor, have_more = qry_ents.fetch_page( RESOLVE_MAX_PAGE_SIZE, projection=[MSEntry.file_id], start_cursor=page_cursor )
-            
-            if len(ent_file_ids) == 0:
-               # definitely no more 
-               have_more = False
-            
-         else:
-            ent_file_ids = qry_ents.fetch(None, projection=[MSEntry.file_id])
+         ent_file_ids, next_cursor, have_more = qry_ents.fetch_page( RESOLVE_MAX_PAGE_SIZE, projection=[MSEntry.file_id], start_cursor=page_cursor )
+         
+         if len(ent_file_ids) == 0:
+            # definitely no more 
+            have_more = False
          
          file_ids = [ x.file_id for x in ent_file_ids ]
          
@@ -2119,7 +2105,7 @@ class MSEntry( storagetypes.Object ):
          
       if file_ids_only:
          # caller only wanted file IDs, not entire entries
-         return (file_ids if not return_cursor else (file_ids, next_cursor, have_more))
+         return (file_ids, next_cursor, have_more)
       
       # check memcache for cached entries...
       missing = file_ids
@@ -2176,7 +2162,7 @@ class MSEntry( storagetypes.Object ):
          ents += [result[1] for result in ent_results]
          
       
-      return (ents if not return_cursor else (ents, next_cursor, have_more))
+      return (ents, next_cursor, have_more)
    
 
    @classmethod

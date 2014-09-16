@@ -123,44 +123,23 @@ def cursor_verify_and_unserialize( volume, serialized_cursor ):
 
 
 # ----------------------------------
-def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id=None, cursor=None ):
+def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cursor=None ):
    """
    Read file and listing of the given file_id.
    """
-
-   file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
-   file_data = storagetypes.memcache.get( file_memcache )
    
-   return_cursor = False
    next_cursor = None 
    have_more = False
    
-   if page_id is not None or cursor is not None:
-      
-      if page_id < 0:
-         
-         log.error("Owner %s in Volume %s sent invalid page ID %s" % (owner_id, volume.name, page_id) )
-         
-         # invalid request 
-         error = -errno.EINVAL
-         
-         reply = make_ms_reply( volume, error )
-         reply.listing.status = ms_pb2.ms_listing.NONE
-         
-         return (error, file_update_complete_response( volume, reply ))
-      
-      else:
-         listing, next_cursor, have_more = MSEntry.ListDir( volume, file_id, page_id=page_id, page_cursor=cursor )
-         return_cursor = True 
-   
-   else:
-      listing = MSEntry.ListDir( volume, file_id )
-
-   all_ents = None
+   all_ents = []
    file_fut = None
    error = 0
    need_refresh = True
    file_data_fut = None
+   
+
+   file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
+   file_data = storagetypes.memcache.get( file_memcache )
    
    # do we need to consult the datastore?
    if file_data is None:
@@ -173,7 +152,7 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id=None
       
       file_data = MSEntry.FromFuture( file_data_fut )
       
-      if file_data != None:
+      if file_data is not None:
          
          cacheable = {
             file_memcache: file_data
@@ -192,6 +171,9 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id=None
 
       else:
          if file_data.ftype == MSENTRY_TYPE_DIR:
+            
+            listing, next_cursor, have_more = MSEntry.ListDir( volume, file_id, page_id, page_cursor=cursor, owner_id=owner_id )
+   
             if listing is not None:
                all_ents = [file_data] + listing
             else:
@@ -245,24 +227,20 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id=None
       reply.listing.ftype = 0
       reply.listing.status = ms_pb2.ms_listing.NONE
       
-   if return_cursor:
-      reply.listing.have_more = have_more 
-      
-      serialized_cursor = None
-      
-      if next_cursor is not None:
-         serialized_cursor = cursor_serialize_and_sign( volume, next_cursor )
-         reply.listing.serialized_cursor = serialized_cursor
-         
-      
-      log.info("Paged response: have more = %s, next cursor = %s" % (have_more, serialized_cursor if next_cursor is not None else "(none)"))
+   reply.listing.have_more = have_more 
+   
+   serialized_cursor = None
+   
+   if next_cursor is not None:
+      serialized_cursor = cursor_serialize_and_sign( volume, next_cursor )
+      reply.listing.serialized_cursor = serialized_cursor
       
    # sign and deliver
    return (error, file_update_complete_response( volume, reply ))
    
 
 # ----------------------------------
-def file_resolve( gateway, volume, file_id, file_version_str, write_nonce_str, page_id=None, cursor=None ):
+def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str, cursor=None ):
    """
    Resolve a (volume_id, file_id, file_vesion, write_nonce) to file metadata.
    This is part of the File Metadata API, so it takes strings for file_version_str and write_nonce_str.
@@ -282,7 +260,7 @@ def file_resolve( gateway, volume, file_id, file_version_str, write_nonce_str, p
    if gateway != None:
       owner_id = gateway.owner_id
       
-   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id=page_id, cursor=cursor )
+   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cursor=cursor )
    
    logging.info("resolve /%s/%s/%s/%s rc = %d" % (volume.volume_id, file_id, file_version, write_nonce, rc) )
    
