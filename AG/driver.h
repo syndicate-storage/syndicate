@@ -90,6 +90,7 @@ char* AG_driver_get_config_var( char const* config_varname );
 // get information about the request
 char* AG_driver_get_request_path( struct AG_connection_context* ctx );
 char* AG_driver_get_query_string( struct AG_connection_context* ctx );
+char* AG_driver_get_query_string_mi( struct AG_map_info* mi );
 int64_t AG_driver_get_request_file_version( struct AG_connection_context* ctx );
 uint64_t AG_driver_get_request_block_id( struct AG_connection_context* ctx );
 int64_t AG_driver_get_request_block_version( struct AG_connection_context* ctx );

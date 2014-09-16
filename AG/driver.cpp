@@ -466,6 +466,11 @@ char* AG_driver_get_query_string( struct AG_connection_context* ag_ctx ) {
    return strdup_or_null( ag_ctx->query_string );
 }
 
+// stable API for getting the query string from a map_info 
+char* AG_driver_get_query_string_mi( struct AG_map_info* mi ) {
+   return strdup_or_null( mi->query_string );
+}
+
 // stable API for getting the requested file version 
 int64_t AG_driver_get_request_file_version( struct AG_connection_context* ctx ) {
    return ctx->reqdat.file_version;
