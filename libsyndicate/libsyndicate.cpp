@@ -773,19 +773,24 @@ char* md_dirname( char const* path, char* dest ) {
 // the depth of / is 0
 // the depth of /foo/bar/baz/ is 3
 // the depth of /foo/bar/baz is also 3
+// the paths must be normalized, and not include ..
 int md_depth( char const* path ) {
    int i = strlen(path) - 1;
    
-   if( i <= 0 )
+   if( i <= 0 ) {
       return 0;
+   }
    
-   if( path[i] == '/' )
+   if( path[i] == '/' ) {
       i--;
+   }
    
    int depth = 0;
-   for( ; i >= 0; i-- )
-      if( path[i] == '/' )
+   for( ; i >= 0; i-- ) {
+      if( path[i] == '/' ) {
          depth++;
+      }
+   }
    
    return depth;
 }
