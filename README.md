@@ -6,13 +6,13 @@ Syndicate is an **Internet-scale software-defined storage system**.  Syndicate p
 Cloud applications that use Syndicate do not need to host user data.  Instead, the application's server and client programs read and write data to user's Syndicate volumes.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
 
 Syndicate competes with systems like [Tent](http://tent.io), [Freenet](https://freenetproject.org), [Unhosted](https://unhosted.org), and [Camlistore](https://camlistore.org).  The key differences are as follows:
-* Syndicate volumes scale in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN accounts to increase storage and bandwidth capacity.
-* Syndicate has a fire-and-forget setup.  Users do not need to provision and manage their own servers to get started.
-* Syndicate seamlessly integrates existing, external data into volumes in a zero-copy manner.
-* Syndicate leverages CDNs and Web caches whenever possible, while providing guaranteed data consistency *even if caches return stale data.*
-* Syndicate works with more than just Web applications.  Syndicate volumes are locally mountable as removable media, so *any* application can use them.
-* Syndicate volumes have user-programmable storage semantics.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
-* Users have built-in access control on a per-file, per-file-attribute, per-host, and per-user basis.
+* **Syndicate volumes scale** in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN capacity to increase storage and bandwidth.
+* Syndicate has a **fire-and-forget setup**.  Users do not need to provision and manage their own servers to get started.
+* Syndicate **seamlessly integrates** existing, external data into volumes in a zero-copy manner.
+* Syndicate leverages CDNs and Web caches whenever possible, while providing **guaranteed data consistency** even if caches return stale data.
+* Syndicate works with more than just Web applications.  Syndicate volumes are **locally mountable as removable media**, so *any* application can use them.
+* Syndicate volumes have **user-programmable storage semantics**.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
+* Syndicate volumes have built-in access controls on a per-file, per-file-attribute, per-host, and per-user basis.  Users can extend them in a provider-agnostic way by changing how they are interpreted by add-on storage logic.
 
 What can I use Syndicate for?
 -----------------------------
