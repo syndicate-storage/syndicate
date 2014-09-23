@@ -613,7 +613,8 @@ int md_download_set_free( struct md_download_set* dlset ) {
 }
 
 
-// add a download context to a download set 
+// add a download context to a download set.
+// do this before starting the download.
 int md_download_set_add( struct md_download_set* dlset, struct md_download_context* dlctx ) {
    
    md_pending_set_t::iterator itr = dlset->waiting->find( dlctx );
