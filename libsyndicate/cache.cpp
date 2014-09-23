@@ -1188,6 +1188,8 @@ void* md_cache_main_loop( void* arg ) {
    
    struct md_syndicate_cache* cache = args->cache;
    
+   pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
+   
    dbprintf("%s", "Cache writer thread strated\n" );
    
    while( cache->running ) {
@@ -1200,6 +1202,9 @@ void* md_cache_main_loop( void* arg ) {
       if( !cache->running )
          break;
       
+      // don't get cancelled while doing this
+      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      
       // begin all pending writes
       md_cache_begin_writes( cache );
       
@@ -1207,6 +1212,9 @@ void* md_cache_main_loop( void* arg ) {
       
       // reap completed writes
       md_cache_complete_writes( cache, &new_writes );
+      
+      // can get cancelled now if needed
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
       
       // evict blocks 
       md_cache_evict_blocks( cache, &new_writes );
@@ -1219,8 +1227,14 @@ void* md_cache_main_loop( void* arg ) {
       
       md_cache_lru_t new_writes;
       
+      // don't get cancelled here
+      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      
       // reap completed writes
       md_cache_complete_writes( cache, &new_writes );
+      
+      // can get cancelled now if needed
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
       
       // evict blocks 
       md_cache_evict_blocks( cache, &new_writes );
