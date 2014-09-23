@@ -1,7 +1,7 @@
 Syndicate
 =========
 
-Syndicate is an **Internet-scale software-defined storage system**.  Syndicate presents a programmable abstraction layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate's storage semantics and access controls are user-programmable, allowing Syndicate to meet arbitrarily-specific storage needs.
+Syndicate is an **Internet-scale software-defined storage system**.  Syndicate presents a programmable abstraction layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate volumes have programable storage semantics and access controls. This lets you apply Syndicate to meet arbitrarily-specific storage needs, without worrying about the underlying technologies.
 
 Cloud applications that use Syndicate do not need to host user data.  Instead, the application's server and client programs read and write data to user's Syndicate volumes.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
 
