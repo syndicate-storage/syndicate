@@ -17,6 +17,7 @@
 #include "reversioner.h"
 #include "core.h"
 #include "map-info.h"
+#include "publish.h"
 #include "driver.h"
 
 // allocate and set up a path map info 

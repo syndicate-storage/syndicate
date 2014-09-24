@@ -379,7 +379,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
    if( request_type == AG_REQUEST_MANIFEST ) {
       
       // get the pubinfo as well 
-      rc = AG_get_pub_info( state, reqdat->fs_path, mi, pubinfo );
+      rc = AG_get_publish_info_lowlevel( state, reqdat->fs_path, mi, pubinfo );
       if( rc != 0 ) {
          errorf("AG_get_map_info(%s) rc = %d\n", reqdat->fs_path, rc );
          

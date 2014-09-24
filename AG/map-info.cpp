@@ -20,8 +20,22 @@
 #include "core.h"
 #include "cache.h"
 
-static int AG_path_prefixes( char const* path, char*** ret_prefixes );
+// is a path an immediate child of another?
+// return true if child refers to an immediate child in parent; false if not
+// parent and child must be normalized paths
+bool AG_path_is_immediate_child( char const* parent, char const* child ) {
+   
+   char* child_parent = md_dirname( child, NULL );
+   
+   bool ret = (strcmp( child_parent, parent ) == 0);
+   
+   free( child_parent );
+   
+   return ret;
+}
 
+
+// make a map info
 void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_string, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver ) {
    
    memset( dest, 0, sizeof(struct AG_map_info) );
@@ -42,6 +56,7 @@ void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_str
    dest->driver = driver;
 }
 
+// free a map info
 void AG_map_info_free( struct AG_map_info* mi ) {
    if( mi->query_string ) {
       free( mi->query_string );
@@ -339,11 +354,11 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
       paths.push_back( itr->first );
    }
    
-   // comparator by string length, longest < shortest
+   // comparator by string length, deeper paths < shorter paths
    struct local_string_length_comparator {
       
       static bool comp( const string& s1, const string& s2 ) {
-         return (s1.size() > s2.size());
+         return md_depth( s1.c_str() ) > md_depth( s2.c_str() );
       }
    };
    
@@ -413,12 +428,12 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
 }
 
 
-// given a path and coherent map_info, get its pubinfo.
+// given a path and map_info, get its pubinfo.
 // check the cache first, and use the driver to get the pubinfo on cache miss.  cache the result.
-// if mi is not coherent, then this method will skip the cache and poll the pubinfo from the driver.  The result will NOT be cached, since the mi isn't coherent
+// if mi is not coherent, then this method will skip the cache and poll the pubinfo from the driver.
 // return 0 on success
 // return -ENODATA if there is no driver loaded for the map info, and we couldn't find any cached data
-int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
+int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
 
    int rc = 0;
    
@@ -435,7 +450,7 @@ int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_inf
       }
    }
 
-   // get details from the driver, if we have one
+   // miss, or no driver.  Try to get details from the driver, if we have one.
    // (we might not, if we're deleting something that we discovered on the MS)
    if( mi->driver != NULL ) {
       
@@ -467,9 +482,9 @@ int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_inf
 }
 
 
-// populate an md_entry from data in a map_info.
+// populate an md_entry from AG-specfile-given data and a map_info.
 // if mi is coherent, then fill in its cached metadata
-static void AG_populate_md_entry_from_map_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename ) {
+void AG_populate_md_entry_from_AG_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename ) {
    
    // fill in basics from our map info 
    entry->type = mi->type;
@@ -479,17 +494,21 @@ static void AG_populate_md_entry_from_map_info( struct md_entry* entry, struct A
    entry->coordinator = gateway_id;
    entry->volume = volume_id;
    entry->max_read_freshness = mi->reval_sec * 1000;
+}
+
+
+// populate an md_entry from cached MS-given data in a map_info 
+// NOTE: don't check if coherent 
+void AG_populate_md_entry_from_cached_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
    
-   if( mi->cache_valid ) {
-      entry->file_id = mi->file_id;
-      entry->version = mi->file_version;
-      entry->write_nonce = mi->write_nonce;
-   }
+   entry->file_id = file_id;
+   entry->version = file_version;
+   entry->write_nonce = write_nonce;
 }
 
 
 // populate an md_entry with driver-given data 
-static void AG_populate_md_entry_from_publish_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info ) {
+void AG_populate_md_entry_from_publish_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info ) {
    
    entry->size = pub_info->size;
    entry->mtime_sec = pub_info->mtime_sec;
@@ -498,20 +517,44 @@ static void AG_populate_md_entry_from_publish_info( struct md_entry* entry, stru
    entry->manifest_mtime_nsec = pub_info->mtime_nsec;
 }
 
-// fill in basic fields for an md_entry, getting information from the driver and the map_info.  map_info must be coherent.
+
+// get pubinfo from the driver.
+// return 0 on success
+// if the driver is NULL or the AG is shutting down, return -ENOTCONN
+// if the driver callback fails, return its error code 
+int AG_get_publish_info( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
+   
+   // use cached or driver-given pubinfo
+   struct AG_state* state = AG_get_state();
+   if( state == NULL ) {
+      return -ENOTCONN;
+   }
+   
+   int rc = AG_get_publish_info_lowlevel( state, path, mi, pub_info );
+
+   AG_release_state( state );
+   
+   if( rc != 0 && (rc != -ENODATA || rc == -ENODATA) ) {
+      errorf("AG_get_publish_info_lowlevel( %s ) rc = %d\n", path, rc );
+      return rc;
+   }
+   else {
+      rc = 0;
+   }
+   
+   return rc;
+}
+
+// fill in basic fields for an md_entry, getting information from the driver and the map_info.
 // if driver_required is true, then a driver is needed for the map_info (otherwise, this method will tolerate its absence and skip filling the md_entry with driver-supplied information)
 // if opt_pubinfo is not NULL, it will be used in lieu of querying the driver or cache for the same information.  This implies driver_required == False
 // this is useful for deleting entries, where driver-supplied information is not necessary.
-static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, struct AG_driver_publish_info* opt_pubinfo, bool driver_required ) {
-   
-   if( !mi->cache_valid ) {
-      return -ESTALE;
-   }
+int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, int flags, struct AG_driver_publish_info* opt_pubinfo ) {
    
    int rc = 0;
    
    // sanity check 
-   if( driver_required && mi->driver == NULL && opt_pubinfo == NULL ) {
+   if( (flags & AG_POPULATE_NO_DRIVER) && opt_pubinfo == NULL ) {
       errorf("No data available for %s\n", path );
       return -EINVAL;
    }
@@ -523,28 +566,16 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    struct AG_driver_publish_info pub_info;
    memset( &pub_info, 0, sizeof(pub_info) );
    
-   if( opt_pubinfo != NULL ) {
+   if( (flags & AG_POPULATE_NO_DRIVER) ) {
       // use caller-given pubinfo
       memcpy( &pub_info, opt_pubinfo, sizeof(struct AG_driver_publish_info) );
    }
    else {
       
-      // use cached or driver-given pubinfo
-      struct AG_state* state = AG_get_state();
-      if( state == NULL ) {
-         return -ENOTCONN;
-      }
-      
-      rc = AG_get_pub_info( state, path, mi, &pub_info );
-   
-      AG_release_state( state );
-      
-      if( rc != 0 && (rc != -ENODATA || (rc == -ENODATA && driver_required) ) ) {
-         errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
+      rc = AG_get_publish_info( path, mi, &pub_info );
+      if( rc != 0 ) {
+         errorf("AG_get_publish_info(%s) rc = %d\n", path, rc );
          return rc;
-      }
-      else {
-         rc = 0;
       }
    }
    
@@ -553,8 +584,13 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    // fill the entry with the driver-given data 
    AG_populate_md_entry_from_publish_info( entry, &pub_info );
    
-   // fill in the entry with our cached data 
-   AG_populate_md_entry_from_map_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
+   // fill in the entry with our AG-specific data 
+   AG_populate_md_entry_from_AG_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
+   
+   // fill in the entry with our cached metadata, if we're coherent or if the caller wants us to
+   if( mi->cache_valid || !(flags & AG_POPULATE_USE_MS_CACHE) ) {
+      AG_populate_md_entry_from_cached_MS_info( entry, mi->file_id, mi->file_version, mi->write_nonce );
+   }
    
    free( path_basename );
    
@@ -564,13 +600,17 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    
    // supply parent info 
    entry->parent_name = md_dirname( path, NULL );
-   entry->parent_id = parent_mi->file_id;
+   
+   if( parent_mi != NULL ) {
+      entry->parent_id = parent_mi->file_id;
+   }
    
    return rc;
 }
 
+
 // generate all prefixes for a path, including the path itself
-static int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
+int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    
    char* fs_path = strdup(path);
    char* fs_ms_path_tok = fs_path;
@@ -729,11 +769,9 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
    return 0;
 }
 
-// copy a tree's cached data into an AG_fs_map.  Don't copy data that exists in src but not in dest
-// neither FS must be locked
+// copy a tree's cached data into an AG_fs_map.  Don't copy data that exists in src but not in dest.  Only copy if coherent.
+// dest cannot be locked.
 int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
-   
-   AG_fs_rlock( src );
    
    for( AG_fs_map_t::iterator itr = src->fs->begin(); itr != src->fs->end(); itr++ ) {
       
@@ -743,12 +781,14 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
       if( info->cache_valid ) {
          AG_fs_make_coherent( dest, path_string.c_str(), info->file_id, info->file_version, info->block_version, info->write_nonce, info->refresh_deadline, NULL );
       }
+      else {
+         errorf("WARN: %s is not coherent\n", path_string.c_str() );
+      }
    }
-   
-   AG_fs_unlock( src );
    
    return 0;
 }
+
 
 // does a map_info have all the cached metadata we need?
 bool AG_has_valid_cached_metadata( char const* path, struct AG_map_info* mi ) {
@@ -803,7 +843,7 @@ static int AG_find_refresh_point( AG_fs_map_t* path_info, char** deepest_known_p
    struct local_string_length_comparator {
       
       static bool comp( const string& s1, const string& s2 ) {
-         return (s1.size() < s2.size());
+         return md_depth(s1.c_str()) < md_depth(s2.c_str());
       }
    };
    
@@ -1211,17 +1251,15 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
 }
 
 
-// look up an AG_map_info from a path 
-// AG_fs must not be locked
-struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
-
-   AG_fs_rlock( ag_fs );
+// look up an AG_map_info from a path, in a map_info 
+// return a duplicate of it on success
+// return NULL if not found.
+struct AG_map_info* AG_fs_lookup_path_in_map( AG_fs_map_t* map_info, char const* path ) {
    
    // do we have a map_info for this?
-   AG_fs_map_t::iterator child_itr = ag_fs->fs->find( string(path) );
-   if( child_itr == ag_fs->fs->end() ) {
+   AG_fs_map_t::iterator child_itr = map_info->find( string(path) );
+   if( child_itr == map_info->end() ) {
       
-      AG_fs_unlock( ag_fs );
       return NULL;
    }
    
@@ -1230,13 +1268,41 @@ struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
    
    AG_map_info_dup( ret, child_itr->second );
    
+   return ret;
+}
+
+
+// look up an AG_map_info from a path 
+// AG_fs must not be locked
+struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
+
+   AG_fs_rlock( ag_fs );
+   
+   struct AG_map_info* ret = AG_fs_lookup_path_in_map( ag_fs->fs, path );
+   
    AG_fs_unlock( ag_fs );
    
    return ret;
 }
 
 
+// make a given map_info coherent with new data 
+int AG_map_info_make_coherent_with_data( struct AG_map_info* mi, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline ) {
+
+   // update the cache data
+   mi->file_id = file_id;
+   mi->file_version = file_version;
+   mi->block_version = block_version;
+   mi->write_nonce = write_nonce;
+   mi->cache_valid = true;
+   mi->refresh_deadline = refresh_deadline;
+   
+   return 0;
+}
+   
+
 // set an AG_map_info's cached metadata in-place, making it coherent
+// optionally fill updated_mi with the newly-coherent information.
 int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline, struct AG_map_info* updated_mi ) {
    
    AG_fs_wlock( ag_fs );
@@ -1252,12 +1318,7 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id
    // update the versions 
    struct AG_map_info* mi = child_itr->second;
    
-   mi->file_id = file_id;
-   mi->file_version = file_version;
-   mi->block_version = block_version;
-   mi->write_nonce = write_nonce;
-   mi->cache_valid = true;
-   mi->refresh_deadline = refresh_deadline;
+   AG_map_info_make_coherent_with_data( mi, path, file_id, file_version, block_version, write_nonce, refresh_deadline );
    
    if( updated_mi != NULL ) {
       AG_map_info_dup( updated_mi, mi );
@@ -1291,483 +1352,13 @@ int AG_fs_remove( struct AG_fs* ag_fs, char const* path ) {
    return 0;
 }
 
-
-static int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
+// make an absolute reval deadline from a given map_info lifetime (reval_sec)
+int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
    
    struct timespec ts;
    clock_gettime( CLOCK_MONOTONIC, &ts );
    
    return reval_sec + ts.tv_sec;
-}
-
-// publish a (path, map_info) via the driver
-// this creates the file/directory, and will fail if it already exists.
-// NOTE: the AG must have cached metadata for the parent directory of path!
-int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi ) {
-   
-   dbprintf("Publish %s in %p\n", path, ag_fs );
-   
-   struct md_entry entry;
-   memset( &entry, 0, sizeof(struct md_entry) );
-   
-   AG_fs_rlock( ag_fs );
-   
-   uint64_t volume_id = ms_client_get_volume_id( ag_fs->ms );
-   uint64_t owner_id = ag_fs->ms->owner_id;
-   uint64_t gateway_id = ag_fs->ms->gateway_id;
-   
-   AG_fs_unlock( ag_fs );
-   
-   int rc = 0;
-   
-   // make sure we have the necessary metadata for the parent, since we'll need the parent's file ID
-   char* parent_path = md_dirname( path, NULL );
-   rc = AG_fs_refresh_path_metadata( ag_fs, parent_path, false );
-   if( rc != 0 ) {
-      errorf("AG_fs_refresh_path_metadata(%s) rc = %d\n", parent_path, rc );
-      free( parent_path );
-      return rc;
-   }
-   
-   // get the map_info for the parent
-   struct AG_map_info* parent_info = AG_fs_lookup_path( ag_fs, parent_path );
-   if( parent_info == NULL ) {
-      errorf("No such entry '%s'\n", parent_path );
-      free( parent_path );
-      return -ENOENT;
-   }
-   
-   uint64_t parent_id = parent_info->file_id;
-   
-   AG_map_info_free( parent_info );
-   free( parent_info );
-   
-   // set versioning information in this copy
-   mi->file_version = md_random64();
-   mi->block_version = md_random64();
-   
-   // get pubinfo from the driver
-   struct AG_driver_publish_info pub_info;
-   memset( &pub_info, 0, sizeof(struct AG_driver_publish_info) );
-   
-   struct AG_state* state = AG_get_state();
-   if( state == NULL ) {
-      free( parent_path );
-      
-      return -ENOTCONN;
-   }
-   
-   // we're not coherent.  ensure we get the driver-given data 
-   mi->cache_valid = false;
-   
-   rc = AG_get_pub_info( state, path, mi, &pub_info );
-
-   AG_release_state( state );
-   
-   if( rc != 0 ) {
-      free( parent_path );
-      
-      errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   char* mi_name = md_basename( path, NULL );
-   
-   // fill in the entry with our mi data 
-   AG_populate_md_entry_from_map_info( &entry, mi, volume_id, owner_id, gateway_id, mi_name );
-   
-   // fill the entry with the driver-given data 
-   AG_populate_md_entry_from_publish_info( &entry, &pub_info );
-   
-   // need parent name and ID to create
-   entry.parent_id = parent_id;
-   entry.parent_name = md_basename( parent_path, NULL );
-   
-   free( mi_name );
-   free( parent_path );
-   
-   uint64_t new_file_id = 0;
-   int64_t write_nonce = 0;
-   char const* method = NULL;
-   
-   // publish to the MS 
-   if( entry.type == MD_ENTRY_DIR ) {
-      
-      method = "ms_client_mkdir";
-      rc = ms_client_mkdir( ag_fs->ms, &new_file_id, &write_nonce, &entry );
-   }
-   else {
-      
-      method = "ms_client_create";
-      rc = ms_client_create( ag_fs->ms, &new_file_id, &write_nonce, &entry );
-   }
-   
-   if( rc != 0 ) {
-      errorf("%s(%s) rc = %d\n", method, path, rc );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   // cache the new metadata
-   AG_fs_make_coherent( ag_fs, path, new_file_id, mi->file_version, mi->block_version, write_nonce, AG_map_info_make_deadline( mi->reval_sec ), NULL );
-   
-   md_entry_free( &entry );
-   return rc;
-}
-
-
-// Publish a whole fs_map of entries.
-// Publish them in a breadth-first order, so parent directories get created before files.
-// NOTE: to_publish must contain all the parent directories for each file to publish!
-// If continue_if_exists is true, then this method will try to publish subsequent entries even if one is found to exist already.
-// if an error besides EEXIST is encountered
-int AG_fs_publish_map( struct AG_fs* ag_fs, AG_fs_map_t* to_publish, bool continue_if_exists ) {
-   
-   int rc = 0;
-
-   // publish in order by increasing path length.  This is becaues if to_publish has all of 
-   // a file's parent directories, then they are guaranteed to be shorter than the file's path.
-   
-   // get the list of paths to publish 
-   vector<string> paths;
-   
-   for( AG_fs_map_t::iterator itr = to_publish->begin(); itr != to_publish->end(); itr++ ) {
-      
-      paths.push_back( itr->first );
-   }
-   
-   // comparator by string length 
-   struct local_string_length_comparator {
-      
-      static bool comp( const string& s1, const string& s2 ) {
-         return (s1.size() < s2.size());
-      }
-   };
-   
-   // sort them by increasing length 
-   sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
-   
-   // publish them all 
-   for( unsigned int i = 0; i < paths.size(); i++ ) {
-      
-      char const* path = paths[i].c_str();
-      struct AG_map_info* mi = (*to_publish)[paths[i]];
-      
-      // publish this!
-      rc = AG_fs_publish( ag_fs, path, mi );
-      if( rc != 0 ) {
-         
-         errorf("AG_fs_publish(%s) rc = %d\n", path, rc );
-         
-         if( continue_if_exists ) {
-            if( rc != -EEXIST ) {
-               // con't continue 
-               return rc;
-            }
-            // CAN continue
-         }
-         else {
-            // can't continue 
-            return rc;
-         }
-      }
-   }
-   
-   return 0;
-}
-
-
-// reversion a (path, map_info) via the driver.
-// this updates the version field of the file, and will fail if it doesn't exist.
-// optionally use the caller-given pubinfo, or generate new pubinfo from the driver.
-int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo ) {
-   
-   dbprintf("Reversion %s in %p\n", path, ag_fs );
-   
-   struct md_entry entry;
-   memset( &entry, 0, sizeof(struct md_entry) );
-   
-   int rc = 0;
-   
-   // make sure the map_info has the requisite metadata from the MS 
-   rc = AG_fs_refresh_path_metadata( ag_fs, path, false );
-   if( rc != 0 ) {
-      errorf("AG_fs_refresh_path_metadata(%s) rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   // look up the map_info
-   struct AG_map_info* mi = AG_fs_lookup_path( ag_fs, path );
-   if( mi == NULL ) {
-      errorf("No such entry at '%s'\n", path );
-      return -ENOENT;
-   }
-   
-   // old file version 
-   int64_t file_version = mi->file_version;
-   
-   // look up the parent map_info 
-   char* parent_path = md_dirname( path, NULL );
-   struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
-   free( parent_path );
-   
-   // get entry's revalidation time for reversioning
-   int64_t mi_reval_sec = mi->reval_sec;
-   
-   // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, pubinfo, true );
-   
-   AG_map_info_free( mi );
-   AG_map_info_free( parent_mi );
-   
-   // remember the driver 
-   struct AG_driver* mi_driver = mi->driver;
-   
-   free( mi );
-   free( parent_mi );
-   
-   if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   // generate a new file and block version, randomly 
-   entry.version = (int64_t)md_random64();
-   int64_t block_version = (int64_t)md_random64();
-   int64_t write_nonce = 0;
-   
-   // update 
-   rc = ms_client_update( ag_fs->ms, &write_nonce, &entry );
-   
-   if( rc != 0 ) {
-      errorf("ms_client_update(%s) rc = %d\n", path, rc );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   struct AG_map_info reversioned_mi;
-   
-   // update authoritative copy to keep it coherent
-   AG_fs_make_coherent( ag_fs, path, entry.file_id, entry.version, block_version, write_nonce, AG_map_info_make_deadline( mi_reval_sec ), &reversioned_mi );
-   
-   md_entry_free( &entry );
-   
-   // evict cached blocks for this file 
-   struct AG_state* state = AG_get_state();
-   if( state != NULL ) {
-      AG_cache_evict_file( state, path, file_version );
-      
-      AG_release_state( state );
-   }
-   
-   // inform the driver that we reversioned
-   rc = AG_driver_reversion( mi_driver, path, &reversioned_mi );
-   if( rc != 0 ) {
-      errorf("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
-   }
-   
-   AG_map_info_free( &reversioned_mi );
-   
-   return rc;
-}
-
-
-// reversion a whole map of map_infos
-// if continue_on_failure is true, then continue to reversion subsequent entries even if reversioning one fails.
-// reversion in order of parents to children, so permissions get applied in the right order
-int AG_fs_reversion_map( struct AG_fs* ag_fs, AG_fs_map_t* to_reversion, bool continue_on_failure ) {
-   
-   int rc = 0;
-   
-   // order paths by length, starting with the shortest.
-   vector<string> paths;
-   
-   for( AG_fs_map_t::iterator itr = to_reversion->begin(); itr != to_reversion->end(); itr++ ) {
-      
-      paths.push_back( itr->first );
-   }
-   
-   // comparator by string length, longest > shortest
-   struct local_string_length_comparator {
-      
-      static bool comp( const string& s1, const string& s2 ) {
-         return (s1.size() < s2.size());
-      }
-   };
-   
-   // sort them by increasing length 
-   sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
-   
-   for( unsigned int i = 0; i < paths.size(); i++ ) {
-      
-      char const* path = paths[i].c_str();
-      
-      rc = AG_fs_reversion( ag_fs, path, NULL );
-      if( rc != 0 ) {
-         
-         errorf("AG_fs_reversion(%s) rc = %d\n", path, rc );
-         if( !continue_on_failure ) {
-            return rc;
-         }
-      }
-   }
-   
-   return 0;
-}
-
-
-// delete a (path, map_info) via the driver
-// if delete_cont is not NULL, then call delete_cont after the entry gets deleted.
-// NOTE: the return code from delete_cont will NOT be reported--the caller must handle errors internally
-int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
-   
-   dbprintf("Delete %s in %p\n", path, ag_fs );
-   
-   struct md_entry entry;
-   memset( &entry, 0, sizeof(struct md_entry) );
-   
-   int rc = 0;
-   
-   // make sure the map_info has the requisite metadata from the MS 
-   rc = AG_fs_refresh_path_metadata( ag_fs, path, false );
-   if( rc != 0 ) {
-      errorf("AG_fs_refresh_path_metadata(%s) rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   // look up the map_info
-   struct AG_map_info* mi = AG_fs_lookup_path( ag_fs, path );
-   if( mi == NULL ) {
-      errorf("No such entry at '%s'\n", path );
-      return -ENOENT;
-   }
-   
-   // old file version 
-   int64_t file_version = mi->file_version;
-   
-   // look up the parent map_info 
-   char* parent_path = md_dirname( path, NULL );
-   struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
-   free( parent_path );
-   
-   // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, NULL, false );
-   
-   AG_map_info_free( parent_mi );
-   free( parent_mi );
-   
-   if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
-      
-      AG_map_info_free( mi );
-      free( mi );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   // delete the entry 
-   rc = ms_client_delete( ag_fs->ms, &entry );
-   
-   if( rc != 0 ) {
-      errorf("ms_client_delete(%s) rc = %d\n", path, rc );
-      
-      AG_map_info_free( mi );
-      free( mi );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   // purge it from the FS 
-   rc = AG_fs_remove( ag_fs, path );
-   if( rc != 0 ) {
-      errorf("AG_fs_remove(%s) rc = %d\n", path, rc );
-      
-      AG_map_info_free( mi );
-      free( mi );
-      
-      md_entry_free( &entry );
-      return rc;
-   }
-   
-   // evict cached blocks for this file 
-   struct AG_state* state = AG_get_state();
-   if( state != NULL ) {
-      AG_cache_evict_file( state, path, file_version );
-      
-      AG_release_state( state );
-   }
-   
-   md_entry_free( &entry );
-   
-   AG_map_info_free( mi );
-   free( mi );
-   
-   return rc;
-}
-
-
-// delete a whole map of map_infos
-// if continue_on_failure is true, then continue to delete subsequent entries even deleting one fails.
-// delete in order of children to parents--a reverse breadth-first, if you will
-int AG_fs_delete_map( struct AG_fs* ag_fs, AG_fs_map_t* to_delete, bool continue_on_failure ) {
-   
-   int rc = 0;
-   
-   // order paths by length, starting with the longest.
-   vector<string> paths;
-   
-   for( AG_fs_map_t::iterator itr = to_delete->begin(); itr != to_delete->end(); itr++ ) {
-      
-      paths.push_back( itr->first );
-   }
-   
-   // comparator by string length, longest < shortest
-   struct local_string_length_comparator {
-      
-      static bool comp( const string& s1, const string& s2 ) {
-         return (s1.size() > s2.size());
-      }
-   };
-   
-   // sort them by decreasing length 
-   sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
-   
-   for( unsigned int i = 0; i < paths.size(); i++ ) {
-      
-      char const* path = paths[i].c_str();
-      
-      rc = AG_fs_delete( ag_fs, path );
-      if( rc != 0 ) {
-         
-         errorf("AG_fs_delete(%s) rc = %d\n", path, rc );
-         if( !continue_on_failure ) {
-            return rc;
-         }
-      }
-   }
-   
-   return 0;
-}
-
-
-// is a path an immediate child of another?
-// return true if child refers to an immediate child in parent; false if not
-// parent and child must be normalized paths
-bool AG_path_is_immediate_child( char const* parent, char const* child ) {
-   
-   char* child_parent = md_dirname( child, NULL );
-   
-   bool ret = (strcmp( child_parent, parent ) == 0);
-   
-   free( child_parent );
-   
-   return ret;
 }
 
 
@@ -1894,6 +1485,7 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
    return rc;
 }
 
+
 // log the contents of an fs map 
 int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
    
@@ -1905,16 +1497,11 @@ int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
       paths.push_back( itr->first );
    }
    
-   // comparator by string length, shortest < longest
+   // comparator by depth, shortest < longest
    struct local_string_length_comparator {
       
       static bool comp( const string& s1, const string& s2 ) {
-         if( s1.size() != s2.size() ) {
-            return (s1.size() < s2.size());
-         }
-         else {
-            return s1 < s2;
-         }
+         return md_depth(s1.c_str()) < md_depth(s2.c_str());
       }
    };
    

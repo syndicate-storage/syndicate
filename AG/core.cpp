@@ -20,6 +20,7 @@
 #include "http.h"
 #include "driver.h"
 #include "events.h"
+#include "publish.h"
 #include "map-parser-xml.h"
 #include "reversioner.h"
 
@@ -231,7 +232,6 @@ int AG_reload_specfile( struct AG_state* state, AG_fs_map_t** new_fs, AG_config_
 // that is, delete from the MS anything that is in old_fs exclusively, and publish to the 
 // MS anything that is in new_fs exclusively.  Update entries that are in the intersection.
 // neither AG_fs must be locked.
-// if old_fs is NULL, then everything in new_fs will be published.
 // This does not affect cache validation flags or driver pointers of either FS
 int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_func_t mi_equ ) {
    
@@ -241,31 +241,20 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
    AG_fs_map_t to_publish;
    AG_fs_map_t to_update;
    
-   // sentinel empty fs_maps 
-   AG_fs_map_t sentinel_old_fs_map;
-   
-   AG_fs_map_t* old_fs_map = NULL;
-   AG_fs_map_t* new_fs_map = NULL;
-   
    // find the difference between old_fs's contents and new_fs's contents
-   if( old_fs != NULL ) {
-      AG_fs_rlock( old_fs );
-      old_fs_map = old_fs->fs;
-   }
-   else {
-      old_fs_map = &sentinel_old_fs_map;
-   }
-   
+   AG_fs_rlock( old_fs );
    AG_fs_rlock( new_fs );
-   new_fs_map = new_fs->fs;
    
-   rc = AG_fs_map_transforms( old_fs_map, new_fs_map, &to_publish, &to_update, &to_delete, mi_equ );
+   dbprintf("%s", "Old FS:\n");
+   AG_dump_fs_map( old_fs->fs );
+   
+   dbprintf("%s", "New FS:\n");
+   AG_dump_fs_map( new_fs->fs );
+   
+   rc = AG_fs_map_transforms( old_fs->fs, new_fs->fs, &to_publish, &to_update, &to_delete, mi_equ );
    
    AG_fs_unlock( new_fs );
-   
-   if( old_fs != NULL ) {
-      AG_fs_unlock( old_fs );
-   }
+   AG_fs_unlock( old_fs );
    
    if( rc != 0 ) {
       errorf("AG_fs_map_transforms rc = %d\n", rc );
@@ -281,6 +270,44 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
    dbprintf("%s", "Entries in the MS that should be deleted:\n");
    AG_dump_fs_map( &to_delete );
    
+   
+   AG_fs_wlock( new_fs );
+   
+   // apply our changes to it.
+   // add new entries, and delete old ones.
+   int publish_rc = AG_fs_create_all( new_fs->ms, new_fs->fs, &to_publish, new_fs->fs );
+   
+   if( publish_rc != 0 ) {
+      errorf("ERR: AG_fs_create_all rc = %d\n", publish_rc );
+      
+      AG_fs_unlock( new_fs );
+      return publish_rc;
+   }
+   
+   int update_rc = AG_fs_update_all( new_fs->ms, new_fs->fs, &to_update, new_fs->fs );
+   if( update_rc != 0 ) {
+      errorf("ERR: AG_fs_update_all rc = %d\n", update_rc );
+      
+      AG_fs_unlock( new_fs );
+      return update_rc;
+   }
+   
+   AG_fs_unlock( new_fs );
+   
+   AG_fs_wlock( old_fs );
+   
+   int delete_rc = AG_fs_delete_all( new_fs->ms, old_fs->fs, &to_delete, old_fs->fs );
+   if( delete_rc != 0 ) {
+      errorf("ERR: AG_fs_delete_all rc = %d\n", delete_rc );
+      
+      AG_fs_unlock( old_fs );
+      return delete_rc;
+   }
+   
+   AG_fs_unlock( old_fs );
+   return 0;
+      
+   /*
    // apply our changes to it.
    // add new entries, and delete old ones.
    int publish_rc = AG_fs_publish_map( new_fs, &to_publish, true );
@@ -300,6 +327,7 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
       errorf("WARN: AG_fs_delete_map rc = %d\n", delete_rc );
       return delete_rc;
    }
+   */
    
    return 0;
 }
@@ -361,7 +389,7 @@ int AG_reload( struct AG_state* state ) {
    }
    
    
-   // for reloading, check details that will be present in both the current fs and specfile-generated fs.
+   // for reloading, an element is in both the old and new fsmaps if it has the same AG-specific metadata 
    struct AG_reload_comparator {
       static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
          return (mi1->driver    == mi2->driver    &&
@@ -710,7 +738,8 @@ int AG_start( struct AG_state* state ) {
    // since on_MS_fs is coherent but the specfile-loaded mapping is not 
    AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
    
-   // for initializing, check details that will be present in both the MS-downloaded fs and the specfile fs
+   // for initializing, an entry is common to both the specfile and the MS-hosted copy
+   // if the MS entry's metadata reflects the entry's metadata in the specfile.
    struct AG_reload_comparator {
       static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
          return (mi1->file_perm == mi2->file_perm &&

@@ -24,6 +24,7 @@ source_files = """
    http.cpp
    map-info.cpp
    map-parser-xml.cpp
+   publish.cpp
    reversioner.cpp
 """
 
