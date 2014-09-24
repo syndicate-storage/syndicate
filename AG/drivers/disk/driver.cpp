@@ -171,7 +171,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 // get information for publishing a particular file to the MS 
 int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
    
-   dbprintf("%s stat dataset\n", DRIVER_QUERY_TYPE );
+   dbprintf("%s stat dataset %s\n", DRIVER_QUERY_TYPE, path );
    
    char* disk_path = AG_driver_get_query_string_mi( map_info );
    
