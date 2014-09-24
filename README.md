@@ -1,18 +1,18 @@
 Syndicate
 =========
 
-Syndicate is an **Internet-scale software-defined storage system**.  Syndicate presents a programmable abstraction layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate's storage semantics and access controls are user-programmable, allowing Syndicate to meet arbitrarily-specific storage needs.
+Syndicate is an **Internet-scale software-defined storage system**.  Syndicate presents a programmable abstraction layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate volumes have programable storage semantics and access controls. This lets you apply Syndicate to meet arbitrarily-specific storage needs, without worrying about the underlying technologies.
 
-Cloud applications that use Syndicate do not need to host user data.  Instead, the application's server and client programs read and write data to user's Syndicate volumes.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
+Cloud applications that use Syndicate do not need to host user data.  Instead, users attach their volumes to the application, and the application reads and writes data to them instead.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
 
 Syndicate competes with systems like [Tent](http://tent.io), [Freenet](https://freenetproject.org), [Unhosted](https://unhosted.org), and [Camlistore](https://camlistore.org).  The key differences are as follows:
-* Syndicate volumes scale in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN accounts to increase storage and bandwidth capacity.
-* Syndicate has a fire-and-forget setup.  Users do not need to provision and manage their own servers to get started.
-* Syndicate seamlessly integrates existing, external data into volumes in a zero-copy manner.
-* Syndicate leverages CDNs and Web caches whenever possible, while providing guaranteed data consistency *even if caches return stale data.*
-* Syndicate works with more than just Web applications.  Syndicate volumes are locally mountable as removable media, so *any* application can use them.
-* Syndicate volumes have user-programmable storage semantics.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
-* Users have built-in access control on a per-file, per-file-attribute, per-host, and per-user basis.
+* **Syndicate volumes scale up** in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN capacity to increase storage and bandwidth.
+* Syndicate has a **fire-and-forget setup**.  Users do not need to provision and manage their own servers to get started.
+* Syndicate **seamlessly integrates existing data** by incorporating it into volumes in a zero-copy manner.
+* Syndicate leverages CDNs and Web caches whenever possible, providing **caching with guaranteed consistency** even when caches return stale data.
+* Syndicate works with more than just Web applications.  Syndicate volumes are **locally mountable as removable media**, so *any* application can use them.
+* Syndicate volumes have **user-programmable storage semantics**.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
+* Syndicate volumes have built-in access controls on a per-file, per-file-attribute, per-host, and per-user basis.  Users can extend them in a provider-agnostic way by changing how they are interpreted by add-on storage logic.
 
 What can I use Syndicate for?
 -----------------------------
@@ -21,8 +21,7 @@ Here are a few examples of how we are currently using Syndicate:
 
 * Creating a secure [DropBox](http://www.dropbox.com)-like "shared folder" system for [OpenCloud](http://www.opencloud.us) that augments VMs, external scientific datasets, and personal computers with a private CDN, allowing users to share large amounts of data with their VMs while minimizing redundant transfers.
 * Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can transparently cache scientific data in commodity CDNs without having to manually re-host data or receive stale copies.  See the [H-Syndicate](https://github.com/iychoi/H-Syndicate) project for details.
-* Adding [HIPPA](https://en.wikipedia.org/wiki/HIPAA) compliance on top of Amazon S3.
-* Creating a decentralized video streaming service.
+* Scalably packaging up and deploying applications across the Internet.
 * Creating webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to user-chosen storage service(s), so webmail providers like [Gmail](https://mail.google.com) can't snoop.  See the [SyndicateMail](https://github.com/jcnelson/syndicatemail) project for details.
 * Implementing scalable secure VDI across the Internet, using both in-house and external storage and caches.
 * Implementing vendor-agnostic [cloud storage gateways](https://en.wikipedia.org/wiki/Cloud_storage_gateway) on top of commodity hardware.

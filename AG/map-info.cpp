@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-
+#include <algorithm>
 #include "driver.h"
 #include "map-info.h"
 #include "core.h"
