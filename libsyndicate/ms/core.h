@@ -58,9 +58,11 @@ typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
 struct ms_client_network_context {
    
    bool upload;                                 // if true, then this is an upload 
+   bool started;                                // if true, then a transfer has started
    bool ended;                                  // if true, then the transfer has ended (i.e. dlctx will have been freed)
    
    struct md_download_context* dlctx;           // upload/download context
+   struct md_download_set* dlset;               // optional download set, which contains this dlctx.  If not null, then dlctx will get added to it.
    struct ms_client_timing* timing;             // benchmark information 
    
    struct curl_httppost* forms;                 // HTTP forms (optional)
@@ -171,13 +173,17 @@ int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int 
 int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url );
 
 int ms_client_download( struct ms_client* client, char const* url, char** buf, size_t* buflen );
-int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx );
+int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing );
 int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len );
 
-int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct ms_client_timing* timing );
+int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing );
 int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen );
 
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
+
+// ioctls on network contexts 
+int ms_client_network_context_set( struct ms_client_network_context* nctx, struct md_download_set* dlset );
+int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
 
 // network contexts
 int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers );
