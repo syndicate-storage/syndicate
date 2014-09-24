@@ -895,6 +895,17 @@ class MSEntry( storagetypes.Object ):
       """
       return int(i_str, 16)
    
+   @classmethod 
+   def protobuf_empty( cls, pbent, **kwargs ):
+      """
+      Create an empty protobuf, suitable as a placeholder.
+      """
+      
+      ment = MSEntry()
+      ment.protobuf( pbent )
+      return
+      
+   
    def protobuf( self, pbent, **kwargs ):
       """
       Return an ms_entry instance containing this entry's data
