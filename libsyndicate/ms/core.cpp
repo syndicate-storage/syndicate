@@ -357,7 +357,7 @@ int ms_client_destroy( struct ms_client* client ) {
 
 // open a metadata connection to the MS
 // return 0 on success, negative on error
-int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct ms_client_timing* times ) {
+int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* times ) {
    
    // set up a cURL handle to the MS 
    // TODO: conection pool
@@ -387,12 +387,24 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
+   if( opt_dlset != NULL ) {
+      md_download_set_add( opt_dlset, dlctx );
+   }
+   
+   ms_client_rlock( client );
+   
    // start to download
    rc = md_download_context_start( &client->dl, dlctx, NULL, url );
+   
+   ms_client_unlock( client );
+   
    if( rc != 0 ) {
       errorf("md_download_context_start(%s) rc = %d\n", url, rc );
       
       // TODO: connection pool 
+      if( opt_dlset != NULL ) {
+         md_download_set_clear( opt_dlset, dlctx );
+      }
       md_download_context_free( dlctx, NULL );
       curl_easy_cleanup( curl );
       return rc;
@@ -482,7 +494,7 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
 
 // begin uploading to the MS
 // return 0 on success; negative on failure
-int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct ms_client_timing* timing ) {
+int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing ) {
    
    int rc = 0;
    
@@ -509,9 +521,14 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
-   if( timing ) {
+   if( timing != NULL ) {
       curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
       curl_easy_setopt( curl, CURLOPT_WRITEHEADER, timing );      
+   }
+   
+   // if there's a download set, add the download context to it
+   if( opt_dlset != NULL ) {
+      md_download_set_add( opt_dlset, dlctx );
    }
    
    ms_client_rlock( client );
@@ -525,6 +542,10 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
       errorf("md_download_context_start(%s) rc = %d\n", url, rc );
       
       // TODO: connection pool 
+      if( opt_dlset != NULL ) {
+         md_download_set_clear( opt_dlset, dlctx );
+      }
+      
       md_download_context_free( dlctx, NULL );
       curl_easy_cleanup( curl );
       return rc;
@@ -559,7 +580,7 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, s
    memset( &times, 0, sizeof(struct ms_client_timing) );
    
    // start downloading
-   int rc = ms_client_download_begin( client, url, NULL, &dlctx, &times );
+   int rc = ms_client_download_begin( client, url, NULL, &dlctx, NULL, &times );
    if( rc != 0 ) {
       errorf("ms_client_download_begin(%s) rc = %d\n", url, rc );
       return rc;
@@ -598,6 +619,9 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, s
 // set up a download
 int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers ) {
    
+   // preserve the download set, which could have been set independently 
+   struct md_download_set* dlset = nctx->dlset;
+   
    memset( nctx, 0, sizeof(struct ms_client_network_context) );
    
    nctx->headers = headers;
@@ -610,11 +634,16 @@ int ms_client_network_context_download_init( struct ms_client_network_context* n
    
    nctx->ended = false;
    
+   nctx->dlset = dlset;
+   
    return 0;
 }
 
 // set up an upload 
 int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms ) {
+   
+   // preserve the download set, which could have been set independently 
+   struct md_download_set* dlset = nctx->dlset;
    
    memset( nctx, 0, sizeof(struct ms_client_network_context) );
    
@@ -628,9 +657,26 @@ int ms_client_network_context_upload_init( struct ms_client_network_context* nct
    
    nctx->ended = false;
    
+   nctx->dlset = dlset;
+   
    return 0;
 }
 
+// use a download set for this network context 
+int ms_client_network_context_set( struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
+   nctx->dlset = dlset;
+   return 0;
+}
+
+// cancel a running download
+int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx ) {
+   if( nctx->dlctx != NULL ) {
+      return md_download_context_cancel( &client->dl, nctx->dlctx );
+   }
+   else {
+      return 0;
+   }
+}
 
 // free a network context 
 int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
@@ -672,6 +718,8 @@ int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
       nctx->url = NULL;
    }
    
+   nctx->dlset = NULL;
+   
    return 0;
 }
 
@@ -684,18 +732,19 @@ int ms_client_network_context_begin( struct ms_client* client, struct ms_client_
    if( nctx->upload ) {
       
       method = "ms_client_upload_begin";
-      rc = ms_client_upload_begin( client, nctx->url, nctx->forms, nctx->dlctx, nctx->timing );
+      rc = ms_client_upload_begin( client, nctx->url, nctx->forms, nctx->dlctx, nctx->dlset, nctx->timing );
    }
    else {
       
       method = "ms_client_download_begin";
-      rc = ms_client_download_begin( client, nctx->url, nctx->headers, nctx->dlctx, nctx->timing );
+      rc = ms_client_download_begin( client, nctx->url, nctx->headers, nctx->dlctx, nctx->dlset, nctx->timing );
    }
    
    if( rc != 0 ) {
       errorf("%s(%s) rc = %d\n", method, nctx->url, rc );
    }
    else {
+      nctx->started = true;
       nctx->ended = false;
    }
    
