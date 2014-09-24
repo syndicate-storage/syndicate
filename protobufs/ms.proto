@@ -62,6 +62,9 @@ message ms_update {
       CHMODXATTR = 8;
       CHOWNXATTR = 9;
       VACUUM = 10;
+      UPDATE_ASYNC = 11;
+      DELETE_ASYNC = 12;
+      CREATE_ASYNC = 13;
    }
 
    required int32 type = 1;
@@ -93,10 +96,10 @@ message ms_listing {
 
    required int32 status = 1;           // cached status (one of the above)
    required int32 ftype = 2;            // was this a file or directory we accessed?
-   repeated ms_entry entries = 3;       // if this was a directory, then this contains its children
+   repeated ms_entry entries = 3;       // if this was a directory, then this contains its children.  Otherwise, entries[0] is the entry's data
    
    optional bool have_more = 4;         // if set to True, there's more entries to be fetched
-   optional string serialized_cursor = 5;  // if have_more is True, then this is the serialized cursor to use for querying more entries
+   optional string serialized_cursor = 5;  // if have_more is True, then this is the MS-signed serialized cursor to use for querying more entries
 }
 
 // metadata information for the entries of a path
@@ -117,7 +120,7 @@ message ms_reply {
    optional int32 manifest_mtime_nsec = 12;
    repeated uint64 affected_blocks = 13;
    
-   optional int32 last_item = 14;             // index of the last item in ms_update.updates that was successfully processed
+   optional int32 num_processed = 14;             // number of items processed
 }
 
 // key/value arguments for replica drivers

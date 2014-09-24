@@ -268,74 +268,203 @@ def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_non
 
 
 # ----------------------------------
-def file_create( reply, gateway, volume, update ):
+def file_create( reply, gateway, volume, update, async=False ):
    """
    Create a file or directory, using the given ms_update structure.
    Add the new entry to the given ms_reply protobuf, containing data from the created MSEntry.
    This is part of the File Metadata API.
+   
+   If async is True, then this method is called from a deferred work queue.
+   "update" and "reply" will be serialized, so we'll need to unserialize them
    """
-   attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+   try:
+      
+      if async:
+         # reply and update will have been serialized 
+         # parse it 
+         updatepb = ms_pb2.ms_update()
+         updatepb.ParseFromString( update )
+         update = updatepb
+         
+         replypb = ms_pb2.ms_reply()
+         replypb.ParseFromString( reply )
+         reply = replypb
+         
+      attrs = MSEntry.unprotobuf_dict( update.entry )
+      
+      logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+      
+      rc, ent = MSEntry.Create( gateway.owner_id, volume, **attrs )
+      
+      logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+      
+      if not async:
+         # have an entry?
+         if ent is not None:
+            ent_pb = reply.listing.entries.add()
+            ent.protobuf( ent_pb )
+            
+         return rc
+      
+      else:
+         assert rc == 0, "create /%s/%s (%s) failed, rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
    
-   rc, ent = MSEntry.Create( gateway.owner_id, volume, **attrs )
+   except Exception, e:
+      
+      logging.error("file_create(async=%s) raised an exception" % async)
+      
+      if async:
+         logging.exception(e)
+         
+         # stop trying 
+         raise storagetypes.deferred.PermanentTaskFailure()
+      
+      else:
+         raise e
+
+# ----------------------------------
+def file_create_async( reply, gateway, volume, update ):
+   """
+   Create a file/directory asynchronously.  Put it into the deferred task queue.
+   This is so AGs can create a huge batch of data efficiently.
+   """
    
-   logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+   storagetypes.deferred.defer( file_create, reply.SerializeToString(), gateway, volume, update.SerializeToString(), async=True )
    
-   # have an entry?
-   if ent is not None:
-      ent_pb = reply.listing.entries.add()
-      ent.protobuf( ent_pb )
-   
-   return rc
+   return 0
 
 
 # ----------------------------------
-def file_update( reply, gateway, volume, update ):
+def file_update( reply, gateway, volume, update, async=False ):
    """
    Update the metadata records of a file or directory, using the given ms_update structure.
    Add the new entry to the given ms_reply protobuf, containing data from the updated MSEntry.
    This is part of the File Metadata API.
+   
+   If async is True, this method was called by a deferred work queue, and update will have been serialized.
    """
-   attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   affected_blocks = update.affected_blocks[:]
-   log_affected_blocks = True
+   try:
+      
+      if async:
+         # update will have been serialized 
+         # parse it 
+         updatepb = ms_pb2.ms_update()
+         updatepb.ParseFromString( update )
+         update = updatepb
+         
+         replypb = ms_pb2.ms_reply()
+         replypb.ParseFromString( reply )
+         reply = replypb
+         
+      attrs = MSEntry.unprotobuf_dict( update.entry )
+      
+      affected_blocks = update.affected_blocks[:]
+      log_affected_blocks = True
+      
+      # don't log affected blocks if the writer was an AG, since they don't replicate anything
+      if gateway.gateway_type == GATEWAY_TYPE_AG:
+         log_affected_blocks = False
+      
+      logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
+      
+      rc, ent = MSEntry.Update( gateway.owner_id, volume, log_affected_blocks, affected_blocks, **attrs )
+      
+      logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
+      
+      if not async:
+         
+         # have an entry 
+         if ent is not None:
+            ent_pb = reply.listing.entries.add()
+            ent.protobuf( ent_pb )
+         
+         return rc
+      
+      else:
+         assert rc == 0, "update /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
    
-   # don't log affected blocks if the writer was an AG, since they don't replicate anything
-   if gateway.gateway_type == GATEWAY_TYPE_AG:
-      log_affected_blocks = False
-   
-   logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
-   
-   rc, ent = MSEntry.Update( gateway.owner_id, volume, log_affected_blocks, affected_blocks, **attrs )
-   
-   logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
-   
-   # have an entry 
-   if ent is not None:
-      ent_pb = reply.listing.entries.add()
-      ent.protobuf( ent_pb )
-   
-   return rc
+   except Exception, e:
+      
+      logging.error("file_update(async=%s) raised an exception" % async)
+      
+      if async:
+         logging.exception(e)
+         
+         # stop trying 
+         raise storagetypes.deferred.PermanentTaskFailure()
+      
+      else:
+         raise e
 
 
 # ----------------------------------
-def file_delete( reply, gateway, volume, update ):
+def file_update_async( reply, gateway, volume, update ):
+   """
+   Perform a file update, but put it on a task queue so it runs in the background.
+   This is so AGs can publish a huge batch of data efficiently.
+   """
+   storagetypes.deferred.defer( file_update, reply.SerializeToString(), gateway, volume, update.SerializeToString(), async=True )
+   
+   return 0
+   
+
+# ----------------------------------
+def file_delete( reply, gateway, volume, update, async=False ):
    """
    Delete a file or directory, using the fields of the given ms_update structure.
    This is part of the File Metadata API.
    """
-   attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+   try:
+      
+      if async:
+         # update will have been serialized 
+         # parse it 
+         updatepb = ms_pb2.ms_update()
+         updatepb.ParseFromString( update )
+         update = updatepb
+         
+         replypb = ms_pb2.ms_reply()
+         replypb.ParseFromString( reply )
+         reply = replypb
+         
+      attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
+      logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
    
-   logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+      rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
    
-   return rc
+      logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+      
+      if not async:
+         return rc
+      
+      else:
+         assert rc == 0, "delete /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
+   
+   except Exception, e:
+      
+      logging.error("file_delete(async=%s) raised an exception" % async)
+      
+      if async:
+         logging.exception(e)
+         
+         # stop trying
+         raise storagetypes.deferred.PermanentTaskFailure()
+      else:
+         raise e
+   
 
+# ----------------------------------
+def file_delete_async( reply, gateway, volume, update ):
+   """
+   Delete a file or directory, but put it on a task queue so it runs in the background.
+   This is so AGs can delete a huge batch of data efficiently.
+   """
+   storagetypes.deferred.defer( file_delete, reply.SerializeToString(), gateway, volume, update.SerializeToString(), async=True )
+   return 0
 
 # ----------------------------------
 def file_rename( reply, gateway, volume, update ):

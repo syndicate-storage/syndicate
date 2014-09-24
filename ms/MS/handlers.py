@@ -427,10 +427,21 @@ class MSFileHandler(webapp2.RequestHandler):
    # ensure that the posted data has all of the requisite optional fields
    # return (boolean validation check, failure status)
    post_validators = {
-      ms_pb2.ms_update.CREATE:          lambda gateway, update: (True, 200),
+      ms_pb2.ms_update.CREATE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA )) or 
+                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
+      
+      ms_pb2.ms_update.CREATE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
+      
       ms_pb2.ms_update.UPDATE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_DATA )) or 
                                                                  (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
-      ms_pb2.ms_update.DELETE:          lambda gateway, update: (True, 200),
+      
+      ms_pb2.ms_update.UPDATE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
+      
+      ms_pb2.ms_update.DELETE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA )) or 
+                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
+      
+      ms_pb2.ms_update.DELETE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
+      
       ms_pb2.ms_update.CHCOORD:         lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
       ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
       ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value") and update.HasField("xattr_mode") and update.HasField("xattr_owner"), 400),
@@ -443,8 +454,11 @@ class MSFileHandler(webapp2.RequestHandler):
    # Map update values onto handlers
    post_api_calls = {
       ms_pb2.ms_update.CREATE:          lambda reply, gateway, volume, update: file_create( reply, gateway, volume, update ),
+      ms_pb2.ms_update.CREATE_ASYNC:    lambda reply, gateway, volume, update: file_create_async( reply, gateway, volume, update ),
       ms_pb2.ms_update.UPDATE:          lambda reply, gateway, volume, update: file_update( reply, gateway, volume, update ),
+      ms_pb2.ms_update.UPDATE_ASYNC:    lambda reply, gateway, volume, update: file_update_async( reply, gateway, volume, update ),
       ms_pb2.ms_update.DELETE:          lambda reply, gateway, volume, update: file_delete( reply, gateway, volume, update ),
+      ms_pb2.ms_update.DELETE_ASYNC:    lambda reply, gateway, volume, update: file_delete_async( reply, gateway, volume, update ),
       ms_pb2.ms_update.RENAME:          lambda reply, gateway, volume, update: file_rename( reply, gateway, volume, update ),
       ms_pb2.ms_update.CHCOORD:         lambda reply, gateway, volume, update: file_chcoord( reply, gateway, volume, update ),
       ms_pb2.ms_update.SETXATTR:        lambda reply, gateway, volume, update: file_xattr_setxattr( reply, gateway, volume, update ),
@@ -458,8 +472,11 @@ class MSFileHandler(webapp2.RequestHandler):
    # Map update values onto benchmark headers
    post_benchmark_headers = {
       ms_pb2.ms_update.CREATE:          "X-Create-Times",
+      ms_pb2.ms_update.CREATE_ASYNC:    "X-Create-Async-Times",
       ms_pb2.ms_update.UPDATE:          "X-Update-Times",
+      ms_pb2.ms_update.UPDATE_ASYNC:    "X-Update-Async-Times",
       ms_pb2.ms_update.DELETE:          "X-Delete-Times",
+      ms_pb2.ms_update.DELETE_ASYNC:    "X-Delete-Async-Times",
       ms_pb2.ms_update.CHCOORD:         "X-Chcoord-Times",
       ms_pb2.ms_update.RENAME:          "X-Rename-Times",
       ms_pb2.ms_update.SETXATTR:        "X-Setxattr-Times",
@@ -596,17 +613,23 @@ class MSFileHandler(webapp2.RequestHandler):
       timing = {}
       
       # carry out the operation(s)
-      index = 0
+      num_processed = 0
+      types = {}
       for update in update_set.updates:
 
+         if not types.has_key(update.type):
+            types[update.type] = 0
+            
+         types[update.type] += 1
+         
          # these are guaranteed to be non-None...
          api_call = MSFileHandler.post_api_calls.get( update.type, None )
          benchmark_header = MSFileHandler.post_benchmark_headers.get( update.type, None )
-            
+         
          # run the API call, but benchmark it too
          try:
             rc = benchmark( benchmark_header, timing, lambda: api_call( reply, gateway, volume, update ) )
-            index += 1
+            num_processed += 1
          except Exception, e:
             logging.exception(e)
             rc = -errno.EREMOTEIO
@@ -617,7 +640,9 @@ class MSFileHandler(webapp2.RequestHandler):
             reply.error = rc
             break
 
-      reply.last_item = index - 1
+      reply.num_processed = num_processed
+      
+      log.info("Processed %s requests (%s)" % (num_processed, types))
       
       # generate the response
       reply_str = file_update_complete_response( volume, reply )
