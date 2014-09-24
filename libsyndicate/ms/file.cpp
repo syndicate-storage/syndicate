@@ -113,47 +113,6 @@ static int ms_client_send_end( struct ms_client* client, ms::ms_reply* reply, bo
    return rc;
 }
 
-/*
-// send file data, synchronously
-// return 0 on success and populate the ms_reply; return negative on error
-static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
-   
-   int rc = 0;
-   struct ms_client_network_context nctx;
-   
-   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
-   
-   // start the upload
-   struct timespec ts, ts2;
-   BEGIN_TIMING_DATA( ts );
-
-   rc = ms_client_send_begin( client, url, data, len, &nctx );
-   if( rc != 0 ) {
-      
-      errorf("ms_client_send_begin(%s) rc = %d\n", url, rc );
-      
-      END_TIMING_DATA( ts, ts2, "MS send (error)" );
-   
-      return rc;
-   }
-   
-   rc = ms_client_send_end( client, reply, verify, &nctx );
-   if( rc != 0 ) {
-      
-      errorf("ms_client_send_end(%s) rc = %d\n", url, rc );
-      
-      END_TIMING_DATA( ts, ts2, "MS send (error)" );
-      
-      return rc;
-   }
-   
-   END_TIMING_DATA( ts, ts2, "MS send" );
-   
-   return 0;
-}
-*/
-
-
 // fill serializable char* fields in an ent, if they aren't there already.  Emit warnings if they aren't 
 static int ms_client_md_entry_sanity_check( struct md_entry* ent ) {
    if( ent->name == NULL ) {
@@ -312,79 +271,140 @@ uint64_t ms_client_make_file_id() {
    return (uint64_t)md_random64();
 }
 
-// extract file IDs and write nonces from an ms_reply 
+
+// extract file metadata from reply, and perform sanity checks.
+// * verify that the reply indcates that the expected number of requests were processed
+// * verify that the reply contains the expected number of entries in its entry listing.
+// * verify that the entries list does not contain duplicates.
 // return 0 on success, -EBADMSG on invalid reply structure, -EINVAL on invalid input
 // if there is no data, then return the reply's error code.
-static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_multi_result* results ) {
+static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_multi_result* results, int num_expected_processed, int num_expected_ents ) {
    
-   int last_item = 0;
-   int num_items = 0;
+   int num_items_processed = 0;
    int error = 0;
+   int rc = 0;
+   struct md_entry* ents = NULL;
+   size_t num_ents = 0;
    
-   uint64_t* file_ids = NULL;
-   int64_t* write_nonces = NULL;
-   uint64_t* coordinator_ids = NULL;
-   
-   size_t num_file_ids = 0;
-   size_t num_write_nonces = 0;
-   size_t num_coordinator_ids = 0;
    
    if( results == NULL ) {
       return -EINVAL;
    }
    
    // sanity check 
-   if( !reply->has_last_item() ) {
-      errorf("%s", "MS reply is missing last_item\n");
+   if( !reply->has_num_processed() ) {
+      errorf("%s", "MS reply is missing num_processed\n");
       return -EBADMSG;
    }
    
-   last_item = reply->last_item();
-   num_items = last_item + 1;
+   num_items_processed = reply->num_processed();
    
-   // sanity check--any data at all?
-   if( reply->listing().entries_size() == 0 ) {
+   // sanity check--did anything get through at all?
+   if( num_items_processed == 0 ) {
       return reply->error();
    }
    
-   // sanity check--did we get back that many replies?
-   if( reply->listing().entries_size() < num_items ) {
-      errorf("MS reply has %d items, but the last item was %d\n", reply->listing().entries_size(), last_item );
-      return -EBADMSG;
+   // sanity check--was everything processed?
+   if( num_items_processed != num_expected_processed ) {
+      errorf("Requested %d items, but %d were processed\n", num_expected_processed, num_items_processed );
+      
+      if( reply->error() != 0 ) {
+         return reply->error();
+      }
+      else {
+         return -EBADMSG;
+      }
+   }
+   
+   // sanity check--do we have the expected number of entries in the listing?
+   if( num_expected_ents > 0 ) {
+      
+      if( !reply->has_listing() ) {
+         errorf("Expected %d entries, but no listing given\n", num_expected_ents);
+         
+         return -EBADMSG;
+      }
+      
+      if( reply->listing().entries_size() != num_expected_ents ) {
+         errorf("Expected %d entries, but listing contains %d\n", num_expected_ents, reply->listing().entries_size() );
+         
+         return -EBADMSG;
+      }
    }
    
    error = reply->error();
    
-   file_ids = CALLOC_LIST( uint64_t, num_items );
-   write_nonces = CALLOC_LIST( int64_t, num_items );
-   coordinator_ids = CALLOC_LIST( uint64_t, num_items );
+   if( num_expected_ents > 0 ) {
+      // get the entries.
+      
+      // First, sanity check: verify no duplicate names or IDs
+      set<string> names;
+      set<uint64_t> ids;
+      
+      for( int i = 0; i < num_expected_ents; i++ ) {
+         
+         string name = reply->listing().entries(i).name();
+         uint64_t id = reply->listing().entries(i).file_id();
+         
+         if( names.count(string(name)) != 0 || ids.count(id) ) {
+            errorf("ERR: Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
+            rc = -EBADMSG;
+         }
+         
+         names.insert( name );
+         ids.insert( id );
+      }
+      
+      if( rc != 0 ) {
+         // invalid message
+         return rc;
+      }
+      
+      // store entries
+      num_ents = reply->listing().entries_size();
+      ents = CALLOC_LIST( struct md_entry, num_ents );
    
-   num_file_ids = num_items;
-   num_write_nonces = num_items;
-   num_coordinator_ids = num_items;
-   
-   for( int i = 0; i < num_items; i++ ) {
-      
-      uint64_t file_id = reply->listing().entries(i).file_id();
-      int64_t write_nonce = reply->listing().entries(i).write_nonce();
-      uint64_t coordinator_id = reply->listing().entries(i).coordinator();
-      
-      file_ids[i] = file_id;
-      write_nonces[i] = write_nonce;
-      coordinator_ids[i] = coordinator_id;
-      
-      dbprintf("%s: output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", reply->listing().entries(i).name().c_str(), file_id, write_nonce, coordinator_id );
+      for( int i = 0; i < num_expected_ents; i++ ) {
+         
+         ms_entry_to_md_entry( reply->listing().entries(i), &ents[i] );   
+         dbprintf("%s: output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ents[i].name, ents[i].file_id, ents[i].write_nonce, ents[i].coordinator );
+      }
    }
    
    // fill in the structure
    results->reply_error = error;
-   results->last_item = last_item;
-   results->file_ids = file_ids;
-   results->num_file_ids = num_file_ids;
-   results->write_nonces = write_nonces;
-   results->num_write_nonces = num_write_nonces;
-   results->coordinator_ids = coordinator_ids;
-   results->num_coordinator_ids = num_coordinator_ids;
+   results->num_processed = num_items_processed;
+   results->ents = ents;
+   results->num_ents = num_ents;
+   
+   return 0;
+}
+
+
+// free a request and all of its data (assumed to be dynamically allocated)
+int ms_client_request_free( struct ms_client_request* req ) {
+   
+   if( req->ent != NULL ) {
+      
+      md_entry_free( req->ent );
+      free( req->ent );
+      req->ent = NULL;
+   }
+   
+   if( req->dest != NULL ) {
+   
+      md_entry_free( req->ent );
+      free( req->ent );
+      req->ent = NULL;
+   }
+   
+   if( req->affected_blocks != NULL ) {
+      
+      free( req->affected_blocks );
+      req->affected_blocks = NULL;
+   }
+   
+   memset( req, 0, sizeof(struct ms_client_request) );
    
    return 0;
 }
@@ -393,26 +413,51 @@ static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_
 // free a multi-result 
 int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
    
-   if( result->file_ids != NULL ) {
-      free( result->file_ids );
+   if( result->ents != NULL ) {
       
-      result->file_ids = NULL;
-      result->num_file_ids = 0;
+      for( unsigned int i = 0; i < result->num_ents; i++ ) {
+         md_entry_free( &result->ents[i] );
+      }
+      
+      free( result->ents );
+      
+      result->ents = NULL;
+      result->num_ents = 0;
    }
    
-   if( result->write_nonces != NULL ) {
-      free( result->write_nonces );
+   return 0;
+}
+
+
+// merge two successful multi-results.
+// NOTE: this will free the ents in src, and set its number of ents to 0
+int ms_client_multi_result_merge( struct ms_client_multi_result* dest, struct ms_client_multi_result* src ) {
+   
+   if( src->num_ents > 0 && src->ents != NULL ) {
+   
+      size_t num_ents = dest->num_ents + src->num_ents;
+   
+      struct md_entry* ents = (struct md_entry*)realloc( dest->ents, num_ents * sizeof(struct md_entry) );
       
-      result->write_nonces = NULL;
-      result->num_write_nonces = 0;
+      if( ents == NULL ) {
+         return -ENOMEM;
+      }
+      
+      memcpy( ents + sizeof(struct md_entry) * dest->num_ents, src->ents, sizeof(struct md_entry) * src->num_ents );
+      
+      dest->ents = ents;
+      dest->num_ents = num_ents;
+      
+      // ensure this won't get used again
+      free( src->ents );
+      src->ents = NULL;
    }
    
-   if( result->coordinator_ids != NULL ) {
-      free( result->coordinator_ids );
-      
-      result->coordinator_ids = NULL;
-      result->num_coordinator_ids = 0;
-   }
+   dest->num_processed += src->num_processed;
+   
+   // ensure we won't access src->ents again
+   src->num_ents = 0;
+   src->num_processed = 0;
    
    return 0;
 }
@@ -421,7 +466,33 @@ int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
 struct ms_client_multi_cls {
    ms_client_update_set* updates;
    char* serialized_updates;
+   int num_expected_replies;
 };
+
+// how many expected entries in a rely listing, given the operation?
+int ms_client_num_expected_reply_ents( size_t num_reqs, int op ) {
+   
+   // list of all operations where we expect one reply for each request 
+   static int expected_all_replies[] = {
+      ms::ms_update::CREATE,
+      ms::ms_update::UPDATE,
+      ms::ms_update::CHCOORD,
+      ms::ms_update::RENAME,
+      -1
+   };
+   
+   // for anything else, we expect zero replies 
+   
+   for( int i = 0; expected_all_replies[i] != -1; i++ ) {
+      
+      if( op == expected_all_replies[i] ) {
+         return (int)num_reqs;
+      }
+   }
+   
+   // no reply expected
+   return 0;
+}
 
 // start performing multiple instances of a single operation over a set of file and/or directory records on the MS 
 // ms_op should be one of the ms::ms_update::* values
@@ -464,18 +535,18 @@ int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags,
    
    // start posting 
    rc = ms_client_send_updates_begin( client, updates, &serialized_updates, nctx );
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       errorf("ms_client_send_updates_begin rc = %d\n", rc );
       
       return rc;
    }
    
-   struct ms_client_multi_cls* creates_cls = CALLOC_LIST( struct ms_client_multi_cls, 1 );
-   creates_cls->updates = updates;
-   creates_cls->serialized_updates = serialized_updates;
+   struct ms_client_multi_cls* multi_cls = CALLOC_LIST( struct ms_client_multi_cls, 1 );
+   multi_cls->updates = updates;
+   multi_cls->serialized_updates = serialized_updates;
+   multi_cls->num_expected_replies = ms_client_num_expected_reply_ents( num_reqs, ms_op );
    
-   // remember the updates between calls 
-   ms_client_network_context_set_cls( nctx, creates_cls );
+   ms_client_network_context_set_cls( nctx, multi_cls );
    
    return rc;
 }
@@ -491,18 +562,22 @@ int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result
    // restore context 
    ms_client_update_set* updates = NULL;
    char* serialized_updates = NULL;
+   int num_expected_replies = 0;
+   int num_expected_processed = 0;
    
-   struct ms_client_multi_cls* creates_cls = (struct ms_client_multi_cls*)ms_client_network_context_get_cls( nctx );
+   struct ms_client_multi_cls* multi_cls = (struct ms_client_multi_cls*)ms_client_network_context_get_cls( nctx );
    
-   if( creates_cls == NULL ) {
+   if( multi_cls == NULL ) {
       return -EINVAL;
    }
    
-   updates = creates_cls->updates;
-   serialized_updates = creates_cls->serialized_updates;
+   updates = multi_cls->updates;
+   serialized_updates = multi_cls->serialized_updates;
+   num_expected_replies = multi_cls->num_expected_replies;
+   num_expected_processed = updates->size();
    
    // done with this
-   free( creates_cls );
+   free( multi_cls );
    
    // finish sending 
    rc = ms_client_send_updates_end( client, &reply, true, nctx );
@@ -519,7 +594,7 @@ int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result
    
    else {
       // if requested, get back at least partial data
-      rc = ms_client_get_partial_results( &reply, results );
+      rc = ms_client_get_partial_results( &reply, results, num_expected_processed, num_expected_replies );
       if( rc != 0 ) {
          
          errorf("ms_client_get_partial_results rc = %d\n", rc );
@@ -595,6 +670,7 @@ int ms_client_update_rpc( struct ms_client* client, struct md_update* up ) {
 // create a single file or directory record on the MS, synchronously
 // assert that the entry's type (MD_ENTRY_FILE or MD_ENTRY_DIRECTORY) matches a given type (return -EINVAL if it doesn't)
 // return 0 on success, negative on error
+// ent will not be modified
 static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, int type, struct md_entry* ent ) {
    
    // sanity check 
@@ -612,9 +688,10 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    
    // remember the old file ID
    uint64_t old_file_id = ent->file_id;
+   uint64_t new_file_id = ms_client_make_file_id();
    
-   // temporarily request a new file ID
-   ent->file_id = ms_client_make_file_id();
+   // request a particular file ID
+   ent->file_id = new_file_id;
    
    dbprintf("desired file_id: %" PRIX64 "\n", ent->file_id );
    
@@ -634,13 +711,20 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    else {
       
       // get data
-      if( result.last_item != 0 ) {
-         errorf("ERR: created %d entries\n", result.last_item );
+      if( result.num_processed != 1 ) {
+         errorf("ERR: created %d entries\n", result.num_processed );
       }
       else {
-         // got data too!
-         *file_id_ret = result.file_ids[0];
-         *write_nonce_ret = result.write_nonces[0];
+         // got data!  make sure it matches (the MS should have went with our file ID)
+         if( new_file_id != result.ents[0].file_id ) {
+            errorf("MS returned invalid data: expected file ID %" PRIX64 ", but got %" PRIX64 "\n", new_file_id, result.ents[0].file_id );
+            rc = -EBADMSG;
+         }
+         
+         else {
+            *file_id_ret = result.ents[0].file_id;
+            *write_nonce_ret = result.ents[0].write_nonce;
+         }
       }
    }
    
@@ -711,12 +795,13 @@ int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, stru
       errorf("ms_client_single_rpc(UPDATE) rc = %d\n", rc );
    }
    else {
-      if( result.last_item != 0 ) {
-         errorf("ERR: updated %d entries\n", result.last_item );
+      if( result.num_processed != 1 ) {
+         errorf("ERR: updated %d entries\n", result.num_processed );
+         rc = -ENODATA;
       }
       else {
          // got data too!
-         *write_nonce = result.write_nonces[0];
+         *write_nonce = result.ents[0].write_nonce;
       }
    }
    
@@ -724,6 +809,7 @@ int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, stru
    
    return 0;
 }
+
 
 // update a record on the MS, synchronously, NOT due to a write()
 int ms_client_update( struct ms_client* client, int64_t* write_nonce_ret, struct md_entry* ent ) {
@@ -752,13 +838,13 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
       errorf("ms_client_single_rpc(CHCOORD) rc = %d\n", rc );
    }
    else {
-      if( result.last_item != 0 ) {
-         errorf("ERR: updated %d entries\n", result.last_item );
+      if( result.num_processed != 1 ) {
+         errorf("ERR: updated %d entries\n", result.num_processed );
       }
       else {
          // got data too!
-         *write_nonce = result.write_nonces[0];
-         *new_coordinator = result.coordinator_ids[0];
+         *write_nonce = result.ents[0].write_nonce;
+         *new_coordinator = result.ents[0].coordinator;
       }
    }
    
@@ -798,12 +884,12 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
       errorf("ms_client_single_rpc(RENAME) rc = %d\n", rc );
    }
    else {
-      if( result.last_item != 0 ) {
-         errorf("ERR: updated %d entries\n", result.last_item );
+      if( result.num_processed != 1 ) {
+         errorf("ERR: updated %d entries\n", result.num_processed );
       }
       else {
          // got data too!
-         *write_nonce = result.write_nonces[0];
+         *write_nonce = result.ents[0].write_nonce;
          
          dbprintf("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, *write_nonce );
       }

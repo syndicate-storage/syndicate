@@ -76,16 +76,10 @@ struct ms_client_request {
 struct ms_client_multi_result {
    
    int reply_error;             // result of the multi-RPC 
-   int last_item;               // index of the last item to be processed in the list of requests
+   int num_processed;           // number of items processed by the MS
    
-   uint64_t* file_ids;          // list of resulting file IDs
-   size_t num_file_ids;
-   
-   int64_t* write_nonces;       // list of resulting write nonces
-   size_t num_write_nonces;
-   
-   uint64_t* coordinator_ids;   // list of resulting coordinator IDs
-   size_t num_coordinator_ids;
+   struct md_entry* ents;
+   size_t num_ents;
 };
 
 
@@ -99,6 +93,7 @@ typedef map< uint64_t, struct ms_listing > ms_response_t;
 extern "C" {
    
 // file metadata API
+uint64_t ms_client_make_file_id();
 int ms_client_create( struct ms_client* client, uint64_t* file_id, int64_t* write_nonce, struct md_entry* ent );
 int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, int64_t* write_nonce, struct md_entry* ent );
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
@@ -115,11 +110,15 @@ int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result
 int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_response_t* ms_response );
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 
+// results 
+int ms_client_multi_result_merge( struct ms_client_multi_result* dest, struct ms_client_multi_result* src );
+
 // memory management
 void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)(void*) );
 void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
+int ms_client_request_free( struct ms_client_request* req );
 int ms_client_multi_result_free( struct ms_client_multi_result* result );
 
 // low-level file API 
@@ -132,9 +131,9 @@ int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_
 int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx );
 int ms_client_send_updates_end( struct ms_client* client, ms::ms_reply* reply, bool verify_response, struct ms_client_network_context* nctx );
 
+// parsing
 int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify );
-
-uint64_t ms_client_make_file_id();
+int ms_client_num_expected_reply_ents( size_t num_reqs, int op );
 
 }
 
