@@ -25,26 +25,19 @@ from google.appengine.ext import ndb
 SHARD_KEY_TEMPLATE = 'shardcounter-{}-{:d}'
 
 
-class GeneralCounterShardConfig(ndb.Model):
-    """Tracks the number of shards for each named counter."""
-    num_shards = ndb.IntegerProperty(default=20)
+def _all_keys(name, num_shards):
+   """Returns all possible keys for the counter name given the config.
 
-    @classmethod
-    def all_keys(cls, name):
-        """Returns all possible keys for the counter name given the config.
+   Args:
+      name: The name of the counter.
 
-        Args:
-            name: The name of the counter.
-
-        Returns:
-            The full list of ndb.Key values corresponding to all the possible
-                counter shards that could exist.
-        """
-        config = cls.get_or_insert(name)
-        shard_key_strings = [SHARD_KEY_TEMPLATE.format(name, index)
-                             for index in range(config.num_shards)]
-        return [ndb.Key(GeneralCounterShard, shard_key_string)
-                for shard_key_string in shard_key_strings]
+   Returns:
+      The full list of ndb.Key values corresponding to all the possible
+            counter shards that could exist.
+   """
+   
+   shard_key_strings = [SHARD_KEY_TEMPLATE.format(name, index) for index in range(num_shards)]
+   return [ndb.Key(GeneralCounterShard, shard_key_string) for shard_key_string in shard_key_strings]
 
 
 class GeneralCounterShard(ndb.Model):
@@ -52,75 +45,171 @@ class GeneralCounterShard(ndb.Model):
     count = ndb.IntegerProperty(default=0)
 
 
-def get_count(name):
+def get_count(name, num_shards):
     """Retrieve the value for a given sharded counter.
 
     Args:
         name: The name of the counter.
-
+        num_shards: the number of shards
     Returns:
         Integer; the cumulative count of all sharded counters for the given
             counter name.
     """
+    
+    # only cache if it exists at all 
+    do_cache = False
     total = memcache.get(name)
     if total is None:
         total = 0
-        all_keys = GeneralCounterShardConfig.all_keys(name)
-        for counter in ndb.get_multi(all_keys):
+        all_keys = _all_keys(name, num_shards)
+        for counter in ndb.get_multi(all_keys, use_cache=False, use_memcache=False):
             if counter is not None:
                 total += counter.count
-        memcache.add(name, total)
+                do_cache = True 
+                
+        if do_cache:
+            memcache.set(name, total)
+            
     return total
 
+def flush_cache(name):
+   """
+   Flush the cache for this counter 
+   """
+   memcache.delete(name)
+   
 
-def increment(name):
-    """Increment the value for a given sharded counter.
+def increment(name, num_shards):
+    """
+    Increment the value for a given sharded counter.
+    This will create the counter if it does not exist.
 
     Args:
         name: The name of the counter.
+        num_shards: the number of shards in the counter
     """
-    config = GeneralCounterShardConfig.get_or_insert(name)
-    _change(name, config.num_shards, 1)
+    _change(name, num_shards, 1)
 
-def decrement(name):
-   config = GeneralCounterShardConfig.get_or_insert(name)
-   _change(name, config.num_shards, -1)
 
-@ndb.transactional
-def _change(name, num_shards, value):
-    """Transactional helper to increment the value for a given sharded counter.
+def decrement(name, num_shards):
+   """
+    Decrement the value for a given sharded counter.
+    This will create the counter if it does not exist.
+
+    Args:
+        name: The name of the counter.
+        num_shards: the number of shards in the counter
+    """
+   _change(name, num_shards, -1)
+
+
+def delete(name, num_shards):
+   """
+   Delete the named counter and all of its shards.
+
+   Args:
+       name: The name of the counter.
+       num_shards: the number of shards in the counter
+   """
+   
+   all_keys = _all_keys(name, num_shards)
+   ndb.delete_multi( all_keys )
+   
+   memcache.delete( name )
+   
+   return
+
+
+def increment_async(name, num_shards):
+    """
+    Asynchronously increment the value for a given sharded counter.
+    This will create the counter if it does not exist.
+
+    Args:
+        name: The name of the counter.
+        num_shards: the number of shards in the counter
+        
+    Return:
+        A future for the transaction 
+    """
+    return _change_async(name, num_shards, 1)
+
+
+def decrement_async(name, num_shards):
+   """
+    Asynchronously decrement the value for a given sharded counter.
+    This will create the counter if it does not exist.
+
+    Args:
+        name: The name of the counter.
+        num_shards: the number of shards in the counter
+    """
+   return _change_async(name, num_shards, -1)
+
+
+def delete_async(name, num_shards):
+   """
+   Asynchronously delete the named counter and all of its shards.
+
+   Args:
+       name: The name of the counter.
+       num_shards: the number of shards in the counter
+       
+   Return:
+       A list of Futures for each entity making up the counter.
+   """
+   
+   all_keys = _all_keys(name, num_shards)
+   delete_futs = ndb.delete_multi_async( all_keys )
+   
+   memcache.delete( name )
+   
+   return delete_futs
+
+
+def _change_async(name, num_shards, value):
+    """
+    Asynchronous transaction helper to increment the value for a given sharded counter.
 
     Also takes a number of shards to determine which shard will be used.
 
     Args:
         name: The name of the counter.
         num_shards: How many shards to use.
+        
+    Returns:
+      A future whose result is the transaction
     """
-    if value != 1 and value != -1:
-       raise Exception("Invalid shard count value %s" % value)
     
-    index = random.randint(0, num_shards - 1)
-    shard_key_string = SHARD_KEY_TEMPLATE.format(name, index)
-    counter = GeneralCounterShard.get_by_id(shard_key_string)
-    if counter is None:
-        counter = GeneralCounterShard(id=shard_key_string)
-    counter.count += value
-    counter.put()
-    # Memcache increment does nothing if the name is not a key in memcache
-    memcache.incr(name)
+    @ndb.tasklet
+    def txn():
+      
+      if value != 1 and value != -1:
+         raise Exception("Invalid shard count value %s" % value)
+
+      memcache.delete( name )
+      
+      index = random.randint(0, num_shards - 1)
+      
+      shard_key_string = SHARD_KEY_TEMPLATE.format(name, index)
+      
+      counter = yield GeneralCounterShard.get_by_id_async(shard_key_string)
+      if counter is None:
+         counter = GeneralCounterShard(id=shard_key_string)
+         
+      counter.count += value
+      yield counter.put_async()
+      
+      memcache.delete( name )
+   
+    return ndb.transaction_async( txn )
 
 
-@ndb.transactional
-def increase_shards(name, num_shards):
-    """Increase the number of shards for a given sharded counter.
+def _change(name, num_shards, value):
+   """
+   Synchronous wrapper around _change_async
+   """
+   tf = _change_async(name, num_shards, value)
+   tf.wait()
+   return
 
-    Will never decrease the number of shards.
-
-    Args:
-        name: The name of the counter.
-        num_shards: How many shards to use.
-    """
-    config = GeneralCounterShardConfig.get_or_insert(name)
-    if config.num_shards < num_shards:
-        config.num_shards = num_shards
-        config.put()
