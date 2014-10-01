@@ -97,9 +97,6 @@ message ms_listing {
    required int32 status = 1;           // cached status (one of the above)
    required int32 ftype = 2;            // was this a file or directory we accessed?
    repeated ms_entry entries = 3;       // if this was a directory, then this contains its children.  Otherwise, entries[0] is the entry's data
-   
-   optional bool have_more = 4;         // if set to True, there's more entries to be fetched
-   optional string serialized_cursor = 5;  // if have_more is True, then this is the MS-signed serialized cursor to use for querying more entries
 }
 
 // metadata information for the entries of a path
@@ -198,18 +195,17 @@ message ms_volume_metadata {
    required uint64 volume_id = 3;             // volume ID
    required uint64 volume_version = 4;          // volume metadata version
    required uint64 cert_version = 5;            // Volume cert bundle version
-   required uint64 num_files = 6;
-   required string name = 7;
-   required string description = 8;
-   required string volume_public_key = 9;
-   required bool archive = 10;
-   required bool private = 11;
-   required bool allow_anon = 12;
+   required string name = 6;
+   required string description = 7;
+   required string volume_public_key = 8;
+   required bool archive = 9;
+   required bool private = 10;
+   required bool allow_anon = 11;
    
-   required string signature = 13;              // base64-encoded Volume signature of this message
+   required string signature = 12;              // base64-encoded Volume signature of this message
    
-   optional ms_entry root = 14;                 // root directory
-   optional string cache_closure_text = 15;     // serialized closure for connecting to the caches
+   optional ms_entry root = 13;                 // root directory
+   optional string cache_closure_text = 14;     // serialized closure for connecting to the caches
 }
 
 
@@ -222,6 +218,9 @@ message ms_registration_metadata {
    required string signature = 5;               // (base64) signed by Volume public key
    required int32 resolve_page_size = 6;                // number of entries we're allowed to ask for at once in a request
    optional string encrypted_gateway_private_key = 7;   // Gateway's private key, previously sealed on upload
+   optional int32 max_connections = 8;                  // MS-given hint on the maximum number of connections to open at once 
+   optional int32 max_batch_request_size = 9;           // MS-given hint on the maximum number of synchronous requests to send per multi-request
+   optional int32 max_batch_async_request_size = 10;     // MS-given hint on the maximum number of asynchronous requests to send per multi-request
 }
 
 
