@@ -394,7 +394,6 @@ class Volume( storagetypes.Object ):
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
       volume_metadata.cert_version = kwargs.get('cert_version', self.cert_version )
       volume_metadata.volume_public_key = kwargs.get( 'metadata_public_key', self.metadata_public_key )
-      volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       volume_metadata.archive = kwargs.get( 'archive', self.archive )
       volume_metadata.private = kwargs.get( 'private', self.private )
       volume_metadata.allow_anon = kwargs.get( 'allow_anon', self.allow_anon )
@@ -992,21 +991,3 @@ class Volume( storagetypes.Object ):
    def shard_counter_name( cls, volume_id, suffix ):
       return "%s-%s" % (volume_id, suffix)
 
-
-   @classmethod
-   def increase_file_count( cls, volume_id ):
-      name = Volume.shard_counter_name( volume_id, "file_count" )
-      shardcounter.increment(name)
-   
-   
-   @classmethod
-   def decrease_file_count( cls, volume_id ):
-      name = Volume.shard_counter_name( volume_id, "file_count" )
-      shardcounter.decrement(name)
-      
-      
-   @classmethod
-   def get_num_files( cls, volume_id ):
-      name = Volume.shard_counter_name( volume_id, "file_count" )
-      ret = shardcounter.get_count( name )
-      return ret
