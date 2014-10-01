@@ -172,8 +172,11 @@ def register_complete( gateway ):
    if gateway.encrypted_gateway_private_key != None:
       registration_metadata.encrypted_gateway_private_key = gateway.encrypted_gateway_private_key
    
-   # add misc. config data 
+   # add flow control data
    registration_metadata.resolve_page_size = RESOLVE_MAX_PAGE_SIZE
+   registration_metadata.max_connections = MAX_NUM_CONNECTIONS
+   registration_metadata.max_batch_request_size = MAX_BATCH_REQUEST_SIZE
+   registration_metadata.max_batch_async_request_size = MAX_BATCH_ASYNC_REQUEST_SIZE
    
    # sign and serialize!
    registration_metadata.signature = ""
