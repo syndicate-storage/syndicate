@@ -82,19 +82,19 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    
    dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
    
-   // what file was requested?
-   char* disk_path = AG_driver_get_query_string( ag_ctx );
+   char* request_path = AG_driver_get_request_path( ag_ctx );
    
    // get the absolute path 
-   char* dataset_path = get_request_abspath( disk_path );
+   char* dataset_path = get_request_abspath( request_path );
    
    if( dataset_path == NULL ) {
-      errorf("Could not translate %s to absolute path\n", disk_path );
-      free( disk_path );
+      errorf("Could not translate %s to absolute path\n", request_path );
+      
+      free( request_path );
       return -EINVAL;
    }
    
-   free( disk_path );
+   free( request_path );
    
    // open the file 
    int fd = open( dataset_path, O_RDONLY );
@@ -173,11 +173,8 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    
    dbprintf("%s stat dataset %s\n", DRIVER_QUERY_TYPE, path );
    
-   char* disk_path = AG_driver_get_query_string_mi( map_info );
-   
    // get the absolute path 
-   char* dataset_path = get_request_abspath( disk_path );
-   free( disk_path );
+   char* dataset_path = get_request_abspath( path );
    
    if( dataset_path == NULL ) {
       errorf("%s", "Could not translate request to absolute path\n" );
