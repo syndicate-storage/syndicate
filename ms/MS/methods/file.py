@@ -91,45 +91,10 @@ def file_update_get_attrs( entry_dict, attr_list ):
 
 
 # ----------------------------------
-def cursor_serialize_and_sign( volume, cursor ):
-   """
-   Given a volume and a cursor, sign the cursor's serialized form 
-   and return a string that is the concatenation of the signature 
-   and the serialized cursor.  This lets the MS prevent the client 
-   from modifying the cursor, since the client will need to serve back
-   a previously-signed cursor.
-   """
-   
-   # TODO : signature
-   return cursor.urlsafe()
-
-
-# ----------------------------------
-def cursor_verify_and_unserialize( volume, serialized_cursor ):
-   """
-   Given a volume and a serialized cusor+signature, verify the
-   signature on the serialized cursor, and if it is valid, unserialize 
-   the cursor and return the storagetypes.Cursor instance.  If the 
-   signature is invalid, return False.
-   """
-   
-   # TODO : verification
-   try:
-      cursor = storagetypes.Cursor( urlsafe=serialized_cursor )
-      return cursor
-   except Exception, e:
-      log.error("Failed to load serialized cursor")
-      return None
-
-
-# ----------------------------------
-def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cursor=None ):
+def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id ):
    """
    Read file and listing of the given file_id.
    """
-   
-   next_cursor = None 
-   have_more = False
    
    all_ents = []
    file_fut = None
@@ -172,12 +137,13 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cur
       else:
          if file_data.ftype == MSENTRY_TYPE_DIR:
             
-            listing, next_cursor, have_more = MSEntry.ListDir( volume, file_id, page_id, page_cursor=cursor, owner_id=owner_id )
-   
-            if listing is not None:
-               all_ents = [file_data] + listing
-            else:
-               all_ents = [file_data]
+            error, listing, next_cursor = MSEntry.ListDir( volume, file_id, page_id, owner_id=owner_id )
+            
+            if error == 0:
+               if listing is not None:
+                  all_ents = [file_data] + listing
+               else:
+                  all_ents = [file_data]
          
             #logging.info("listing of %s: %s" % (file_data.file_id, listing))
             
@@ -185,23 +151,26 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cur
             all_ents = [file_data]
 
    # check security
-   error = -errno.EACCES
-   
-   if file_data is None:
-      # not found
-      error = -errno.ENOENT 
+   if error == 0:
       
-   elif file_data.ftype == MSENTRY_TYPE_DIR:
-      # directory. check permissions
-      if file_data.owner_id == owner_id or (file_data.mode & 0055) != 0:
-         # readable
-         error = 0
+      error = -errno.EACCES
+      
+      if file_data is None:
+         # not found
+         error = -errno.ENOENT 
+         
+      elif file_data.ftype == MSENTRY_TYPE_DIR:
+         # directory. check permissions
+         if file_data.owner_id == owner_id or (file_data.mode & 0055) != 0:
+            # readable
+            error = 0
 
-   elif file_data.ftype == MSENTRY_TYPE_FILE:
-      # file.  check permissions
-      if file_data.owner_id == owner_id or (file_data.mode & 0044) != 0:
-         # readable
-         error = 0
+      elif file_data.ftype == MSENTRY_TYPE_FILE:
+         # file.  check permissions
+         if file_data.owner_id == owner_id or (file_data.mode & 0044) != 0:
+            # readable
+            error = 0
+
 
    reply = make_ms_reply( volume, error )
    
@@ -227,20 +196,12 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cur
       reply.listing.ftype = 0
       reply.listing.status = ms_pb2.ms_listing.NONE
       
-   reply.listing.have_more = have_more 
-   
-   serialized_cursor = None
-   
-   if next_cursor is not None:
-      serialized_cursor = cursor_serialize_and_sign( volume, next_cursor )
-      reply.listing.serialized_cursor = serialized_cursor
-      
    # sign and deliver
    return (error, file_update_complete_response( volume, reply ))
    
 
 # ----------------------------------
-def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str, cursor=None ):
+def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str):
    """
    Resolve a (volume_id, file_id, file_vesion, write_nonce) to file metadata.
    This is part of the File Metadata API, so it takes strings for file_version_str and write_nonce_str.
@@ -260,7 +221,7 @@ def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_non
    if gateway != None:
       owner_id = gateway.owner_id
       
-   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, cursor=cursor )
+   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id )
    
    logging.info("resolve /%s/%s/%s/%s rc = %d" % (volume.volume_id, file_id, file_version, write_nonce, rc) )
    
