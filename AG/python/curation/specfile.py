@@ -405,7 +405,7 @@ def generate_specfile( config_dict, hierarchy_dict=None, output_fd=None, hierarc
       
       h = hierarchy_cb( path )
       
-      generate_specfile_pair( data, output_fd )
+      generate_specfile_pair( h, output_fd )
       
    generate_specfile_footer( output_fd=output_fd )
    
