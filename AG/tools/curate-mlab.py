@@ -63,12 +63,8 @@ if __name__ == "__main__":
       parser.print_help()
       sys.exit(1)
    
-   try:
-      num_threads = int(args.num_threads)
-      max_retries = int(args.max_attempts)
-   except:
-      parser.print_help()
-      sys.exit(1)
+   num_threads = AG_args.get_num_threads_or_die( args )
+   num_retries = AG_args.get_max_retries_or_die( args )
    
    try:
       gsutil_binary_path = args.gsutil_path

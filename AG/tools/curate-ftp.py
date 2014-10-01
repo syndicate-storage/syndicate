@@ -44,6 +44,7 @@ if __name__ == "__main__":
    parser.add_argument( '-R', "--reval", dest="reval_sec", required=True, help="Length of time to go between revalidating entries.  Formatted as a space-separated list of numbers, with units 's' for seconds, 'm' for minutes, 'h' for hours, and 'd' for days.  For example, '10d 12h 30m' means ten days, twelve hours, and thirty minutes.")
    parser.add_argument( '-u', "--username", dest="username", default="anonymous", help="FTP username.")
    parser.add_argument( '-p', "--password", dest="password", default="", help="FTP password.")
+   parser.add_argument( '-r', "--root-dir", dest="root_dir", default="/", help="Directory on the FTP server to treat as the root directory for this Volume.")
    parser.add_argument( "hostname", nargs=1, help="Name of the host to be crawled.")
 
    args = parser.parse_args()
@@ -69,12 +70,8 @@ if __name__ == "__main__":
       parser.print_help()
       sys.exit(1)
    
-   try:
-      num_threads = int(args.num_threads)
-      max_retries = int(args.max_attempts)
-   except:
-      parser.print_help()
-      sys.exit(1)
+   num_threads = AG_args.get_num_threads_or_die( args )
+   num_retries = AG_args.get_max_retries_or_die( args )
       
    blacklists, whitelists = AG_acl.load_blacklists_and_whitelists( args.blacklists, args.whitelists )
    
