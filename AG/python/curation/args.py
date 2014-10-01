@@ -18,6 +18,7 @@
 
 import argparse
 import logging 
+import sys
 
 logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
@@ -31,7 +32,6 @@ def make_arg_parser( tool_desc ):
    
    parser.add_argument( '-b', "--blacklist", dest="blacklists", action='append', help='File containing a list of strings or regular expressions, separated by newlines, that describe paths that should NOT be published.  Any FTP path matched by a blacklisted path or regular expression will be ignored.  If not given, no paths are blacklisted.  This argument can be given multiple times.')
    parser.add_argument( '-w', "--whitelist", dest="whitelists", action='append', help="File containing a list of strings or regular expressions, separated by newlines, that describe the paths that should be published.  An FTP path must be matched by at least one whitelisted path or regular expression to be published.  If not given, all paths are whitelisted.  This argument can be given multiple times.")
-   parser.add_argument( '-r', "--root-dir", dest="root_dir", default="/", help="Directory on the FTP server to treat as the root directory for this Volume.")
    parser.add_argument( '-d', "--debug", dest="debug", action='store_true', help="If set, print debugging information.")
    parser.add_argument( '-t', "--threads", dest="num_threads", default="4", help="Number of threads (default: 4)" )
    parser.add_argument( '-f', "--fail-fast", dest="fail_fast", action='store_true', help="Fail fast on error.  Do not give back partial results.")
@@ -39,3 +39,19 @@ def make_arg_parser( tool_desc ):
    
    return parser 
 
+def get_num_threads_or_die( args ):
+   
+   try:
+      num_threads = int(args.num_threads)
+      return num_threads
+   except:
+      parser.print_help()
+      sys.exit(1)
+      
+def get_num_retries_or_die( args ):
+   
+   try:
+      max_retries = int(args.max_attempts)
+   except:
+      parser.print_help()
+      sys.exit(1)
