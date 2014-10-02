@@ -1,0 +1,450 @@
+<Map>
+   <Config>
+      <dataset_root>/tmp/test-disk-medium</dataset_root>
+  </Config>
+  <Pair reval="1d">
+     <Dir perm="0555">/</Dir>
+     <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-1</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-1/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-1/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-10</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-10/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-10/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-2</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-2/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-2/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-3</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-3/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-3/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-4</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-4/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-4/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-5</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-5/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-5/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-6</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-6/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-6/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-7</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-7/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-7/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-8</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-8/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-8/f-9</Query>
+  </Pair>
+  <Pair reval="1d">
+    <Dir perm="0555">/d-9</Dir>
+    <Query type="disk"></Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-1</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-1</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-10</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-10</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-2</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-2</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-3</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-3</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-4</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-4</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-5</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-5</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-6</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-6</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-7</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-7</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-8</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-8</Query>
+  </Pair>
+  <Pair reval="1d">
+    <File perm="0444">/d-9/f-9</File>
+    <Query type="disk">/tmp/test-disk-medium/d-9/f-9</Query>
+  </Pair>
+</Map>
+
