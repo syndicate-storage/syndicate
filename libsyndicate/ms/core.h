@@ -40,6 +40,11 @@
 // maximum cert size is 10MB
 #define MS_MAX_CERT_SIZE 10240000
 
+// flow control defaults 
+#define MS_CLIENT_DEFAULT_MAX_REQUEST_BATCH 10
+#define MS_CLIENT_DEFAULT_MAX_ASYNC_REQUEST_BATCH 100
+#define MS_CLIENT_DEFAULT_MAX_CONNECTIONS 100
+
 using namespace std;
 
 // use STRONG crypto.
@@ -94,10 +99,16 @@ struct ms_client {
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
    int gateway_type;          // what kind of gateway is this for?
    int portnum;               // port the gateway listens on
-   int page_size;             // when listing files, how many are we allowed to ask for at once?
 
    bool running;              // set to true if threads are running for this ms_client
    sem_t uploader_sem;        // uploader thread waits on this until signaled to reload 
+   
+   //////////////////////////////////////////////////////////////////
+   // flow-control information 
+   int page_size;             // when listing files, how many are we allowed to ask for at once?
+   int max_request_batch;     // maximum number of synchronous requests we can send in one multi_request
+   int max_request_async_batch;     // maximum number of asynchronous requests we can send in one multi_request
+   int max_connections;       // maximum number of open connections to make to the MS
    
    //////////////////////////////////////////////////////////////////
    // gateway volume-change structures (represents a consistent view of the Volume control state)
@@ -180,6 +191,8 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
 int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen );
 
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
+
+int ms_client_is_async_operation( int oper );
 
 // ioctls on network contexts 
 int ms_client_network_context_set( struct ms_client_network_context* nctx, struct md_download_set* dlset );

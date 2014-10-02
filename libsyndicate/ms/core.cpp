@@ -357,6 +357,7 @@ int ms_client_destroy( struct ms_client* client ) {
 
 // open a metadata connection to the MS
 // return 0 on success, negative on error
+// if opt_dlset is not NULL, then add the resulting download context to it.  NOTE: opt_dlset must NOT be freed until ms_client_download_end() is called for this download context!
 int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* times ) {
    
    // set up a cURL handle to the MS 
@@ -405,6 +406,7 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
       if( opt_dlset != NULL ) {
          md_download_set_clear( opt_dlset, dlctx );
       }
+      
       md_download_context_free( dlctx, NULL );
       curl_easy_cleanup( curl );
       return rc;
@@ -415,7 +417,7 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
 }
 
 // shut down a metadata connection to the MS
-// return the HTTP status on success, negative on failure
+// return the HTTP status on success, negative on failure, or the positive CURL Error code on error
 int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len ) {
    
    // wait for the download to finish 
@@ -426,6 +428,9 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
       
       // timed out.  cancel 
       md_download_context_cancel( &client->dl, dlctx );
+      
+      // if we were given a download set, then clear it 
+      md_download_context_clear_set( dlctx );
       
       // TODO: connection pool 
       CURL* curl = NULL;
@@ -475,6 +480,11 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
    
    // TODO: connection pool 
    CURL* curl = NULL;
+   
+   // if we were given a download set, then clear it 
+   md_download_context_clear_set( dlctx );
+   
+   // clean up 
    md_download_context_free( dlctx, &curl );
    
    if( curl != NULL ) {
@@ -492,7 +502,8 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
    return rc;
 }
 
-// begin uploading to the MS
+// begin uploading to the MS.
+// if opt_dlset is given, add dlctx to it (in which case, opt_dlset cannot be freed until calling ms_client_upload_end() with this dlctx)
 // return 0 on success; negative on failure
 int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing ) {
    
@@ -671,7 +682,29 @@ int ms_client_network_context_set( struct ms_client_network_context* nctx, struc
 // cancel a running download
 int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx ) {
    if( nctx->dlctx != NULL ) {
-      return md_download_context_cancel( &client->dl, nctx->dlctx );
+      int rc = md_download_context_cancel( &client->dl, nctx->dlctx );
+      
+      if( rc == 0 ) {
+         
+         // safe to free
+         CURL* curl = NULL;
+         
+         if( nctx->dlset != NULL ) {
+            md_download_set_clear( nctx->dlset, nctx->dlctx );
+         }
+         
+         md_download_context_free( nctx->dlctx, &curl );
+         
+         // TODO: connection pool 
+         if( curl != NULL ) {
+            curl_easy_cleanup( curl );
+         }
+         
+         free( nctx->dlctx );
+         
+         nctx->ended = true;
+      }
+      return rc;
    }
    else {
       return 0;
@@ -681,6 +714,35 @@ int ms_client_network_context_cancel( struct ms_client* client, struct ms_client
 // free a network context 
 int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
    
+   
+   if( nctx->dlctx != NULL ) {
+      
+      if( !nctx->ended ) {
+         
+         if( !md_download_context_finalized( nctx->dlctx ) ) {
+            // not finalized.  cancel or wait for it to complete first.
+            return -EINVAL;
+         }
+         
+         CURL* curl = NULL;
+         
+         if( nctx->dlset != NULL ) {
+            md_download_set_clear( nctx->dlset, nctx->dlctx );
+         }
+         
+         md_download_context_free( nctx->dlctx, &curl );
+         
+         // TODO: connection pool 
+         if( curl != NULL ) {
+            curl_easy_cleanup( curl );
+         }
+         
+         free( nctx->dlctx );
+      }
+      
+      nctx->dlctx = NULL;
+   }
+   
    if( nctx->headers != NULL ) {
       curl_slist_free_all( nctx->headers );
       nctx->headers = NULL;
@@ -689,22 +751,6 @@ int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
    if( nctx->forms != NULL ) {
       curl_formfree( nctx->forms );
       nctx->forms = NULL;
-   }
-   
-   if( nctx->dlctx != NULL ) {
-      
-      if( !nctx->ended ) {
-         CURL* curl = NULL;
-         md_download_context_free( nctx->dlctx, &curl );
-         
-         // TODO: connection pool 
-         if( curl != NULL ) {
-            curl_easy_cleanup( curl );
-         }
-      }
-      
-      free( nctx->dlctx );
-      nctx->dlctx = NULL;
    }
    
    if( nctx->timing != NULL ) {
@@ -753,6 +799,9 @@ int ms_client_network_context_begin( struct ms_client* client, struct ms_client_
 
 
 // wait for and finish a network context
+// return the HTTP status on success
+// return -errno on OS-level error
+// return positive error code (< 200) on CURL error
 int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len ) {
    
    int http_status = 0;
@@ -770,7 +819,13 @@ int ms_client_network_context_end( struct ms_client* client, struct ms_client_ne
    }
    
    if( http_status != 200 ) {
-      errorf("%s(%s) HTTP status = %d\n", method, nctx->url, http_status );
+      errorf("%s(%s) rc = %d\n", method, nctx->url, http_status );
+   }
+   
+   if( nctx->dlctx != NULL ) {
+      // done with this 
+      free( nctx->dlctx );
+      nctx->dlctx = NULL;
    }
    
    nctx->ended = true;
@@ -1027,6 +1082,13 @@ int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root )
    ms_client_view_unlock( client );
 
    return rc;
+}
+
+
+// is an MS operation an async operation?
+int ms_client_is_async_operation( int oper ) {
+   
+   return (oper == ms::ms_update::UPDATE_ASYNC || oper == ms::ms_update::CREATE_ASYNC || oper == ms::ms_update::DELETE_ASYNC );
 }
 
 // process a gateway message's header, in order to detect when we have stale metadata.
