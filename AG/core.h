@@ -31,6 +31,8 @@
 #include <ftw.h>
 #include <dlfcn.h>
 
+#define AG_MAX_SPECFILE_SIZE 102400000  // 100MB
+
 // prototypes
 struct AG_event_listener;
 struct AG_reversioner;

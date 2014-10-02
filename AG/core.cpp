@@ -136,7 +136,7 @@ int AG_get_spec_file_text( struct ms_client* client, char** out_specfile_text, s
    
    // it came from the MS, so it's definitely compressed 
    char* decompressed_text = NULL;
-   size_t decompressed_text_len = 0;
+   size_t decompressed_text_len = AG_MAX_SPECFILE_SIZE;
    
    int zrc = md_inflate( specfile_text, specfile_text_len, &decompressed_text, &decompressed_text_len );
    
