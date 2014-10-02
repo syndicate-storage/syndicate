@@ -985,6 +985,8 @@ static int AG_accumulate_data_from_ms_response( char const* deepest_known_path, 
    
    char* shallowest_unknown_name = md_basename( shallowest_unknown_path, NULL );
    
+   dbprintf("Shallowest unknown path: %s, name: %s\n", shallowest_unknown_path, shallowest_unknown_name );
+   
    // find the entry for the shallowest unknown info 
    // NOTE: deepest_known_entry_listing[0] is the deepest known entry's data
    for( unsigned int i = 1; i < deepest_known_entry_listing->size(); i++ ) {
@@ -1010,7 +1012,7 @@ static int AG_accumulate_data_from_ms_response( char const* deepest_known_path, 
          AG_copy_metadata_to_map_info( shallowest_unknown_map_info, ent );
          shallowest_unknown_map_info->cache_valid = true;
          
-         dbprintf("%s at %p is now valid\n", shallowest_unknown_path, shallowest_unknown_map_info );
+         dbprintf("%s (%" PRIX64") at %p is now valid\n", shallowest_unknown_path, ent->file_id, shallowest_unknown_map_info );
          
          found = true;
       }
@@ -1021,7 +1023,7 @@ static int AG_accumulate_data_from_ms_response( char const* deepest_known_path, 
          
          AG_accumulate_data_from_md_entry( new_data, child_path, NULL, ent );
          
-         dbprintf("New valid data: %s\n", child_path );
+         dbprintf("New valid data: %s (%" PRIX64 ")\n", child_path, ent->file_id );
          
          free( child_path );
       }
