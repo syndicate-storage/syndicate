@@ -227,7 +227,7 @@ void attr_handle_perm( AG_XMLMapParserHandler* handler, char* perm_str ) {
    handler->has_file_perm = true;
    handler->file_perm = perm;
    
-   dbprintf("Parsed attr '%s' = '%s' as %o\n", AG_ATTR_PERM_NAME, perm_str, handler->file_perm );
+   // dbprintf("Parsed attr '%s' = '%s' as %o\n", AG_ATTR_PERM_NAME, perm_str, handler->file_perm );
 }
 
 
@@ -245,7 +245,7 @@ void attr_handle_query_type( AG_XMLMapParserHandler* handler, char* query_type_s
    handler->has_query_type = true;
    handler->query_type = strdup( query_type_str );
    
-   dbprintf("Parsed attr '%s' = '%s'\n", AG_ATTR_PERM_NAME, handler->query_type );
+   // dbprintf("Parsed attr '%s' = '%s'\n", AG_ATTR_PERM_NAME, handler->query_type );
 }
 
 
@@ -267,7 +267,7 @@ void attr_handle_reval( AG_XMLMapParserHandler* handler, char* rt_str ) {
    handler->has_reval_secs = true;
    handler->reval_secs = rt_secs;
    
-   dbprintf("Parsed attr '%s' = '%s' as %" PRIu64 "\n", AG_ATTR_REVAL_NAME, rt_str, rt_secs );
+   // dbprintf("Parsed attr '%s' = '%s' as %" PRIu64 "\n", AG_ATTR_REVAL_NAME, rt_str, rt_secs );
 }
 
 
@@ -322,7 +322,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
    char* tag = XMLString::transcode(localname);
    char* qname_str = XMLString::transcode( qname );
    
-   dbprintf("start element '%s' at '%s'\n", tag, qname_str );
+   // dbprintf("start element '%s' at '%s'\n", tag, qname_str );
    
    XMLString::release(&qname_str);
    
@@ -347,8 +347,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
       
       this->config_tag = strdup(tag);
       
-      
-      dbprintf("Config tag '%s'\n", this->config_tag );
+      // dbprintf("Config tag '%s'\n", this->config_tag );
    }
    else {
       // Otherwise, make sure this is a valid tag, and then get its attributes
@@ -369,7 +368,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
          char* attr = XMLString::transcode(attrs.getLocalName(i));
          char* value = XMLString::transcode(attrs.getValue(i));
 
-         dbprintf("%s '%s' = '%s'\n", tag, attr, value );
+         // dbprintf("%s '%s' = '%s'\n", tag, attr, value );
          
          this->consume_attr( tag_id, attr, value );
       }
@@ -459,7 +458,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
    // make sure this is a valid tag
    char* tag = XMLString::transcode(localname);
    char* qname_str = XMLString::transcode( qname );
-   dbprintf("end element '%s' at '%s'\n", tag, qname_str );
+   // dbprintf("end element '%s' at '%s'\n", tag, qname_str );
    
    int rc = 0;
    int tag_id = AG_XMLMapParserHandler::tag_type_id_from_str( tag );
@@ -478,7 +477,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          // this is a config element 
          char* value = sanitize_element_buffer( this->element_buf );
          
-         dbprintf("Config element '%s'\n", value );
+         // dbprintf("Config element '%s'\n", value );
          
          // update config 
          (*this->config)[ string(this->config_tag) ] = string(value);
@@ -508,7 +507,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
             
             this->has_file_path = true;
             
-            dbprintf("File path element '%s'\n", this->file_path );
+            // dbprintf("File path element '%s'\n", this->file_path );
             
             if( tag_id == AG_TAG_FILE_ID ) {
                this->file_path_type = MD_ENTRY_FILE;
@@ -541,7 +540,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
             this->query_string = sanitize_element_buffer( this->element_buf );
             this->has_query_string = true;
             
-            dbprintf("Query string element '%s'\n", this->query_string );
+            // dbprintf("Query string element '%s'\n", this->query_string );
          }
       }
       else {
