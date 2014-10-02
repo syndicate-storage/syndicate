@@ -163,10 +163,32 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    client->gateway_id = cert.gateway_id;
    client->portnum = cert.portnum;
    
+   // flow control 
    client->page_size = registration_md->resolve_page_size();
    if( client->page_size < 0 ) {
       errorf("Invalid MS page size %d\n", client->page_size );
       rc = -EINVAL;
+   }
+   
+   if( registration_md->has_max_batch_request_size() ) {
+      client->max_request_batch = registration_md->max_batch_request_size();
+   }
+   else {
+      client->max_request_batch = MS_CLIENT_DEFAULT_MAX_REQUEST_BATCH;
+   }
+   
+   if( registration_md->has_max_batch_async_request_size() ) {
+      client->max_request_async_batch = registration_md->max_batch_async_request_size();
+   }
+   else {
+      client->max_request_async_batch = MS_CLIENT_DEFAULT_MAX_ASYNC_REQUEST_BATCH;
+   }
+   
+   if( registration_md->has_max_connections() ) {
+      client->max_connections = registration_md->max_connections();
+   }
+   else {
+      client->max_connections = MS_CLIENT_DEFAULT_MAX_CONNECTIONS;
    }
    
    // sanity check...
