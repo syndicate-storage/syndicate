@@ -19,32 +19,49 @@
 #include "cache.h"
 #include "driver.h"
 
-// initialize a DAG node
-// NOTE: this consumes request--node becomes its owner
-int AG_request_DAG_node_init( struct AG_request_DAG_node* node, char const* dirpath, int file_oper, int dir_oper, AG_request_list_t* file_reqs, AG_request_list_t* dir_reqs, bool dirs_first ) {
+// initialize a stage
+// NOTE: this consumes request--stage becomes its owner
+// NOTE: this consume parents--stage becomes its owner
+int AG_request_stage_init( struct AG_request_stage* stage, int depth, int file_oper, int dir_oper, AG_request_list_t* file_reqs, AG_request_list_t* dir_reqs, AG_request_parent_map_t* parents, bool dirs_first ) {
    
-   memset( node, 0, sizeof(struct AG_request_DAG_node) );
+   memset( stage, 0, sizeof(struct AG_request_stage) );
    
-   node->dir_path = strdup(dirpath );
+   stage->depth = depth;
    
-   node->file_oper = file_oper;
-   node->dir_oper = dir_oper;
+   stage->file_oper = file_oper;
+   stage->dir_oper = dir_oper;
    
-   node->file_reqs = file_reqs;
-   node->dir_reqs = dir_reqs;
+   stage->file_reqs = file_reqs;
+   stage->dir_reqs = dir_reqs;
    
-   node->dirs_first = dirs_first;
+   stage->dirs_first = dirs_first;
+   
+   stage->results = NULL;
+   
+   stage->parents = parents;
    
    return 0;
 }
 
+// clear a stage's results 
+static int AG_request_stage_clear_results( struct AG_request_stage* stage ) {
+   
+   if( stage->results != NULL ) {
+      ms_client_multi_result_free( stage->results );
+      free( stage->results );
+      stage->results = NULL;
+   }
 
-// free a DAG node
-int AG_request_DAG_node_free( struct AG_request_DAG_node* node ) {
+   return 0;
+}
+
+
+// free a stage
+int AG_request_stage_free( struct AG_request_stage* stage ) {
    
    AG_request_list_t** reqs_to_free[] = {
-      &node->file_reqs,
-      &node->dir_reqs,
+      &stage->file_reqs,
+      &stage->dir_reqs,
       NULL
    };
    
@@ -67,48 +84,53 @@ int AG_request_DAG_node_free( struct AG_request_DAG_node* node ) {
       }
    }
    
-   if( node->dir_path != NULL ) {
-      free( node->dir_path );
-      node->dir_path = NULL;
-   }
+   AG_request_stage_clear_results( stage );
    
-   ms_client_multi_result_free( &node->results );
+   if( stage->parents ) {
+      for( AG_request_parent_map_t::iterator itr = stage->parents->begin(); itr != stage->parents->end(); itr++ ) {
+         
+         if( itr->second != NULL ) {
+            free( itr->second );
+         }
+      }
+      
+      stage->parents->clear();
+      delete stage->parents;
+      stage->parents = NULL;
+   }
    
    return 0;
 }
 
 
-// free a list of DAG nodes 
-int AG_request_DAG_node_list_free( AG_request_DAG_node_list_t* dag ) {
+// free a list of stages
+int AG_request_stage_list_free( AG_request_stage_list_t* stages ) {
    
-   for( unsigned int i = 0; i < dag->size(); i++ ) {
+   for( unsigned int i = 0; i < stages->size(); i++ ) {
       
-      AG_request_DAG_node_free( dag->at(i) );
-      free( dag->at(i) );
+      AG_request_stage_free( stages->at(i) );
+      free( stages->at(i) );
       
    }
    
-   dag->clear();
+   stages->clear();
    return 0;
 }
 
 // find and remove all entries from sorted_paths of the same depth, and put them into directory_list
 // sorted_paths must be sorted by increasing path depth.
-static int AG_pop_DAG_list( vector<string>* sorted_paths, vector<string>* directory_list ) {
+static int AG_pop_dirs_by_depth( vector<string>* sorted_paths, vector<string>* directory_list ) {
    
    if( sorted_paths->size() == 0 ) {
       return -EINVAL;
    }
    
    int depth = 0;
-   int num_pop = 0;
    
    // what's the depth of the head?
    depth = md_depth( sorted_paths->at(0).c_str() );
    
    directory_list->push_back( sorted_paths->at(0) );
-   
-   num_pop = 1;
    
    if( sorted_paths->size() > 1 ) {
       // find all directories in sorted_paths that are have $depth.
@@ -119,7 +141,6 @@ static int AG_pop_DAG_list( vector<string>* sorted_paths, vector<string>* direct
          if( next_depth == depth ) {
             
             directory_list->push_back( sorted_paths->at(i) );
-            num_pop++;
          }
          else {
             break;
@@ -128,98 +149,200 @@ static int AG_pop_DAG_list( vector<string>* sorted_paths, vector<string>* direct
    }
    
    // pop all pushed paths 
-   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + num_pop );
+   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + directory_list->size() );
    
    return 0;
 }
 
-// given a list of paths that are all children of the same directory, and the operation to be performed with them, generate a DAG node containing the request
+
+// find and remove all entries from sorted_paths that share the same parent, and put them into directory_list
+// sorted_paths must be sorted alphanumerically
+static int AG_pop_dirs_by_parent( vector<string>* sorted_paths, vector<string>* directory_list ) {
+   
+   if( sorted_paths->size() == 0 ) {
+      return -EINVAL;
+   }
+   
+   char* parent_dir = md_dirname( sorted_paths->at(0).c_str(), NULL );
+   
+   directory_list->push_back( sorted_paths->at(0) );
+   
+   if( sorted_paths->size() > 0 ) {
+      // find all directories in sorted paths that have the parent directory $parent_dir 
+      // they will all be at the head.
+      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
+         
+         if( AG_path_is_immediate_child( parent_dir, sorted_paths->at(i).c_str() ) ) {
+            
+            directory_list->push_back( sorted_paths->at(i) );
+         }
+         else {
+            break;
+         }
+      }
+   }
+   
+   free( parent_dir );
+   
+   // pop all pushed paths 
+   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + directory_list->size() );
+   
+   return 0;
+}
+
+// given a list of paths that are all children of the same directory, and the operation to be performed with them, generate a stage containing the request.
 // use the operation to perform sanity checks and to fill out the request properly.
-// directives containst the metadata for the paths in listing_paths to publish.
-// if we're creating entries, then the paths in listing_paths don't have to be coherent (but they have to be for update and delete)
-// always honor coherency requirements in coherency flags (abort with ESTALE if they are not met)
-static int AG_generate_DAG_node( struct ms_client* client, char const* dirpath, struct AG_map_info* parent_mi, vector<string>* listing_paths, AG_fs_map_t* directives,
-                                 int file_op, int dir_op, struct AG_request_DAG_node* node, int flags ) {
+// reference and directives contain the metadata for the paths in listing_paths.  They may overlap; go with the reference by default, but use directives instead of AG_REQUEST_USE_DIRECTIVES is set in flags.
+// get metadata from the driver if AG_REQUEST_USE_DRIVER is set in flags.  Otherwise, use metadata already in reference/directives (regardless of whether or not it is coherent).
+// NOTE: listing_paths will get *consumed* by this method!
+static int AG_generate_stage( struct ms_client* client, int depth, vector<string>* listing_paths, AG_fs_map_t* directives, AG_fs_map_t* reference, int file_op, int dir_op, struct AG_request_stage* stage, int flags ) {
    
    if( listing_paths->size() == 0 ) {
       // nothing to do 
       return 0;
    }
    
+   // group by parent directory--sort alphanumerically
+   sort( listing_paths->begin(), listing_paths->end(), less<string>() );
+   
    int rc = 0;
    uint64_t volume_id = ms_client_get_volume_id( client );
    
    AG_request_list_t* file_requests = new AG_request_list_t();
    AG_request_list_t* dir_requests = new AG_request_list_t();
-   
-   
-   for( unsigned int i = 0; i < listing_paths->size(); i++ ) {
+   AG_request_parent_map_t* parents = new AG_request_parent_map_t();
+
+   while( listing_paths->size() > 0 ) {
       
-      // find the map info 
-      AG_fs_map_t::iterator itr = directives->find( listing_paths->at(i) );
-      if( itr == directives->end() ) {
-         
-         // not found; can't continue
-         errorf("ERR: Not found in directives: %s\n", listing_paths->at(i).c_str() );
-         rc = -ENOENT;
+      // get the next batch that share a common parent 
+      vector<string> next_batch;
+      
+      rc = AG_pop_dirs_by_parent( listing_paths, &next_batch );
+      if( rc != 0 ) {
+         errorf("AG_pop_dirs_by_parent rc = %d\n", rc );
          break;
       }
       
-      char const* mi_path = itr->first.c_str();
-      char* mi_name = md_basename( mi_path, NULL );
+      // what's the parent?
+      char* dirpath = md_dirname( next_batch[0].c_str(), NULL );
       
-      struct AG_map_info* mi = itr->second;
+      // find the parent of the entries we'll generate 
+      AG_fs_map_t::iterator parent_itr;
+      AG_fs_map_t::iterator parent_itr_reference = reference->find( string(dirpath) );
+      AG_fs_map_t::iterator parent_itr_directive = directives->find( string(dirpath) );
       
-      // entry to generate 
-      struct md_entry ent;
-      memset( &ent, 0, sizeof(struct md_entry) );
-      
-      if( flags & (AG_DAG_USE_DRIVER) ) {
+      if( parent_itr_reference == reference->end() && parent_itr_directive == directives->end() ) {
          
-         // driver info 
-         struct AG_driver_publish_info pub_info;
-         memset( &pub_info, 0, sizeof(struct AG_driver_publish_info) );
+         errorf("Parent not found: %s\n", dirpath );
+         free( stage );
+         free( dirpath );
+         rc = -ENOENT;
+         break;
+      }
+      else if( parent_itr_reference != reference->end() && parent_itr_directive != directives->end() ) {
          
-         // get driver info 
-         rc = AG_get_publish_info( mi_path, mi, &pub_info );
-         if( rc != 0 ) {
-            errorf("AG_get_publish_info(%s) rc = %d\n", mi_path, rc );
-            free( mi_name );
+         // parent available in both reference and directives.
+         if( (flags & AG_REQUEST_USE_DIRECTIVES) != 0 ) {
+            
+            parent_itr = parent_itr_directive;
+         }
+         else {
+            
+            parent_itr = parent_itr_reference;
+         }
+      }
+      else if( parent_itr_reference != reference->end() ) {
+         
+         parent_itr = parent_itr_reference;
+      }
+      else {
+         
+         parent_itr = parent_itr_directive;
+      }
+      
+      // parent data 
+      struct AG_map_info* parent_mi = parent_itr->second;
+      
+      // process all children of the parent
+      for( unsigned int i = 0; i < next_batch.size(); i++ ) {
+         
+         // find the map info as given in the directives map
+         AG_fs_map_t::iterator itr = directives->find( next_batch.at(i) );
+         if( itr == directives->end() ) {
+            
+            // not found; can't continue
+            errorf("ERR: Not found in directives: %s\n", next_batch.at(i).c_str() );
+            rc = -ENOENT;
             break;
          }
          
-         // fill the entry with the driver-given data 
-         AG_populate_md_entry_from_publish_info( &ent, &pub_info );
+         // this child...
+         char const* mi_path = itr->first.c_str();
+         char* mi_name = md_basename( mi_path, NULL );
+         
+         struct AG_map_info* mi = itr->second;
+         
+         // entry to generate from the child
+         struct md_entry ent;
+         memset( &ent, 0, sizeof(struct md_entry) );
+         
+         if( flags & (AG_REQUEST_USE_DRIVER) ) {
+            
+            // get info from the driver for this entry
+            struct AG_driver_publish_info pub_info;
+            memset( &pub_info, 0, sizeof(struct AG_driver_publish_info) );
+            
+            // get driver info 
+            rc = AG_get_publish_info( mi_path, mi, &pub_info );
+            if( rc != 0 ) {
+               errorf("AG_get_publish_info(%s) rc = %d\n", mi_path, rc );
+               free( mi_name );
+               break;
+            }
+            
+            // fill the entry with the driver-given data 
+            AG_populate_md_entry_from_publish_info( &ent, &pub_info );
+         }
+         
+         // fill in the entry with our AG-specific data 
+         AG_populate_md_entry_from_AG_info( &ent, mi, volume_id, client->owner_id, client->gateway_id, mi_name );
+         free( mi_name );
+         
+         // fill in the entry with the data we'll send to the MS 
+         AG_populate_md_entry_from_cached_MS_info( &ent, mi->file_id, mi->file_version, mi->write_nonce );
+         
+         // fill in parent information
+         if( parent_mi != NULL ) {
+            ent.parent_id = parent_mi->file_id;
+            ent.parent_name = md_basename( dirpath, NULL );
+         }
+         
+         // populate this request
+         struct ms_client_request req;
+         memset( &req, 0, sizeof(struct ms_client_request) );
+         
+         req.ent = CALLOC_LIST( struct md_entry, 1 );
+         *req.ent = ent;
+         
+         if( ent.type == MD_ENTRY_FILE ) {
+            file_requests->push_back( req );
+         }
+         else if( ent.type == MD_ENTRY_DIR ) {
+            dir_requests->push_back( req );
+         }
+         else {
+            errorf("unknown type %d in entry %s (%" PRIX64 ")\n", ent.type, ent.name, ent.file_id );
+            rc = -EINVAL;
+            break;
+         }
+         
+         // remember the parent!
+         (*parents)[ req.ent->file_id ] = strdup(dirpath);
       }
       
-      // fill in the entry with our AG-specific data 
-      AG_populate_md_entry_from_AG_info( &ent, mi, volume_id, client->owner_id, client->gateway_id, mi_name );
-      free( mi_name );
+      free( dirpath );
       
-      // fill in the entry with the data we'll send to the MS 
-      AG_populate_md_entry_from_cached_MS_info( &ent, mi->file_id, mi->file_version, mi->write_nonce );
-      
-      if( parent_mi != NULL ) {
-         ent.parent_id = parent_mi->file_id;
-         ent.parent_name = md_basename( dirpath, NULL );
-      }
-      
-      // populate this request
-      struct ms_client_request req;
-      memset( &req, 0, sizeof(struct ms_client_request) );
-      
-      req.ent = CALLOC_LIST( struct md_entry, 1 );
-      *req.ent = ent;
-      
-      if( ent.type == MD_ENTRY_FILE ) {
-         file_requests->push_back( req );
-      }
-      else if( ent.type == MD_ENTRY_DIR ) {
-         dir_requests->push_back( req );
-      }
-      else {
-         errorf("unknown type %d in entry %s (%" PRIX64 ")\n", ent.type, ent.name, ent.file_id );
-         rc = -EINVAL;
+      if( rc != 0 ) {
          break;
       }
    }
@@ -237,52 +360,61 @@ static int AG_generate_DAG_node( struct ms_client* client, char const* dirpath, 
          ms_client_request_free( &dir_requests->at(i) );
       }
       
+      for( AG_request_parent_map_t::iterator itr = parents->begin(); itr != parents->end(); itr++ ) {
+         
+         if( itr->second != NULL ) {
+            free( itr->second );
+         }
+      }
+      
       file_requests->clear();
       dir_requests->clear();
+      parents->clear();
       
       delete file_requests;
       delete dir_requests;
+      delete parents;
       
       return rc;
    }
    
-   // set up the DAG node 
-   AG_request_DAG_node_init( node, dirpath, file_op, dir_op, file_requests, dir_requests, (flags & AG_DAG_DIRS_FIRST) != 0 );
+   // set up the stage
+   AG_request_stage_init( stage, depth, file_op, dir_op, file_requests, dir_requests, parents, (flags & AG_REQUEST_DIRS_FIRST) != 0 );
    
    return 0;
 }
 
 
-// dump a DAG to stdout, for debugging purposes 
-static int AG_dump_DAG( AG_request_DAG_node_list_t* dag ) {
+// dump stages to stdout, for debugging purposes 
+static int AG_dump_stages( AG_request_stage_list_t* stages ) {
    
-   dbprintf("Begin DAG %p\n", dag );
-   for( unsigned int i = 0; i < dag->size(); i++ ) {
+   dbprintf("Begin request stages %p\n", stages );
+   for( unsigned int i = 0; i < stages->size(); i++ ) {
       
-      struct AG_request_DAG_node* node = dag->at(i);
+      struct AG_request_stage* stage = stages->at(i);
       
-      dbprintf("   DAG stage %u, dirs_first = %d\n", i, node->dirs_first );
-      dbprintf("      Directories (operation=%d):\n", node->dir_oper);
+      dbprintf("   Stage %d, dirs_first = %d\n", stage->depth, stage->dirs_first );
+      dbprintf("      Directories (operation=%d, count=%zu):\n", stage->dir_oper, stage->dir_reqs->size());
       
-      for( unsigned int j = 0; j < node->dir_reqs->size(); j++ ) {
-         dbprintf("       %" PRIX64 " name=%s, parent=%" PRIX64 "\n", node->dir_reqs->at(j).ent->file_id, node->dir_reqs->at(j).ent->name, node->dir_reqs->at(j).ent->parent_id );
+      for( unsigned int j = 0; j < stage->dir_reqs->size(); j++ ) {
+         dbprintf("       %" PRIX64 " name=%s, parent=%" PRIX64 "\n", stage->dir_reqs->at(j).ent->file_id, stage->dir_reqs->at(j).ent->name, stage->dir_reqs->at(j).ent->parent_id );
       }
       
-      dbprintf("      Files (operation=%d):\n", node->file_oper);
+      dbprintf("      Files (operation=%d, count=%zu):\n", stage->file_oper, stage->file_reqs->size());
       
-      for( unsigned int j = 0; j < node->file_reqs->size(); j++ ) {
-         dbprintf("       %" PRIX64 " name=%s, parent=%" PRIX64 "\n", node->file_reqs->at(j).ent->file_id, node->file_reqs->at(j).ent->name, node->file_reqs->at(j).ent->parent_id );
+      for( unsigned int j = 0; j < stage->file_reqs->size(); j++ ) {
+         dbprintf("       %" PRIX64 " name=%s, parent=%" PRIX64 "\n", stage->file_reqs->at(j).ent->file_id, stage->file_reqs->at(j).ent->name, stage->file_reqs->at(j).ent->parent_id );
       }
    }
-   dbprintf("End DAG %p\n", dag );
+   dbprintf("End request stages %p\n", stages );
    return 0;
 }
 
 
-// Given a list of paths and their associated data in reference, generate a request DAG that when evaluated step by step, will perform the given operation on the MS for the collection of entries they name.
-// The request DAG is generated from the root of the fs, where files and directories are grouped by depth.
-// The resulting request DAG is in pre-order traversal, so [root, (root's child directories, root's child files), (root's grandchild directories, root's grandchild files), ...]
-static int AG_generate_DAG( struct ms_client* client, AG_fs_map_t* directives, AG_fs_map_t* reference, int file_op, int dir_op, int node_flags, AG_request_DAG_node_list_t* dag ) {
+// Given a list of paths and their associated data in reference, generate request stages that when evaluated step by step, will perform the given operation on the MS for the collection of entries they name.
+// The request stage list is generated from the root of the fs, where files and directories are grouped by depth.
+// The resulting request stage list is in pre-order traversal, so [root, (root's child directories, root's child files), (root's grandchild directories, root's grandchild files), ...]
+static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives, AG_fs_map_t* reference, int file_op, int dir_op, int stage_flags, AG_request_stage_list_t* stages ) {
    
    int rc = 0;
    int depth = 0;
@@ -291,7 +423,7 @@ static int AG_generate_DAG( struct ms_client* client, AG_fs_map_t* directives, A
    
    // sanity check 
    if( directives->size() == 0 ) {
-      // empty DAG
+      // empty list
       return 0;
    }
    
@@ -319,20 +451,23 @@ static int AG_generate_DAG( struct ms_client* client, AG_fs_map_t* directives, A
    while( paths.size() > 0 ) {
       
       vector<string> directory_list;
-      struct AG_request_DAG_node* node = CALLOC_LIST( struct AG_request_DAG_node, 1 );
+      struct AG_request_stage* stage = CALLOC_LIST( struct AG_request_stage, 1 );
       
-      // get the next group of files and directories that belong together
-      AG_pop_DAG_list( &paths, &directory_list );
+      // get the next group of files and directories that are at the same depth
+      AG_pop_dirs_by_depth( &paths, &directory_list );
+      
+      // group by parent directory: sort alphanumerically
+      sort( directory_list.begin(), directory_list.end(), less<string>() );
       
       ////////////////////////////////////////////////////
-      dbprintf("DAG node %d will have these %zu items:\n", expected_depth, directory_list.size() );
+      dbprintf("Stage at %d will have these %zu items:\n", expected_depth, directory_list.size() );
       
       for( unsigned int i = 0; i < directory_list.size(); i++ ) {
          dbprintf("   '%s'\n", directory_list[i].c_str() );
       }
       ////////////////////////////////////////////////////
       
-      // what's the current depth?
+      // sanity check: what's the current depth?
       depth = md_depth( directory_list.at(0).c_str() );
       
       // sanity check: each iteration of this loop should consume all directories at a given depth, in increasing order
@@ -342,101 +477,60 @@ static int AG_generate_DAG( struct ms_client* client, AG_fs_map_t* directives, A
          break;
       }
       
-      char* dirpath = md_dirname( directory_list.at(0).c_str(), NULL );
-      
-      // find the parent of the entries we'll generate 
-      AG_fs_map_t::iterator parent_itr;
-      AG_fs_map_t::iterator parent_itr_reference = reference->find( string(dirpath) );
-      AG_fs_map_t::iterator parent_itr_directive = directives->find( string(dirpath) );
-      
-      if( parent_itr_reference == reference->end() && parent_itr_directive == directives->end() ) {
-         
-         errorf("Parent not found: %s\n", dirpath );
-         free( node );
-         free( dirpath );
-         rc = -ENOENT;
-         break;
-      }
-      else if( parent_itr_reference != reference->end() && parent_itr_directive != directives->end() ) {
-         
-         // parent available in both reference and directives.
-         if( (node_flags & AG_DAG_USE_DIRECTIVES) != 0 ) {
-            
-            parent_itr = parent_itr_directive;
-         }
-         else {
-            
-            parent_itr = parent_itr_reference;
-         }
-      }
-      else if( parent_itr_reference != reference->end() ) {
-         
-         parent_itr = parent_itr_reference;
-      }
-      else {
-         
-         parent_itr = parent_itr_directive;
-      }
-      
-      struct AG_map_info* parent_mi = parent_itr->second;
-      
-      dbprintf("Generate DAG node %s\n", dirpath );
-      
-      // generate a DAG node for this depth 
-      rc = AG_generate_DAG_node( client, dirpath, parent_mi, &directory_list, directives, file_op, dir_op, node, node_flags );
+      // generate a stae for this depth 
+      rc = AG_generate_stage( client, depth, &directory_list, directives, reference, file_op, dir_op, stage, stage_flags );
       
       if( rc != 0 ) {
-         errorf("AG_generate_DAG_node(%s) rc = %d\n", dirpath, rc );
-         free( node );
-         free( dirpath );
+         errorf("AG_generate_stage(depth=%d) rc = %d\n", depth, rc );
+         free( stage );
          break;
       }
       
-      free( dirpath );
-      
-      dag->push_back( node );
+      stages->push_back( stage );
       
       expected_depth++;
    }
    
    if( rc != 0 ) {
       // clean up 
-      AG_request_DAG_node_list_free( dag );
+      AG_request_stage_list_free( stages );
    }
    else {
-      AG_dump_DAG( dag );
+      AG_dump_stages( stages );
    }
    return rc;
 }
 
 
-// generate a DAG that will create everything in the given to_publish mapping
+// generate a stage list that will create everything in the given to_publish mapping
 // directories will be created by the MS synchronously.
 // files will be created by the MS asynchronously.
-// when building the DAG, get parent data from the directives over the reference if there's a conflict, since the parent doesn't exist
-static int AG_generate_DAG_create( struct ms_client* client, AG_fs_map_t* to_publish, AG_fs_map_t* reference, AG_request_DAG_node_list_t* dag ) {
-   return AG_generate_DAG( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, AG_DAG_DIRS_FIRST | AG_DAG_USE_DIRECTIVES, dag );
+// when building the stage list, get parent data from the directives over the reference if there's a conflict, since the parent doesn't exist
+static int AG_generate_stages_create( struct ms_client* client, AG_fs_map_t* to_publish, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
+   return AG_generate_stages( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DIRECTIVES, stages );
 }
 
-// generate a DAG that will update everything in the given to_update mapping
+
+// generate a stage list that will update everything in the given to_update mapping
 // all updates will be processed by the MS asynchronously.
-// when building the DAG, get parent data from the reference over the directives if there's a conflict, since the parent should already exist.
-static int AG_generate_DAG_update( struct ms_client* client, AG_fs_map_t* to_update, AG_fs_map_t* reference, AG_request_DAG_node_list_t* dag ) {
-   return AG_generate_DAG( client, to_update, reference, ms::ms_update::UPDATE_ASYNC, ms::ms_update::UPDATE_ASYNC, AG_DAG_DIRS_FIRST | AG_DAG_USE_DRIVER, dag );
+// when building the stage list, get parent data from the reference over the directives if there's a conflict, since the parent should already exist.
+static int AG_generate_stages_update( struct ms_client* client, AG_fs_map_t* to_update, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
+   return AG_generate_stages( client, to_update, reference, ms::ms_update::UPDATE_ASYNC, ms::ms_update::UPDATE_ASYNC, AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DRIVER, stages );
 }
 
-// generate a DAG that will delete everything in the given to_delete mapping 
+
+// generate a stage list that will delete everything in the given to_delete mapping 
 // files and directories will be deleted synchronously.
-static int AG_generate_DAG_delete( struct ms_client* client, AG_fs_map_t* to_delete, AG_fs_map_t* reference, AG_request_DAG_node_list_t* dag ) {
+static int AG_generate_stages_delete( struct ms_client* client, AG_fs_map_t* to_delete, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
    
-   int rc = AG_generate_DAG( client, to_delete, reference, ms::ms_update::DELETE, ms::ms_update::DELETE, 0, dag );
+   int rc = AG_generate_stages( client, to_delete, reference, ms::ms_update::DELETE, ms::ms_update::DELETE, 0, stages );
    if( rc != 0 ) {
-      errorf("AG_generate_DAG(delete) rc = %d\n", rc );
+      errorf("AG_generate_stages(delete) rc = %d\n", rc );
       return rc;
    }
    
-   // reverse the DAG, since we have to delete in post-traversal order 
-   reverse( dag->begin(), dag->end() );
+   // reverse the stages, since we have to delete in post-traversal order 
+   reverse( stages->begin(), stages->end() );
    return 0;
 }
 
@@ -445,12 +539,17 @@ static int AG_generate_DAG_delete( struct ms_client* client, AG_fs_map_t* to_del
 static int AG_network_contexts_cancel_and_free( struct ms_client* client, struct md_download_set* dlctx, struct ms_client_network_context* contexts, int num_contexts ) {
    // failed to set up.  clean up
    for( int i = 0; i < num_contexts; i++ ) {
-      if( contexts[i].dlctx != NULL ) {
-         ms_client_network_context_cancel( client, &contexts[i] );
-         
-         if( contexts[i].dlset != NULL ) {
-            md_download_set_clear( contexts[i].dlset, contexts[i].dlctx );  
-         }
+      
+      // stop tracking
+      if( contexts[i].dlset != NULL ) {
+         md_download_set_clear( contexts[i].dlset, contexts[i].dlctx );  
+      }
+      
+      // destroy the context 
+      int rc = ms_client_multi_cancel( client, &contexts[i] );
+      if( rc != 0 ) {
+         // shouldn't happen
+         errorf("BUG: ms_client_multi_cancel(%p) rc = %d\n", contexts[i].dlctx, rc );
       }
    }
    
@@ -464,12 +563,14 @@ static int AG_network_contexts_cancel_and_free( struct ms_client* client, struct
 
 // start up to num_connections, with up to max_batch operations.
 // track network contexts with the download_set
+// return the number started
 static int AG_start_operations( struct ms_client* client, struct ms_client_network_context* contexts, int num_connections, int oper, int flags, int max_batch,
                                 AG_request_list_t* reqs, int req_offset,
                                 struct md_download_set* dlset, int* ret_rc ) {
    
    int offset = 0;      // offset from req_offset in reqs where the next requests will be inserted for processing
    int rc = 0;
+   int opened_connections = 0;
    
    // start batch operations 
    for( int i = 0; i < num_connections && (unsigned)(req_offset + offset) < reqs->size(); i++ ) {
@@ -491,7 +592,7 @@ static int AG_start_operations( struct ms_client* client, struct ms_client_netwo
       // NOTE: vectors are guaranteed by C++ to be contiguous in memory
       struct ms_client_request* msreqs = &reqs->at( req_offset + offset );
       
-      // start running directories
+      // start running operations
       rc = ms_client_multi_begin( client, oper, flags, msreqs, num_reqs, &contexts[i] );
       if( rc != 0 ) {
          errorf("ms_client_multi_begin(%p) rc = %d\n", contexts[i].dlctx, rc );
@@ -500,18 +601,21 @@ static int AG_start_operations( struct ms_client* client, struct ms_client_netwo
       
       // next batch...
       offset += num_reqs;
+      opened_connections++;
    }
    
    if( rc != 0 ) {
       *ret_rc = rc;
    }
    
+   dbprintf("Opened %d connections\n", opened_connections );
+   
    return offset;
 }
 
 
-// finish an operation on a node
-static int AG_finish_operation( struct ms_client* client, struct ms_client_network_context* nctx, struct AG_request_DAG_node* node ) {
+// finish an operation on a stage.  Return 0 on success; return -ENOMEM if out of memory; return an MS-given error if the requests failed.
+static int AG_finish_operation( struct ms_client* client, struct ms_client_network_context* nctx, struct AG_request_stage* stage ) {
    
    int rc = 0;
    struct ms_client_multi_result results;
@@ -521,39 +625,64 @@ static int AG_finish_operation( struct ms_client* client, struct ms_client_netwo
    // finish and get results
    rc = ms_client_multi_end( client, &results, nctx );
    if( rc != 0 ) {
-      errorf("ms_client_multi_end(%p (node=%s)) rc = %d\n", nctx->dlctx, node->dir_path, rc );
+      errorf("ms_client_multi_end(%p (stage=%d)) rc = %d\n", nctx->dlctx, stage->depth, rc );
       return rc;
    }
    
-   if( results.reply_error != 0 ) {
-      errorf("Operational reply error %d, num_processed = %d\n", results.reply_error, results.num_processed );
-      ms_client_multi_result_free( &results );
-      return results.reply_error;
+   dbprintf("Stage %d: got back %d results, %zu entries, reply_error = %d\n", stage->depth, results.num_processed, results.num_ents, results.reply_error );
+   
+   // make sure we have results
+   if( stage->results == NULL ) {
+      stage->results = CALLOC_LIST( struct ms_client_multi_result, 1 );  
+      if( stage->results == NULL ) {
+         return -ENOMEM;
+      }
    }
    
-   dbprintf("Node %s: got back %d results, %zu entries\n", node->dir_path, results.num_processed, results.num_ents );
+   if( results.reply_error == 0 ) {
+      // merge results into the stage's results
+      ms_client_multi_result_merge( stage->results, &results );
+   }
+   else {
+      // just remember the error 
+      stage->results->reply_error = results.reply_error;
+   }
    
-   // merge results into the node's results
-   ms_client_multi_result_merge( &node->results, &results );
+   dbprintf("Stage %d: %d results total (%zu entries)\n", stage->depth, stage->results->num_processed, stage->results->num_ents );
    
-   dbprintf("Node %s: %d results total (%zu entries)\n", node->dir_path, node->results.num_processed, node->results.num_ents );
-   
-   return 0;
+   return results.reply_error;
 }
 
 
-// run a list of requests for a DAG node, but don't open more than max_connections connections and don't send more than max_batch operations
-static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request_DAG_node* node, int oper, AG_request_list_t* reqs, int max_connections, int max_batch ) {
+// run a list of requests for a stage, but don't open more than max_connections connections and don't send more than max_batch operations
+// return 0 on success
+// return negative on failure (i.e. due to network failure, or MS operational failure)
+// if an MS operational failure code is NOT listed in tolerated_operational_errors, this method fails fast on the first error encountered.
+// otherwise, MS operational errors in tolerated_operational_errors will be masked (but will be recorded in stage->results->reply_error)
+// if this method fails to process a request, stage->error will be set to the returned error code, and stage->failed_reqs will be set to the request list that was being procesed.
+static int AG_run_stage_requests( struct ms_client* client, struct AG_request_stage* stage, bool dirs, int max_connections, int max_batch, AG_operational_error_set_t* tolerated_operational_errors ) {
+   
+   int rc = 0;
+   int offset = 0;              // offset into reqs for unstarted requests
+   int started = 0;             // number of requests started
+   
+   AG_request_list_t* reqs = NULL;
+   int oper = 0;
+   
+   if( dirs ) {
+      reqs = stage->dir_reqs;
+      oper = stage->dir_oper;
+   }
+   else {
+      reqs = stage->file_reqs;
+      oper = stage->file_oper;
+   }
    
    // sanity check 
    if( reqs->size() == 0 ) {
       // done!
       return 0;
    }
-   
-   int rc = 0;
-   int offset = 0;
-   int started = 0;
    
    // network contexts 
    struct ms_client_network_context* contexts = CALLOC_LIST( struct ms_client_network_context, max_connections );
@@ -563,7 +692,7 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
    md_download_set_init( &dlset );
    
    // start batch operations 
-   started = AG_start_operations( client, contexts, max_connections, oper, node->flags, max_batch, reqs, 0, &dlset, &rc );
+   started = AG_start_operations( client, contexts, max_connections, oper, stage->flags, max_batch, reqs, 0, &dlset, &rc );
    
    if( rc != 0 ) {
       // failed to set up.  clean up
@@ -575,7 +704,7 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
       return rc;
    }
    
-   dbprintf("Node %s: started %d connections (%d results so far)\n", node->dir_path, started, node->results.num_processed );
+   dbprintf("Stage %d: started %d reqests\n", stage->depth, started );
    
    offset += started;
    
@@ -610,11 +739,31 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
          }
          
          // finished!  process it and keep its data around 
-         rc = AG_finish_operation( client, &contexts[i], node );
+         rc = AG_finish_operation( client, &contexts[i], stage );
          if( rc != 0 ) {
             
-            // failed to finish 
-            break;
+            // failed to finish.
+            // mask this error?
+            if( tolerated_operational_errors != NULL && tolerated_operational_errors->count( rc ) > 0 ) {
+               
+               // this isn't considered to be an error by the caller 
+               rc = 0;
+               finished.insert(i);
+            }
+            
+            else {
+               // Otherwise, remember where ths stage failed 
+               stage->error = rc;
+               
+               if( dirs ) {
+                  stage->failed_reqs = stage->dir_reqs;
+               }
+               else {
+                  stage->failed_reqs = stage->file_reqs;
+               }
+               
+               break;
+            }
          }
          else {
             
@@ -625,7 +774,7 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
          // start more downloads, if there are more left 
          if( offset < (signed)reqs->size() ) {
             
-            started = AG_start_operations( client, contexts, oper, node->flags, max_connections, max_batch, reqs, offset, &dlset, &rc );
+            started = AG_start_operations( client, contexts, oper, stage->flags, max_connections, max_batch, reqs, offset, &dlset, &rc );
             if( rc != 0 ) {
                
                // failed to start 
@@ -633,7 +782,12 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
             }
             else {
                
-               dbprintf("Node %s: started %d more connections (%d total, %d results)\n", node->dir_path, started, offset, node->results.num_processed );
+               int num_results = 0;
+               if( stage->results != NULL ) {
+                  num_results = stage->results->num_processed;
+               }
+               
+               dbprintf("Stage %d: started %d more requests (%d total, %d results)\n", stage->depth, started, offset, num_results );
                
                offset += started;
                
@@ -672,33 +826,34 @@ static int AG_run_DAG_node_requests( struct ms_client* client, struct AG_request
       }
    }
    
-   md_download_set_free( &dlset );
-   
    if( rc != 0 ) {
       // clean up on error from the operations loop
       AG_network_contexts_cancel_and_free( client, &dlset, contexts, max_connections );
    }
+   
+   
+   md_download_set_free( &dlset );
    
    free( contexts );
    return rc;
 }
 
 
-// run a single DAG node.
+// run a single stage
 // return 0 on success, negative on error.
-static int AG_run_DAG_node( struct ms_client* client, struct AG_request_DAG_node* node, int max_connections, int max_batch ) {
+static int AG_run_stage( struct ms_client* client, struct AG_request_stage* stage, int max_connections, int max_batch, int max_async_batch, AG_operational_error_set_t* tolerated_operational_errors ) {
    
    int rc = 0;
    
-   AG_request_list_t** reqs = NULL;
+   const bool* is_dir_opers = NULL;
    char const** req_names = NULL;
    const int* opers = NULL;
    
-   if( node->dirs_first ) {
+   if( stage->dirs_first ) {
       
-      const AG_request_list_t* d_reqs[] = {
-         node->dir_reqs,
-         node->file_reqs
+      const bool d_is_dir_opers[] = {
+         true,
+         false
       };
       
       char const* d_req_names[] = {
@@ -707,19 +862,19 @@ static int AG_run_DAG_node( struct ms_client* client, struct AG_request_DAG_node
       };
       
       const int d_opers[] = {
-         node->dir_oper,
-         node->file_oper
+         stage->dir_oper,
+         stage->file_oper
       };
       
-      reqs = (AG_request_list_t**)d_reqs;
+      is_dir_opers = d_is_dir_opers;
       req_names = d_req_names;
       opers = d_opers;
    }
    else {
       
-      const AG_request_list_t* f_reqs[] = {
-         node->file_reqs,
-         node->dir_reqs
+      const bool f_is_dir_opers[] = {
+         false,
+         true
       };
       
       char const* f_req_names[] = {
@@ -728,22 +883,39 @@ static int AG_run_DAG_node( struct ms_client* client, struct AG_request_DAG_node
       };
       
       const int f_opers[] = {
-         node->file_oper,
-         node->dir_oper
+         stage->file_oper,
+         stage->dir_oper
       };
       
-      reqs = (AG_request_list_t**)f_reqs;
+      is_dir_opers = f_is_dir_opers;
       req_names = f_req_names;
       opers = f_opers;
    }
    
    for( int i = 0; i < 2; i++ ) {
-        
-      dbprintf("Node %s: Run %zu requests on %s\n", node->dir_path, reqs[i]->size(), req_names[i] );
       
-      rc = AG_run_DAG_node_requests( client, node, opers[i], reqs[i], max_connections, max_batch );
+      // how many requests per connection?
+      int num_requests_per_connection = 0;
+      
+      if( ms_client_is_async_operation( opers[i] ) ) {
+         
+         num_requests_per_connection = max_async_batch;
+      }
+      else {
+         
+         num_requests_per_connection = max_batch;
+      }
+      
+      if( is_dir_opers[i] ) {
+         dbprintf("Stage %d: Run %zu requests on %s (batch size = %d)\n", stage->depth, stage->dir_reqs->size(), req_names[i], num_requests_per_connection );
+      }
+      else {
+         dbprintf("Stage %d: Run %zu requests on %s (batch size = %d)\n", stage->depth, stage->file_reqs->size(), req_names[i], num_requests_per_connection );
+      }
+      
+      rc = AG_run_stage_requests( client, stage, is_dir_opers[i], max_connections, num_requests_per_connection, tolerated_operational_errors );
       if( rc != 0 ) {
-         errorf("AG_run_DAG_node_requests(%s, node=%s) rc = %d\n", req_names[i], node->dir_path, rc );
+         errorf("AG_run_stage_requests(%s, stage=%d) rc = %d\n", req_names[i], stage->depth, rc );
          return rc;
       }
    }
@@ -751,15 +923,77 @@ static int AG_run_DAG_node( struct ms_client* client, struct AG_request_DAG_node
    return 0;
 }
 
+
+// verify that the MS response has exactly the replies we expected 
+// return 0 on success 
+// return -ENODATA if we're missing a reply 
+// return -EBADMSG if we got a gratuitous reply
+static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage, AG_request_list_t* reqs ) {
+
+   int rc = 0;
+   struct ms_client_multi_result* results = stage->results;
+   
+   if( (signed)(stage->dir_reqs->size() + stage->file_reqs->size()) != results->num_processed ) {
+      return -EINVAL;
+   }
+   
+   // make sure all entries we requested are present in the reply 
+   // map file ID to requests and replies
+   map<uint64_t, struct md_entry*> ms_replies;
+   map<uint64_t, struct md_entry*> ag_requests;
+   
+   for( unsigned int i = 0; i < reqs->size(); i++ ) {
+      
+      struct ms_client_request* req = &reqs->at(i);
+      struct md_entry* ent = &results->ents[i];
+      
+      ag_requests[req->ent->file_id] = req->ent;
+      ms_replies[ent->file_id] = ent;
+   }
+   
+   // check for missing replies
+   for( unsigned int i = 0; i < reqs->size(); i++ ) {
+      
+      struct ms_client_request* req = &reqs->at(i);
+      
+      if( ms_replies.count( req->ent->file_id ) == 0 ) {
+         errorf("Missing MS reply for %" PRIX64 " (%s)\n", req->ent->file_id, req->ent->name );
+         rc = -ENODATA;
+      }
+   }
+   
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   // check for gratuitous replies 
+   for( unsigned int i = 0; i < reqs->size(); i++ ) {
+      
+      struct md_entry* ent = &results->ents[i];
+      
+      if( ag_requests.count( ent->file_id ) == 0 ) {
+         errorf("Gratuitous MS reply for %" PRIX64 " (%s)\n", ent->file_id, ent->name );
+         rc = -EBADMSG;
+      }
+   }
+   
+   return rc;
+}
+
+
 // validate the MS response against the requests we made 
-static int AG_validate_DAG_MS_response( struct AG_request_DAG_node* node ) {
+static int AG_validate_stage_MS_response( struct AG_request_stage* stage ) {
    
    int rc = 0;
    
-   AG_request_list_t* file_reqs = node->file_reqs;
-   AG_request_list_t* dir_reqs = node->dir_reqs;
-   struct ms_client_multi_result* results = &node->results;
+   AG_request_list_t* file_reqs = stage->file_reqs;
+   AG_request_list_t* dir_reqs = stage->dir_reqs;
+   struct ms_client_multi_result* results = stage->results;
    
+   if( results == NULL ) {
+      errorf("No data received for stage %d\n", stage->depth );
+      return -ENODATA;
+   }
    
    AG_request_list_t* reqs_list[] = {
       dir_reqs,
@@ -774,14 +1008,14 @@ static int AG_validate_DAG_MS_response( struct AG_request_DAG_node* node ) {
    };
    
    // even if we got no data back, the MS should have processed all our entries
-   if( (signed)(dir_reqs->size() + file_reqs->size()) != node->results.num_processed ) {
-      errorf("Sent %zu requests, but the MS processed %d\n", dir_reqs->size() + file_reqs->size(), node->results.num_processed );
+   if( (signed)(dir_reqs->size() + file_reqs->size()) != results->num_processed ) {
+      errorf("Sent %zu requests, but the MS processed %d\n", dir_reqs->size() + file_reqs->size(), results->num_processed );
       return -EREMOTEIO;
    }
    
    // were we even expecting results to be sent back?
-   int num_expected_dirs = ms_client_num_expected_reply_ents( dir_reqs->size(), node->dir_oper );
-   int num_expected_files = ms_client_num_expected_reply_ents( file_reqs->size(), node->file_oper );
+   int num_expected_dirs = ms_client_num_expected_reply_ents( dir_reqs->size(), stage->dir_oper );
+   int num_expected_files = ms_client_num_expected_reply_ents( file_reqs->size(), stage->file_oper );
    
    int num_expected_replies[] = {
       num_expected_dirs,
@@ -793,7 +1027,6 @@ static int AG_validate_DAG_MS_response( struct AG_request_DAG_node* node ) {
       
       // each request list...
       AG_request_list_t* reqs = reqs_list[j];
-      int expected_type = reqs_types[j];
       
       if( num_expected_replies[j] == 0 ) {
          continue;
@@ -804,24 +1037,10 @@ static int AG_validate_DAG_MS_response( struct AG_request_DAG_node* node ) {
          return -EBADMSG;
       }
       
-      for( unsigned int i = 0; i < reqs->size(); i++ ) {
-         
-         struct ms_client_request* req = &reqs->at(i);
-         struct md_entry* ent = &results->ents[i];
-         
-         // The MS *should* return entires that are of the same type 
-         if( expected_type != ent->type ) {
-            errorf("Invalid MS data: entry %d should have type %d, but the MS replied %d\n", i, expected_type, ent->type );
-            rc = -EBADMSG;
-            break;
-         }
-         
-         // The MS *should* return entries in the same order as we requested them
-         if( strcmp( ent->name, req->ent->name ) != 0 ) {
-            errorf("Invalid MS data: entry %d (type %d) should be '%s', but the MS replied '%s'\n", i, ent->type, ent->name, req->ent->name );
-            rc = -EBADMSG;
-            break;
-         }
+      rc = AG_validate_stage_MS_response_replies( stage, reqs );
+      if( rc != 0 ) {
+         errorf("AG_validate_stage_MS_response_replies(stage=%d) rc = %d\n", stage->depth, rc );
+         break;
       }
    }
    
@@ -829,34 +1048,34 @@ static int AG_validate_DAG_MS_response( struct AG_request_DAG_node* node ) {
 }
 
 
-// given a request DAG, walk down it and send the updates to the MS 
+// given a request stage list, walk down it and send the updates to the MS 
 // return 0 on succes, negative on failure.
-static int AG_run_DAG( struct ms_client* client, AG_request_DAG_node_list_t* dag, int max_connections, int max_batch ) {
+static int AG_run_stages( struct ms_client* client, AG_request_stage_list_t* stages, int max_connections, int max_batch, int max_async_batch ) {
    
    int rc = 0;
    
-   for( unsigned int i = 0; i < dag->size(); i++ ) {
+   for( unsigned int i = 0; i < stages->size(); i++ ) {
       
-      struct AG_request_DAG_node* node = dag->at(i);
+      struct AG_request_stage* stage = stages->at(i);
       
-      dbprintf("Running DAG node %d\n", i );
+      dbprintf("Running stage %d\n", stage->depth );
       
-      rc = AG_run_DAG_node( client, node, max_connections, max_batch );
+      rc = AG_run_stage( client, stage, max_connections, max_batch, max_async_batch, NULL );
       if( rc != 0 ) {
       
-         // this DAG stage failed
-         errorf("AG_run_DAG_node(%s, depth=%d) rc = %d\n", node->dir_path, i, rc );
+         // this stage failed
+         errorf("AG_run_stage(depth=%d) rc = %d\n", stage->depth, rc );
          break;
       }
       
       
-      dbprintf("Validating MS replies for DAG node %s (depth=%d)\n", node->dir_path, i );
+      dbprintf("Validating MS replies for stage %d\n", stage->depth );
       
-      rc = AG_validate_DAG_MS_response( node );
+      rc = AG_validate_stage_MS_response( stage );
       if( rc != 0 ) {
       
-         // this DAG stage fialed 
-         errorf("AG_validate_DAG_MS_response(%s, depth=%d) rc = %d\n", node->dir_path, i, rc );
+         // this stage fialed 
+         errorf("AG_validate_stage_MS_response(depth=%d) rc = %d\n", stage->depth, rc );
          break;
       }
    }
@@ -866,19 +1085,24 @@ static int AG_run_DAG( struct ms_client* client, AG_request_DAG_node_list_t* dag
 
 
 
-// add a node's worth of data into an fs_map (overwriting duplicates)
-// NOTE: no validation occurs on the MS-given node results (use AG_validate_DAG_MS_response for that) beyond ensuring that we have N replies for N total requests.
+// add a stage's worth of data into an fs_map (overwriting duplicates)
+// NOTE: no validation occurs on the MS-given stage results (use AG_validate_stage_MS_response for that) beyond ensuring that we have N replies for N total requests.
 // mi_reference will be used as a whitelist of entries to add, and will be used to ensure that the MS didn't 
-static int AG_fs_add_DAG_node_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference, struct AG_request_DAG_node* node ) {
+static int AG_fs_add_stage_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference, struct AG_request_stage* stage ) {
    
    int rc = 0;
    
-   AG_request_list_t* file_reqs = node->file_reqs;
-   AG_request_list_t* dir_reqs = node->dir_reqs;
-   struct ms_client_multi_result* results = &node->results;
+   AG_request_list_t* file_reqs = stage->file_reqs;
+   AG_request_list_t* dir_reqs = stage->dir_reqs;
+   struct ms_client_multi_result* results = stage->results;
    
-   int num_expected_file_ents = ms_client_num_expected_reply_ents( file_reqs->size(), node->file_oper );
-   int num_expected_dir_ents = ms_client_num_expected_reply_ents( dir_reqs->size(), node->dir_oper );
+   if( results == NULL ) {
+      errorf("No data received for stage %d\n", stage->depth );
+      return -ENODATA;
+   }
+   
+   int num_expected_file_ents = ms_client_num_expected_reply_ents( file_reqs->size(), stage->file_oper );
+   int num_expected_dir_ents = ms_client_num_expected_reply_ents( dir_reqs->size(), stage->dir_oper );
    
    // did all creates process?
    if( (unsigned)(num_expected_file_ents + num_expected_dir_ents) != results->num_ents ) {
@@ -908,8 +1132,20 @@ static int AG_fs_add_DAG_node_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference
          
          struct md_entry* ent = &results->ents[i];
          
+         // find the parent 
+         AG_request_parent_map_t::iterator parent_itr = stage->parents->find( ent->file_id );
+         if( parent_itr == stage->parents->end() ) {
+            
+            // very strange..this shouldn't happen 
+            errorf("BUG: no parent name found for %" PRIX64 " (%s)\n", ent->file_id, ent->name );
+            rc = -EINVAL;
+            break;
+         }
+         
+         char* dirpath = parent_itr->second;
+         
          // make a duplicate of the map_info in mi_reference, and add it to dest
-         char* path = md_fullpath( node->dir_path, ent->name, NULL );
+         char* path = md_fullpath( dirpath, ent->name, NULL );
          struct AG_map_info* mi = AG_fs_lookup_path_in_map( mi_reference, path );
          
          if( mi == NULL ) {
@@ -923,7 +1159,6 @@ static int AG_fs_add_DAG_node_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference
          
          // update with ent data
          AG_map_info_make_coherent_with_data( mi, path, ent->file_id, ent->version, md_random64(), ent->write_nonce, AG_map_info_make_deadline( mi->reval_sec ) );
-         
          
          AG_fs_map_t::iterator itr = dest->find( path );
          if( itr != dest->end() ) {   
@@ -949,18 +1184,18 @@ static int AG_fs_add_DAG_node_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference
 }
 
 
-// add a DAG's worth of data to an fs_map.
-// NOTE: no validation occurs on the data, use AG_validate_DAG_MS_response for that.
+// add a stage-list's worth of data to an fs_map.
+// NOTE: no validation occurs on the data, use AG_validate_stage_MS_response for that.
 // This method fails with -EEXIST if there is a collision.
-static int AG_fs_add_DAG( AG_fs_map_t* dest, AG_fs_map_t* mi_reference, AG_request_DAG_node_list_t* dag ) {
+static int AG_fs_add_stages( AG_fs_map_t* dest, AG_fs_map_t* mi_reference, AG_request_stage_list_t* stages ) {
    
    int rc = 0;
    
-   for( unsigned int i = 0; i < dag->size(); i++ ) {
+   for( unsigned int i = 0; i < stages->size(); i++ ) {
       
-      rc = AG_fs_add_DAG_node_data( dest, mi_reference, dag->at(i) );
+      rc = AG_fs_add_stage_data( dest, mi_reference, stages->at(i) );
       if( rc != 0 ) {
-         errorf("AG_fs_add_DAG_node_data(depth=%d) rc = %d\n", i, rc );
+         errorf("AG_fs_add_stage_data(depth=%d) rc = %d\n", stages->at(i)->depth, rc );
          break;
       }
    }
@@ -995,13 +1230,13 @@ static int AG_fs_mark_all_updated( AG_fs_map_t* dest, AG_fs_map_t* mi_reference 
    return rc;
 }
 
-// remove files and directories from an fs_map, as listed by the given dag node
-static int AG_fs_remove_DAG_node_data( AG_fs_map_t* dest, struct AG_request_DAG_node* node ) {
+// remove files and directories from an fs_map, as listed by the given stage
+static int AG_fs_remove_stage_data( AG_fs_map_t* dest, struct AG_request_stage* stage ) {
    
    int rc = 0;
 
-   AG_request_list_t* file_reqs = node->file_reqs;
-   AG_request_list_t* dir_reqs = node->dir_reqs;
+   AG_request_list_t* file_reqs = stage->file_reqs;
+   AG_request_list_t* dir_reqs = stage->dir_reqs;
    
    AG_request_list_t* reqs_list[] = {
       dir_reqs,
@@ -1018,7 +1253,19 @@ static int AG_fs_remove_DAG_node_data( AG_fs_map_t* dest, struct AG_request_DAG_
          
          struct ms_client_request* req = &reqs->at(i);
          
-         char* path = md_fullpath( node->dir_path, req->ent->name, NULL );
+         // find the parent 
+         AG_request_parent_map_t::iterator parent_itr = stage->parents->find( req->ent->file_id );
+         if( parent_itr == stage->parents->end() ) {
+            
+            // very strange..this shouldn't happen 
+            errorf("BUG: no parent name found for %" PRIX64 " (%s)\n", req->ent->file_id, req->ent->name );
+            rc = -EINVAL;
+            break;
+         }
+         
+         char* dirpath = parent_itr->second;
+         
+         char* path = md_fullpath( dirpath, req->ent->name, NULL );
          
          // remove it from the fs, replacing an existing entry if need be.
          AG_fs_map_t::iterator itr = dest->find( string(path) );
@@ -1044,16 +1291,16 @@ static int AG_fs_remove_DAG_node_data( AG_fs_map_t* dest, struct AG_request_DAG_
 }
 
 
-// remove file and directories from an fs_map, as listed by the dag 
-static int AG_fs_remove_DAG( AG_fs_map_t* dest, AG_request_DAG_node_list_t* dag ) {
+// remove file and directories from an fs_map, as listed by the stages 
+static int AG_fs_remove_stages( AG_fs_map_t* dest, AG_request_stage_list_t* stages ) {
    
    int rc = 0;
    
-   for( unsigned int i = 0; i < dag->size(); i++ ) {
+   for( unsigned int i = 0; i < stages->size(); i++ ) {
       
-      rc = AG_fs_remove_DAG_node_data( dest, dag->at(i) );
+      rc = AG_fs_remove_stage_data( dest, stages->at(i) );
       if( rc != 0 ) {
-         errorf("AG_fs_remove_DAG_node_data(depth=%d) rc = %d\n", i, rc );
+         errorf("AG_fs_remove_stage_data(depth=%d) rc = %d\n", stages->at(i)->depth, rc );
          break;
       }
    }
@@ -1062,27 +1309,24 @@ static int AG_fs_remove_DAG( AG_fs_map_t* dest, AG_request_DAG_node_list_t* dag 
 }
 
 
-// generate a dag with the requested method, run it, and validate the response.
-static int AG_fs_apply_DAG( struct ms_client* client, int (*DAG_generator)( struct ms_client*, AG_fs_map_t*, AG_fs_map_t*, AG_request_DAG_node_list_t* ),
-                            AG_fs_map_t* directives, AG_fs_map_t* reference,
-                            AG_request_DAG_node_list_t* dag ) {
+// generate a list of stages with the requested method, run it, and validate the response.
+// don't mask errors; fail fast if the MS barfs on any request
+static int AG_fs_apply_stages( struct ms_client* client, AG_request_stage_generator_t stage_list_generator, AG_fs_map_t* directives, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
    
    int rc = 0;
    
    // run the generator 
-   rc = (*DAG_generator)( client, directives, reference, dag );
+   rc = (*stage_list_generator)( client, directives, reference, stages );
    if( rc != 0 ) {
-      errorf("DAG generator rc = %d\n", rc );
+      errorf("Stage list generator rc = %d\n", rc );
       return rc;
    }
    
    // run it and validate it
-   // TODO: get these constants from somewhere 
-   rc = AG_run_DAG( client, dag, 10, 3 );
+   rc = AG_run_stages( client, stages, client->max_connections, client->max_request_batch, client->max_request_async_batch );
    if( rc != 0 ) {
-      errorf("AG_run_DAG rc = %d\n", rc );
+      errorf("AG_run_stages rc = %d\n", rc );
       
-      AG_request_DAG_node_list_free( dag );
       return rc;
    }
    
@@ -1095,7 +1339,7 @@ static int AG_fs_apply_DAG( struct ms_client* client, int (*DAG_generator)( stru
 // we're going to use its data plus the data the MS returns to map the paths in ag_fs.
 int AG_fs_create_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_publish, AG_fs_map_t* current_mappings ) {
    
-   AG_request_DAG_node_list_t dag;
+   AG_request_stage_list_t stages;
    int rc = 0;
    
    // build up a set of references for publishing.
@@ -1152,29 +1396,30 @@ int AG_fs_create_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
       return rc;
    }
    
-   // get the DAG 
-   rc = AG_fs_apply_DAG( client, AG_generate_DAG_create, &merged_publish, current_mappings, &dag );
+   // get the stages 
+   rc = AG_fs_apply_stages( client, AG_generate_stages_create, &merged_publish, current_mappings, &stages );
    
    AG_fs_map_free( &merged_publish );
    
    if( rc != 0 ) {
-      errorf("AG_fs_apply_DAG(create) rc = %d\n", rc );
+      errorf("AG_fs_apply_stages(create) rc = %d\n", rc );
       
+      AG_request_stage_list_free( &stages );
       return rc;
    }
    
    // add everything.
-   rc = AG_fs_add_DAG( dest, to_publish, &dag );
+   rc = AG_fs_add_stages( dest, to_publish, &stages );
    if( rc != 0 ) {
-      errorf("AG_fs_add_DAG() rc = %d\n", rc );
+      errorf("AG_fs_add_stages() rc = %d\n", rc );
       
-      AG_request_DAG_node_list_free( &dag );
+      AG_request_stage_list_free( &stages );
       
       return rc;
    }
    
    // success!
-   AG_request_DAG_node_list_free( &dag );
+   AG_request_stage_list_free( &stages );
    return rc;
 }
 
@@ -1185,7 +1430,7 @@ int AG_fs_create_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
 // since we're going to use its data plus the data the MS returns.
 int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_update, AG_fs_map_t* current_mappings ) {
    
-   AG_request_DAG_node_list_t dag;
+   AG_request_stage_list_t stages;
    int rc = 0;
 
    for( AG_fs_map_t::iterator itr = to_update->begin(); itr != to_update->end(); itr++ ) {
@@ -1204,12 +1449,13 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
       return rc;
    }
    
-   // get the DAG 
-   rc = AG_fs_apply_DAG( client, AG_generate_DAG_update, to_update, current_mappings, &dag );
+   // get the stages 
+   rc = AG_fs_apply_stages( client, AG_generate_stages_update, to_update, current_mappings, &stages );
    
    if( rc != 0 ) {
-      errorf("AG_fs_apply_DAG(update) rc = %d\n", rc );
+      errorf("AG_fs_apply_stages(update) rc = %d\n", rc );
       
+      AG_request_stage_list_free( &stages );
       return rc;
    }
    
@@ -1218,13 +1464,13 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
    if( rc != 0 ) {
       errorf("AG_fs_mark_all_updated() rc = %d\n", rc );
       
-      AG_request_DAG_node_list_free( &dag );
+      AG_request_stage_list_free( &stages );
       
       return rc;
    }
    
    // success!
-   AG_request_DAG_node_list_free( &dag );
+   AG_request_stage_list_free( &stages );
    return rc;
 }
 
@@ -1233,29 +1479,95 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
 // current_mappings must have the AG-specific information for all paths to delete.
 int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_delete, AG_fs_map_t* current_mappings ) {
    
-   AG_request_DAG_node_list_t dag;
+   AG_request_stage_list_t stages;
+   AG_request_stage_list_t all_stages;
+   
    int rc = 0;
    
-   // get the DAG 
-   rc = AG_fs_apply_DAG( client, AG_generate_DAG_delete, to_delete, current_mappings, &dag );
+   // make all the stages 
+   rc = AG_generate_stages_delete( client, to_delete, current_mappings, &all_stages );
    if( rc != 0 ) {
-      errorf("AG_fs_apply_DAG(delete) rc = %d\n", rc );
+      errorf("Stage list generator (delete) rc = %d\n", rc );
+      return rc;
+   }
+   
+   // keep shallow copies to all stages, and work with this instead
+   for( unsigned int i = 0; i < all_stages.size(); i++ ) {
+      stages.push_back( all_stages[i] );
+   }
+   
+   // run the stages, but try a failed stage again if we fail with -ENOTEMPTY.
+   // this is because sometimes entries don't disappear synchronously on delete, since 
+   // the MS's query-processing logic is not guaranteed to be sequentially consistent.
+   while( true ) {
+
+      // run the stages that have not been processed yet
+      rc = AG_run_stages( client, &stages, client->max_connections, client->max_request_batch, client->max_request_async_batch );
       
+      if( rc == -ENOENT ) {
+         
+         // find the failed stage
+         unsigned int failed_stage = 0;
+         
+         for( failed_stage = 0; failed_stage < stages.size(); failed_stage++ ) {
+            if( stages[failed_stage]->error != 0 && stages[failed_stage]->failed_reqs != NULL ) {
+               break;
+            }
+         }
+         
+         if( failed_stage == stages.size() ) {
+            errorf("%s", "BUG: could not find failed stage\n");
+            rc = -EIO;
+            break;
+         }
+         
+         // try again, but mask -ENOENT 
+         dbprintf("WARN: stage %u failed; will retry while ignoring -ENOENT\n", failed_stage );
+      
+         // run this stage again, but mask -ENOENT, since we're retrying a deletion 
+         AG_operational_error_set_t masked;
+         masked.insert( -ENOENT );
+         
+         // try the failed stage again 
+         rc = AG_run_stage( client, stages[failed_stage], client->max_connections, client->max_request_batch, client->max_request_async_batch, &masked );
+         if( rc != 0 ) {
+            errorf("AG_run_stage(depth=%d) rc = %d\n", stages[failed_stage]->depth, rc );
+         }
+         
+         else {   
+            // remove the successful stages, and try the rest 
+            stages.erase( stages.begin(), stages.begin() + (failed_stage + 1) );
+         }
+      }
+      else {
+         
+         // success, or some other error besides -ENOENT
+         if( rc != 0 ) {
+            errorf("AG_run_stages(delete) rc = %d\n", rc );
+         }
+         
+         break;
+      }
+   }
+   
+   if( rc != 0 ) {
+      // can't continue 
+      AG_request_stage_list_free( &all_stages );
       return rc;
    }
    
    // remove everything
-   rc = AG_fs_remove_DAG( dest, &dag );
+   rc = AG_fs_remove_stages( dest, &all_stages );
    if( rc != 0 ) {
-      errorf("AG_fs_remove_DAG rc = %d\n", rc );
+      errorf("AG_fs_remove_stages rc = %d\n", rc );
       
-      AG_request_DAG_node_list_free( &dag );
+      AG_request_stage_list_free( &all_stages );
       
       return rc;
    }
    
    // success!
-   AG_request_DAG_node_list_free( &dag );
+   AG_request_stage_list_free( &all_stages );
    return rc;
 }
 

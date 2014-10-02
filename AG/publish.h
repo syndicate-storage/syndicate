@@ -24,29 +24,42 @@
 
 #include "map-info.h"
 
-#define AG_DAG_USE_DRIVER               0x1
-#define AG_DAG_DIRS_FIRST               0x2
-#define AG_DAG_USE_DIRECTIVES           0x4
+#define AG_REQUEST_USE_DRIVER               0x1
+#define AG_REQUEST_DIRS_FIRST               0x2
+#define AG_REQUEST_USE_DIRECTIVES           0x4
 
-struct AG_request_DAG_node;
+#define AG_REQUEST_DELETE_MAX_RETRIES           5
 
-typedef vector<struct AG_request_DAG_node*> AG_request_DAG_node_list_t;
+struct AG_request_stage;
+
+typedef vector<struct AG_request_stage*> AG_request_stage_list_t;
 typedef vector<struct ms_client_request> AG_request_list_t;
 
+typedef int (*AG_request_stage_generator_t)( struct ms_client*, AG_fs_map_t*, AG_fs_map_t*, AG_request_stage_list_t* );
+
+typedef map<uint64_t, char*> AG_request_parent_map_t;
+
+typedef set<int> AG_operational_error_set_t;
+
 // bundle of requests to execute at a given depth
-struct AG_request_DAG_node {
+struct AG_request_stage {
    
    int file_oper;                   // MS operation to perform for the files 
    int dir_oper;                    // MS operation to perform for the directories
    
    int flags;                       // operation flags (i.e. for xattrs)
    
-   char* dir_path;                      // which directory is this node for?
+   int depth;                           // what depth is this stage at?
    AG_request_list_t* file_reqs;        // requests over files
    AG_request_list_t* dir_reqs;         // requests over directories
+   AG_request_parent_map_t* parents;        // map file and directory requests to their parents' paths
+   
    bool dirs_first;                     // run directories first if true.  Otherwise run files first.
    
-   struct ms_client_multi_result results;       // results of operation
+   struct ms_client_multi_result* results;       // results of operation
+   
+   int error;                           // set to non-zero if there was a failure
+   AG_request_list_t* failed_reqs;      // points to either file_reqs or dir_reqs of one of them failed to process 
 };
 
 // hierarchy management 
