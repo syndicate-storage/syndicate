@@ -57,6 +57,13 @@ indexes:
   - name: parent_id
   - name: volume_id
   - name: mode
+
+- kind: MSEntry
+  properties:
+  - name: is_readable_in_list
+  - name: parent_id
+  - name: volume_id
+  - name: mode
   - name: __key__
   - name: file_id
 
