@@ -115,6 +115,7 @@ int md_downloader_shutdown( struct md_downloader* dl );
 int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_cache_connector_func cache_func, void* cache_func_cls, off_t max_len );
 int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl );
 int md_download_context_free( struct md_download_context* dlctx, CURL** curl );
+int md_download_context_clear_set( struct md_download_context* dlctx );
 
 // download context sets (like an FDSET)
 int md_download_set_init( struct md_download_set* dlset );
