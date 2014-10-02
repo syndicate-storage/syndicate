@@ -24,7 +24,7 @@ extern "C" {
 char* ms_client_url( char const* ms_url, uint64_t volume_id, char const* metadata_path );
 
 char* ms_client_file_url( char const* ms_url, uint64_t volume_id );
-char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_size, char const* serialized_cursor );
+char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_size );
 
 char* ms_client_getxattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, char const* xattr_name );
 char* ms_client_listxattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id );
