@@ -864,11 +864,6 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
 // decompress a string, returning the normal string 
 int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
-   if( *out_len == 0 ) {
-      // guess a minimum size of 1MB
-      *out_len = 1024000;
-   }
-   
    uLongf out_buf_len = *out_len;
    char* out_buf = CALLOC_LIST( char, out_buf_len );;
    
