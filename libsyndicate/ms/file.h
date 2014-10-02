@@ -31,8 +31,7 @@ struct ms_listing {
    int type;         // file or directory?
    vector<struct md_entry>* entries;
    
-   bool have_more;
-   char* serialized_cursor;
+   int error;
 };
 
 // path entry metadata for getting metadata listings
@@ -52,7 +51,6 @@ struct ms_path_download_context {
    struct md_download_context* dlctx;
    
    int page_id;
-   char* serialized_cursor;
    
    struct ms_path_ent* path_ent;
    
@@ -105,6 +103,7 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 // multi-RPC API
 int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx );
 int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result* results, struct ms_client_network_context* nctx );
+int ms_client_multi_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
 
 // path resolution 
 int ms_client_get_listings( struct ms_client* client, ms_path_t* path, ms_response_t* ms_response );
