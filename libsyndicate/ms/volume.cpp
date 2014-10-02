@@ -295,7 +295,6 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
    vol->volume_owner_id = volume_md->owner_id();
    vol->blocksize = volume_md->blocksize();
    vol->volume_version = volume_md->volume_version();
-   vol->num_files = volume_md->num_files();
    
    if( vol->name == NULL ) {
       vol->name = strdup( volume_md->name().c_str() );
