@@ -39,33 +39,6 @@ import traceback
 
 from common.msconfig import *
 
-class IDCounter( storagetypes.Object ):
-   value = storagetypes.Integer()
-
-   required_attrs = [
-      "value"
-   ]
-
-   gateway_type = "G"
-
-   @classmethod
-   def make_key_name(cls, **attrs):
-      return cls.gateway_type + "IDCounter"
-
-   @classmethod
-   def __next_value(cls):
-      # gateway does not exist
-      gid_counter = cls.get_or_insert( IDCounter.make_key_name(), value=0)
-      gid_counter.value += 1
-      ret = gid_counter.value
-      gid_key = gid_counter.put()
-      return ret
-
-   @classmethod
-   def next_value(cls):
-      return cls.__next_value()
-
-
 def is_int( x ):
    try:
       y = int(x)
@@ -122,7 +95,7 @@ class Gateway( storagetypes.Object ):
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
    
-   closure = storagetypes.Text()                # gateway-specific configuration
+   closure = storagetypes.Text()                # closure data for this gateway
    
    # for RPC
    key_type = "gateway"
@@ -159,9 +132,9 @@ class Gateway( storagetypes.Object ):
    
    
    write_attrs = [
+      "closure",
       "host",
       "port",
-      "closure",
       "cert_expires",
       "session_expires",
       "session_timeout"
@@ -307,7 +280,7 @@ class Gateway( storagetypes.Object ):
       return 0
       
    
-   def protobuf_cert( self, cert_pb, need_closure=True ):
+   def protobuf_cert( self, cert_pb, need_closure=False ):
       """
       Populate an ms_volume_gateway_cred structure
       """
@@ -322,12 +295,12 @@ class Gateway( storagetypes.Object ):
       cert_pb.cert_expires = self.cert_expires
       cert_pb.volume_id = self.volume_id
       
-      if self.closure == None or not need_closure:
+      if self.closure is None or not need_closure:
          cert_pb.closure_text = ""
          
       elif self.closure is not None:
          cert_pb.closure_text = str( self.closure )
-         
+      
       cert_pb.signature = ""
 
       if self.gateway_public_key != None:
@@ -531,17 +504,18 @@ class Gateway( storagetypes.Object ):
       Update a gateway identified by ID with fields specified as keyword arguments.
       '''
       
+      # get gateway ID
       try:
          g_id = int(g_name_or_id)
       except:
          gateway = Gateway.Read( g_name_or_id )
-         if gateway:
+         if gateway is not None:
             g_id = gateway.g_id 
          else:
             raise Exception("No such Gateway '%s'" % g_name_or_id )
       
       if len(fields.keys()) == 0:
-         return storagetypes.make_key( Gateway, storagetypes.make_key_name( g_id=g_id ) )
+         return True
       
       # validate...
       invalid = cls.validate_fields( fields )
