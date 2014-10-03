@@ -282,12 +282,14 @@ unsigned char* sha256_fd( int fd ) {
 char* load_file( char const* path, size_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
-   if( rc != 0 )
+   if( rc != 0 ) {
       return NULL;
+   }
    
-   char* ret = (char*)calloc( statbuf.st_size, 1 );
-   if( ret == NULL )
+   char* ret = CALLOC_LIST( char, statbuf.st_size );
+   if( ret == NULL ) {
       return NULL;
+   }
    
    FILE* f = fopen( path, "r" );
    if( !f ) {
