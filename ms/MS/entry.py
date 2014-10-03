@@ -1777,28 +1777,6 @@ class MSEntry( storagetypes.Object ):
             # not empty
             storagetypes.concurrent_return( -errno.ENOTEMPTY )
          
-         """
-         # see if we can get a child
-         qry_ents = MSEntry.query()
-         qry_ents = qry_ents.filter( MSEntry.volume_id == ent.volume_id, MSEntry.parent_id == ent.file_id )
-         child = yield qry_ents.fetch_async( 1, keys_only=True )
-
-         if len(child) != 0:
-            # attempt to get this (since queries are eventually consistent, but gets on an entity group are strongly consistent)
-            child_ent = yield child[0].get_async()
-
-            if child_ent is not None:
-               
-               log.info("Directory %s (%s) has child %s (%s)" % (ent.file_id, ent.name, child_ent.file_id, child_ent.name) )
-               
-               yield MSEntry.__delete_undo_async( ent )
-
-               # uncache
-               storagetypes.memcache.delete( ent_cache_key_name )
-               
-               # not empty
-               storagetypes.concurrent_return( -errno.ENOTEMPTY )
-         """
                
       # otherwise, ent is a file.  Make sure there are no outstanding writes that need to be vacuumed 
       else:
@@ -1972,7 +1950,7 @@ class MSEntry( storagetypes.Object ):
       root_file_id = MSEntry.unserialize_id(0)
       
       root_ent = MSEntry.Read( volume, root_file_id )
-      if root_ent == None:
+      if root_ent is None:
          # done here
          return 0
       
