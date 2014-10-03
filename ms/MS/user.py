@@ -62,24 +62,6 @@ except ImportError:
       raise Exception("No way to validate e-mails!")
    
 
-
-
-class SyndicateUIDCounter( storagetypes.Object ):
-   value = storagetypes.Integer()
-
-   required_attrs = [
-      "value"
-   ]
-
-   default_values = {
-      "value" : (lambda cls, attrs: 1000)
-   }
-
-   @classmethod
-   def make_key_name( cls, **args ):
-      return "SyndicateUIDCounter"
-
-
 class SyndicateUserNameHolder( storagetypes.Object ):
    '''
    Mark a SyndicateUser email as taken
