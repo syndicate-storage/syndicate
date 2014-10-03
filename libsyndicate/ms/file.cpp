@@ -337,8 +337,7 @@ static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_
    if( num_expected_ents > 0 ) {
       // get the entries.
       
-      // First, sanity check: verify no duplicate names or IDs
-      set<string> names;
+      // First, sanity check: verify no duplicate IDs
       set<uint64_t> ids;
       
       for( int i = 0; i < num_expected_ents; i++ ) {
@@ -346,12 +345,11 @@ static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_
          string name = reply->listing().entries(i).name();
          uint64_t id = reply->listing().entries(i).file_id();
          
-         if( names.count(string(name)) != 0 || ids.count(id) ) {
+         if( ids.count(id) ) {
             errorf("ERR: Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
             rc = -EBADMSG;
          }
          
-         names.insert( name );
          ids.insert( id );
       }
       
