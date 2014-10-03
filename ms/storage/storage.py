@@ -259,7 +259,7 @@ def update_volume( volume_name_or_id, **fields ):
 # ----------------------------------
 def delete_volume( volume_name_or_id ):
    volume = Volume.Read( volume_name_or_id )
-   if volume == None:
+   if volume is None:
       return True
    
    ret = Volume.Delete( volume.volume_id )
