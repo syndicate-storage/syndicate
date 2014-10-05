@@ -1077,7 +1077,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
       // find the one(s) that finished 
       for( md_download_set_iterator itr = md_download_set_begin( &read_ctx->dlset ); itr != md_download_set_end( &read_ctx->dlset ); ) {
          
-         // extract current iterator
+         // extract current iterator, so we can safely manipulate it
          md_download_set_iterator curr_itr = itr;
          itr++;
          
