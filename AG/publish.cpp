@@ -535,36 +535,107 @@ static int AG_generate_stages_delete( struct ms_client* client, AG_fs_map_t* to_
 }
 
 
-// clean up a list of network contexts 
-static int AG_network_contexts_cancel_and_free( struct ms_client* client, struct md_download_set* dlctx, struct ms_client_network_context* contexts, int num_contexts ) {
+// free up a batch request's data 
+static int AG_batch_request_free( struct AG_batch_request* request ) {
+   
+   if( request->nctx != NULL ) {
+      ms_client_network_context_free( request->nctx );
+      free( request->nctx );
+      request->nctx = NULL;
+   }
+   
+   memset( request, 0, sizeof(struct AG_batch_request) );
+   return 0;
+}
+
+// cancel a single batch request 
+static int AG_batch_request_cancel( struct ms_client* client, struct md_download_set* dlset, struct AG_batch_request* request ) {
+   
+   struct ms_client_network_context* nctx = request->nctx;
+   
+   if( nctx == NULL ) {
+      return 0;
+   }
+   
+   // stop tracking
+   if( dlset != NULL ) {
+      md_download_set_clear( dlset, nctx->dlctx );  
+   }
+   
+   // destroy the context 
+   int rc = ms_client_multi_cancel( client, nctx );
+   if( rc != 0 ) {
+      // shouldn't happen
+      errorf("BUG: ms_client_multi_cancel(%p) rc = %d\n", nctx->dlctx, rc );
+   }
+   
+   return rc;
+}
+
+// clean up the network state of a list of batch requests
+static int AG_batch_requests_cancel_and_free( struct ms_client* client, struct md_download_set* dlset, struct AG_batch_request* requests, int num_contexts ) {
+   
    // failed to set up.  clean up
    for( int i = 0; i < num_contexts; i++ ) {
       
-      // stop tracking
-      if( contexts[i].dlset != NULL ) {
-         md_download_set_clear( contexts[i].dlset, contexts[i].dlctx );  
-      }
+      AG_batch_request_cancel( client, dlset, &requests[i] );
       
-      // destroy the context 
-      int rc = ms_client_multi_cancel( client, &contexts[i] );
-      if( rc != 0 ) {
-         // shouldn't happen
-         errorf("BUG: ms_client_multi_cancel(%p) rc = %d\n", contexts[i].dlctx, rc );
-      }
-   }
-   
-   for( int i = 0; i < num_contexts; i++ ) {
-      ms_client_network_context_free( &contexts[i] );
+      AG_batch_request_free( &requests[i] );
    }
    
    return 0;
 }
 
+// clean up all batches 
+static int AG_batch_request_free_all( struct AG_batch_request* batches, int num_batches ) {
+   
+   for( int i = 0; i < num_batches; i++ ) {
+      
+      AG_batch_request_free( &batches[i] );
+   }
+   
+   return 0;
+}
+
+// restart a single batch of operations 
+// allocate the network context, if needed.
+// return 0 on success, negative on error
+static int AG_restart_operation( struct ms_client* client, struct AG_batch_request* batch, int oper, int flags, struct ms_client_request* reqs, int num_reqs, struct md_download_set* dlset ) {
+   
+   // sanity check
+   if( batch->nctx != NULL && batch->nctx->started ) {
+      return -EINVAL;
+   }
+   
+   if( batch->nctx == NULL ) {
+      
+      batch->nctx = CALLOC_LIST( struct ms_client_network_context, 1 );
+      
+      if( batch->nctx == NULL ) {
+         return -ENOMEM;
+      }
+   }
+   
+   // set up the request 
+   batch->reqs = reqs;
+   batch->num_reqs = num_reqs;
+   batch->retries ++;
+   
+   dbprintf("(Re)start operations %p (%d requests)\n", reqs, num_reqs );
+   
+   int rc = ms_client_multi_begin( client, oper, flags, reqs, num_reqs, batch->nctx, dlset );
+   if( rc != 0 ) {
+      errorf("ms_client_multi_begin(%p) rc = %d\n", batch->nctx->dlctx, rc );
+   }
+   
+   return rc;
+}
 
 // start up to num_connections, with up to max_batch operations.
-// track network contexts with the download_set
-// return the number started
-static int AG_start_operations( struct ms_client* client, struct ms_client_network_context* contexts, int num_connections, int oper, int flags, int max_batch,
+// track each batch's network context with the download_set
+// return the number started, or negative on error.
+// If this method fails, you should call AG_batch_request_free_all() on the batches to clean up
+static int AG_start_operations( struct ms_client* client, struct AG_batch_request* batches, int num_connections, int oper, int flags, int max_batch,
                                 AG_request_list_t* reqs, int req_offset,
                                 struct md_download_set* dlset, int* ret_rc ) {
    
@@ -576,13 +647,9 @@ static int AG_start_operations( struct ms_client* client, struct ms_client_netwo
    for( int i = 0; i < num_connections && (unsigned)(req_offset + offset) < reqs->size(); i++ ) {
       
       // find a free connection 
-      if( contexts[i].started ) {
+      if( batches[i].nctx != NULL && batches[i].nctx->started ) {
          continue;
       }
-      
-      // attach this context's dlctx to this download set 
-      ms_client_network_context_set( &contexts[i], dlset );
-      
       
       size_t num_reqs = MIN( (unsigned)max_batch, reqs->size() - offset );
       if( num_reqs == 0 ) {
@@ -592,10 +659,13 @@ static int AG_start_operations( struct ms_client* client, struct ms_client_netwo
       // NOTE: vectors are guaranteed by C++ to be contiguous in memory
       struct ms_client_request* msreqs = &reqs->at( req_offset + offset );
       
-      // start running operations
-      rc = ms_client_multi_begin( client, oper, flags, msreqs, num_reqs, &contexts[i] );
+      // set up the batch request 
+      batches[i].retries = 0;
+      
+      // start the batch request
+      rc = AG_restart_operation( client, &batches[i], oper, flags, msreqs, num_reqs, dlset );
       if( rc != 0 ) {
-         errorf("ms_client_multi_begin(%p) rc = %d\n", contexts[i].dlctx, rc );
+         errorf("AG_start_operation(%p) rc = %d\n", batches[i].nctx->dlctx, rc );
          break;
       }
       
@@ -615,7 +685,11 @@ static int AG_start_operations( struct ms_client* client, struct ms_client_netwo
 
 
 // finish an operation on a stage.  Return 0 on success; return -ENOMEM if out of memory; return an MS-given error if the requests failed.
-static int AG_finish_operation( struct ms_client* client, struct ms_client_network_context* nctx, struct AG_request_stage* stage ) {
+static int AG_finish_operation( struct ms_client* client, struct AG_batch_request* req, struct AG_request_stage* stage ) {
+   
+   if( req->nctx == NULL ) {
+      return -EINVAL;   
+   }
    
    int rc = 0;
    struct ms_client_multi_result results;
@@ -623,9 +697,9 @@ static int AG_finish_operation( struct ms_client* client, struct ms_client_netwo
    memset( &results, 0, sizeof(struct ms_client_multi_result) );
    
    // finish and get results
-   rc = ms_client_multi_end( client, &results, nctx );
+   rc = ms_client_multi_end( client, &results, req->nctx );
    if( rc != 0 ) {
-      errorf("ms_client_multi_end(%p (stage=%d)) rc = %d\n", nctx->dlctx, stage->depth, rc );
+      errorf("ms_client_multi_end(%p (stage=%d)) rc = %d\n", req->nctx->dlctx, stage->depth, rc );
       return rc;
    }
    
@@ -655,8 +729,9 @@ static int AG_finish_operation( struct ms_client* client, struct ms_client_netwo
 
 
 // run a list of requests for a stage, but don't open more than max_connections connections and don't send more than max_batch operations
+// retry operations if they fail with -EAGAIN, up to client->conf->max_metadata_write_retry times.
 // return 0 on success
-// return negative on failure (i.e. due to network failure, or MS operational failure)
+// return negative on failure (i.e. due to persistent network failure, or MS operational failure)
 // if an MS operational failure code is NOT listed in tolerated_operational_errors, this method fails fast on the first error encountered.
 // otherwise, MS operational errors in tolerated_operational_errors will be masked (but will be recorded in stage->results->reply_error)
 // if this method fails to process a request, stage->error will be set to the returned error code, and stage->failed_reqs will be set to the request list that was being procesed.
@@ -684,21 +759,24 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
       return 0;
    }
    
-   // network contexts 
-   struct ms_client_network_context* contexts = CALLOC_LIST( struct ms_client_network_context, max_connections );
+   // batch requests 
+   struct AG_batch_request* batches = CALLOC_LIST( struct AG_batch_request, max_connections );
+   if( batches == NULL ) {
+      return -ENOMEM;
+   }
    
-   // download set for the contexts 
+   // download set for the batches 
    struct md_download_set dlset;
    md_download_set_init( &dlset );
    
    // start batch operations 
-   started = AG_start_operations( client, contexts, max_connections, oper, stage->flags, max_batch, reqs, 0, &dlset, &rc );
+   started = AG_start_operations( client, batches, max_connections, oper, stage->flags, max_batch, reqs, 0, &dlset, &rc );
    
    if( rc != 0 ) {
       // failed to set up.  clean up
-      AG_network_contexts_cancel_and_free( client, &dlset, contexts, started );
+      AG_batch_request_free_all( batches, started );
       
-      free( contexts );
+      free( batches );
       md_download_set_free( &dlset );
       
       return rc;
@@ -725,9 +803,15 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
       // which operation(s) finished?
       for( int i = 0; i < max_connections; i++ ) {
          
-         struct md_download_context* dlctx = contexts[i].dlctx;
+         if( batches[i].nctx == NULL ) {
+            // not in use
+            continue;
+         }
+         
+         struct md_download_context* dlctx = batches[i].nctx->dlctx;
          
          if( dlctx == NULL ) {
+            // download not active
             continue;
          }
          
@@ -739,19 +823,38 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
          }
          
          // finished!  process it and keep its data around 
-         rc = AG_finish_operation( client, &contexts[i], stage );
+         rc = AG_finish_operation( client, &batches[i], stage );
          if( rc != 0 ) {
             
-            // failed to finish.
+            if( rc == -EAGAIN ) {
+               
+               // connetion timed out.  Try these requests again 
+               if( batches[i].retries <= AG_REQUEST_MAX_RETRIES ) {
+                  
+                  dbprintf("Retry batch %p (%zu requests)\n", batches[i].reqs, batches[i].num_reqs );
+                  
+                  // retry this request
+                  rc = AG_restart_operation( client, &batches[i], oper, stage->flags, batches[i].reqs, batches[i].num_reqs, &dlset );
+                  if( rc != 0 ) {
+                     errorf("AG_restart_operation(%p stage=%d) rc = %d\n", batches[i].nctx->dlctx, stage->depth, rc );
+                  }
+                  else {
+                     
+                     // this one is running
+                     num_running++;
+                  }
+               }
+            }
+            
             // mask this error?
-            if( tolerated_operational_errors != NULL && tolerated_operational_errors->count( rc ) > 0 ) {
+            else if( tolerated_operational_errors != NULL && tolerated_operational_errors->count( rc ) > 0 ) {
                
                // this isn't considered to be an error by the caller 
                rc = 0;
                finished.insert(i);
             }
             
-            else {
+            if( rc != 0 ) {
                // Otherwise, remember where ths stage failed 
                stage->error = rc;
                
@@ -774,7 +877,7 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
          // start more downloads, if there are more left 
          if( offset < (signed)reqs->size() ) {
             
-            started = AG_start_operations( client, contexts, oper, stage->flags, max_connections, max_batch, reqs, offset, &dlset, &rc );
+            started = AG_start_operations( client, batches, oper, stage->flags, max_connections, max_batch, reqs, offset, &dlset, &rc );
             if( rc != 0 ) {
                
                // failed to start 
@@ -791,10 +894,10 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
                
                offset += started;
                
-               // discount all now-running contexts from our finished set
+               // discount all now-running batches from our finished set
                for( int j = 0; j < num_running; j++ ) {
                   
-                  if( contexts[j].started ) {
+                  if( batches[j].nctx != NULL && batches[j].nctx->started ) {
                      if( finished.count(j) > 0 ) {
                         finished.erase(j);
                         num_running++;
@@ -815,8 +918,8 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
          
          int i = *itr;
          
-         if( contexts[i].dlctx != NULL ) {
-            md_download_set_clear( &dlset, contexts[i].dlctx );
+         if( batches[i].nctx != NULL ) {
+            md_download_set_clear( &dlset, batches[i].nctx->dlctx );
          }
       }
       
@@ -828,13 +931,14 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
    
    if( rc != 0 ) {
       // clean up on error from the operations loop
-      AG_network_contexts_cancel_and_free( client, &dlset, contexts, max_connections );
+      AG_batch_requests_cancel_and_free( client, &dlset, batches, max_connections );
    }
    
    
    md_download_set_free( &dlset );
    
-   free( contexts );
+   AG_batch_request_free_all( batches, num_batches );
+   free( batches );
    return rc;
 }
 

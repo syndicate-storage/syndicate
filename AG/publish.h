@@ -28,7 +28,7 @@
 #define AG_REQUEST_DIRS_FIRST               0x2
 #define AG_REQUEST_USE_DIRECTIVES           0x4
 
-#define AG_REQUEST_DELETE_MAX_RETRIES           5
+#define AG_REQUEST_MAX_RETRIES           5
 
 struct AG_request_stage;
 
@@ -40,6 +40,18 @@ typedef int (*AG_request_stage_generator_t)( struct ms_client*, AG_fs_map_t*, AG
 typedef map<uint64_t, char*> AG_request_parent_map_t;
 
 typedef set<int> AG_operational_error_set_t;
+
+// state associated with a batch request 
+struct AG_batch_request {
+   
+   struct ms_client_network_context* nctx;
+   
+   int retries;
+   
+   // NOTE: shallow data
+   struct ms_client_request* reqs;
+   size_t num_reqs;
+};
 
 // bundle of requests to execute at a given depth
 struct AG_request_stage {
