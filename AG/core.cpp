@@ -107,7 +107,7 @@ int AG_state_config_unlock( struct AG_state* state ) {
 }
 
 // get the specfile from the AG's cert (given by the MS)
-int AG_get_spec_file_text( struct ms_client* client, char** out_specfile_text, size_t* out_specfile_text_len ) {
+int AG_get_spec_file_text_from_MS( struct ms_client* client, char** out_specfile_text, size_t* out_specfile_text_len ) {
    
    // this will be embedded in the AG's driver text as a base64-encoded string.
    int rc = 0;
@@ -171,7 +171,7 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
          rc = -ENODATA;
       }
       else {
-         dbprintf("Loaded %zu-byte specfile from %s\n", *specfile_text_len, state->ag_opts.spec_file_path );
+         dbprintf("Loaded %zu-byte specfile from %s\n", txt_len, state->ag_opts.spec_file_path );
          
          *specfile_text = txt;
          *specfile_text_len = txt_len;
@@ -180,10 +180,10 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
    }
    else {
       // read from MS 
-      rc = AG_get_spec_file_text( state->ms, specfile_text, specfile_text_len );
+      rc = AG_get_spec_file_text_from_MS( state->ms, specfile_text, specfile_text_len );
       
       if( rc != 0 ) {
-         errorf("AG_get_spec_file_text rc = %d\n", rc );
+         errorf("AG_get_spec_file_text_from_MS rc = %d\n", rc );
       }
       else {
          dbprintf("Loaded %zu-byte specfile from the MS\n", *specfile_text_len );
@@ -245,11 +245,11 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
    AG_fs_rlock( old_fs );
    AG_fs_rlock( new_fs );
    
-   dbprintf("%s", "Old FS:\n");
-   AG_dump_fs_map( old_fs->fs );
+   // dbprintf("%s", "Old FS:\n");
+   // AG_dump_fs_map( old_fs->fs );
    
-   dbprintf("%s", "New FS:\n");
-   AG_dump_fs_map( new_fs->fs );
+   // dbprintf("%s", "New FS:\n");
+   // AG_dump_fs_map( new_fs->fs );
    
    rc = AG_fs_map_transforms( old_fs->fs, new_fs->fs, &to_publish, &to_update, &to_delete, mi_equ );
    
@@ -261,15 +261,14 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
       return rc;
    }
    
-   dbprintf("%s", "Entries not on the MS that should be published:\n");
-   AG_dump_fs_map( &to_publish );
+   // dbprintf("%s", "Entries not on the MS that should be published:\n");
+   // AG_dump_fs_map( &to_publish );
    
-   dbprintf("%s", "Entries in the MS that should be updated:\n");
-   AG_dump_fs_map( &to_update );
+   // dbprintf("%s", "Entries in the MS that should be updated:\n");
+   // AG_dump_fs_map( &to_update );
    
-   dbprintf("%s", "Entries in the MS that should be deleted:\n");
-   AG_dump_fs_map( &to_delete );
-   
+   // dbprintf("%s", "Entries in the MS that should be deleted:\n");
+   // AG_dump_fs_map( &to_delete );
    
    AG_fs_wlock( new_fs );
    
@@ -625,8 +624,8 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
       return rc;
    }
    
-   dbprintf("Loaded the following file mapping into %p\n", state->ag_fs->fs );
-   AG_dump_fs_map( state->ag_fs->fs );
+   // dbprintf("Loaded the following file mapping into %p\n", state->ag_fs->fs );
+   // AG_dump_fs_map( state->ag_fs->fs );
    
    // initialize HTTP 
    state->http = CALLOC_LIST( struct md_HTTP, 1 );
@@ -774,8 +773,8 @@ int AG_start( struct AG_state* state ) {
    AG_state_fs_rlock( state );
    AG_fs_rlock( state->ag_fs );
    
-   dbprintf("%s", "Starting with the following FS map:\n");
-   AG_dump_fs_map( state->ag_fs->fs );
+   // dbprintf("%s", "Starting with the following FS map:\n");
+   // AG_dump_fs_map( state->ag_fs->fs );
    
    rc = 0;
    
