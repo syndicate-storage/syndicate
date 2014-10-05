@@ -116,6 +116,9 @@ public:
    // reference to the AG's running state 
    struct AG_state* state;
    
+   // how many pairs parsed?
+   uint64_t num_pairs_parsed;
+   
    static int64_t parse_time(char *tm_str);
    
    void reset_element_parse_state( int tag_id );

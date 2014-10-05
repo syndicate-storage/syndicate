@@ -66,6 +66,7 @@ AG_XMLMapParserHandler::AG_XMLMapParserHandler( struct AG_state* state )
    
    this->reset_element_parse_state( -1 );
    
+   this->num_pairs_parsed = 0;
    this->state = state;
 }
 
@@ -430,23 +431,26 @@ int AG_XMLMapParserHandler::pair_check_missing_fields(const XMLCh* const qname) 
 // sanitize the element buffer--strip leading whitespace
 static char* sanitize_element_buffer( char const* ro_element_buf ) {
    
-   char* element_buf = strdup( ro_element_buf );
-   char* tok_save;
-   
    char const* delim = " \n\r\t";
+   size_t len = strlen(ro_element_buf);
+   unsigned int start = 0;
    
-   char* tok = strtok_r( element_buf, delim, &tok_save );
+   for( start = 0; start < len; start++ ) {
+      
+      if( index( delim, ro_element_buf[start] ) == NULL ) {
+         break;
+      }
+   }
    
-   if( tok == NULL ) {
-      // nothing to match 
-      free( element_buf );
+   if( start >= len ) {
+      // all whitspace
       return NULL;
    }
-   else {
-      char* ret = strdup(tok);
-      free( element_buf );
-      return ret;
-   }
+   
+   char* element_buf = CALLOC_LIST( char, len - start + 1 );
+   memcpy( element_buf, ro_element_buf + start, len - start );
+   
+   return element_buf; 
 }
 
 // callback to stop parsing an xml element.
@@ -594,6 +598,12 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
                
                // put this into our map 
                (*this->xmlmap)[ path_s ] = mi;
+               
+               this->num_pairs_parsed++;
+               
+               if( (this->num_pairs_parsed % 1000) == 0 && this->num_pairs_parsed > 0 ) {
+                  dbprintf("%" PRIu64 " files processed so far...\n", this->num_pairs_parsed);
+               }
             }
          }
       }
