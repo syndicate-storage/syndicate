@@ -62,21 +62,24 @@ int driver_shutdown( void* driver_state ) {
    
    struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
    
-   // shut down 
-   int rc = shell_driver_state_stop( state );
-   if( rc != 0 ) {
-      errorf("shell_driver_state_stop rc = %d\n", rc );
-      return rc;
+   if( state != NULL ) {
+      // shut down 
+      int rc = shell_driver_state_stop( state );
+      if( rc != 0 ) {
+         errorf("shell_driver_state_stop rc = %d\n", rc );
+         return rc;
+      }
+      
+      // free 
+      rc = shell_driver_state_free( state );
+      if( rc != 0 ) {
+         errorf("shell_driver_state_free rc = %d\n", rc );
+         return rc;
+      }
+   
+      free( state );
    }
    
-   // free 
-   rc = shell_driver_state_free( state );
-   if( rc != 0 ) {
-      errorf("shell_driver_state_free rc = %d\n", rc );
-      return rc;
-   }
-   
-   free( state );
    return 0;
 }
 
