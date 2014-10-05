@@ -101,7 +101,7 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
 int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest );
 
 // multi-RPC API
-int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx );
+int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx, struct md_download_set* dlset );
 int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result* results, struct ms_client_network_context* nctx );
 int ms_client_multi_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
 
@@ -127,7 +127,7 @@ int ms_client_single_rpc( struct ms_client* client, int ms_op, int ms_op_flags, 
 int ms_client_update_rpc( struct ms_client* client, struct md_update* up );
 
 int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_updates, ms::ms_reply* reply, bool verify_response );
-int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx );
+int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx, struct md_download_set* dlset );
 int ms_client_send_updates_end( struct ms_client* client, ms::ms_reply* reply, bool verify_response, struct ms_client_network_context* nctx );
 
 // parsing

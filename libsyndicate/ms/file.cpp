@@ -35,7 +35,7 @@ static long ms_client_hash( uint64_t volume_id, uint64_t file_id ) {
 
 // begin posting file data
 // return 0 on success, negative on error
-static int ms_client_send_begin( struct ms_client* client, char const* url, char const* data, size_t len, struct ms_client_network_context* nctx ) {
+static int ms_client_send_begin( struct ms_client* client, char const* url, char const* data, size_t len, struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
    
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
@@ -44,7 +44,7 @@ static int ms_client_send_begin( struct ms_client* client, char const* url, char
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-metadata-updates", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, data, CURLFORM_BUFFERLENGTH, len, CURLFORM_END );
 
    // initialize the context 
-   ms_client_network_context_upload_init( nctx, url, post );
+   ms_client_network_context_upload_init( nctx, url, post, dlset );
    
    // start the upload
    rc = ms_client_network_context_begin( client, nctx );
@@ -500,7 +500,7 @@ int ms_client_num_expected_reply_ents( size_t num_reqs, int op ) {
 // ms_op should be one of the ms::ms_update::* values
 // ms_op_flags only really applies to ms::ms_update::SETXATTR
 // return 0 on success, negative on failure
-int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx ) {
+int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
    
    int rc = 0;
    
@@ -536,7 +536,7 @@ int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags,
    char* serialized_updates = NULL;
    
    // start posting 
-   rc = ms_client_send_updates_begin( client, updates, &serialized_updates, nctx );
+   rc = ms_client_send_updates_begin( client, updates, &serialized_updates, nctx, dlset );
    if( rc < 0 ) {
       errorf("ms_client_send_updates_begin rc = %d\n", rc );
       
@@ -667,7 +667,7 @@ int ms_client_single_rpc( struct ms_client* client, int ms_op, int ms_op_flags, 
    memset( &nctx, 0, sizeof(struct ms_client_network_context) );
    
    // start creating 
-   rc = ms_client_multi_begin( client, ms_op, ms_op_flags, request, 1, &nctx );
+   rc = ms_client_multi_begin( client, ms_op, ms_op_flags, request, 1, &nctx, NULL );
    if( rc != 0 ) {
       errorf("ms_client_multi_begin rc = %d\n", rc );
       return rc;
@@ -955,7 +955,7 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 // return 0 on success, and allocate *serialized_updates to hold the serialized update set (which the caller must free once the transfer finishes)
 // return 1 if we didn't have an error, but had nothing to send.
 // return negative on error 
-int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx ) {
+int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_updates, struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
    
    int rc = 0;
    
@@ -991,7 +991,7 @@ int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set
    char* file_url = ms_client_file_url( client->url, volume_id );
 
    // start sending 
-   rc = ms_client_send_begin( client, file_url, update_text, update_text_len, nctx );
+   rc = ms_client_send_begin( client, file_url, update_text, update_text_len, nctx, dlset );
    if( rc != 0 ) {
       errorf("ms_client_send_begin(%s) rc = %d\n", file_url, rc );
       free( update_text );
@@ -1034,7 +1034,7 @@ int ms_client_send_updates( struct ms_client* client, ms_client_update_set* all_
    
    memset( &nctx, 0, sizeof(struct ms_client_network_context) );
    
-   rc = ms_client_send_updates_begin( client, all_updates, &serialized_updates, &nctx );
+   rc = ms_client_send_updates_begin( client, all_updates, &serialized_updates, &nctx, NULL );
    if( rc < 0 ) {
       
       errorf("ms_client_send_updates_begin rc = %d\n", rc );
@@ -1639,9 +1639,11 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
       rc = 0;
       
       // find the one(s) that finished...
-      for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
+      // for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
+      for( unsigned int i = 0; i < num_downloads; i++ ) {
          
-         struct md_download_context* dlctx = md_download_set_iterator_get_context( itr );
+         // struct md_download_context* dlctx = md_download_set_iterator_get_context( itr );
+         struct md_download_context* dlctx = path_downloads[i].dlctx;
          
          if( dlctx == NULL ) {
             continue;
@@ -1766,7 +1768,7 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
          }
       }
       
-      // clear the ones that succeeded from the download set 
+      // clear the ones that succeeded from the download set, so we don't wait on them
       for( unsigned int i = 0; i < succeeded.size(); i++ ) {
          
          md_download_set_clear( &path_download_set, succeeded[i] );
