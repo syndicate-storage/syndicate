@@ -195,12 +195,11 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 int ms_client_is_async_operation( int oper );
 
 // ioctls on network contexts 
-int ms_client_network_context_set( struct ms_client_network_context* nctx, struct md_download_set* dlset );
 int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
 
 // network contexts
-int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers );
-int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms );
+int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers, struct md_download_set* dlset );
+int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms, struct md_download_set* dlset );
 int ms_client_network_context_free( struct ms_client_network_context* nctx );
 
 int ms_client_network_context_begin( struct ms_client* client, struct ms_client_network_context* nctx );
@@ -211,7 +210,7 @@ void* ms_client_network_context_get_cls( struct ms_client_network_context* nctx 
 
 // higher-level network I/O 
 int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply );
-int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx );
+int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx, struct md_download_set* dlset );
 int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct ms_client_network_context* nctx );
 
 // CDN access closure

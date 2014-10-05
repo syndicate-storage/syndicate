@@ -355,7 +355,7 @@ int ms_client_destroy( struct ms_client* client ) {
 }
 
 
-// open a metadata connection to the MS
+// open a metadata connection to the MS.  Preserve all connection state in dlctx.  Optionally have opt_dlset track dlctx (if it's not NULL), so the caller can wait on batches of dlctx instances
 // return 0 on success, negative on error
 // if opt_dlset is not NULL, then add the resulting download context to it.  NOTE: opt_dlset must NOT be freed until ms_client_download_end() is called for this download context!
 int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* times ) {
@@ -416,8 +416,13 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
    return 0;
 }
 
-// shut down a metadata connection to the MS
-// return the HTTP status on success, negative on failure, or the positive CURL Error code on error
+// shut down a metadata connection to the MS.  Free up the state in dlctx.
+// this method returns:
+// * -EAGAIN if we got no data
+// * the negative errno if errno was set by a connection disruption
+// * the positive HTTP status if it's an error status (i.e. >= 400)
+// * the positive error code returned by libcurl (i.e. < 100)
+// * the positive HTTP status (between 200 and 399) if we succeeded
 int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len ) {
    
    // wait for the download to finish 
@@ -458,8 +463,12 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
       if( os_errno != 0 ) {
          rc = -abs(os_errno);
       }
-      else if( http_status != 0 ) {
+      else if( http_status >= 400 ) {
          rc = http_status;
+      }
+      else if( curl_rc == CURLE_GOT_NOTHING ) {
+         // got disconnected; try again
+         rc = -EAGAIN;
       }
       else {
          rc = curl_rc;
@@ -503,6 +512,7 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
 }
 
 // begin uploading to the MS.
+// dlctx serves as the state to be preserved between ms_client_upload_begin and ms_client_upload_end.  Do not free it!
 // if opt_dlset is given, add dlctx to it (in which case, opt_dlset cannot be freed until calling ms_client_upload_end() with this dlctx)
 // return 0 on success; negative on failure
 int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing ) {
@@ -567,7 +577,7 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
 }
 
 
-// finish uploading from the MS.  Get back the HTTP status and response buffer 
+// finish uploading from the MS.  Get back the HTTP status and response buffer.  Free up the state in dlctx.
 // return the HTTP response on success; negative on error
 int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen ) {
    
@@ -628,10 +638,7 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, s
 
 
 // set up a download
-int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers ) {
-   
-   // preserve the download set, which could have been set independently 
-   struct md_download_set* dlset = nctx->dlset;
+int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers, struct md_download_set* dlset ) {
    
    memset( nctx, 0, sizeof(struct ms_client_network_context) );
    
@@ -651,10 +658,7 @@ int ms_client_network_context_download_init( struct ms_client_network_context* n
 }
 
 // set up an upload 
-int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms ) {
-   
-   // preserve the download set, which could have been set independently 
-   struct md_download_set* dlset = nctx->dlset;
+int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms, struct md_download_set* dlset ) {
    
    memset( nctx, 0, sizeof(struct ms_client_network_context) );
    
@@ -673,12 +677,6 @@ int ms_client_network_context_upload_init( struct ms_client_network_context* nct
    return 0;
 }
 
-// use a download set for this network context 
-int ms_client_network_context_set( struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
-   nctx->dlset = dlset;
-   return 0;
-}
-
 // cancel a running download
 int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx ) {
    if( nctx->dlctx != NULL ) {
@@ -690,6 +688,7 @@ int ms_client_network_context_cancel( struct ms_client* client, struct ms_client
          CURL* curl = NULL;
          
          if( nctx->dlset != NULL ) {
+            // remove ourselves from the download set
             md_download_set_clear( nctx->dlset, nctx->dlctx );
          }
          
@@ -727,6 +726,7 @@ int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
          CURL* curl = NULL;
          
          if( nctx->dlset != NULL ) {
+            // remove ourselves from the download set
             md_download_set_clear( nctx->dlset, nctx->dlctx );
          }
          
@@ -799,27 +799,27 @@ int ms_client_network_context_begin( struct ms_client* client, struct ms_client_
 
 
 // wait for and finish a network context
-// return the HTTP status on success
-// return -errno on OS-level error
+// return the HTTP status on successful HTTP-level communication (could be an error, though)
+// return -errno on OS-level error (or if the connection timed out)
 // return positive error code (< 200) on CURL error
 int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len ) {
    
-   int http_status = 0;
+   int http_status_or_error_code = 0;
    char const* method = NULL;
    
    if( nctx->upload ) {
       
       method = "ms_client_upload_end";
-      http_status = ms_client_upload_end( client, nctx->dlctx, result_buf, result_len );
+      http_status_or_error_code = ms_client_upload_end( client, nctx->dlctx, result_buf, result_len );
    }
    else {
       
       method = "ms_client_download_end";
-      http_status = ms_client_download_end( client, nctx->dlctx, result_buf, result_len );
+      http_status_or_error_code = ms_client_download_end( client, nctx->dlctx, result_buf, result_len );
    }
    
-   if( http_status != 200 ) {
-      errorf("%s(%s) rc = %d\n", method, nctx->url, http_status );
+   if( http_status_or_error_code != 200 ) {
+      errorf("%s(%s) rc = %d\n", method, nctx->url, http_status_or_error_code );
    }
    
    if( nctx->dlctx != NULL ) {
@@ -828,9 +828,10 @@ int ms_client_network_context_end( struct ms_client* client, struct ms_client_ne
       nctx->dlctx = NULL;
    }
    
+   nctx->started = false;
    nctx->ended = true;
    
-   return http_status;
+   return http_status_or_error_code;
 }
 
 
@@ -1117,10 +1118,10 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 
 // asynchronously start fetching data from the MS 
 // client cannot be locked
-int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx ) {
+int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
    
    // set up the download 
-   ms_client_network_context_download_init( nctx, url, NULL );
+   ms_client_network_context_download_init( nctx, url, NULL, dlset );
    
    // start downloading 
    int rc = ms_client_network_context_begin( client, nctx );
@@ -1215,7 +1216,7 @@ int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* ur
    memset( &nctx, 0, sizeof(struct ms_client_network_context) );
    
    // start reading
-   rc = ms_client_read_begin( client, url, &nctx );
+   rc = ms_client_read_begin( client, url, &nctx, NULL );
    if( rc != 0 ) {
       errorf("ms_client_read_begin(%s) rc = %d\n", url, rc );
       return rc;
