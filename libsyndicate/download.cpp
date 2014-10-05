@@ -525,7 +525,7 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
 // if a download context is part of a download set, remove it 
 int md_download_context_clear_set( struct md_download_context* dlctx ) {
 
-   if( dlctx->dlset != NULL ) {
+   if( dlctx != NULL && dlctx->dlset != NULL ) {
       md_download_set_clear( dlctx->dlset, dlctx );
       dlctx->dlset = NULL;
    }
@@ -682,7 +682,7 @@ int md_download_set_clear_itr( struct md_download_set* dlset, const md_download_
 // don't do this in e.g. a for() loop where you're iterating over download contexts
 int md_download_set_clear( struct md_download_set* dlset, struct md_download_context* dlctx ) {
 
-   if( dlset->waiting != NULL ) {
+   if( dlctx != NULL && dlset->waiting != NULL ) {
       dlset->waiting->erase( dlctx );
       dlctx->dlset = NULL;
    }
