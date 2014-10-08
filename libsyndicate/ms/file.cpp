@@ -135,6 +135,12 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
 
       struct md_update* update = &itr->second;
       
+      // verify that we have a valid update type...
+      if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
+         errorf("Invalid update type %d\n", update->op );
+         return -EINVAL;
+      }
+      
       ms_client_md_entry_sanity_check( &update->ent );
       
       ms::ms_update* ms_up = ms_updates->add_updates();
@@ -301,6 +307,8 @@ static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_
    
    // sanity check--did anything get through at all?
    if( num_items_processed == 0 ) {
+      errorf("MS processed %d items\n", num_items_processed );
+      
       results->reply_error = reply->error();
       return -ENODATA;
    }
@@ -422,6 +430,8 @@ int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
       result->num_ents = 0;
    }
    
+   memset( result, 0, sizeof(struct ms_client_multi_result) );
+   
    return 0;
 }
 
@@ -527,7 +537,7 @@ int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags,
       // destination?  i.e. due to a RENAME?
       // shallow-copy it over
       if( reqs[i].dest != NULL ) {
-         memcpy( &up.dest, reqs[i].dest, sizeof(struct md_entry) );
+         up.dest = *(reqs[i].dest);
       }
       
       ms_client_add_update( updates, &up );
@@ -967,7 +977,11 @@ int ms_client_send_updates_begin( struct ms_client* client, ms_client_update_set
 
    // pack the updates into a protobuf
    ms::ms_updates ms_updates;
-   ms_client_update_set_serialize( all_updates, &ms_updates );
+   rc = ms_client_update_set_serialize( all_updates, &ms_updates );
+   if( rc != 0 ) {
+      errorf("ms_client_update_set_serialize rc = %d\n", rc );
+      return rc;
+   }
 
    // sign it
    rc = ms_client_sign_updates( client->my_key, &ms_updates );
@@ -1223,7 +1237,7 @@ static int ms_client_path_download_context_init( struct ms_client* client, struc
 // free an ms path download context 
 static int ms_client_path_download_context_free( struct ms_path_download_context* pdlctx ) {
 
-   if( pdlctx->dlctx ) {
+   if( pdlctx->dlctx != NULL ) {
       if( !md_download_context_finalized( pdlctx->dlctx ) ) {
          // wait for it...
          md_download_context_wait( pdlctx->dlctx, -1 );
@@ -1507,15 +1521,17 @@ static int ms_client_consume_listing_page( struct ms_client* client, struct ms_p
       
       errorf("%s", "WARN: listing.status == NOCHANGE\n" );
       
-      dbprintf("Ignore page %d (entries: %zu)\n", pdlctx->page_id, listing.entries->size() );
-      
-      if( listing.entries->size() > 1 ) {
-         // NOTE: entries[0] is the parent directory 
-         // ask for more
-         *have_more = true;
-      }
-      
       if( have_listing ) {
+            
+         if( listing.entries != NULL ) {
+            dbprintf("Ignore page %d (entries: %zu)\n", pdlctx->page_id, listing.entries->size() );
+            
+            if( listing.entries->size() > 1 ) {
+               // NOTE: entries[0] is the parent directory 
+               // ask for more
+               *have_more = true;
+            }
+         }
          
          // don't need to remember this 
          ms_client_free_listing( &listing );
@@ -1599,7 +1615,6 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
       attempts[ path_downloads[i].dlctx ] = 0;
    }
    
-   
    // set up a download set to track these downloads 
    struct md_download_set path_download_set;
    
@@ -1611,6 +1626,10 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
       rc = md_download_set_add( &path_download_set, path_downloads[i].dlctx );
       if( rc != 0 ) {
          errorf("md_download_set_add rc = %d\n", rc );
+         
+         for( unsigned int j = 0; j < num_downloads; j++ ) {
+            md_download_set_clear( &path_download_set, path_downloads[i].dlctx );
+         }
          
          md_download_set_free( &path_download_set );
          return rc;
@@ -1639,10 +1658,8 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
       rc = 0;
       
       // find the one(s) that finished...
-      // for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
       for( unsigned int i = 0; i < num_downloads; i++ ) {
          
-         // struct md_download_context* dlctx = md_download_set_iterator_get_context( itr );
          struct md_download_context* dlctx = path_downloads[i].dlctx;
          
          if( dlctx == NULL ) {
@@ -1778,24 +1795,34 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
          
          dbprintf("Cancel %d path downloads on error (rc = %d)\n", num_downloads, rc );
          
-         vector<struct md_download_context*> downloads;
-         
-         // clear all 
-         for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
+         for( unsigned int i = 0; i < num_downloads; i++ ) {
             
-            struct md_download_context* dlctx = md_download_set_iterator_get_context( itr );
-            downloads.push_back( dlctx );
-         }
-         
-         for( unsigned int i = 0; i < downloads.size(); i++ ) {
-            
-            md_download_set_clear( &path_download_set, downloads[i] );
+            if( path_downloads[i].dlctx != NULL ) {
+               md_download_set_clear( &path_download_set, path_downloads[i].dlctx );
+            }
          }
          
          // cancel all
          int cancel_rc = ms_client_cancel_path_downloads( client, path_downloads, num_downloads );
          if( cancel_rc != 0 ) {
             errorf("ms_client_cancel_path_downloads rc = %d\n", cancel_rc );
+         }
+         
+         break;
+      }
+   }
+   
+   if( rc == 0 ) {
+      
+      // make sure all downloads have been stopped
+      ms_client_cancel_path_downloads( client, path_downloads, num_downloads );
+      
+      // remove each download from this set 
+      for( unsigned int i = 0; i < num_downloads; i++ ) {
+         
+         if( path_downloads[i].dlctx != NULL ) {
+            
+            md_download_set_clear( &path_download_set, path_downloads[i].dlctx );
          }
       }
    }
