@@ -47,6 +47,7 @@ struct AG_opts {
    size_t cache_soft_limit;
    size_t cache_hard_limit;
    bool reversion_on_startup;
+   bool quickstart;
 };
 
 // AG core state
