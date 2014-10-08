@@ -466,7 +466,7 @@ int ms_client_download_end( struct ms_client* client, struct md_download_context
       else if( http_status >= 400 ) {
          rc = http_status;
       }
-      else if( curl_rc == CURLE_GOT_NOTHING ) {
+      else if( curl_rc == CURLE_GOT_NOTHING || curl_rc == CURLE_OPERATION_TIMEDOUT ) {
          // got disconnected; try again
          rc = -EAGAIN;
       }
