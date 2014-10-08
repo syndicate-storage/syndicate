@@ -65,6 +65,8 @@ message ms_update {
       UPDATE_ASYNC = 11;
       DELETE_ASYNC = 12;
       CREATE_ASYNC = 13;
+      
+      NUM_UPDATE_TYPES = 14;
    }
 
    required int32 type = 1;
