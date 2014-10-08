@@ -448,6 +448,9 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
          
          return rc;
       }
+      else {
+         rc = 0;
+      }
    }
 
    // miss, or no driver.  Try to get details from the driver, if we have one.
@@ -475,6 +478,7 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
    }
    else {
       // cache miss and no driver
+      errorf("No driver for %s\n", path );
       return -ENODATA;
    }
    
