@@ -328,11 +328,6 @@ int AG_event_listener_start( struct AG_event_listener* event_listener ) {
    // start listening on it 
    event_listener->event_thread = md_start_thread( AG_event_listener_event_loop, event_listener, false );
    
-   if( (int)event_listener->event_thread < 0 ) {
-      errorf("md_start_thread rc = %d\n", (int)event_listener->event_thread );
-      return (int)event_listener->event_thread;
-   }
-   
    return 0;
 }
 
@@ -438,14 +433,6 @@ int AG_signal_listener_start() {
    g_sigs.signal_running = true;
    
    g_sigs.signal_thread = md_start_thread( AG_signal_listener_main_loop, NULL, false );
-   if( (int)(g_sigs.signal_thread) < 0 ) {
-      
-      int rc = (int)(g_sigs.signal_thread);
-      errorf("md_start_thread( AG_signal_listener_main_loop ) rc = %d\n", rc );
-      
-      g_sigs.signal_running = false;
-      return rc;
-   }
    
    return 0;
 }
