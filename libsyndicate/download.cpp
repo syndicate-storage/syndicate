@@ -604,8 +604,16 @@ int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout
 // wait for a download to finish within a download set, either in error or not.
 // return the result of waiting, NOT the result of the download 
 int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout_ms ) {
+
+   if( dlset->waiting == NULL ) {
+      return -EINVAL;
+   }
    
-   dbprintf("Wait on download set %p\n", dlset );
+   if( dlset->waiting->size() == 0 ) {
+      return -EINVAL;
+   }
+   
+   dbprintf("Wait on download set %p (%zu contexts)\n", dlset, dlset->waiting->size() );
    
    int rc = 0;
    
@@ -684,6 +692,9 @@ int md_download_set_clear( struct md_download_set* dlset, struct md_download_con
 
    if( dlctx != NULL && dlset->waiting != NULL ) {
       dlset->waiting->erase( dlctx );
+   }
+   
+   if( dlctx != NULL ) {
       dlctx->dlset = NULL;
    }
    
@@ -1230,7 +1241,7 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
          }
          else {
             // unknown error 
-            errorf("md_download_cancel(%p) rc = %d\n", dlctx, rc );
+            errorf("md_download_context_cancel(%p) rc = %d\n", dlctx, rc );
             return rc;
          }
       }
