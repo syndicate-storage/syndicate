@@ -624,6 +624,7 @@ class MSFileHandler(webapp2.RequestHandler):
          except Exception, e:
             logging.exception(e)
             rc = -errno.EREMOTEIO
+            reply.error = rc
             break
          
          if rc < 0:
