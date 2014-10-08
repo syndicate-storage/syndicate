@@ -322,6 +322,11 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
          memset( &req, 0, sizeof(struct ms_client_request) );
          
          req.ent = CALLOC_LIST( struct md_entry, 1 );
+         if( req.ent == NULL ) {
+            rc = -ENOMEM;
+            break;
+         }
+         
          *req.ent = ent;
          
          if( ent.type == MD_ENTRY_FILE ) {
@@ -459,13 +464,16 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
       // group by parent directory: sort alphanumerically
       sort( directory_list.begin(), directory_list.end(), less<string>() );
       
-      ////////////////////////////////////////////////////
-      dbprintf("Stage at %d will have these %zu items:\n", expected_depth, directory_list.size() );
       
+      ////////////////////////////////////////////////////
+      dbprintf("Stage at %d will have %zu items\n", expected_depth, directory_list.size() );
+      
+      /*
       for( unsigned int i = 0; i < directory_list.size(); i++ ) {
          dbprintf("   '%s'\n", directory_list[i].c_str() );
       }
       ////////////////////////////////////////////////////
+      */
       
       // sanity check: what's the current depth?
       depth = md_depth( directory_list.at(0).c_str() );
@@ -495,9 +503,11 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
       // clean up 
       AG_request_stage_list_free( stages );
    }
+   /*
    else {
       AG_dump_stages( stages );
    }
+   */
    return rc;
 }
 
@@ -621,7 +631,7 @@ static int AG_restart_operation( struct ms_client* client, struct AG_batch_reque
    batch->num_reqs = num_reqs;
    batch->retries ++;
    
-   dbprintf("(Re)start operations %p (%d requests)\n", reqs, num_reqs );
+   dbprintf("(Re)start operations (oper=%d) for %p (%d requests)\n", oper, reqs, num_reqs );
    
    int rc = ms_client_multi_begin( client, oper, flags, reqs, num_reqs, batch->nctx, dlset );
    if( rc != 0 ) {
@@ -651,7 +661,7 @@ static int AG_start_operations( struct ms_client* client, struct AG_batch_reques
          continue;
       }
       
-      size_t num_reqs = MIN( (unsigned)max_batch, reqs->size() - offset );
+      size_t num_reqs = MIN( (unsigned)max_batch, reqs->size() - (req_offset + offset) );
       if( num_reqs == 0 ) {
          break;
       }
@@ -678,7 +688,7 @@ static int AG_start_operations( struct ms_client* client, struct AG_batch_reques
       *ret_rc = rc;
    }
    
-   dbprintf("Opened %d connections\n", opened_connections );
+   dbprintf("Opened %d connections for %d more requests (starting at %d)\n", opened_connections, offset, req_offset );
    
    return offset;
 }
@@ -720,6 +730,7 @@ static int AG_finish_operation( struct ms_client* client, struct AG_batch_reques
    else {
       // just remember the error 
       stage->results->reply_error = results.reply_error;
+      ms_client_multi_result_free( &results );
    }
    
    dbprintf("Stage %d: %d results total (%zu entries)\n", stage->depth, stage->results->num_processed, stage->results->num_ents );
@@ -790,11 +801,15 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
    while( true ) {
       
       // wait for directory operations to finish
-      rc = md_download_context_wait_any( &dlset, -1 );
-      if( rc != 0 ) {
+      rc = md_download_context_wait_any( &dlset, 10000 );
+      if( rc != 0 && rc != -ETIMEDOUT ) {
          
          // failed
          break;
+      }
+      
+      else if( rc == -ETIMEDOUT ) {
+         continue;
       }
       
       set<int> finished;
@@ -829,7 +844,7 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
             if( rc == -EAGAIN ) {
                
                // connetion timed out.  Try these requests again 
-               if( batches[i].retries <= AG_REQUEST_MAX_RETRIES ) {
+               if( batches[i].retries <= client->conf->max_metadata_write_retry ) {
                   
                   dbprintf("Retry batch %p (%zu requests)\n", batches[i].reqs, batches[i].num_reqs );
                   
@@ -877,7 +892,7 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
          // start more downloads, if there are more left 
          if( offset < (signed)reqs->size() ) {
             
-            started = AG_start_operations( client, batches, oper, stage->flags, max_connections, max_batch, reqs, offset, &dlset, &rc );
+            started = AG_start_operations( client, batches, max_connections, oper, stage->flags, max_batch, reqs, offset, &dlset, &rc );
             if( rc != 0 ) {
                
                // failed to start 
@@ -890,12 +905,12 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
                   num_results = stage->results->num_processed;
                }
                
-               dbprintf("Stage %d: started %d more requests (%d total, %d results)\n", stage->depth, started, offset, num_results );
-               
                offset += started;
                
+               dbprintf("Stage %d: started %d more requests (%d started, %d results, %zu total)\n", stage->depth, started, offset, num_results, reqs->size() );
+               
                // discount all now-running batches from our finished set
-               for( int j = 0; j < num_running; j++ ) {
+               for( int j = 0; j < max_connections; j++ ) {
                   
                   if( batches[j].nctx != NULL && batches[j].nctx->started ) {
                      if( finished.count(j) > 0 ) {
@@ -934,10 +949,9 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
       AG_batch_requests_cancel_and_free( client, &dlset, batches, max_connections );
    }
    
-   
    md_download_set_free( &dlset );
    
-   AG_batch_request_free_all( batches, num_batches );
+   AG_batch_request_free_all( batches, max_connections );
    free( batches );
    return rc;
 }
