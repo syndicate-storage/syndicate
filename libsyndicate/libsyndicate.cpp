@@ -913,6 +913,7 @@ void md_sanitize_path( char* path ) {
 }
 
 // start a thread
+// return -1 on failure
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
 
    // start up a thread to listen for connections
@@ -1899,6 +1900,11 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->view_reload_freq = 3600;  // once an hour at minimum
    
    conf->gateway_type = gateway_type;
+   
+   conf->max_metadata_read_retry = 3;
+   conf->max_metadata_write_retry = 3;
+   conf->max_read_retry = 3;
+   conf->max_write_retry = 3;
    
    if( gateway_type == SYNDICATE_UG ) {
       // need both storage and networking to be set up
