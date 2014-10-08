@@ -701,7 +701,7 @@ class MSEntryVacuumLog( storagetypes.Object ):
       Return -errno.ENOENT if it doesn't exist 
       """
       
-      print "remove log head /%s/%s (version = %s, manifest_mtime_sec = %s, manifest_mtime_nsec = %s)" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+      log.info( "remove log head /%s/%s (version = %s, manifest_mtime_sec = %s, manifest_mtime_nsec = %s)" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec) )
       
       key_name = MSEntryVacuumLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
       log_ent_key = storagetypes.make_key( MSEntryVacuumLog, key_name )
@@ -1243,6 +1243,8 @@ class MSEntry( storagetypes.Object ):
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
+         log.error("/%s/%s, parent_id=%s, name=%s exists (nameholder: /%s/%s, parent_id=%s, name=%s)" % (volume_id, child_id, parent_id, ent_attrs['name'], nameholder.volume_id, nameholder.file_id, nameholder.parent_id, nameholder.name))
+         
          return (-errno.EEXIST, None)
       
       # cache parent...
@@ -1286,6 +1288,7 @@ class MSEntry( storagetypes.Object ):
       # invalidate caches
       storagetypes.memcache.delete_multi( [MSEntry.cache_key_name( volume_id, parent_id ) ] )
 
+      # TODO: what if this times out?  need an abort?
       return (0, child_ent)
 
 
@@ -2266,7 +2269,7 @@ class MSEntry( storagetypes.Object ):
             next_cursor = None 
             file_ids = []
             
-         log.info("Page %s of /%s/%s: %s" % (page_id, volume_id, file_id, file_ids))
+         # log.info("Page %s of /%s/%s: %s" % (page_id, volume_id, file_id, file_ids))
          
             
       if file_ids_only:
