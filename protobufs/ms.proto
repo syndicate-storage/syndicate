@@ -99,6 +99,7 @@ message ms_listing {
    required int32 status = 1;           // cached status (one of the above)
    required int32 ftype = 2;            // was this a file or directory we accessed?
    repeated ms_entry entries = 3;       // if this was a directory, then this contains its children.  Otherwise, entries[0] is the entry's data
+   repeated int64 file_ids = 4;         // if this was a directory, and we requested file IDs only, then these are the file IDs
 }
 
 // metadata information for the entries of a path
