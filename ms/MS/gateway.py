@@ -97,6 +97,8 @@ class Gateway( storagetypes.Object ):
    
    closure = storagetypes.Text()                # closure data for this gateway
    
+   need_cert = storagetypes.Boolean(default=False)      # whether or not other gateways in the volume need this gateway's certificate (i.e. will this gateway ever serve data)
+   
    # for RPC
    key_type = "gateway"
    
@@ -180,6 +182,22 @@ class Gateway( storagetypes.Object ):
       return given_caps
       
 
+   @classmethod 
+   def needs_cert( cls, gateway_type, caps ):
+      """
+      Given a gateway's capabilities, will another gateway need its certificate?
+      """
+      if gateway_type == GATEWAY_TYPE_AG:
+         return True 
+      
+      if gateway_type == GATEWAY_TYPE_RG:
+         return True 
+      
+      if (caps & (GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_COORDINATE)) != 0:
+         return True 
+      
+      return False
+   
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
 
@@ -609,6 +627,7 @@ class Gateway( storagetypes.Object ):
          
          gateway.caps = Gateway.safe_caps( gateway.gateway_type, caps )
          gateway.cert_version += 1
+         gateway.need_cert = Gateway.needs_cert( gateway.gateway_type, caps )
          gateway.put()
          return gateway
       
@@ -632,6 +651,7 @@ class Gateway( storagetypes.Object ):
       """
       def set_caps_func( gw ):
          gw.caps = caps
+         gw.need_cert = Gateway.needs_cert( GATEWAY_TYPE_UG, caps )
          return gw.put_async()
          
       gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.owner_id ==": owner_id}, map_func=set_caps_func )
@@ -646,6 +666,7 @@ class Gateway( storagetypes.Object ):
       """
       def set_caps_func( gw ):
          gw.caps = caps
+         gw.need_cert = Gateway.needs_cert( GATEWAY_TYPE_UG, caps )
          return gw.put_async()
          
       gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.volume_id ==": volume_id}, map_func=set_caps_func )

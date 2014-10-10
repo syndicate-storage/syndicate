@@ -450,8 +450,8 @@ class Volume( storagetypes.Object ):
       
       sz = 0
       
-      # query certificate versions, types, and caps of all gateways          
-      listing = Gateway.ListAll( {"Gateway.volume_id ==" : self.volume_id}, projection=["g_id", "gateway_type", "cert_version", "caps"] )
+      # query certificate versions, types, and caps of all gateways that need to be trusted
+      listing = Gateway.ListAll( {"Gateway.volume_id ==" : self.volume_id, "Gateway.need_cert ==": True}, projection=["g_id", "gateway_type", "cert_version", "caps"] )
       
       for gateway_metadata in listing:
          cert_block = manifest.block_url_set.add()
