@@ -771,11 +771,15 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    char* ptr = _name_id_and_version_str + strlen(_name_id_and_version_str);
    
    int num_periods = 0;
-   while( ptr != _name_id_and_version_str && num_periods < 2 ) {
+   while( num_periods < 2 ) {
       if( *ptr == '.' ) {
          num_periods ++;
       }
       ptr--;
+      
+      if( ptr < _name_id_and_version_str ) {
+         break;
+      }
    }
    ptr++;
    
