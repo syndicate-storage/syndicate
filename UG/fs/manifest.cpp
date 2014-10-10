@@ -400,15 +400,15 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
       }
 
       if( local ) {
-         return fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_version );
+         return md_url_local_block_url( core->conf->data_root, fent->volume, fent->file_id, fent->version, block_id, block_version );
       }
       else {
          // not hosted here
          if( fs_path != NULL ) {
             char* ret = NULL;
-            int rc = fs_entry_make_block_url( core, fs_path, itr->second->gateway_id, fent->file_id, fent->version, block_id, block_version, &ret );
+            int rc = md_url_make_block_url( core->ms, fs_path, itr->second->gateway_id, fent->file_id, fent->version, block_id, block_version, &ret );
             if( rc != 0 ) {
-               errorf("fs_entry_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+               errorf("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
                return NULL;
             }
             

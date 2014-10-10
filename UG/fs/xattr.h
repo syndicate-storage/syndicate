@@ -18,6 +18,7 @@
 #define _XATTR_H_
 
 #include "fs_entry.h"
+#include "libsyndicate/url.h"
 
 #include <sys/types.h>
 #include <attr/xattr.h>

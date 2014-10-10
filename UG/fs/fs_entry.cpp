@@ -497,6 +497,9 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
       // this is a FIFO 
       fs_entry_init_fifo( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
    }
+   
+   fent->max_read_freshness = ent->max_read_freshness;
+   fent->max_write_freshness = ent->max_write_freshness;
 
    return 0;
 }

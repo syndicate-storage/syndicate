@@ -188,11 +188,11 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
       if( !block_local ) {
          // block exists, and is remotely-hosted
          char* block_url = NULL;
-         rc = fs_entry_make_block_url( state->core, fs_path, gateway_id, local_file_id, file_version, block_id, block_version, &block_url );
+         rc = md_url_make_block_url( state->core->ms, fs_path, gateway_id, local_file_id, file_version, block_id, block_version, &block_url );
          
          if( rc != 0 ) {
             // failed to make the URL 
-            errorf("fs_entry_make_block_url( %" PRIu64 ": %s (.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", gateway_id, fs_path, file_version, block_id, block_version, rc );
+            errorf("md_url_make_block_url( %" PRIu64 ": %s (.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", gateway_id, fs_path, file_version, block_id, block_version, rc );
             return rc;
          }
          
@@ -214,7 +214,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
          // same file version but wrong block version?  redirect
          if( latest_block_version != block_version || latest_file_version != file_version ) {
             // HTTP redirect to the latest block
-            char* txt = fs_entry_public_block_url( state->core, fs_path, local_file_id, latest_file_version, block_id, latest_block_version );
+            char* txt = md_url_public_block_url( state->core->conf->content_url, state->core->volume, fs_path, local_file_id, latest_file_version, block_id, latest_block_version );
 
             *redirect_url = txt;
 
@@ -255,7 +255,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
                fs_entry_get_mod_time( state->core, fs_path, &lastmod );
 
                // redirect to the appropriate manifest URL
-               char* txt = fs_entry_public_manifest_url( state->core, fs_path, local_file_id, latest_file_version, &lastmod );
+               char* txt = md_url_public_manifest_url( state->core->conf->content_url, state->core->volume, fs_path, local_file_id, latest_file_version, &lastmod );
 
                *redirect_url = txt;
 
@@ -267,7 +267,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
          }
          else if( latest_file_version != file_version ) {
             // request for an older version of a local file
-            char* txt = fs_entry_public_file_url( state->core, fs_path, local_file_id, latest_file_version );
+            char* txt = md_url_public_file_url( state->core->conf->content_url, state->core->volume, fs_path, local_file_id, latest_file_version );
 
             *redirect_url = txt;
             return HTTP_REDIRECT_HANDLED;

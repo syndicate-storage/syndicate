@@ -38,10 +38,12 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    uint64_t refresh_ms = (uint64_t)(fent->refresh_time.tv_sec) * 1000 + (uint64_t)(fent->refresh_time.tv_nsec) / 1000000;
 
    dbprintf("%s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
-   if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness )
+   if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness ) {
       return true;
-   else
+   }
+   else {
       return false;
+   }
 }
 
 
@@ -1087,9 +1089,9 @@ static int fs_entry_download_path_listings( struct fs_core* core, ms_path_t* to_
 }
 
 
-// given the list of path entries that exist locally, reload them.
+// given the list of path entries that are cached locally, reload them.
 // if one of them no longer exists on the MS, then unlink all of the children beneath it.
-static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, ms_path_t* ms_path ) {
+static int fs_entry_reload_cached_path_entries( struct fs_entry_consistency_cls* cls, ms_path_t* ms_path ) {
 
    struct fs_core* core = cls->core;
 
@@ -1366,10 +1368,10 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    if( ms_path_stale.size() > 0 ) {
       // reload the stale entries
       dbprintf("%zu stale entries\n", ms_path_stale.size() );
-      rc = fs_entry_reload_local_path_entries( &consistency_cls, &ms_path_stale );
+      rc = fs_entry_reload_cached_path_entries( &consistency_cls, &ms_path_stale );
       
       if( rc != 0 ) {
-         errorf("fs_entry_reload_local_path_entries(%s) rc = %d\n", path, rc );
+         errorf("fs_entry_reload_cached_path_entries(%s) rc = %d\n", path, rc );
          free( path );
          ms_client_free_path( &ms_path, fs_entry_free_listing_cls );
          return rc;
@@ -1513,6 +1515,8 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       err = fs_entry_revalidate_manifest_once( core, fs_path, fent );
       
       if( err != -EAGAIN ) {
+         
+         // TODO: revalidate the path too!
          break;
       }
       

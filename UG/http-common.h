@@ -19,6 +19,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/httpd.h"
+#include "libsyndicate/url.h"
 #include "syndicate.h"
 
 #define HTTP_REDIRECT_HANDLED 0

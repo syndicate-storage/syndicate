@@ -100,7 +100,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
          ts.tv_sec = manifest_mtime_sec;
          ts.tv_nsec = manifest_mtime_nsec;
          
-         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], fent->file_id, fent->version, &ts );
+         char* replica_url = md_url_RG_manifest_url( core->ms, rg_ids[i], fent->file_id, fent->version, &ts );
          
          rc = fs_entry_download_manifest( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, replica_url, mmsg );
 
@@ -167,11 +167,11 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          return -EAGAIN;
       }
       
-      rc = fs_entry_make_manifest_url( core, fs_path, fent->coordinator, fent->file_id, fent->version, &modtime, &manifest_url );
+      rc = md_url_make_manifest_url( core->ms, fs_path, fent->coordinator, fent->file_id, fent->version, &modtime, &manifest_url );
       
       if( rc != 0 ) {
          // failed to produce the url
-         errorf("fs_entry_make_manifest_url rc = %d\n", rc );
+         errorf("md_url_make_manifest_url rc = %d\n", rc );
          
          if( rc == -ENOENT ) {
             // gateway not found.  try refreshing our certs
@@ -233,11 +233,15 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       return manifest_msg->errorcode();
    }
    
+   rc = 0;
+   
    // verify that the manifest matches the timestamp
    if( manifest_msg->mtime_sec() != manifest_mtime_sec || manifest_msg->mtime_nsec() != manifest_mtime_nsec ) {
-      // invalid manifest
+      // invalid manifest--probably due to a timestamp mismatch.  Try again 
       errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg->mtime_sec(), manifest_msg->mtime_nsec(), manifest_mtime_sec, manifest_mtime_nsec );
-      return -EBADMSG;
+      fent->manifest->mark_stale();
+      fent->read_stale = false;
+      rc = -EAGAIN;
    }
    
    // verify that the manifest matches the volume and file id and version 
@@ -254,11 +258,12 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          return -EAGAIN;
       }
       else {
+         // wrong file ID or volume ID
          return -EBADMSG;
       }
    }
    
-   return 0;
+   return rc;
 }
 
 

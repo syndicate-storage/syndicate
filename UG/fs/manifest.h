@@ -18,6 +18,7 @@
 #define _MANIFEST_H_
 
 #include "fs_entry.h"
+#include "libsyndicate/url.h"
 
 // block URL set--a set of blocks for a particular file from a particular host
 class block_url_set {

@@ -18,7 +18,8 @@
 #define _NETWORK_H_
 
 #include "fs_entry.h"
-#include "serialization.pb.h"
+#include "libsyndicate/serialization.pb.h"
+#include "libsyndicate/url.h"
 
 // downloading
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg );

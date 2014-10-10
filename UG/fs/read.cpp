@@ -540,9 +540,9 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
    // kick off the read from the remote UG (the primary source)
    char* block_url = NULL;
    
-   int rc = fs_entry_make_block_url( core, block_fut->fs_path, block_fut->gateway_id, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, &block_url );
+   int rc = md_url_make_block_url( core->ms, block_fut->fs_path, block_fut->gateway_id, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, &block_url );
    if( rc != 0 ) {
-      errorf("fs_entry_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+      errorf("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       return -ENODATA;
    }
    
@@ -607,7 +607,7 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
       uint64_t rg_id = rg_ids[ block_fut->curr_RG ];
       
       // get the URL to the block 
-      char* replica_url = fs_entry_RG_block_url( core, rg_id, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
+      char* replica_url = md_url_RG_block_url( core->ms, rg_id, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
          
       // reset the download context
       // TODO: use connection pool--point the dlctx to the keep-alive connection to the RG

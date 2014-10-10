@@ -134,7 +134,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
       }
    }
    
-   char* cached_file_url = fs_entry_local_file_url( core, fent->file_id, fent->version );
+   char* cached_file_url = md_url_local_file_url( core->conf->data_root, fent->volume, fent->file_id, fent->version );
    char* cached_file_path = GET_PATH( cached_file_url );
    
    // enough space...
@@ -167,7 +167,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
 // get cached file path
 static ssize_t xattr_get_cached_file_path( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len) {
    
-   char* cached_file_url = fs_entry_local_file_url( core, fent->file_id, fent->version );
+   char* cached_file_url = md_url_local_file_url( core->conf->data_root, fent->volume, fent->file_id, fent->version );
    char* cached_file_path = GET_PATH( cached_file_url );
    
    ssize_t len = strlen(cached_file_path);
