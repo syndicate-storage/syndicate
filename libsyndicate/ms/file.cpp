@@ -1206,7 +1206,7 @@ static int ms_client_path_download_context_init( struct ms_client* client, struc
    // TODO: connection pool 
    CURL* curl_handle = curl_easy_init();
    
-   char* url = ms_client_file_read_url( client->url, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce, 0 );
+   char* url = ms_client_file_read_url( client->url, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce, 0, false );
    
    // NOTE: no cache driver for the MS, so we'll do this manually 
    md_init_curl_handle( client->conf, curl_handle, url, client->conf->connect_timeout );
@@ -1579,7 +1579,7 @@ static int ms_client_start_next_page( struct ms_client* client, struct ms_path_d
    // restart the download
    md_download_context_reset( dlctx, NULL );
    
-   char* new_url = ms_client_file_read_url( client->url, pdlctx->path_ent->volume_id, pdlctx->path_ent->file_id, pdlctx->path_ent->version, pdlctx->path_ent->write_nonce, pdlctx->page_id );
+   char* new_url = ms_client_file_read_url( client->url, pdlctx->path_ent->volume_id, pdlctx->path_ent->file_id, pdlctx->path_ent->version, pdlctx->path_ent->write_nonce, pdlctx->page_id, false );
    
    // set the new URL 
    CURL* curl = md_download_context_get_curl( dlctx );

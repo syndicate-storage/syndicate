@@ -44,8 +44,23 @@ char* ms_client_file_url( char const* ms_url, uint64_t volume_id ) {
    return volume_file_path;
 }
 
+// query arg concat 
+int ms_client_arg_concat( char* url, char const* arg, bool first ) {
+   
+   if( first ) {
+      strcat( url, "?" );
+      strcat( url, arg );
+   }
+   else {
+      strcat( url, "&" );
+      strcat( url, arg );
+   }
+   
+   return 0;
+}
+
 // GET url for a file
-char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_id ) {
+char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_id, bool file_ids_only ) {
 
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
@@ -60,25 +75,38 @@ char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t 
    sprintf( write_nonce_str, "%" PRId64, write_nonce );
 
    size_t page_id_len = 0;
+   size_t file_ids_only_len = 0;
+   bool query_args = false;
    
    if( page_id >= 0 ) {
-      page_id_len = 32;
+      page_id_len = 50;
    }
    
-   char* volume_file_path = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 +
-                                               strlen(version_str) + 1 + strlen(write_nonce_str) + 1 + page_id_len + 1 );
+   if( file_ids_only ) {
+      file_ids_only_len = strlen("&file_ids_only=1") + 1;
+   }
+   
+   char* volume_file_url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 +
+                                              strlen(version_str) + 1 + strlen(write_nonce_str) + 1 + page_id_len + 1 + file_ids_only_len + 1 );
 
-   sprintf( volume_file_path, "%s/FILE/RESOLVE/%s/%s/%s/%s", ms_url, volume_id_str, file_id_str, version_str, write_nonce_str );
+   sprintf( volume_file_url, "%s/FILE/RESOLVE/%s/%s/%s/%s", ms_url, volume_id_str, file_id_str, version_str, write_nonce_str );
    
    if( page_id_len > 0 ) {
       
       char page_id_buf[50];
-      sprintf( page_id_buf, "?page_id=%d", page_id );
+      sprintf( page_id_buf, "page_id=%d", page_id );
       
-      strcat( volume_file_path, page_id_buf );
+      ms_client_arg_concat( volume_file_url, page_id_buf, !query_args );
+      query_args = true;
    }
    
-   return volume_file_path;
+   if( file_ids_only ) {
+      
+      ms_client_arg_concat( volume_file_url, "file_ids_only=1", !query_args );
+      query_args = true;
+   }
+   
+   return volume_file_url;
 }
 
 // GETXATTR url 
