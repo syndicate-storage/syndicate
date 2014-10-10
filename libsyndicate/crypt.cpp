@@ -234,7 +234,7 @@ int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* s
    char* sig_bin = NULL;
    size_t sig_bin_len = 0;
 
-   dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
+   // dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
 
    int rc = Base64Decode( sigb64, sigb64_len, &sig_bin, &sig_bin_len );
    if( rc != 0 ) {
@@ -358,7 +358,7 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
    *sigb64 = b64;
    *sigb64_len = strlen(b64);
    
-   dbprintf("SIGN: message len = %zu, sigb64_len = %zu, sigb64 = %s\n", len, strlen(b64), b64 );
+   // dbprintf("SIGN: message len = %zu, sigb64_len = %zu, sigb64 = %s\n", len, strlen(b64), b64 );
 
    free( sig_bin );
    
