@@ -91,7 +91,7 @@ def file_update_get_attrs( entry_dict, attr_list ):
 
 
 # ----------------------------------
-def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id ):
+def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, file_ids_only=False ):
    """
    Read file and listing of the given file_id.
    """
@@ -137,18 +137,28 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id ):
       else:
          if file_data.ftype == MSENTRY_TYPE_DIR:
             
-            error, listing, next_cursor = MSEntry.ListDir( volume, file_id, page_id, owner_id=owner_id )
+            error, listing, next_cursor = MSEntry.ListDir( volume, file_id, page_id, owner_id=owner_id, file_ids_only=file_ids_only )
             
             if error == 0:
                if listing is not None:
-                  all_ents = [file_data] + listing
+                  if file_ids_only:
+                     all_ents = [file_data.file_id] + listing
+                  else:
+                     all_ents = [file_data] + listing
                else:
-                  all_ents = [file_data]
+                  if file_ids_only:
+                     all_ents = [file_data.file_id]
+                  else:
+                     all_ents = [file_data]
          
             #logging.info("listing of %s: %s" % (file_data.file_id, listing))
             
          else:
-            all_ents = [file_data]
+            if file_ids_only:
+               all_ents = [file_data.file_id]
+            else:
+               all_ents = [file_data]
+
 
    # check security
    if error == 0:
@@ -187,8 +197,14 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id ):
          reply.listing.status = ms_pb2.ms_listing.NEW
 
          for ent in all_ents:
-            ent_pb = reply.listing.entries.add()
-            ent.protobuf( ent_pb )
+            if file_ids_only:
+               # just file ID 
+               reply.listing.file_ids.append( ent.file_id )
+               
+            else:
+               # full ent 
+               ent_pb = reply.listing.entries.add()
+               ent.protobuf( ent_pb )
          
          # logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
    
@@ -201,7 +217,7 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id ):
    
 
 # ----------------------------------
-def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str):
+def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str, file_ids_only=False ):
    """
    Resolve a (volume_id, file_id, file_vesion, write_nonce) to file metadata.
    This is part of the File Metadata API, so it takes strings for file_version_str and write_nonce_str.
@@ -221,7 +237,7 @@ def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_non
    if gateway != None:
       owner_id = gateway.owner_id
       
-   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id )
+   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, file_ids_only=file_ids_only )
    
    logging.info("resolve /%s/%s/%s/%s rc = %d" % (volume.volume_id, file_id, file_version, write_nonce, rc) )
    

@@ -410,11 +410,11 @@ class MSFileHandler(webapp2.RequestHandler):
    
    # these return a serialized response
    get_api_calls = {
-      "GETXATTR":       lambda gateway, volume, file_id, args, page_id: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
-      "LISTXATTR":      lambda gateway, volume, file_id, args, page_id: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
-      "RESOLVE":        lambda gateway, volume, file_id, args, page_id: file_resolve( gateway, volume, page_id, file_id, *args ),  # args == [file_version_str, write_nonce]
+      "GETXATTR":       lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
+      "LISTXATTR":      lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
+      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, file_ids_only: file_resolve( gateway, volume, page_id, file_id, *args, file_id_only=file_ids_only ),  # args == [file_version_str, write_nonce]
       
-      "VACUUM":         lambda gateway, volume, file_id, args, page_id: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
+      "VACUUM":         lambda gateway, volume, file_id, args, page_id, file_ids_only: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
    }
    
    get_benchmark_headers = {
@@ -516,12 +516,27 @@ class MSFileHandler(webapp2.RequestHandler):
       
       # do we have a requested page for this request?
       page_id = self.request.get('page_id')
+      file_ids_only = self.request.get('file_ids_only')
       
       if page_id is None:
          log.error("No page ID given")
          response_user_error( self, 400 )
          return 
       
+      if file_ids_only is None:
+         file_ids_only = 0
+      else:
+         try:
+            file_ids_only = int(file_ids_only)
+         except:
+            response_user_error( self, 400 )
+            return 
+            
+      if file_ids_only != 0:
+         file_ids_only = True 
+      else:
+         file_ids_only = False 
+         
       # validate 
       try:
          page_id = int(page_id)
@@ -539,7 +554,7 @@ class MSFileHandler(webapp2.RequestHandler):
       
       # run and benchmark the operation
       try:
-         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, page_id ) )
+         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, page_id, file_ids_only ) )
       except Exception, e:
          logging.exception(e)
          response_user_error( self, 500 )
