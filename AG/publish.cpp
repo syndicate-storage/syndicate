@@ -40,6 +40,8 @@ int AG_request_stage_init( struct AG_request_stage* stage, int depth, int file_o
    
    stage->parents = parents;
    
+   dbprintf("Init stage %d with %zu files and %zu directories\n", depth, file_reqs->size(), dir_reqs->size() );
+   
    return 0;
 }
 
@@ -117,78 +119,6 @@ int AG_request_stage_list_free( AG_request_stage_list_t* stages ) {
    return 0;
 }
 
-// find and remove all entries from sorted_paths of the same depth, and put them into directory_list
-// sorted_paths must be sorted by increasing path depth.
-static int AG_pop_dirs_by_depth( vector<string>* sorted_paths, vector<string>* directory_list ) {
-   
-   if( sorted_paths->size() == 0 ) {
-      return -EINVAL;
-   }
-   
-   int depth = 0;
-   
-   // what's the depth of the head?
-   depth = md_depth( sorted_paths->at(0).c_str() );
-   
-   directory_list->push_back( sorted_paths->at(0) );
-   
-   if( sorted_paths->size() > 1 ) {
-      // find all directories in sorted_paths that are have $depth.
-      // they will all be at the head.
-      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
-         
-         int next_depth = md_depth( sorted_paths->at(i).c_str() );
-         if( next_depth == depth ) {
-            
-            directory_list->push_back( sorted_paths->at(i) );
-         }
-         else {
-            break;
-         }
-      }
-   }
-   
-   // pop all pushed paths 
-   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + directory_list->size() );
-   
-   return 0;
-}
-
-
-// find and remove all entries from sorted_paths that share the same parent, and put them into directory_list
-// sorted_paths must be sorted alphanumerically
-static int AG_pop_dirs_by_parent( vector<string>* sorted_paths, vector<string>* directory_list ) {
-   
-   if( sorted_paths->size() == 0 ) {
-      return -EINVAL;
-   }
-   
-   char* parent_dir = md_dirname( sorted_paths->at(0).c_str(), NULL );
-   
-   directory_list->push_back( sorted_paths->at(0) );
-   
-   if( sorted_paths->size() > 0 ) {
-      // find all directories in sorted paths that have the parent directory $parent_dir 
-      // they will all be at the head.
-      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
-         
-         if( AG_path_is_immediate_child( parent_dir, sorted_paths->at(i).c_str() ) ) {
-            
-            directory_list->push_back( sorted_paths->at(i) );
-         }
-         else {
-            break;
-         }
-      }
-   }
-   
-   free( parent_dir );
-   
-   // pop all pushed paths 
-   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + directory_list->size() );
-   
-   return 0;
-}
 
 // given a list of paths that are all children of the same directory, and the operation to be performed with them, generate a stage containing the request.
 // use the operation to perform sanity checks and to fill out the request properly.
@@ -217,9 +147,9 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
       // get the next batch that share a common parent 
       vector<string> next_batch;
       
-      rc = AG_pop_dirs_by_parent( listing_paths, &next_batch );
+      rc = AG_pop_paths_by_parent( listing_paths, &next_batch );
       if( rc != 0 ) {
-         errorf("AG_pop_dirs_by_parent rc = %d\n", rc );
+         errorf("AG_pop_paths_by_parent rc = %d\n", rc );
          break;
       }
       
@@ -383,10 +313,12 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
       return rc;
    }
    
-   // set up the stage
-   AG_request_stage_init( stage, depth, file_op, dir_op, file_requests, dir_requests, parents, (flags & AG_REQUEST_DIRS_FIRST) != 0 );
+   else {
+      // set up the stage
+      AG_request_stage_init( stage, depth, file_op, dir_op, file_requests, dir_requests, parents, (flags & AG_REQUEST_DIRS_FIRST) != 0 );
    
-   return 0;
+      return 0;
+   }
 }
 
 
@@ -432,61 +364,49 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
       return 0;
    }
    
-   for( AG_fs_map_t::iterator itr = directives->begin(); itr != directives->end(); itr++ ) {
-      paths.push_back( itr->first );
+   rc = AG_sort_paths_by_depth( directives, &paths );
+   if( rc != 0 ) {
+      // failed 
+      errorf("AG_sort_paths_by_depth rc = %d\n", rc );
+      return rc;
    }
-   
-   // put the FS paths into breadth-first order.
-   struct local_path_comparator {
-      
-      static bool comp_breadth_first( const string& s1, const string& s2 ) {
-         // s1 comes before s2 if s1 is shallower than s2
-         int depth_1 = md_depth( s1.c_str() );
-         int depth_2 = md_depth( s2.c_str() );
-         
-         return depth_1 < depth_2;
-      }
-   };
-   
-   // breadth-first order
-   sort( paths.begin(), paths.end(), local_path_comparator::comp_breadth_first );
    
    expected_depth = md_depth( paths.at(0).c_str() );
    
    while( paths.size() > 0 ) {
       
-      vector<string> directory_list;
+      vector<string> stage_paths;
       struct AG_request_stage* stage = CALLOC_LIST( struct AG_request_stage, 1 );
       
       // get the next group of files and directories that are at the same depth
-      AG_pop_dirs_by_depth( &paths, &directory_list );
+      AG_pop_paths_by_depth( &paths, &stage_paths );
       
       // group by parent directory: sort alphanumerically
-      sort( directory_list.begin(), directory_list.end(), less<string>() );
+      sort( stage_paths.begin(), stage_paths.end(), less<string>() );
       
       
       ////////////////////////////////////////////////////
-      dbprintf("Stage at %d will have %zu items\n", expected_depth, directory_list.size() );
+      dbprintf("Stage at %d will have %zu items\n", expected_depth, stage_paths.size() );
       
       /*
-      for( unsigned int i = 0; i < directory_list.size(); i++ ) {
-         dbprintf("   '%s'\n", directory_list[i].c_str() );
+      for( unsigned int i = 0; i < stage_paths.size(); i++ ) {
+         dbprintf("   '%s'\n", stage_paths[i].c_str() );
       }
       ////////////////////////////////////////////////////
       */
       
       // sanity check: what's the current depth?
-      depth = md_depth( directory_list.at(0).c_str() );
+      depth = md_depth( stage_paths.at(0).c_str() );
       
       // sanity check: each iteration of this loop should consume all directories at a given depth, in increasing order
       if( depth != expected_depth ) {
-         errorf("BUG: depth of %s is %d, but expected %d\n", directory_list.at(0).c_str(), depth, expected_depth );
+         errorf("BUG: depth of %s is %d, but expected %d\n", stage_paths.at(0).c_str(), depth, expected_depth );
          rc = -EINVAL;
          break;
       }
       
       // generate a stae for this depth 
-      rc = AG_generate_stage( client, depth, &directory_list, directives, reference, file_op, dir_op, stage, stage_flags );
+      rc = AG_generate_stage( client, depth, &stage_paths, directives, reference, file_op, dir_op, stage, stage_flags );
       
       if( rc != 0 ) {
          errorf("AG_generate_stage(depth=%d) rc = %d\n", depth, rc );
@@ -517,7 +437,7 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
 // files will be created by the MS asynchronously.
 // when building the stage list, get parent data from the directives over the reference if there's a conflict, since the parent doesn't exist
 static int AG_generate_stages_create( struct ms_client* client, AG_fs_map_t* to_publish, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
-   return AG_generate_stages( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DIRECTIVES, stages );
+   return AG_generate_stages( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DIRECTIVES | AG_REQUEST_USE_DRIVER, stages );
 }
 
 
@@ -867,6 +787,8 @@ static int AG_run_stage_requests( struct ms_client* client, struct AG_request_st
                // this isn't considered to be an error by the caller 
                rc = 0;
                finished.insert(i);
+               
+               dbprintf("WARN: batch %p (%zu requests) had tolerated error %d\n", batches[i].reqs, batches[i].num_reqs, rc );
             }
             
             if( rc != 0 ) {
@@ -1042,16 +964,17 @@ static int AG_run_stage( struct ms_client* client, struct AG_request_stage* stag
 }
 
 
-// verify that the MS response has exactly the replies we expected 
+// verify that the MS response has exactly the replies we expected.
+// if the stage failed due to a tolerated operational error (i.e. has_tolerated_error == true), then only verify that there are no gratuitous replies.
 // return 0 on success 
 // return -ENODATA if we're missing a reply 
 // return -EBADMSG if we got a gratuitous reply
-static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage, AG_request_list_t* reqs ) {
+static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage, AG_request_list_t* reqs, bool has_tolerated_error ) {
 
    int rc = 0;
    struct ms_client_multi_result* results = stage->results;
    
-   if( (signed)(stage->dir_reqs->size() + stage->file_reqs->size()) != results->num_processed ) {
+   if( !has_tolerated_error && (signed)(stage->dir_reqs->size() + stage->file_reqs->size()) != results->num_processed ) {
       return -EINVAL;
    }
    
@@ -1069,19 +992,22 @@ static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage
       ms_replies[ent->file_id] = ent;
    }
    
-   // check for missing replies
-   for( unsigned int i = 0; i < reqs->size(); i++ ) {
+   if( !has_tolerated_error ) {
       
-      struct ms_client_request* req = &reqs->at(i);
-      
-      if( ms_replies.count( req->ent->file_id ) == 0 ) {
-         errorf("Missing MS reply for %" PRIX64 " (%s)\n", req->ent->file_id, req->ent->name );
-         rc = -ENODATA;
+      // check for missing replies
+      for( unsigned int i = 0; i < reqs->size(); i++ ) {
+         
+         struct ms_client_request* req = &reqs->at(i);
+         
+         if( ms_replies.count( req->ent->file_id ) == 0 ) {
+            errorf("Missing MS reply for %" PRIX64 " (%s)\n", req->ent->file_id, req->ent->name );
+            rc = -ENODATA;
+         }
       }
-   }
-   
-   if( rc != 0 ) {
-      return rc;
+      
+      if( rc != 0 ) {
+         return rc;
+      }
    }
    
    // check for gratuitous replies 
@@ -1100,13 +1026,15 @@ static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage
 
 
 // validate the MS response against the requests we made 
-static int AG_validate_stage_MS_response( struct AG_request_stage* stage ) {
+static int AG_validate_stage_MS_response( struct AG_request_stage* stage, AG_operational_error_set_t* tolerated_errors ) {
    
    int rc = 0;
    
    AG_request_list_t* file_reqs = stage->file_reqs;
    AG_request_list_t* dir_reqs = stage->dir_reqs;
    struct ms_client_multi_result* results = stage->results;
+   
+   bool has_tolerated_error = false;
    
    if( results == NULL ) {
       errorf("No data received for stage %d\n", stage->depth );
@@ -1125,8 +1053,18 @@ static int AG_validate_stage_MS_response( struct AG_request_stage* stage ) {
       -1
    };
    
-   // even if we got no data back, the MS should have processed all our entries
-   if( (signed)(dir_reqs->size() + file_reqs->size()) != results->num_processed ) {
+   if( results->reply_error != 0 ) {
+      if( tolerated_errors != NULL && tolerated_errors->count( results->reply_error ) > 0 ) {
+         errorf("WARN: stage %d failed with tolerated error %d\n", stage->depth, results->reply_error );
+         has_tolerated_error = true;
+      }
+      else {
+         return results->reply_error;
+      }
+   }
+   
+   // even if we got no data back, the MS should have processed all our entries if we didn't encounter an error
+   if( !has_tolerated_error && (signed)(dir_reqs->size() + file_reqs->size()) != results->num_processed ) {
       errorf("Sent %zu requests, but the MS processed %d\n", dir_reqs->size() + file_reqs->size(), results->num_processed );
       return -EREMOTEIO;
    }
@@ -1150,12 +1088,12 @@ static int AG_validate_stage_MS_response( struct AG_request_stage* stage ) {
          continue;
       }
       
-      if( num_expected_replies[j] != (signed)reqs->size() ) {
+      if( !has_tolerated_error && num_expected_replies[j] != (signed)reqs->size() ) {
          errorf("Expected %d replies for type %d, but got %zu\n", num_expected_replies[j], reqs_types[j], reqs->size() );
          return -EBADMSG;
       }
       
-      rc = AG_validate_stage_MS_response_replies( stage, reqs );
+      rc = AG_validate_stage_MS_response_replies( stage, reqs, has_tolerated_error );
       if( rc != 0 ) {
          errorf("AG_validate_stage_MS_response_replies(stage=%d) rc = %d\n", stage->depth, rc );
          break;
@@ -1168,7 +1106,7 @@ static int AG_validate_stage_MS_response( struct AG_request_stage* stage ) {
 
 // given a request stage list, walk down it and send the updates to the MS 
 // return 0 on succes, negative on failure.
-static int AG_run_stages( struct ms_client* client, AG_request_stage_list_t* stages, int max_connections, int max_batch, int max_async_batch ) {
+static int AG_run_stages( struct ms_client* client, AG_request_stage_list_t* stages, int max_connections, int max_batch, int max_async_batch, AG_operational_error_set_t* tolerated_errors ) {
    
    int rc = 0;
    
@@ -1178,7 +1116,7 @@ static int AG_run_stages( struct ms_client* client, AG_request_stage_list_t* sta
       
       dbprintf("Running stage %d\n", stage->depth );
       
-      rc = AG_run_stage( client, stage, max_connections, max_batch, max_async_batch, NULL );
+      rc = AG_run_stage( client, stage, max_connections, max_batch, max_async_batch, tolerated_errors );
       if( rc != 0 ) {
       
          // this stage failed
@@ -1189,7 +1127,7 @@ static int AG_run_stages( struct ms_client* client, AG_request_stage_list_t* sta
       
       dbprintf("Validating MS replies for stage %d\n", stage->depth );
       
-      rc = AG_validate_stage_MS_response( stage );
+      rc = AG_validate_stage_MS_response( stage, tolerated_errors );
       if( rc != 0 ) {
       
          // this stage fialed 
@@ -1429,7 +1367,8 @@ static int AG_fs_remove_stages( AG_fs_map_t* dest, AG_request_stage_list_t* stag
 
 // generate a list of stages with the requested method, run it, and validate the response.
 // don't mask errors; fail fast if the MS barfs on any request
-static int AG_fs_apply_stages( struct ms_client* client, AG_request_stage_generator_t stage_list_generator, AG_fs_map_t* directives, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
+static int AG_fs_apply_stages( struct ms_client* client, AG_request_stage_generator_t stage_list_generator, AG_fs_map_t* directives, AG_fs_map_t* reference,
+                               AG_request_stage_list_t* stages, AG_operational_error_set_t* tolerated_errors ) {
    
    int rc = 0;
    
@@ -1441,7 +1380,7 @@ static int AG_fs_apply_stages( struct ms_client* client, AG_request_stage_genera
    }
    
    // run it and validate it
-   rc = AG_run_stages( client, stages, client->max_connections, client->max_request_batch, client->max_request_async_batch );
+   rc = AG_run_stages( client, stages, client->max_connections, client->max_request_batch, client->max_request_async_batch, tolerated_errors );
    if( rc != 0 ) {
       errorf("AG_run_stages rc = %d\n", rc );
       
@@ -1514,8 +1453,12 @@ int AG_fs_create_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
       return rc;
    }
    
+   // tolerate existence 
+   AG_operational_error_set_t tolerated_create_errors;
+   tolerated_create_errors.insert( -EEXIST );
+   
    // get the stages 
-   rc = AG_fs_apply_stages( client, AG_generate_stages_create, &merged_publish, current_mappings, &stages );
+   rc = AG_fs_apply_stages( client, AG_generate_stages_create, &merged_publish, current_mappings, &stages, &tolerated_create_errors );
    
    AG_fs_map_free( &merged_publish );
    
@@ -1568,7 +1511,7 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
    }
    
    // get the stages 
-   rc = AG_fs_apply_stages( client, AG_generate_stages_update, to_update, current_mappings, &stages );
+   rc = AG_fs_apply_stages( client, AG_generate_stages_update, to_update, current_mappings, &stages, NULL );
    
    if( rc != 0 ) {
       errorf("AG_fs_apply_stages(update) rc = %d\n", rc );
@@ -1620,7 +1563,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
    while( true ) {
 
       // run the stages that have not been processed yet
-      rc = AG_run_stages( client, &stages, client->max_connections, client->max_request_batch, client->max_request_async_batch );
+      rc = AG_run_stages( client, &stages, client->max_connections, client->max_request_batch, client->max_request_async_batch, NULL );
       
       if( rc == -ENOENT ) {
          
@@ -1728,7 +1671,14 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    int64_t mi_reval_sec = mi->reval_sec;
    
    // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, 0, opt_pubinfo );
+   int reversion_flags = 0;
+   
+   if( opt_pubinfo != NULL ) {
+      // use caller-given publish data 
+      reversion_flags = AG_POPULATE_NO_DRIVER;
+   }
+   
+   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, reversion_flags, opt_pubinfo );
    
    AG_map_info_free( mi );
    AG_map_info_free( parent_mi );
