@@ -20,6 +20,9 @@
 
 #include "fs_entry.h"
 
+// syndicatefs magic number
+#define SYNDICATEFS_MAGIC  0x01191988
+
 // read metadata
 int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume );
 int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, int64_t* version, uint64_t* coordinator_id, uint64_t user, uint64_t volume, bool revalidate );
