@@ -78,6 +78,11 @@ opOR = backend.opOR
 # toplevel decorator
 toplevel = backend.toplevel
 
+# aliases for common exceptions 
+RequestDeadlineExceededError = backend.RequestDeadlineExceededError
+APIRequestDeadlineExceededError = backend.APIRequestDeadlineExceededError
+URLRequestDeadlineExceededError = backend.URLRequestDeadlineExceededError
+
 
 def clock_gettime():
    now = datetime.datetime.utcnow()

@@ -412,7 +412,7 @@ class MSFileHandler(webapp2.RequestHandler):
    get_api_calls = {
       "GETXATTR":       lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
       "LISTXATTR":      lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
-      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, file_ids_only: file_resolve( gateway, volume, page_id, file_id, *args, file_id_only=file_ids_only ),  # args == [file_version_str, write_nonce]
+      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, file_ids_only: file_resolve( gateway, volume, page_id, file_id, *args, file_ids_only=file_ids_only ),  # args == [file_version_str, write_nonce]
       
       "VACUUM":         lambda gateway, volume, file_id, args, page_id, file_ids_only: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
    }
@@ -518,17 +518,18 @@ class MSFileHandler(webapp2.RequestHandler):
       page_id = self.request.get('page_id')
       file_ids_only = self.request.get('file_ids_only')
       
-      if page_id is None:
+      if page_id is None or len(page_id) == 0:
          log.error("No page ID given")
          response_user_error( self, 400 )
          return 
       
-      if file_ids_only is None:
+      if file_ids_only is None or len(file_ids_only) == 0:
          file_ids_only = 0
       else:
          try:
             file_ids_only = int(file_ids_only)
          except:
+            log.error("Invalid file_ids_only value '%s'" % file_ids_only)
             response_user_error( self, 400 )
             return 
             
@@ -555,6 +556,11 @@ class MSFileHandler(webapp2.RequestHandler):
       # run and benchmark the operation
       try:
          data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, page_id, file_ids_only ) )
+         
+      except storagetypes.RequestDeadlineExceededError, de:
+         response_user_error( self, 503 )
+         return
+      
       except Exception, e:
          logging.exception(e)
          response_user_error( self, 500 )
@@ -636,6 +642,12 @@ class MSFileHandler(webapp2.RequestHandler):
          try:
             rc = benchmark( benchmark_header, timing, lambda: api_call( reply, gateway, volume, update ) )
             num_processed += 1
+            
+         except storagetypes.RequestDeadlineExceededError, de:
+            # quickly now...
+            response_user_error( self, 503 )
+            return
+            
          except Exception, e:
             logging.exception(e)
             rc = -errno.EREMOTEIO
@@ -659,7 +671,7 @@ class MSFileHandler(webapp2.RequestHandler):
       timing_headers.update( response_timing )
       
       response_end( self, status, reply_str, "application/octet-stream", timing_headers )
-         
+      
       return
 
 

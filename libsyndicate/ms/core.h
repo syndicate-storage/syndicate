@@ -44,6 +44,7 @@
 #define MS_CLIENT_DEFAULT_MAX_REQUEST_BATCH 10
 #define MS_CLIENT_DEFAULT_MAX_ASYNC_REQUEST_BATCH 100
 #define MS_CLIENT_DEFAULT_MAX_CONNECTIONS 100
+#define MS_CLIENT_DEFAULT_MS_TRANSFER_TIMEOUT 25
 
 using namespace std;
 
@@ -109,6 +110,7 @@ struct ms_client {
    int max_request_batch;     // maximum number of synchronous requests we can send in one multi_request
    int max_request_async_batch;     // maximum number of asynchronous requests we can send in one multi_request
    int max_connections;       // maximum number of open connections to make to the MS
+   int ms_transfer_timeout;     // how long to wait for data transfer before failing with -EAGAIN
    
    //////////////////////////////////////////////////////////////////
    // gateway volume-change structures (represents a consistent view of the Volume control state)

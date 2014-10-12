@@ -388,6 +388,8 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
+   curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
+   
    if( opt_dlset != NULL ) {
       md_download_set_add( opt_dlset, dlctx );
    }
@@ -541,6 +543,8 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
    curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
+   
+   curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
    
    if( timing != NULL ) {
       curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );

@@ -15,6 +15,7 @@
    limitations under the License.
 """
 
+import google
 from google.appengine.ext import ndb
 import google.appengine.api.memcache as google_memcache
 import google.appengine.ext.deferred as google_deferred
@@ -134,3 +135,8 @@ opOR = ndb.OR
 
 # aliases for top-level asynchronous loop
 toplevel = ndb.toplevel
+
+# aliases for common exceptions 
+RequestDeadlineExceededError = google.appengine.runtime.DeadlineExceededError
+APIRequestDeadlineExceededError = google.appengine.runtime.apiproxy_errors.DeadlineExceededError
+URLRequestDeadlineExceededError = google.appengine.api.urlfetch_errors.DeadlineExceededError

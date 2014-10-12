@@ -191,6 +191,13 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       client->max_connections = MS_CLIENT_DEFAULT_MAX_CONNECTIONS;
    }
    
+   if( registration_md->has_max_transfer_time() ) {
+      client->ms_transfer_timeout = registration_md->max_transfer_time();
+   }
+   else {
+      client->ms_transfer_timeout = MS_CLIENT_DEFAULT_MS_TRANSFER_TIMEOUT;
+   }
+   
    // sanity check...
    if( client->session_expires > 0 && client->session_expires < currentTimeSeconds() ) {
       errorf("Session password expired at %" PRId64 "\n", client->session_expires );

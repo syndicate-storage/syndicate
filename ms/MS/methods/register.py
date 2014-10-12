@@ -177,6 +177,7 @@ def register_complete( gateway ):
    registration_metadata.max_connections = MAX_NUM_CONNECTIONS
    registration_metadata.max_batch_request_size = MAX_BATCH_REQUEST_SIZE
    registration_metadata.max_batch_async_request_size = MAX_BATCH_ASYNC_REQUEST_SIZE
+   registration_metadata.max_transfer_time = MAX_TRANSFER_TIME
    
    # sign and serialize!
    registration_metadata.signature = ""

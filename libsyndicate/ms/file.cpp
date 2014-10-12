@@ -1212,6 +1212,7 @@ static int ms_client_path_download_context_init( struct ms_client* client, struc
    md_init_curl_handle( client->conf, curl_handle, url, client->conf->connect_timeout );
    curl_easy_setopt( curl_handle, CURLOPT_USERPWD, client->userpass );
    curl_easy_setopt( curl_handle, CURLOPT_URL, url );
+   curl_easy_setopt( curl_handle, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
    
    pdlctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
    
@@ -1253,6 +1254,11 @@ static int ms_client_path_download_context_free( struct ms_path_download_context
       
       free( pdlctx->dlctx );
       pdlctx->dlctx = NULL;
+      
+      if( pdlctx->have_listing ) {
+         ms_client_free_listing( &pdlctx->listing_buf );
+         pdlctx->have_listing = false;
+      }
    }
    
    memset( pdlctx, 0, sizeof(struct ms_path_download_context));
@@ -1679,6 +1685,14 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
          
          struct ms_path_download_context* pdlctx = path_contexts[ dlctx ];
          
+         if( http_status == MD_HTTP_TRYAGAIN ) {
+            
+            errorf("MS says try %p (%s) again\n", dlctx, final_url );
+            rc = -EAGAIN;
+            free( final_url );
+            break;
+         }
+         
          // serious MS error?
          if( http_status >= 500 ) {
             errorf("Download %p (%s) HTTP status %d\n", dlctx, final_url, http_status );
@@ -1741,7 +1755,7 @@ static int ms_client_run_path_downloads( struct ms_client* client, struct ms_pat
                errorf("ms_client_consume_listing_page(%p, page=%d) rc = %d\n", dlctx, pdlctx->page_id, rc );
                
                if( rc == -EAGAIN ) {
-                  // MS says to try this one again 
+                  // try this one again 
                   attempts[dlctx] ++;
                   
                   rc = ms_client_retry_path_download( client, dlctx, attempts[dlctx] );
