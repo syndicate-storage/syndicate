@@ -45,6 +45,13 @@ struct httpd_connection_data {
    ssize_t written;
 };
 
+struct syndicate_httpd_extra_opts {
+   char* logfile_path;
+   char* pidfile_path;
+   bool foreground;
+   int frontend_portnum;
+};
+
 #define HTTP_MODE "X-POSIX-Mode"
 
 #define SYNDICATE_HTTPD_TMP "/tmp/syndicate-httpd-XXXXXX"

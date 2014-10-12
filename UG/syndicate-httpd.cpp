@@ -833,13 +833,6 @@ void quit_sigterm( int param ) {
    md_stop_HTTP( &g_http );
 }
 
-struct syndicate_httpd_extra_opts {
-   char* logfile_path;
-   char* pidfile_path;
-   bool foreground;
-   int frontend_portnum;
-};
-
 static struct syndicate_httpd_extra_opts g_extra_opts;
 
 int syndicate_httpd_handle_opt( int c, char* arg ) {
