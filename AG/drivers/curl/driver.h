@@ -35,7 +35,7 @@
 #include "AG/driver.h"
 
 
-#define AG_CURL_DRIVER_CONFIG_BASE_URL "BaseURL"
+#define AG_CURL_DRIVER_CONFIG_CHECK_UPSTREAM "check_upstream"
 
 // curl write context 
 struct curl_write_context {

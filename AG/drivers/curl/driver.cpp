@@ -150,6 +150,8 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
    
    // fill in our pubinfo 
    pub_info->size = (off_t)filesize;
+   
+   // set the time to now 
    pub_info->mtime_sec = (int64_t)filetime;
    pub_info->mtime_nsec = 0;
    
@@ -342,18 +344,49 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    char* url = AG_driver_map_info_get_query_string( map_info );
    
    if( url == NULL ) {
-      // can't do anything
-      return -ENODATA;
+      
+      // it's a directory.
+      // timestamp is simply now 
+      pub_info->size = 4096;
+      
+      struct timespec ts;
+      clock_gettime( CLOCK_REALTIME, &ts );
+      
+      pub_info->mtime_sec = ts.tv_sec;
+      pub_info->mtime_nsec = ts.tv_nsec;
+      
+      return 0;
    }
    
-   int rc = curl_get_pubinfo( path, url, pub_info );
+   int rc = 0;
    
-   if( rc != 0 ) {
-      errorf("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
+   // it's a file.
+   // get information from upstream?
+   char* get_from_upstream = AG_driver_get_config_var( AG_CURL_DRIVER_CONFIG_CHECK_UPSTREAM );
+   if( get_from_upstream != NULL ) {
+      
+      free( get_from_upstream );
+      
+      // get the info from upstream
+      int rc = curl_get_pubinfo( path, url, pub_info );
+      
+      if( rc != 0 ) {
+         errorf("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
+      }
+      
+   }
+   else {
+      // get locally 
+      pub_info->size = -1;
+      
+      struct timespec ts;
+      clock_gettime( CLOCK_REALTIME, &ts );
+      
+      pub_info->mtime_sec = ts.tv_sec;
+      pub_info->mtime_nsec = ts.tv_nsec;
    }
    
    free( url );
-   
    return rc;
 }
 
