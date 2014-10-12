@@ -106,8 +106,13 @@ void AG_populate_md_entry_from_AG_info( struct md_entry* entry, struct AG_map_in
 void AG_populate_md_entry_from_cached_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce );
 void AG_populate_md_entry_from_publish_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info );
 
+// directory searching 
+int AG_sort_paths_by_depth( AG_fs_map_t* directives, vector<string>* paths );
+int AG_pop_paths_by_depth( vector<string>* sorted_paths, vector<string>* path_list );
+int AG_pop_paths_by_parent( vector<string>* sorted_paths, vector<string>* path_list );
+
 // misc 
-int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existing_fs, bool fail_fast );
+int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* in_specfile, AG_fs_map_t* on_MS );
 int AG_get_publish_info( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info );
 int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info );
 int AG_dump_fs_map( AG_fs_map_t* fs_map );

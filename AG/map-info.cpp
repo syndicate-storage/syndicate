@@ -239,7 +239,6 @@ static int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry
 
 // invalidate cached data, so we get new listings for it when we ask the MS again 
 static int AG_invalidate_cached_metadata( struct AG_map_info* mi ) {
-   dbprintf("Invalidate %p\n", mi);
    mi->write_nonce = md_random64();
    mi->cache_valid = false;
    return 0;
@@ -264,6 +263,7 @@ static int AG_invalidate_path_metadata( AG_fs_map_t* fs_map, char const* path ) 
          return -ENOENT;
       }
       
+      dbprintf("Invalidate %s\n", prefixes[i] );
       AG_invalidate_cached_metadata( itr->second );
    }
    
@@ -614,6 +614,7 @@ int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char con
 
 
 // generate all prefixes for a path, including the path itself
+// return the number of prefixes, or negative on error
 int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    
    char* fs_path = strdup(path);
@@ -662,7 +663,7 @@ int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    }
    
    *ret_prefixes = ret;
-   return 0;
+   return prefixes.size();
 }
 
 
@@ -775,6 +776,7 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
 
 // copy a tree's cached data into an AG_fs_map.  Don't copy data that exists in src but not in dest.  Only copy if coherent.
 // dest cannot be locked.
+// src must be at least read-locked
 int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
    
    for( AG_fs_map_t::iterator itr = src->fs->begin(); itr != src->fs->end(); itr++ ) {
@@ -1368,42 +1370,278 @@ int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
 }
 
 
-// find the set of entries that already exist on the MS.
-// exisitng_fs must be empty.
-int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existing_fs, bool fail_fast ) {
+// find and remove all entries from sorted_paths of the same depth, and put them into path_list
+// sorted_paths must be sorted by increasing path depth.
+int AG_pop_paths_by_depth( vector<string>* sorted_paths, vector<string>* path_list ) {
+   
+   if( sorted_paths->size() == 0 ) {
+      return -EINVAL;
+   }
+   
+   int depth = 0;
+   
+   // what's the depth of the head?
+   depth = md_depth( sorted_paths->at(0).c_str() );
+   
+   path_list->push_back( sorted_paths->at(0) );
+   
+   if( sorted_paths->size() > 1 ) {
+      // find all directories in sorted_paths that are have $depth.
+      // they will all be at the head.
+      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
+         
+         int next_depth = md_depth( sorted_paths->at(i).c_str() );
+         if( next_depth == depth ) {
+            
+            path_list->push_back( sorted_paths->at(i) );
+         }
+         else {
+            break;
+         }
+      }
+   }
+   
+   // pop all pushed paths 
+   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + path_list->size() );
+   
+   return 0;
+}
+
+
+// find and remove all entries from sorted_paths that share the same parent, and put them into path_list
+// sorted_paths must be sorted alphanumerically
+int AG_pop_paths_by_parent( vector<string>* sorted_paths, vector<string>* path_list ) {
+   
+   if( sorted_paths->size() == 0 ) {
+      return -EINVAL;
+   }
+   
+   // if well-formed, the first element is the parent directory (since its path will be shortest)
+   char* parent_dir = md_dirname( sorted_paths->at(0).c_str(), NULL );
+   
+   path_list->push_back( sorted_paths->at(0) );
+   
+   if( sorted_paths->size() > 0 ) {
+      // find all directories in sorted paths that have the parent directory $parent_dir 
+      // they will all be at the head.
+      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
+         
+         if( AG_path_is_immediate_child( parent_dir, sorted_paths->at(i).c_str() ) ) {
+            
+            path_list->push_back( sorted_paths->at(i) );
+         }
+         else {
+            break;
+         }
+      }
+   }
+   
+   free( parent_dir );
+   
+   // pop all pushed paths 
+   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + path_list->size() );
+   
+   return 0;
+}
+
+
+// sort paths by depth.  put them into paths
+int AG_sort_paths_by_depth( AG_fs_map_t* directives, vector<string>* paths ) {
+   
+   // sanity check 
+   if( directives->size() == 0 ) {
+      // empty list
+      return 0;
+   }
+   
+   for( AG_fs_map_t::iterator itr = directives->begin(); itr != directives->end(); itr++ ) {
+      paths->push_back( itr->first );
+   }
+   
+   // put the FS paths into breadth-first order.
+   struct local_path_comparator {
+      
+      static bool comp_breadth_first( const string& s1, const string& s2 ) {
+         // s1 comes before s2 if s1 is shallower than s2
+         int depth_1 = md_depth( s1.c_str() );
+         int depth_2 = md_depth( s2.c_str() );
+         
+         return depth_1 < depth_2;
+      }
+   };
+   
+   // breadth-first order
+   sort( paths->begin(), paths->end(), local_path_comparator::comp_breadth_first );
+   
+   return 0;
+}
+
+
+// find all directories and the number of children they have in an fs_map 
+static int AG_fs_count_children( AG_fs_map_t* fs_map, map<string, int>* child_counts ) {
+   
+   // find all directories in the specfile, and count their children in specfile_child_counts
+   for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
+      
+      struct AG_map_info* mi = itr->second;
+      
+      // make sure path is r-stripped of '/'
+      char* path = strdup( itr->first.c_str() );
+      if( path == NULL ) {
+         return -ENOMEM;
+      }
+      
+      md_sanitize_path( path );
+      
+      string path_s( path );
+      
+      // add count entry if directory
+      if( mi->type == MD_ENTRY_DIR ) {
+         
+         map<string, int>::iterator count_itr = child_counts->find( path_s );
+         if( count_itr == child_counts->end() ) {
+            
+            (*child_counts)[ path_s ] = 0;
+         }
+      }
+      
+      // increment parent count 
+      char* parent_path = md_dirname( path, NULL );
+      if( parent_path == NULL ) {
+         free( path );
+         return -ENOMEM;
+      }
+      
+      // ensure r-stripped of /
+      md_sanitize_path( parent_path );
+      
+      // increment parent count 
+      string parent_path_s( parent_path );
+      
+      map<string, int>::iterator count_itr = child_counts->find( parent_path_s );
+      if( count_itr == child_counts->end() ) {
+         
+         (*child_counts)[ itr->first ] = 1;
+      }
+      else {
+         count_itr->second ++;
+      }
+      
+      free( parent_path );
+      free( path );
+   }
+   
+   return 0;
+}
+
+
+// given the specfile and cached MS data, find the frontier of the cached data
+// that is, find all directories in the cached data that:
+// * have a child in the specfile that is not cached
+// * have a different number of children than what the specfile says
+static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vector<string>* frontier ) {
+   
+   map<string, int> specfile_child_counts;
+   map<string, int> MS_child_counts;
+   
+   // count up children 
+   AG_fs_count_children( specfile, &specfile_child_counts );
+   AG_fs_count_children( on_MS, &MS_child_counts );
+   
+   set<string> frontier_set;    // use this to prevent duplicate insertions 
+   
+   // find all directories in the specfile that aren't on the MS, or that have a different number of children
+   for( map<string, int>::iterator itr = specfile_child_counts.begin(); itr != specfile_child_counts.end(); itr++ ) {
+      
+      map<string, int>::iterator ms_itr = MS_child_counts.find( itr->first );
+      
+      if( ms_itr == MS_child_counts.end() ) {
+         
+         char** prefixes = NULL;
+         int num_prefixes = AG_path_prefixes( itr->first.c_str(), &prefixes );
+         
+         // find the deepest ancestor in the cached data; this is the frontier directory
+         for( int i = num_prefixes - 1; i >= 0; i-- ) {
+            
+            string prefix_s( prefixes[i] );
+            
+            ms_itr = MS_child_counts.find( prefix_s );
+            if( ms_itr != MS_child_counts.end() ) {
+               
+               if( frontier_set.count( prefix_s ) == 0 ) {
+                  frontier->push_back( prefix_s );
+                  frontier_set.insert( prefix_s );
+               }
+               
+               break;
+            }
+         }
+         
+         FREE_LIST( prefixes );
+      }
+      else if( ms_itr->second != itr->second ) {
+         
+         if( frontier_set.count( itr->first ) == 0 ) {
+            frontier->push_back( itr->first );
+            frontier_set.insert( itr->first );
+         }
+      }
+   }
+   
+   return 0;
+}
+
+
+// find the set of entries that already exist on the MS, and put them into on_MS.
+// don't re-download items that are already present in on_MS
+// specfile_fs contains the specfile's data, and must be well-formed (i.e. every element has a parent except root)
+// NOTE: regardless of sucess or failure, the caller must free the on_MS's contents
+int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs_map_t* on_MS ) {
    
    dbprintf("%s", "Begin downloading\n");
    
    int rc = 0;
    vector<string> frontier;
    
-   struct AG_map_info* root = CALLOC_LIST( struct AG_map_info, 1 );
-   
-   rc = AG_map_info_get_root( ms, root );
-   if( rc != 0 ) {
-      errorf("AG_map_info_get_root rc = %d\n", rc );
+   if( on_MS->size() == 0 ) {
       
-      free( root );
+      // do the whole tree
+      struct AG_map_info* root = CALLOC_LIST( struct AG_map_info, 1 );
       
-      dbprintf("End downloading (failure, rc = %d)\n", rc);
-      return rc;
+      rc = AG_map_info_get_root( ms, root );
+      if( rc != 0 ) {
+         errorf("AG_map_info_get_root rc = %d\n", rc );
+         
+         free( root );
+         
+         dbprintf("End downloading (failure, rc = %d)\n", rc);
+         return rc;
+      }
+      
+      (*on_MS)[ string("/") ] = root;
+      
+      frontier.push_back( string("/") );
    }
    
-   AG_fs_map_t* existing_fs = new AG_fs_map_t();
-   
-   (*existing_fs)[ string("/") ] = root;
-   
-   // find the root and invalidate it 
-   rc = AG_invalidate_path_metadata( existing_fs, "/" );
-   if( rc != 0 ) {
-      errorf("AG_invalidate_path_metadata(/) rc = %d\n", rc );
+   else {
       
-      delete existing_fs;
-      dbprintf("End downloading (failure, rc = %d)\n", rc);
-      return rc;
+      // build up our frontier from the empty directories in on_MS
+      rc = AG_fs_find_frontier( specfile_fs, on_MS, &frontier );
+      if( rc != 0 ) {
+         errorf("AG_fs_find_frontier rc = %d\n", rc );
+         return rc;
+      }
    }
    
-   frontier.push_back( string("/") );
+   // invalidate the frontier so we can search them 
+   for( unsigned int i = 0; i < frontier.size(); i++ ) {
+      
+      // find the associated map info 
+      AG_fs_map_t::iterator itr = on_MS->find( frontier[i] );
+      if( itr != on_MS->end() ) {
+         AG_invalidate_cached_metadata( itr->second );
+      }
+   }
    
    while( frontier.size() > 0 ) {
       
@@ -1422,7 +1660,7 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
       AG_fs_map_t new_info;
       
       // copy this path in 
-      rc = AG_fs_map_clone_path( existing_fs, dir_path, &dir_listing );
+      rc = AG_fs_map_clone_path( on_MS, dir_path, &dir_listing );
       if( rc != 0 ) {
          errorf("AG_fs_map_clone_path(%s) rc = %d\n", dir_path, rc );
          break;
@@ -1438,13 +1676,13 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
          break;
       }
       
-      // find unexplored info, and invalidate directories
+      // find unexplored info, and invalidate newly-discovered directories
       for( AG_fs_map_t::iterator itr = new_info.begin(); itr != new_info.end(); itr++ ) {
          
          char const* child_path = itr->first.c_str();
          struct AG_map_info* mi = itr->second;
          
-         // ignore non-immediate childs of the current directory, and ignore root
+         // ignore non-immediate children of the current directory, and ignore root
          if( !AG_path_is_immediate_child( dir_path, child_path ) || strcmp( child_path, "/" ) == 0 ) {
             dbprintf("Ignore %s\n", child_path);
             continue;
@@ -1464,7 +1702,7 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
       AG_fs_map_free( &dir_listing );
       
       // merge discovered data back in 
-      rc = AG_fs_map_merge_tree( existing_fs, &new_info, true, NULL );
+      rc = AG_fs_map_merge_tree( on_MS, &new_info, true, NULL );
       
       if( rc != 0 ) {
          errorf("AG_fs_map_merge_tree(%s) rc = %d\n", dir_path, rc );
@@ -1474,17 +1712,13 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
    
    if( rc == 0 ) {
       
-      *ret_existing_fs = existing_fs;
-      
-      dbprintf("Downloaded file mapping %p:\n", existing_fs);
-      AG_dump_fs_map( existing_fs );
+      dbprintf("Downloaded file mapping %p:\n", on_MS);
+      AG_dump_fs_map( on_MS );
       
       dbprintf("%s", "End downloading (success)\n");
    }
    else {
-
-      AG_fs_map_free( existing_fs );
-      delete existing_fs;
+      
       dbprintf("End downloading (failure, rc = %d)\n", rc);
    }
    
