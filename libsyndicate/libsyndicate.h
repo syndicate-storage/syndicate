@@ -152,6 +152,7 @@ struct md_upload_buf {
 
 // server configuration
 struct md_syndicate_conf {
+   
    // UG fields
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
@@ -159,8 +160,6 @@ struct md_syndicate_conf {
    bool gather_stats;                                 // gather statistics or not?
    char* content_url;                                 // what is the URL under which local data can be accessed publicly?
    char* storage_root;                                // toplevel directory that stores local syndicate state (blocks, manifests, logs, etc)
-   char* local_sd_dir;                                // directory containing local storage drivers
-   int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
    int max_read_retry;                                // maximum number of times to retry a read (i.e. fetching a block or manifest) before considering it failed 
@@ -173,6 +172,7 @@ struct md_syndicate_conf {
    unsigned int num_http_threads;                     // how many HTTP threads to create
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
+   char* local_sd_dir;                                // directory containing local storage drivers (AG only)
    
    // debug
    int debug_lock;                                    // print verbose information on locks
@@ -181,13 +181,13 @@ struct md_syndicate_conf {
    char* gateway_name;                                // name of this gateway
    int portnum;                                       // Syndicate-side port number
    int connect_timeout;                               // number of seconds to wait to connect for data
-   int transfer_timeout;                              // how long a transfer is allowed to take (in seconds)
-   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
+   int transfer_timeout;                              // how long a manifest/block transfer is allowed to take (in seconds)
+   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers (if using HTTPS to talk to them)
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
    
    // MS-related fields
-   char* metadata_url;                                // URL (or path on disk) where to get the metadata
+   char* metadata_url;                                // MS url
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
@@ -245,7 +245,6 @@ struct md_syndicate_conf {
 #define NUM_HTTP_THREADS_KEY        "HTTP_THREADPOOL_SIZE"
 
 #define PORTNUM_KEY                 "PORTNUM"
-#define HTTPD_PORTNUM_KEY           "HTTPD_PORTNUM"
 #define SSL_PKEY_KEY                "TLS_PKEY"
 #define SSL_CERT_KEY                "TLS_CERT"
 #define GATEWAY_KEY_KEY             "GATEWAY_KEY"
@@ -452,9 +451,6 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 // system UID
 #define SYS_USER 0
-
-// syndicatefs magic number
-#define SYNDICATEFS_MAGIC  0x01191988
 
 #define INVALID_BLOCK_ID (uint64_t)(-1)
 #define INVALID_GATEWAY_ID INVALID_BLOCK_ID

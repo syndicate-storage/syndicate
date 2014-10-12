@@ -569,10 +569,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->local_sd_dir = strdup( values[0] );
       }
       
-      else if( strcmp( key, HTTPD_PORTNUM_KEY ) == 0 ) {
-         conf->httpd_portnum = strtol( values[0], NULL, 10 );
-      }
-
       else if( strcmp( key, TRANSFER_TIMEOUT_KEY ) == 0 ) {
          conf->transfer_timeout = strtol( values[0], NULL, 10 );
       }
@@ -1876,7 +1872,6 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->default_read_freshness = 5000;
    conf->default_write_freshness = 0;
    conf->gather_stats = false;
-   conf->httpd_portnum = 44444;
 
 #ifndef _DEVELOPMENT
    conf->verify_peer = true;
