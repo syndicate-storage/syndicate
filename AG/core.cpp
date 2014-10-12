@@ -339,6 +339,8 @@ int AG_reload( struct AG_state* state ) {
    AG_fs_map_t* new_fs = NULL;
    AG_config_t* new_config = NULL;
    
+   dbprintf("%s", "Begin reload state\n");
+   
    // get the new fs data 
    rc = AG_reload_specfile( state, &new_fs, &new_config );
    if( rc != 0 ) {
@@ -391,11 +393,17 @@ int AG_reload( struct AG_state* state ) {
    // for reloading, an element is in both the old and new fsmaps if it has the same AG-specific metadata 
    struct AG_reload_comparator {
       static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
+         
+         bool streq = true;
+         if( mi1->query_string != NULL && mi2->query_string != NULL ) {
+            streq = (strcmp( mi1->query_string, mi2->query_string ) == 0);
+         }
+         
          return (mi1->driver    == mi2->driver    &&
                  mi1->file_perm == mi2->file_perm &&
                  mi1->reval_sec == mi2->reval_sec &&
                  mi1->type      == mi2->type      &&
-                 strcmp( mi1->query_string, mi2->query_string ) == 0 );
+                 streq );
       }
    };
    
@@ -445,6 +453,7 @@ int AG_reload( struct AG_state* state ) {
       errorf("WARN: AG_reversioner_reload_map_infos rc = %d\n", rc );
    }
    
+   dbprintf("%s", "End reload state\n");
    return 0;
 }
 
@@ -592,39 +601,35 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    
    // initialize the path-mapping 
    state->ag_fs = CALLOC_LIST( struct AG_fs, 1 );
+
+   // get the new FS mapping and config 
+   rc = AG_reload_specfile( state, &parsed_map, &state->config );
+   if( rc != 0 ) {
+      errorf("AG_reload_specfile rc = %d\n", rc );
+      return rc;
+   }
    
-   if( !ag_opts->quickstart ) {
+   // verify its integrity 
+   rc = AG_validate_map_info( parsed_map );
+   if( rc != 0 ) {
+      errorf("AG_validate_map_info rc = %d\n", rc );
       
-      // get the new FS mapping and config 
-      rc = AG_reload_specfile( state, &parsed_map, &state->config );
-      if( rc != 0 ) {
-         errorf("AG_reload_specfile rc = %d\n", rc );
-         return rc;
-      }
+      AG_fs_map_free( parsed_map );
+      delete parsed_map;
       
-      // verify its integrity 
-      rc = AG_validate_map_info( parsed_map );
-      if( rc != 0 ) {
-         errorf("AG_validate_map_info rc = %d\n", rc );
-         
-         AG_fs_map_free( parsed_map );
-         delete parsed_map;
-         
-         return rc;
-      }
+      return rc;
+   }
+   
+   // pass in the newly-parsed FS map into the AG_fs (which takes ownership)
+   rc = AG_fs_init( state->ag_fs, parsed_map, state->ms );
+   
+   if( rc != 0 ) {
+      errorf("AG_fs_init rc = %d\n", rc );
       
-      // pass in the newly-parsed FS map into the AG_fs (which takes ownership)
-      rc = AG_fs_init( state->ag_fs, parsed_map, state->ms );
+      AG_fs_map_free( parsed_map );
+      delete parsed_map;
       
-      if( rc != 0 ) {
-         errorf("AG_fs_init rc = %d\n", rc );
-         
-         
-         AG_fs_map_free( parsed_map );
-         delete parsed_map;
-         
-         return rc;
-      }
+      return rc;
    }
    
    // dbprintf("Loaded the following file mapping into %p\n", state->ag_fs->fs );
@@ -713,42 +718,61 @@ int AG_start( struct AG_state* state ) {
    dbprintf("%s", "(Re)synchronizing dataset\n");
    
    // get the list of entries that are already on the MS 
-   AG_fs_map_t* on_MS = NULL;
+   AG_fs_map_t* on_MS = new AG_fs_map_t();
    
-   rc = AG_download_existing_fs_map( state->ms, &on_MS, true );
+   // wrap on_MS into an AG_fs 
+   // NOTE: we don't care about drivers for this map; only consistency information
+   struct AG_fs on_MS_fs;
+   rc = AG_fs_init( &on_MS_fs, on_MS, state->ms );
+   
    if( rc != 0 ) {
-      errorf("AG_download_existing_fs_map rc = %d\n", rc );
+      errorf("AG_fs_init(on_MS) rc = %d\n", rc );
+      
+      AG_fs_map_free( on_MS );
+      delete on_MS;
       
       return rc;
    }
    
-   if( !state->ag_opts.quickstart ) {
-         
-      // wrap on_MS into an AG_fs 
-      // NOTE: we don't care about drivers for this map; only consistency information
-      struct AG_fs on_MS_fs;
-      rc = AG_fs_init( &on_MS_fs, on_MS, state->ms );
+   if( state->ag_opts.cached_metadata_path != NULL ) {
       
+      // populate on_MS with cached data 
+      rc = AG_MS_cache_load( state->ag_opts.cached_metadata_path, on_MS_fs.fs );
       if( rc != 0 ) {
-         errorf("AG_fs_init(on_MS) rc = %d\n", rc );
-         
-         AG_fs_map_free( on_MS );
-         delete on_MS;
-         
-         return rc;
+         errorf("WARN: AG_MS_cache_load(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
+         rc = 0;
       }
       
-      // copy all cached data from on_MS_fs to the new mapping (from the spec file),
-      // since on_MS_fs is coherent but the specfile-loaded mapping is not 
+      // copy cached MS metadata into the specfile-generated fs map (so we can tell which metadata to download next)
       AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
+   }
+   
+   AG_fs_wlock( state->ag_fs );
+   
+   // fetched non-cached entries
+   rc = AG_download_MS_fs_map( state->ms, state->ag_fs->fs, on_MS_fs.fs );
+   
+   AG_fs_unlock( state->ag_fs );
+   
+   if( rc != 0 ) {
+      errorf("AG_download_existing_fs_map rc = %d\n", rc );
       
+      AG_fs_free( &on_MS_fs );
+      
+      return rc;
+   }
+   
+   // copy all downloaded MS metadata into the specfile-generatd fs map
+   AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
+   
+   if( !state->ag_opts.quickstart ) {
       // for initializing, an entry is common to both the specfile and the MS-hosted copy
       // if the MS entry's metadata reflects the entry's metadata in the specfile.
       struct AG_reload_comparator {
          static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
             return (mi1->file_perm == mi2->file_perm &&
-                  mi1->reval_sec == mi2->reval_sec &&
-                  mi1->type      == mi2->type );
+                    mi1->reval_sec == mi2->reval_sec &&
+                    mi1->type      == mi2->type );
          }
       };
       
@@ -762,21 +786,22 @@ int AG_start( struct AG_state* state ) {
          AG_fs_free( &on_MS_fs );
          return rc;
       }
-      
-      AG_fs_free( &on_MS_fs );
    }
-   else {
-      // quick start.  Just go with what we downloaded.
-      rc = AG_fs_init( state->ag_fs, on_MS, state->ms );
+   
+   AG_fs_free( &on_MS_fs );
+   
+   if( state->ag_opts.cached_metadata_path != NULL ) {
       
+      AG_fs_rlock( state->ag_fs );
+      
+      // save the cached data 
+      rc = AG_MS_cache_store( state->ag_opts.cached_metadata_path, state->ag_fs->fs );
       if( rc != 0 ) {
-         errorf("AG_fs_init rc = %d\n", rc );
-         
-         AG_fs_map_free( on_MS );
-         delete on_MS;
-         
-         return rc;
+         errorf("WARN: AG_MS_cache_store(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
+         rc = 0;
       }
+      
+      AG_fs_unlock( state->ag_fs );
    }
    
    // start HTTP 
@@ -935,6 +960,7 @@ int AG_state_free( struct AG_state* state ) {
       state->ag_opts.logfile_path,
       state->ag_opts.driver_dir,
       state->ag_opts.spec_file_path,
+      state->ag_opts.cached_metadata_path,
       NULL
    };
    
@@ -1011,6 +1037,14 @@ AG-specific options:\n\
    -q\n\
             Quick start: take no action on the specfile; just cache the entries\n\
             from the volume and begin serving requests.\n\
+   -M PATH\n\
+            Use cached data from the MS.  If PATH does not exist, then download and\n\
+            cache metadata to PATH.  If PATH exists, then load metadata from PATH, and\n\
+            append to it any metadata that had to be fetched from the MS.\n\
+            \n\
+            No consistency checks will be performed if you load cached data from\n\
+            the MS.  This is meant for AGs that expose so much static data that re-syncing\n\
+            it with the MS on every start-up is infeasible.\n\
    -n\n\
             On start-up, queue all datasets for reversion.  This updates the\n\
             consistency information for each dataset on the MS, and invokes\n\
@@ -1157,7 +1191,15 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          g_AG_opts.quickstart = true;
          break;
       }
-      
+      case 'M': {
+         
+         if( g_AG_opts.cached_metadata_path != NULL ) {
+            free( g_AG_opts.cached_metadata_path );
+         }
+         
+         g_AG_opts.cached_metadata_path = strdup( opt_s );
+         break;
+      }
       default: {
          errorf("Unrecognized option '%c'\n", opt_c );
          rc = -1;
@@ -1196,7 +1238,7 @@ int AG_main( int argc, char** argv ) {
    memset( &opts, 0, sizeof(struct md_opts));
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:nq", AG_handle_opt );
+   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:nqM:", AG_handle_opt );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       AG_usage();
