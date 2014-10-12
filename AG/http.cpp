@@ -138,7 +138,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
       bbmsg->add_block_versions( mi->block_version );
    }
    
-   // NOTE: no hashes, since they're served with the blocks directly
+   // NOTE: no hashes, since they're served with the blocks directly (along with a signature)
    
    // sign the message
    int rc = md_sign< Serialization::ManifestMsg >( state->ms->my_key, mmsg );
@@ -459,11 +459,14 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       return NULL;
    }
    
+   // determine request type 
+   int request_type = AG_request_type( &reqdat );
+   
    // verify that the requester has fresh data
    rc = AG_HTTP_verify_fresh( state, md_con_data, &reqdat, mi, &pubinfo ); 
    if( rc > 0 ) {
-      // nope 
       
+      // not fresh 
       AG_release_state( state );
       
       md_gateway_request_data_free( &reqdat );
@@ -473,9 +476,6 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       
       return NULL;
    }
-   
-   // determine request type 
-   int request_type = AG_request_type( &reqdat );
    
    // set up the connection data
    struct AG_connection_data* con_data = CALLOC_LIST( struct AG_connection_data, 1 );
