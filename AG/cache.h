@@ -18,6 +18,7 @@
 #define _AG_CACHE_H_
 
 #include "libsyndicate/cache.h"
+#include "libsyndicate/url.h"
 
 #include "AG.h"
 
@@ -27,19 +28,24 @@
 struct AG_state;
 struct AG_driver_publish_info;
 
+// driver block cache
 int AG_cache_get_block( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version, char** block, size_t* block_len );
 int AG_cache_promote_block( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version );
 int AG_cache_put_block_async( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version, char* block, size_t block_len );
 int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version );
 
 char* AG_cache_stat_path( char const* path );
-uint64_t AG_cache_file_id( char const* path );
 
+// driver pubinfo cache
 int AG_cache_get_stat( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
 int AG_cache_promote_stat( struct AG_state* state, char const* path, int64_t file_version );
 int AG_cache_put_stat_async( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
 int AG_cache_evict_stat( struct AG_state* state, char const* path, int64_t file_version );
 
 int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_version );
+
+// MS metadata cache
+int AG_MS_cache_load( char const* file_path, AG_fs_map_t* fs_map );
+int AG_MS_cache_store( char const* file_path, AG_fs_map_t* fs_map );
 
 #endif 
