@@ -224,6 +224,7 @@ message ms_registration_metadata {
    optional int32 max_connections = 8;                  // MS-given hint on the maximum number of connections to open at once 
    optional int32 max_batch_request_size = 9;           // MS-given hint on the maximum number of synchronous requests to send per multi-request
    optional int32 max_batch_async_request_size = 10;     // MS-given hint on the maximum number of asynchronous requests to send per multi-request
+   optional int32 max_transfer_time = 11;             // MS-given hint on how long to wait for metadata before trying again
 }
 
 
