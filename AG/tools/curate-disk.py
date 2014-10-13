@@ -61,12 +61,8 @@ if __name__ == "__main__":
       parser.print_help()
       sys.exit(1)
       
-   try:
-      num_threads = int(args.num_threads)
-      max_retries = int(args.max_attempts)
-   except:
-      parser.print_help()
-      sys.exit(1)
+   num_threads = AG_args.get_num_threads_or_die( args )
+   max_retries = AG_args.get_num_retries_or_die( args )
    
    blacklists, whitelists = AG_acl.load_blacklists_and_whitelists( args.blacklists, args.whitelists )
    

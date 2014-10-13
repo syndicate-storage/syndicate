@@ -52,6 +52,7 @@ def get_num_retries_or_die( args ):
    
    try:
       max_retries = int(args.max_attempts)
+      return max_retries
    except:
       parser.print_help()
       sys.exit(1)
