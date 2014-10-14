@@ -958,14 +958,16 @@ int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** 
    *_block_version = block_version;
    _manifest_ts->tv_sec = manifest_timestamp.tv_sec;
    _manifest_ts->tv_nsec = manifest_timestamp.tv_nsec;
-   
+
+   /*
    if( manifest_timestamp.tv_sec > 0 || manifest_timestamp.tv_nsec > 0 ) {
       dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld\n", volume_id, file_path, file_id, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec );
    }
    else {
       dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", volume_id, file_path, file_id, file_version, block_id, block_version );
    }
-
+   */
+   
    free( parts );
 
 _md_HTTP_parse_url_path_finish:
