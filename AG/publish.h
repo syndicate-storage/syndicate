@@ -27,6 +27,7 @@
 #define AG_REQUEST_USE_DRIVER               0x1
 #define AG_REQUEST_DIRS_FIRST               0x2
 #define AG_REQUEST_USE_DIRECTIVES           0x4
+#define AG_REQUEST_SKIP_IF_CACHE_VALID      0x8
 
 #define AG_REQUEST_MAX_RETRIES           5
 

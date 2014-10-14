@@ -80,15 +80,12 @@ void AG_fs_map_free( AG_fs_map_t* fs_map ) {
 
 // merge info from a fresh AG_map_info into an existing AG_map_info, respecting which field(s) are read-only.
 // this is preferred to duplicating an AG_map_info with AG_map_info_dup
-void AG_map_info_make_coherent( struct AG_map_info* dest, struct AG_map_info* src ) {
+void AG_map_info_merge( struct AG_map_info* dest, struct AG_map_info* src ) {
    
    if( !dest->cache_valid && src->cache_valid ) {
-      dest->file_id = src->file_id;
-      dest->file_version = src->file_version;
-      dest->block_version = src->block_version;
-      dest->write_nonce = src->write_nonce;
-      dest->cache_valid = src->cache_valid;
-      dest->refresh_deadline = src->refresh_deadline;
+      
+      AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce );
+      AG_map_info_make_coherent_with_AG_data( dest, src->block_version, src->refresh_deadline );
    }
    
    if( dest->query_string == NULL && src->query_string != NULL ) {
@@ -101,6 +98,11 @@ void AG_map_info_make_coherent( struct AG_map_info* dest, struct AG_map_info* sr
    
    if( dest->type != MD_ENTRY_DIR && dest->type != MD_ENTRY_FILE ) {
       dest->type = src->type;
+   }
+   
+   if( !dest->driver_cache_valid && src->driver_cache_valid ) {  
+      
+      AG_map_info_make_coherent_with_driver_data( dest, src->pubinfo.size, src->pubinfo.mtime_sec, src->pubinfo.mtime_nsec );
    }
 }
 
@@ -228,19 +230,36 @@ int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t*
 
 
 // extract useful metadata from an md_entry into a map_info
-static int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent ) {
+// this will make the map info's MS and driver data coherent
+int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent ) {
    mi->file_id = ent->file_id;
    mi->file_version = ent->version;
    mi->write_nonce = ent->write_nonce;
    mi->type = ent->type;
+   mi->cache_valid = true;
    
+   mi->pubinfo.size = ent->size;
+   mi->pubinfo.mtime_sec = ent->mtime_sec;
+   mi->pubinfo.mtime_nsec = ent->mtime_nsec;
+   mi->driver_cache_valid = true;
+   
+   dbprintf("%s (%" PRIX64 ") size=%zu modtime=%" PRId64 ".%" PRId32 "\n", ent->name, ent->file_id, ent->size, ent->mtime_sec, ent->mtime_nsec );
    return 0;
 }
+
 
 // invalidate cached data, so we get new listings for it when we ask the MS again 
 static int AG_invalidate_cached_metadata( struct AG_map_info* mi ) {
    mi->write_nonce = md_random64();
    mi->cache_valid = false;
+   return 0;
+}
+
+
+// invalidate cached driver data 
+static int AG_invalidate_cached_driver_data( struct AG_map_info* mi ) {
+   mi->driver_cache_valid = false;
+   memset( &mi->pubinfo, 0, sizeof(struct AG_driver_publish_info) );
    return 0;
 }
 
@@ -290,8 +309,6 @@ int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root ) {
    AG_map_info_init( root, MD_ENTRY_DIR, NULL, volume_root.mode, volume_root.max_read_freshness / 1000, NULL );
    AG_copy_metadata_to_map_info( root, &volume_root );
    
-   root->cache_valid = true;
-   
    md_entry_free( &volume_root );
    return 0;
 }
@@ -310,9 +327,8 @@ int AG_fs_init( struct AG_fs* ag_fs, AG_fs_map_t* fs_map, struct ms_client* ms )
 }
 
 // free an AG_fs 
+// NOTE: you must ensure exclusive access on your own
 int AG_fs_free( struct AG_fs* ag_fs ) {
-   
-   AG_fs_wlock( ag_fs );
    
    if( ag_fs->fs != NULL ) {
       
@@ -322,7 +338,6 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
       ag_fs->fs = NULL;
    }
    
-   AG_fs_unlock( ag_fs );
    pthread_rwlock_destroy( &ag_fs->fs_lock );
    
    return 0;
@@ -332,8 +347,8 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
 void AG_map_info_dup( struct AG_map_info* dest, struct AG_map_info* src ) {
    AG_map_info_init( dest, src->type, src->query_string, src->file_perm, src->reval_sec, src->driver );
    
-   if( src->cache_valid ) {
-      AG_map_info_make_coherent( dest, src );
+   if( src->cache_valid || src->driver_cache_valid ) {
+      AG_map_info_merge( dest, src );
    }
 }
 
@@ -437,43 +452,32 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
 
    int rc = 0;
    
-   if( mi->cache_valid ) {
+   if( mi->driver_cache_valid ) {
       
-      // see if we have a cached pubinfo 
-      rc = AG_cache_get_stat( state, path, mi->file_version, pub_info );
+      dbprintf("Cache HIT on driver metadata for %s\n", path );
       
-      if( rc == 0 ) {
-         // cache hit 
-         AG_cache_promote_stat( state, path, mi->file_version );
-         
-         return rc;
-      }
-      else {
-         rc = 0;
-      }
+      // get cached pubinfo 
+      memcpy( pub_info, &mi->pubinfo, sizeof(struct AG_driver_publish_info) );
+      return 0;
    }
-
+   
    // miss, or no driver.  Try to get details from the driver, if we have one.
    // (we might not, if we're deleting something that we discovered on the MS)
    if( mi->driver != NULL ) {
       
-      // cache miss. ask the drivers
+      dbprintf("Cache MISS on driver metadata for %s\n", path );
+      
+      // cache miss. ask the driver
       rc = AG_driver_stat( mi->driver, path, mi, pub_info );
       if( rc != 0 ) {
          errorf("AG_driver_stat(%s) rc = %d\n", path, rc );
          return rc;
       }
-      
-      if( mi->cache_valid ) {
+      else {
          
-         // have coherent information, so we can cache this
-         rc = AG_cache_put_stat_async( state, path, mi->file_version, pub_info );
-         if( rc != 0 ) {
-            
-            // mask error, since this isn't required for correctness
-            errorf("WARN: AG_cache_put_stat_async(%s) rc = %d\n", path, rc );
-            rc = 0;
-         }
+         // cache this 
+         memcpy( &mi->pubinfo, pub_info, sizeof(struct AG_driver_publish_info) );
+         mi->driver_cache_valid = true;
       }
    }
    else {
@@ -503,7 +507,7 @@ void AG_populate_md_entry_from_AG_info( struct md_entry* entry, struct AG_map_in
 
 // populate an md_entry from cached MS-given data in a map_info 
 // NOTE: don't check if coherent 
-void AG_populate_md_entry_from_cached_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
+void AG_populate_md_entry_from_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
    
    entry->file_id = file_id;
    entry->version = file_version;
@@ -512,7 +516,7 @@ void AG_populate_md_entry_from_cached_MS_info( struct md_entry* entry, uint64_t 
 
 
 // populate an md_entry with driver-given data 
-void AG_populate_md_entry_from_publish_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info ) {
+void AG_populate_md_entry_from_driver_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info ) {
    
    entry->size = pub_info->size;
    entry->mtime_sec = pub_info->mtime_sec;
@@ -571,29 +575,33 @@ int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char con
    memset( &pub_info, 0, sizeof(pub_info) );
    
    if( (flags & AG_POPULATE_NO_DRIVER) ) {
+      
       // use caller-given pubinfo
       memcpy( &pub_info, opt_pubinfo, sizeof(struct AG_driver_publish_info) );
    }
    else {
       
-      rc = AG_get_publish_info( path, mi, &pub_info );
+      // use internal (possibly cached) data
+      rc = AG_get_publish_info( path, mi, &mi->pubinfo );
       if( rc != 0 ) {
          errorf("AG_get_publish_info(%s) rc = %d\n", path, rc );
          return rc;
       }
+      
+      memcpy( &pub_info, &mi->pubinfo, sizeof(struct AG_driver_publish_info) );
    }
    
    char* path_basename = md_basename( path, NULL );
    
    // fill the entry with the driver-given data 
-   AG_populate_md_entry_from_publish_info( entry, &pub_info );
+   AG_populate_md_entry_from_driver_info( entry, &pub_info );
    
    // fill in the entry with our AG-specific data 
    AG_populate_md_entry_from_AG_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
    
    // fill in the entry with our cached metadata, if we're coherent or if the caller wants us to
    if( mi->cache_valid || !(flags & AG_POPULATE_USE_MS_CACHE) ) {
-      AG_populate_md_entry_from_cached_MS_info( entry, mi->file_id, mi->file_version, mi->write_nonce );
+      AG_populate_md_entry_from_MS_info( entry, mi->file_id, mi->file_version, mi->write_nonce );
    }
    
    free( path_basename );
@@ -750,7 +758,7 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
          old_info = itr2->second;
          
          // copy over relevant fields
-         AG_map_info_make_coherent( old_info, info );
+         AG_map_info_merge( old_info, info );
          
          // consumed!
          itr->second = NULL;
@@ -784,26 +792,15 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
       const string& path_string = itr->first;
       struct AG_map_info* info = itr->second;
       
-      if( info->cache_valid ) {
-         AG_fs_make_coherent( dest, path_string.c_str(), info->file_id, info->file_version, info->block_version, info->write_nonce, info->refresh_deadline, NULL );
+      if( info->cache_valid && info->driver_cache_valid ) {
+         AG_fs_make_coherent( dest, path_string.c_str(), info, NULL );
       }
       else {
-         errorf("WARN: %s is not coherent\n", path_string.c_str() );
+         errorf("WARN: %s is not coherent with the MS (valid=%d) or the driver (valid=%d)\n", path_string.c_str(), info->cache_valid, info->driver_cache_valid );
       }
    }
    
    return 0;
-}
-
-
-// does a map_info have all the cached metadata we need?
-bool AG_has_valid_cached_metadata( char const* path, struct AG_map_info* mi ) {
-      
-   if( !mi->cache_valid ) {
-      return false;
-   }
-   
-   return true;
 }
 
 
@@ -861,7 +858,7 @@ static int AG_find_refresh_point( AG_fs_map_t* path_info, char** deepest_known_p
       char const* mi_path = paths[i].c_str();
       struct AG_map_info* mi = (*path_info)[ paths[i] ];
       
-      if( !AG_has_valid_cached_metadata( mi_path, mi ) ) {
+      if( !mi->cache_valid ) {
          
          *shallowest_unknown_path = strdup( mi_path );
          *shallowest_unknown_mi = mi;
@@ -959,7 +956,6 @@ static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* 
    
    // got it!
    AG_copy_metadata_to_map_info( new_info, ent );
-   new_info->cache_valid = true;
    
    // merge into new_data, freeing an old entry if need be
    AG_fs_map_t::iterator itr = new_data->find( string(path) );
@@ -1016,7 +1012,6 @@ static int AG_accumulate_data_from_ms_response( char const* deepest_known_path, 
          
          // update in-place.  The shallowest unknown map_info is now cache-coherent, and thus known.
          AG_copy_metadata_to_map_info( shallowest_unknown_map_info, ent );
-         shallowest_unknown_map_info->cache_valid = true;
          
          dbprintf("%s (%" PRIX64") at %p is now valid\n", shallowest_unknown_path, ent->file_id, shallowest_unknown_map_info );
          
@@ -1149,7 +1144,6 @@ static int AG_get_path_metadata( struct ms_client* client, char const* path, AG_
       
       // merge response into deepest known info.  The deepest known info is now cache-coherent.
       AG_copy_metadata_to_map_info( deepest_known_map_info, deepest_known_entry_metadata );
-      deepest_known_map_info->cache_valid = true;
       
       dbprintf("%s at %p is now valid\n", deepest_known_path, deepest_known_map_info );
       
@@ -1294,24 +1288,49 @@ struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
 }
 
 
-// make a given map_info coherent with new data 
-int AG_map_info_make_coherent_with_data( struct AG_map_info* mi, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline ) {
+// make a given map_info coherent with new MS data 
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
 
    // update the cache data
    mi->file_id = file_id;
    mi->file_version = file_version;
-   mi->block_version = block_version;
    mi->write_nonce = write_nonce;
    mi->cache_valid = true;
+   
+   return 0;
+}
+   
+// make a given map info coherent with new driver data 
+int AG_map_info_make_coherent_with_driver_data( struct AG_map_info* mi, size_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   
+   mi->pubinfo.size = size;
+   mi->pubinfo.mtime_sec = mtime_sec;
+   mi->pubinfo.mtime_nsec = mtime_nsec;
+   mi->driver_cache_valid = true;
+   
+   return 0;
+}
+
+// make a given map info coherent with AG runtime data 
+int AG_map_info_make_coherent_with_AG_data( struct AG_map_info* mi, int64_t block_version, uint64_t refresh_deadline ) {
+
+   mi->block_version = block_version;
    mi->refresh_deadline = refresh_deadline;
    
    return 0;
 }
    
-
-// set an AG_map_info's cached metadata in-place, making it coherent
+// set an AG_map_info's cached metadata in-place, making it coherent with the reference map info (which must be coherent)
 // optionally fill updated_mi with the newly-coherent information.
-int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline, struct AG_map_info* updated_mi ) {
+int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_info* ref_mi, struct AG_map_info* updated_mi ) {
+   
+   if( !ref_mi->cache_valid ) {
+      return -EINVAL;   
+   }
+   
+   if( !ref_mi->driver_cache_valid ) {
+      return -EINVAL;
+   }
    
    AG_fs_wlock( ag_fs );
    
@@ -1326,7 +1345,9 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id
    // update the versions 
    struct AG_map_info* mi = child_itr->second;
    
-   AG_map_info_make_coherent_with_data( mi, path, file_id, file_version, block_version, write_nonce, refresh_deadline );
+   AG_map_info_make_coherent_with_MS_data( mi, ref_mi->file_id, ref_mi->file_version, ref_mi->write_nonce );
+   AG_map_info_make_coherent_with_driver_data( mi, ref_mi->pubinfo.size, ref_mi->pubinfo.mtime_sec, ref_mi->pubinfo.mtime_nsec );
+   AG_map_info_make_coherent_with_AG_data( mi, ref_mi->block_version, ref_mi->refresh_deadline );
    
    if( updated_mi != NULL ) {
       AG_map_info_dup( updated_mi, mi );
@@ -1485,7 +1506,6 @@ static int AG_fs_count_children( AG_fs_map_t* fs_map, map<string, int>* child_co
       
       struct AG_map_info* mi = itr->second;
       
-      // make sure path is r-stripped of '/'
       char* path = strdup( itr->first.c_str() );
       if( path == NULL ) {
          return -ENOMEM;
@@ -1569,6 +1589,9 @@ static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vecto
             if( ms_itr != MS_child_counts.end() ) {
                
                if( frontier_set.count( prefix_s ) == 0 ) {
+                  
+                  dbprintf("Add %s to frontier: it is in the specfile, but not cached\n", itr->first.c_str() );
+               
                   frontier->push_back( prefix_s );
                   frontier_set.insert( prefix_s );
                }
@@ -1582,6 +1605,8 @@ static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vecto
       else if( ms_itr->second != itr->second ) {
          
          if( frontier_set.count( itr->first ) == 0 ) {
+            
+            dbprintf("Add %s to frontier: specfile lists %d children, but the cache has %d\n", itr->first.c_str(), itr->second, ms_itr->second );
             frontier->push_back( itr->first );
             frontier_set.insert( itr->first );
          }

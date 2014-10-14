@@ -122,7 +122,7 @@ int AG_request_stage_list_free( AG_request_stage_list_t* stages ) {
 
 // given a list of paths that are all children of the same directory, and the operation to be performed with them, generate a stage containing the request.
 // use the operation to perform sanity checks and to fill out the request properly.
-// reference and directives contain the metadata for the paths in listing_paths.  They may overlap; go with the reference by default, but use directives instead of AG_REQUEST_USE_DIRECTIVES is set in flags.
+// reference and directives contain the metadata for the parent paths in listing_paths.  They may overlap; go with the reference by default, but use directives instead of AG_REQUEST_USE_DIRECTIVES is set in flags.
 // get metadata from the driver if AG_REQUEST_USE_DRIVER is set in flags.  Otherwise, use metadata already in reference/directives (regardless of whether or not it is coherent).
 // NOTE: listing_paths will get *consumed* by this method!
 static int AG_generate_stage( struct ms_client* client, int depth, vector<string>* listing_paths, AG_fs_map_t* directives, AG_fs_map_t* reference, int file_op, int dir_op, struct AG_request_stage* stage, int flags ) {
@@ -207,10 +207,16 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
          }
          
          // this child...
+         struct AG_map_info* mi = itr->second;
+         
+         // skip this child if it's valid, and the appropriate flag is set 
+         if( (flags & AG_REQUEST_SKIP_IF_CACHE_VALID) && mi->cache_valid ) {
+            dbprintf("Skipping %s (%" PRIX64 ") since it's valid\n", itr->first.c_str(), mi->file_id );
+            continue;
+         }
+         
          char const* mi_path = itr->first.c_str();
          char* mi_name = md_basename( mi_path, NULL );
-         
-         struct AG_map_info* mi = itr->second;
          
          // entry to generate from the child
          struct md_entry ent;
@@ -222,7 +228,7 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
             struct AG_driver_publish_info pub_info;
             memset( &pub_info, 0, sizeof(struct AG_driver_publish_info) );
             
-            // get driver info 
+            // get (and cache) driver info 
             rc = AG_get_publish_info( mi_path, mi, &pub_info );
             if( rc != 0 ) {
                errorf("AG_get_publish_info(%s) rc = %d\n", mi_path, rc );
@@ -231,7 +237,7 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
             }
             
             // fill the entry with the driver-given data 
-            AG_populate_md_entry_from_publish_info( &ent, &pub_info );
+            AG_populate_md_entry_from_driver_info( &ent, &pub_info );
          }
          
          // fill in the entry with our AG-specific data 
@@ -239,7 +245,7 @@ static int AG_generate_stage( struct ms_client* client, int depth, vector<string
          free( mi_name );
          
          // fill in the entry with the data we'll send to the MS 
-         AG_populate_md_entry_from_cached_MS_info( &ent, mi->file_id, mi->file_version, mi->write_nonce );
+         AG_populate_md_entry_from_MS_info( &ent, mi->file_id, mi->file_version, mi->write_nonce );
          
          // fill in parent information
          if( parent_mi != NULL ) {
@@ -384,16 +390,7 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
       // group by parent directory: sort alphanumerically
       sort( stage_paths.begin(), stage_paths.end(), less<string>() );
       
-      
-      ////////////////////////////////////////////////////
       dbprintf("Stage at %d will have %zu items\n", expected_depth, stage_paths.size() );
-      
-      /*
-      for( unsigned int i = 0; i < stage_paths.size(); i++ ) {
-         dbprintf("   '%s'\n", stage_paths[i].c_str() );
-      }
-      ////////////////////////////////////////////////////
-      */
       
       // sanity check: what's the current depth?
       depth = md_depth( stage_paths.at(0).c_str() );
@@ -423,11 +420,6 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
       // clean up 
       AG_request_stage_list_free( stages );
    }
-   /*
-   else {
-      AG_dump_stages( stages );
-   }
-   */
    return rc;
 }
 
@@ -437,7 +429,8 @@ static int AG_generate_stages( struct ms_client* client, AG_fs_map_t* directives
 // files will be created by the MS asynchronously.
 // when building the stage list, get parent data from the directives over the reference if there's a conflict, since the parent doesn't exist
 static int AG_generate_stages_create( struct ms_client* client, AG_fs_map_t* to_publish, AG_fs_map_t* reference, AG_request_stage_list_t* stages ) {
-   return AG_generate_stages( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DIRECTIVES | AG_REQUEST_USE_DRIVER, stages );
+   int flags = AG_REQUEST_DIRS_FIRST | AG_REQUEST_USE_DIRECTIVES | AG_REQUEST_USE_DRIVER | AG_REQUEST_SKIP_IF_CACHE_VALID;
+   return AG_generate_stages( client, to_publish, reference, ms::ms_update::CREATE_ASYNC, ms::ms_update::CREATE, flags, stages );
 }
 
 
@@ -986,9 +979,12 @@ static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage
    for( unsigned int i = 0; i < reqs->size(); i++ ) {
       
       struct ms_client_request* req = &reqs->at(i);
-      struct md_entry* ent = &results->ents[i];
-      
       ag_requests[req->ent->file_id] = req->ent;
+   }
+   
+   for( int i = 0; i < results->num_processed; i++ ) {
+      
+      struct md_entry* ent = &results->ents[i];
       ms_replies[ent->file_id] = ent;
    }
    
@@ -1011,7 +1007,7 @@ static int AG_validate_stage_MS_response_replies( struct AG_request_stage* stage
    }
    
    // check for gratuitous replies 
-   for( unsigned int i = 0; i < reqs->size(); i++ ) {
+   for( int i = 0; i < results->num_processed; i++ ) {
       
       struct md_entry* ent = &results->ents[i];
       
@@ -1213,8 +1209,9 @@ static int AG_fs_add_stage_data( AG_fs_map_t* dest, AG_fs_map_t* mi_reference, s
             break;
          }
          
-         // update with ent data
-         AG_map_info_make_coherent_with_data( mi, path, ent->file_id, ent->version, md_random64(), ent->write_nonce, AG_map_info_make_deadline( mi->reval_sec ) );
+         // update with MS-given data
+         AG_copy_metadata_to_map_info( mi, ent );
+         AG_map_info_make_coherent_with_AG_data( mi, md_random64(), AG_map_info_make_deadline( mi->reval_sec ) );
          
          AG_fs_map_t::iterator itr = dest->find( path );
          if( itr != dest->end() ) {   
@@ -1636,6 +1633,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* 
 // reversion a (path, map_info) via the driver.
 // this updates the version field of the file, and will fail if it doesn't exist.
 // optionally use the caller-given opt_pubinfo, or generate new pubinfo from the driver.
+// AG_fs must not be locked
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* opt_pubinfo ) {
    
    dbprintf("Reversion %s in %p\n", path, ag_fs );
@@ -1712,9 +1710,16 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    }
    
    struct AG_map_info reversioned_mi;
+   memset( &reversioned_mi, 0, sizeof(struct AG_map_info) );
+   
+   struct AG_map_info tmp;
+   memset( &tmp, 0, sizeof(struct AG_map_info) );
+   
+   AG_copy_metadata_to_map_info( &tmp, &entry );
+   AG_map_info_make_coherent_with_AG_data( &tmp, block_version, AG_map_info_make_deadline( mi_reval_sec ) );
    
    // update authoritative copy to keep it coherent
-   AG_fs_make_coherent( ag_fs, path, entry.file_id, entry.version, block_version, write_nonce, AG_map_info_make_deadline( mi_reval_sec ), &reversioned_mi );
+   AG_fs_make_coherent( ag_fs, path, &tmp, &reversioned_mi );
    
    md_entry_free( &entry );
    

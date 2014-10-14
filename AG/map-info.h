@@ -21,15 +21,12 @@
 #include "libsyndicate/ms/ms-client.h"
 
 #include "AG.h"
+#include "driver.h"
 
 #define AG_POPULATE_NO_DRIVER           0x1
 #define AG_POPULATE_USE_MS_CACHE        0x2
 
 using namespace std;
-
-// prototypes
-struct AG_driver;
-struct AG_driver_publish_info;
 
 // descriptor of an AG's published entry
 struct AG_map_info {
@@ -41,11 +38,15 @@ struct AG_map_info {
    int32_t type;                        // file or directory
    char* query_string;                  // specfile-given query string
    
-   // cached runtime fields; needed for manipulating the volume
+   // cached MS fields; needed for manipulating the volume
    bool cache_valid;            // if true, then this data is fresh
    uint64_t file_id;            // ID of this file (obtained from the MS; initialized to 0)
    int64_t file_version;        // version of this file (obtained from the MS; initialized to 0)
    int64_t write_nonce;         // write nonce for this file (obtained from the MS; initialized to 0)
+   
+   // cached driver fields
+   bool driver_cache_valid;
+   struct AG_driver_publish_info pubinfo;       // driver-given dataset information
    
    // generated at runtime 
    int64_t block_version;       // version all blocks will have.  Regenerated on publish/reversion.
@@ -79,9 +80,13 @@ int AG_fs_rlock( struct AG_fs* ag_fs );
 int AG_fs_wlock( struct AG_fs* ag_fs );
 int AG_fs_unlock( struct AG_fs* ag_fs );
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload );
-bool AG_has_valid_cached_metadata( char const* path, struct AG_map_info* mi );
-int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t reval_sec, struct AG_map_info* updated_mi );
-int AG_map_info_make_coherent_with_data( struct AG_map_info* mi, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline );
+
+int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_info* ref_mi, struct AG_map_info* updated_mi );
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce );
+int AG_map_info_make_coherent_with_driver_data( struct AG_map_info* mi, size_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int AG_map_info_make_coherent_with_AG_data( struct AG_map_info* mi, int64_t block_version, uint64_t refresh_deadline );
+
+int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent );
 int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src );
 
 // validation 
@@ -103,8 +108,8 @@ int AG_fs_remove( struct AG_fs* ag_fs, char const* path );
 int64_t AG_map_info_make_deadline( int64_t reval_sec );
 int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, int flags, struct AG_driver_publish_info* opt_pubinfo );
 void AG_populate_md_entry_from_AG_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename );
-void AG_populate_md_entry_from_cached_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce );
-void AG_populate_md_entry_from_publish_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info );
+void AG_populate_md_entry_from_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce );
+void AG_populate_md_entry_from_driver_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info );
 
 // directory searching 
 int AG_sort_paths_by_depth( AG_fs_map_t* directives, vector<string>* paths );
