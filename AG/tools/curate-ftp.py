@@ -84,7 +84,7 @@ if __name__ == "__main__":
                                                             dir_reval_sec_cb  = lambda path: args.reval_sec,
                                                             file_perm_cb      = lambda path: file_perm,
                                                             dir_perm_cb       = lambda path: dir_perm,
-                                                            query_string_cb   = lambda path: "ftp://" + args.hostname[0] + os.path.join( args.root_dir, path.strip("/") ) )
+                                                            query_string_cb   = lambda path: "ftp://" + args.hostname[0] + "/" + path.strip("/") )
    
    hierarchy = AG_ftp.build_hierarchy( args.hostname[0], args.root_dir, ftp_include_callback, ftp_specfile_callbacks, 
                                        num_threads           = num_threads,
