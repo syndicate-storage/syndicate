@@ -1515,8 +1515,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       err = fs_entry_revalidate_manifest_once( core, fs_path, fent );
       
       if( err != -EAGAIN ) {
-         
-         // TODO: revalidate the path too!
+         // bad error
          break;
       }
       
@@ -1597,7 +1596,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
 
 // revalidate a path and the manifest at the end of the path.
 // if anywhere along the process we are told to try again (i.e. by the MS, the remote gateway, etc,), do so up to conf->max_read_retry times.
-// fent should NOT be locked
+// fent should NOT be locked, but it should be open as well
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
    
    struct timespec ts, ts2;
@@ -1619,8 +1618,13 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       
       fs_entry_wlock( fent );
       
-      // reload this manifest.  If we get this manifest from an RG, remember which one.
+      // if we're not a file, we're done 
+      if( fent->ftype != FTYPE_FILE ) {
+         fs_entry_unlock( fent );
+         break;
+      }
       
+      // reload this manifest.  If we get this manifest from an RG, remember which one.
       if( fent->manifest == NULL ) {
          errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
          exit(1);
@@ -1633,7 +1637,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
          break;
       }
       
-      else if( rc == -EAGAIN ) {
+      else if( rc == -ESTALE || rc == -EAGAIN ) {
          // try again 
          fs_entry_unlock( fent );
          
@@ -1656,7 +1660,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
          continue;
       }
       else {
-         errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
+         errorf("fs_entry_revalidate_manifest_ex(%s) rc = %d\n", fs_path, rc );
          fs_entry_unlock( fent );
          return rc;
       }
