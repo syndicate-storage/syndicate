@@ -74,9 +74,10 @@ static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nme
    char* data = (char*)ptr;
 
    // only get one Location header
-   if( rb->size() > 0 )
+   if( rb->size() > 0 ) {
       return len;
-
+   }
+   
    char* data_str = CALLOC_LIST( char, len + 1 );
    strncpy( data_str, data, len );
 
@@ -218,7 +219,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
    curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
    curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
    curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-   //curl_easy_setopt( curl, CURLOPT_VERBOSE, 1L );
+   curl_easy_setopt( curl, CURLOPT_VERBOSE, (get_debug_level() > 0 ? 1L: 0L) );
 
    char* url_and_path = NULL;
    char* url_qs = NULL;
@@ -270,8 +271,6 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
       // authenticated already; we're being sent back
       char* url = response_buffer_to_string( &header_rb );
 
-      dbprintf("return to %s", url );
-      
       *return_to = url;
       
       response_buffer_free( &header_rb );

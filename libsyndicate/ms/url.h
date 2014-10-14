@@ -42,7 +42,7 @@ char* ms_client_openid_rpc_url( char const* ms_url );
 char* ms_client_syndicate_pubkey_url( char const* ms_url );
 
 char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
-char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version );
+char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, uint64_t include_gateway_id );
 
 }
 

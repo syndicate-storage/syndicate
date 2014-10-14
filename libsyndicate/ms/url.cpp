@@ -235,10 +235,22 @@ char* ms_client_syndicate_pubkey_url( char const* ms_url ) {
 }
 
 // URL to a certificate manifest 
-char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version ) {
+// if include_gateway_id > 0, then request its cert information as well.
+char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, uint64_t include_gateway_id ) {
    
-   char* url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + strlen("manifest.") + 21 + 1 );
-   sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, ms_url, volume_id, volume_cert_version );
+   size_t gateway_id_len = 0;
+   if( include_gateway_id > 0 ) {
+      gateway_id_len = 70;
+   }
+   
+   char* url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + strlen("manifest.") + 21 + 1 + gateway_id_len + 1 );
+   
+   if( include_gateway_id > 0 ) {
+      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64 "?include_cert=%" PRIu64, ms_url, volume_id, volume_cert_version, include_gateway_id );
+   }
+   else {
+      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, ms_url, volume_id, volume_cert_version );
+   }
    
    return url;
 }

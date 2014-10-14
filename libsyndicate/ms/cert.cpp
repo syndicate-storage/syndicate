@@ -53,9 +53,10 @@ void ms_client_gateway_cert_free( struct ms_gateway_cert* cert ) {
 }
 
 // synchronously download a cert bundle manfest
+// be sure to request our certificate
 int ms_client_gateway_cert_manifest_download( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, Serialization::ManifestMsg* mmsg ) {
    
-   char* url = ms_client_cert_manifest_url( client->url, volume_id, volume_cert_version );
+   char* url = ms_client_cert_manifest_url( client->url, volume_id, volume_cert_version, client->gateway_id );
    
    int rc = md_download_manifest( client->conf, &client->dl, url, client->volume->cache_closure, ms_client_connect_cache_impl, client->conf, mmsg, NULL, NULL );
    

@@ -385,6 +385,7 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
    }
    
    curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
@@ -541,6 +542,7 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
    
    curl_easy_setopt( curl, CURLOPT_URL, url );
    curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
@@ -1328,6 +1330,10 @@ static void* ms_client_view_thread( void* arg ) {
                errorf("sem_timedwait errno = %d\n", rc);
                return NULL;
             }
+         }
+         else {
+            // got woken up by client
+            break;
          }
       }
       
