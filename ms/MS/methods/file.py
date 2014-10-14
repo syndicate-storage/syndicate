@@ -126,15 +126,19 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, fil
          logging.info( "cache file %s (%s)" % (file_id, file_data) )
          storagetypes.memcache.set_multi( cacheable )
  
+   
    if file_data is not None:
       # got data...
-      logging.info("%s has type %s version %s write_nonce %s" % (file_data.name, file_data.ftype, file_data.version, file_data.write_nonce))
-      
       # do we need to actually send this?
       if file_data.version == file_version and file_data.write_nonce == write_nonce:
          need_refresh = False
+         
+         logging.info("%s has type %s version %s write_nonce %s, status=NOCHANGE" % (file_data.name, file_data.ftype, file_data.version, file_data.write_nonce))
 
       else:
+         
+         logging.info("%s has type %s version %s write_nonce %s, status=NEW" % (file_data.name, file_data.ftype, file_data.version, file_data.write_nonce))
+         
          if file_data.ftype == MSENTRY_TYPE_DIR:
             
             error, listing, next_cursor = MSEntry.ListDir( volume, file_id, page_id, owner_id=owner_id, file_ids_only=file_ids_only )

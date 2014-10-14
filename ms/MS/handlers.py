@@ -110,6 +110,16 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       if status != 200:
          return
       
+      # do we want to include a cert for a particular gateway?
+      include_cert = None
+      include_cert_qs = self.request.get("include_cert")
+      
+      if include_cert_qs is not None:
+         try:
+            include_cert = int(include_cert_qs)
+         except:
+            pass
+      
       # check version
       if volume_cert_version != volume.cert_version:
          hdr = "%s/CERT/%s/manifest.%s" % (MS_URL, volume_id_str, volume.cert_version)
@@ -120,7 +130,7 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       # build the manifest
       manifest = serialization_pb2.ManifestMsg()
       
-      volume.protobuf_gateway_cert_manifest( manifest )
+      volume.protobuf_gateway_cert_manifest( manifest, include_cert=include_cert )
       
       data = manifest.SerializeToString()
       

@@ -432,7 +432,18 @@ class Volume( storagetypes.Object ):
       return 
    
    
-   def protobuf_gateway_cert_manifest( self, manifest, sign=True ):
+   def protobuf_gateway_cert_manifest_record( self, cert_block, g_id, gateway_type, caps, cert_version ):
+      """
+      Populate a protobuf manifest entry with a gateway's certificate information.
+      """
+      
+      cert_block.gateway_id = g_id
+      cert_block.start_id = gateway_type
+      cert_block.end_id = caps
+      cert_block.block_versions.append( cert_version )
+   
+   
+   def protobuf_gateway_cert_manifest( self, manifest, include_cert=None, sign=True ):
       """
       Generate a specially-crafted manifest protobuf, which a gateway can use to learn 
       the IDs and types of all gateways in the Volume, as well as their certs' versions.
@@ -453,16 +464,33 @@ class Volume( storagetypes.Object ):
       # query certificate versions, types, and caps of all gateways that need to be trusted
       listing = Gateway.ListAll( {"Gateway.volume_id ==" : self.volume_id, "Gateway.need_cert ==": True}, projection=["g_id", "gateway_type", "cert_version", "caps"] )
       
+      # if the caller wants to include a particular gateway's cert, do so 
+      has_included_cert = False
+      
       for gateway_metadata in listing:
          cert_block = manifest.block_url_set.add()
       
-         cert_block.gateway_id = gateway_metadata.g_id
-         cert_block.start_id = gateway_metadata.gateway_type
-         cert_block.end_id = gateway_metadata.caps
-         cert_block.block_versions.append( gateway_metadata.cert_version )
-      
+         self.protobuf_gateway_cert_manifest_record( cert_block, gateway_metadata.g_id, gateway_metadata.gateway_type, gateway_metadata.caps, gateway_metadata.cert_version )
+         
          logging.info("cert block: (%s, %s, %s, %x)" % (gateway_metadata.gateway_type, gateway_metadata.g_id, gateway_metadata.cert_version, gateway_metadata.caps) )
          sz += 1
+         
+         if gateway_metadata.g_id == include_cert:
+            has_included_cert = True
+            
+      if not has_included_cert and include_cert is not None:
+         
+         # get this gateway's cert as well
+         gw = Gateway.Read( include_cert )
+         
+         if gw is not None:
+            cert_block = manifest.block_url_set.add()
+            
+            self.protobuf_gateway_cert_manifest_record( cert_block, gw.g_id, gw.gateway_type, gw.caps, gw.cert_version )
+            
+            logging.info("cert block (included for %s): (%s, %s, %s, %x)" % (include_cert, gw.gateway_type, gw.g_id, gw.cert_version, gw.caps) )
+            sz += 1
+         
       
       manifest.size = sz
       manifest.signature = ""
