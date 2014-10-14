@@ -144,7 +144,11 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
 
 // get a manifest, either from the coordinator, or from an RG.  If we got it from an RG, remember which one.
 // if we're getting a manifest from an AG, don't try getting it from the RGs (they won't have it)
-// fent must be at least read-locked
+// fent must be at least read-locked.
+// return -EAGAIN if the caller should try again (i.e. we were working off of inconsistent/stale data)
+// return -ENODATA if we did not have sufficient data to fetch the manifest 
+// return -EBADMSG if the manifest was malformed
+// return -ESTALE if the path metadata was or became stale, and should be revalidated.  The caller should revalidate the path and try this method again.
 int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                            Serialization::ManifestMsg* manifest_msg, uint64_t* successful_gateway_id ) {
    
@@ -241,7 +245,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg->mtime_sec(), manifest_msg->mtime_nsec(), manifest_mtime_sec, manifest_mtime_nsec );
       fent->manifest->mark_stale();
       fent->read_stale = false;
-      rc = -EAGAIN;
+      rc = -ESTALE;
    }
    
    // verify that the manifest matches the volume and file id and version 
@@ -255,7 +259,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       if( manifest_msg->volume_id() == fent->volume && manifest_msg->file_id() == fent->file_id ) {
          fent->manifest->mark_stale();
          fent->read_stale = false;
-         return -EAGAIN;
+         return -ESTALE;
       }
       else {
          // wrong file ID or volume ID
