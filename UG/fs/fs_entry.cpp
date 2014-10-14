@@ -1236,11 +1236,11 @@ void fs_dir_handle_destroy( struct fs_dir_handle* dh ) {
 // NOTE: it must be wlocked first
 int fs_file_handle_destroy( struct fs_file_handle* fh ) {
    fh->fent = NULL;
-   if( fh->path ) {
+   if( fh->path != NULL ) {
       free( fh->path );
       fh->path = NULL;
    }
-   if( fh->parent_name ) {
+   if( fh->parent_name != NULL ) {
       free( fh->parent_name );
       fh->parent_name = NULL;
    }
