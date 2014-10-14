@@ -247,22 +247,23 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
    
    if( dlctx->finalized ) {
       md_downloader_cancelling_unlock( dl );
-      return -EINVAL;
-   }
-   
-   if( dlctx->pending ) {
-      md_downloader_cancelling_unlock( dl );
+      
+      errorf("Download context %p is already finalized\n", dlctx );
       return -EINVAL;
    }
    
    if( dlctx->cancelling ) {
       md_downloader_cancelling_unlock( dl );
+      
+      errorf("Download context %p is already cancelling\n", dlctx );
       return -EINPROGRESS;
    }
    
    dlctx->cancelling = true;
    
-   dl->cancelling->insert( dlctx );
+   if( !dlctx->pending ) {
+      dl->cancelling->insert( dlctx );
+   }
    
    dl->has_cancelling = true;
    
@@ -289,6 +290,13 @@ int md_downloader_start_all_pending( struct md_downloader* dl ) {
          }
          
          if( md_download_context_finalized( dlctx ) ) {
+            continue;
+         }
+         
+         if( dlctx->cancelling ) {
+            // got cancelled quickly after insertion 
+            dlctx->cancelled = true;
+            md_downloader_finalize_download_context( dlctx, -EAGAIN );
             continue;
          }
          
@@ -1102,6 +1110,7 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
    curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl_h, CURLOPT_MAXREDIRS, 10L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, query_timeout );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
