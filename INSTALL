@@ -59,8 +59,6 @@ aptitude install \
    libxerces-c-dev \
    libmicrohttpd-dev \
    python-daemon \
-   unixodbc-dev \
-   libconfig++-dev \
    cython \
    python-scrypt \
    python-requests \
