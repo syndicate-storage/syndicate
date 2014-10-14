@@ -139,6 +139,7 @@ int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file
    return rc;
 }
 
+/*
 // make a cache path to a pubinfo, given the path to the associated map_info 
 char* AG_cache_stat_path( char const* path ) {
    return md_fullpath( path, "stat", NULL );
@@ -290,7 +291,7 @@ int AG_cache_evict_stat( struct AG_state* state, char const* path, int64_t file_
    
    return rc;
 }
-
+*/
 
 // evict a file's worth of blocks and stats
 int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_version ) {
@@ -305,11 +306,13 @@ int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_
       errorf("md_cache_evict_file(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
    }
    
+   /*
    // evict the status
    rc = AG_cache_evict_stat( state, path, file_version );
    if( rc != 0 ) {
       errorf("AG_cache_evict_stat(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
    }
+   */
    
    return rc;
 }
@@ -377,6 +380,8 @@ static int AG_MS_cache_serialize_line( char** buf, char const* path, int type, u
 // if successful, add the cached data to ms_cache (creating map_info entries if needed)
 // ms_cache should be empty when this method is called.
 int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
+   
+   dbprintf("Load MS cache from %s\n", file_path);
    
    int rc = 0;
    FILE* f = NULL;

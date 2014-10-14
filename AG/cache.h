@@ -36,11 +36,13 @@ int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file
 
 char* AG_cache_stat_path( char const* path );
 
+/*
 // driver pubinfo cache
 int AG_cache_get_stat( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
 int AG_cache_promote_stat( struct AG_state* state, char const* path, int64_t file_version );
 int AG_cache_put_stat_async( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
 int AG_cache_evict_stat( struct AG_state* state, char const* path, int64_t file_version );
+*/
 
 int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_version );
 
