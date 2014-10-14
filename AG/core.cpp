@@ -245,12 +245,6 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
    AG_fs_rlock( old_fs );
    AG_fs_rlock( new_fs );
    
-   // dbprintf("%s", "Old FS:\n");
-   // AG_dump_fs_map( old_fs->fs );
-   
-   // dbprintf("%s", "New FS:\n");
-   // AG_dump_fs_map( new_fs->fs );
-   
    rc = AG_fs_map_transforms( old_fs->fs, new_fs->fs, &to_publish, &to_update, &to_delete, mi_equ );
    
    AG_fs_unlock( new_fs );
@@ -260,15 +254,6 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
       errorf("AG_fs_map_transforms rc = %d\n", rc );
       return rc;
    }
-   
-   // dbprintf("%s", "Entries not on the MS that should be published:\n");
-   // AG_dump_fs_map( &to_publish );
-   
-   // dbprintf("%s", "Entries in the MS that should be updated:\n");
-   // AG_dump_fs_map( &to_update );
-   
-   // dbprintf("%s", "Entries in the MS that should be deleted:\n");
-   // AG_dump_fs_map( &to_delete );
    
    AG_fs_wlock( new_fs );
    
@@ -304,30 +289,6 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
    }
    
    AG_fs_unlock( old_fs );
-   return 0;
-      
-   /*
-   // apply our changes to it.
-   // add new entries, and delete old ones.
-   int publish_rc = AG_fs_publish_map( new_fs, &to_publish, true );
-   if( publish_rc != 0 ) {
-      errorf("WARN: AG_fs_publish_map rc = %d\n", publish_rc );
-      return publish_rc;
-   }
-   
-   int update_rc = AG_fs_reversion_map( new_fs, &to_update, true );
-   if( update_rc != 0 ) {
-      errorf("WARN: AG_fs_reversion_map rc = %d\n", update_rc );
-      return update_rc;
-   }
-   
-   int delete_rc = AG_fs_delete_map( old_fs, &to_delete, true );
-   if( delete_rc != 0 ) {
-      errorf("WARN: AG_fs_delete_map rc = %d\n", delete_rc );
-      return delete_rc;
-   }
-   */
-   
    return 0;
 }
 
@@ -747,25 +708,27 @@ int AG_start( struct AG_state* state ) {
       AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
    }
    
-   AG_fs_wlock( state->ag_fs );
-   
-   // fetched non-cached entries
-   rc = AG_download_MS_fs_map( state->ms, state->ag_fs->fs, on_MS_fs.fs );
-   
-   AG_fs_unlock( state->ag_fs );
-   
-   if( rc != 0 ) {
-      errorf("AG_download_existing_fs_map rc = %d\n", rc );
-      
-      AG_fs_free( &on_MS_fs );
-      
-      return rc;
-   }
-   
-   // copy all downloaded MS metadata into the specfile-generatd fs map
-   AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
    
    if( !state->ag_opts.quickstart ) {
+         
+      AG_fs_wlock( state->ag_fs );
+      
+      // fetched non-cached entries
+      rc = AG_download_MS_fs_map( state->ms, state->ag_fs->fs, on_MS_fs.fs );
+      
+      AG_fs_unlock( state->ag_fs );
+      
+      if( rc != 0 ) {
+         errorf("AG_download_existing_fs_map rc = %d\n", rc );
+         
+         AG_fs_free( &on_MS_fs );
+         
+         return rc;
+      }
+      
+      // copy all downloaded MS metadata into the specfile-generatd fs map
+      AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
+      
       // for initializing, an entry is common to both the specfile and the MS-hosted copy
       // if the MS entry's metadata reflects the entry's metadata in the specfile.
       struct AG_reload_comparator {
