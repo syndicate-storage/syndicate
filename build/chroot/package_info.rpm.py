@@ -81,6 +81,11 @@ PACKAGE_INFO = [
                 install_dir     = "%s/python-syndicate-root/usr" % BASE_DIR,
                 package_root    = "%s/python-syndicate-root/" % BASE_DIR,
                 package_script  = "%s/python-syndicate-rpm.sh" % BASE_DIR,
+                package_scripts_root = "" ),
+
+   PackageInfo( name            = "syndicate-opencloud",
+                package_script  = "%s/syndicate-opencloud-rpm.sh" % BASE_DIR,
+                package_root    = "%s/syndicate-opencloud-root/" % BASE_DIR,
                 package_scripts_root = "" )
 
 ]

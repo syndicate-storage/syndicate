@@ -99,16 +99,15 @@ if __name__ == "__main__":
          raise Exception("No such package %s" % package_name)
 
       name = package.name
-      build = package.build_target
-      install = package.install_target
-      installdir = package.install_dir
       package_script = package.package_script
       package_root = package.package_root
 
       # optional
+      build = getattr( package, "build_target", None)
+      install = getattr( package, "install_target", None)
+      installdir = getattr( package, "install_dir", None)
       package_scripts_target = getattr( package, "package_scripts_target", None)
       package_scripts_root = getattr( package, "package_scripts_root", None)
-
       config_target = getattr( package, "config_target", None )
       config_install_dir = getattr( package, "config_install_dir", None )
 

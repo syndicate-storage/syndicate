@@ -18,5 +18,5 @@ done
 
 source /usr/local/rvm/scripts/rvm
 
-fpm --force -s empty -t deb -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --maintainer "Jude Nelson <jcnelson@cs.princeton.edu>" --url "https://github.com/jcnelson/syndicate" --description "Metapackage to bring in all Syndicate packages for OpenCloud." $(ls $ROOT)
+fpm --force -s empty -t rpm -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --maintainer "Jude Nelson <jcnelson@cs.princeton.edu>" --url "https://github.com/jcnelson/syndicate" --description "Metapackage to bring in all Syndicate packages for OpenCloud." $(ls $ROOT)
 
