@@ -80,7 +80,7 @@ static size_t curl_write_block( void* ptr, size_t size, size_t nmemb, void* data
    size_t total_available = size * nmemb;
    
    // have space?
-   if( write_ctx->num_written + total_available < write_ctx->buf_len ) {
+   if( write_ctx->num_written + total_available <= write_ctx->buf_len ) {
       
       memcpy( write_ctx->buf + write_ctx->num_written, ptr, total_available );
       write_ctx->num_written += total_available;
@@ -89,6 +89,7 @@ static size_t curl_write_block( void* ptr, size_t size, size_t nmemb, void* data
    }
    else {
       // not enough space
+      errorf("Not enough space (have %zu bytes, but need at least %zu)\n", write_ctx->buf_len, write_ctx->num_written + total_available );
       return 0;
    }
 }
@@ -160,7 +161,7 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
 
 
 // get a block of data, and get its pubinfo while we're at it
-// return 0 on success
+// return the number of bytes received on success
 // return negative errno on failure, or if errno was not set, return positive curl status code on failure
 static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, char* buf, uint64_t block_size, struct AG_driver_publish_info* pub_info ) {
    
@@ -200,8 +201,16 @@ static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, 
          return (int)(-oserr);
       }
       else {
-         errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
-         return rc;
+         if( rc == CURLE_BAD_DOWNLOAD_RESUME ) {
+            // EOF 
+            errorf("WARN: Block %" PRIu64 " is off the end of the file\n", block_id );
+            
+            write_ctx.num_written = 0;
+         }
+         else {
+            errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
+            return -rc;
+         }
       }
    }
    
@@ -221,7 +230,7 @@ static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, 
       pub_info->mtime_nsec = 0;
    }
    
-   return 0;
+   return write_ctx.num_written;
 }
 
 
@@ -301,11 +310,11 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    CURL* curl = curl_easy_init();
    
    // no data cached; go get it 
-   int rc = curl_download_block( curl, curl_ctx->url, block_id, block_buf, buf_len, &pubinfo );
+   int num_read = curl_download_block( curl, curl_ctx->url, block_id, block_buf, buf_len, &pubinfo );
    
-   if( rc != 0 ) {
+   if( num_read < 0 ) {
       
-      errorf("curl_download_block(%s, %" PRIu64 ") rc = %d\n", curl_ctx->url, block_id, rc );
+      errorf("curl_download_block(%s, %" PRIu64 ") rc = %d\n", curl_ctx->url, block_id, num_read );
    }
    else {
       
@@ -329,12 +338,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    
    curl_easy_cleanup( curl );
    
-   if( rc != 0 ) {
-      return rc;
-   }
-   else {
-      return buf_len;
-   }
+   return num_read;
 }
 
 
@@ -342,6 +346,9 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
    
    char* url = AG_driver_map_info_get_query_string( map_info );
+   
+   
+   dbprintf("stat %s (url: %s)\n", path, url );
    
    if( url == NULL ) {
       
