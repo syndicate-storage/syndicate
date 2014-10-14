@@ -20,6 +20,8 @@
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/ms/ms-client.h"
 
+#include <algorithm>
+
 #include "AG.h"
 
 #include "map-info.h"
