@@ -87,8 +87,8 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
       return -EINVAL;
    }
    
-   // need all cached metadata 
-   if( !AG_has_valid_cached_metadata( path, mi ) ) {
+   // need cached MS metadata
+   if( !mi->cache_valid ) {
       errorf("Entry for %s does not have all cached metadata\n", path );
       return -EINVAL;
    }
@@ -137,6 +137,9 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
    for( uint64_t i = 0; i < num_blocks; i++ ) {
       bbmsg->add_block_versions( mi->block_version );
    }
+   
+   dbprintf("Manifest: volume=%" PRIu64 " coordinator=%" PRIu64 " owner=%" PRIu64 " file_id=%" PRIX64 " file_version=%" PRId64 " size=%zu mtime=%" PRId64 ".%" PRId32 " num_blocks=%" PRIu64 " block_version=%" PRId64 "\n",
+            volume_id, gateway_id, owner_id, mi->file_id, mi->file_version, pub_info->size, pub_info->mtime_sec, pub_info->mtime_nsec, num_blocks, mi->block_version );
    
    // NOTE: no hashes, since they're served with the blocks directly (along with a signature)
    
@@ -547,6 +550,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
    
    char* block_buf = NULL;
    size_t block_size = 0;
+   size_t read_block_size = 0;
    bool free_block_buf = true;
    
    // check cache 
@@ -573,11 +577,13 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       if( ret > 0 && (unsigned)ret < block_size ) {
          
          // zero untouched area of the block
-         memset( block_buf + ret, 0, block_size - ret );
+         memset( block_buf + ret, 0, block_size - ret ); 
       }
       
+      read_block_size = ret;
+      
       // cache the block for future use  
-      ret = AG_cache_put_block_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, block_buf, block_size );
+      ret = AG_cache_put_block_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, block_buf, read_block_size );
       
       if( ret != 0 ) {
          errorf("WARN: AG_cache_put_block_async(%s %" PRIX64 ".%" PRId64 ".%" PRId64 ".%" PRId64 ") rc = %d\n",
@@ -602,14 +608,20 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
          // mask this, since this isn't necessary for correctness 
          ret = 0;
       }
+      
+      read_block_size = block_size;
    }
          
    
    // generate an AG_Block 
    Serialization::AG_Block ag_block;
    
-   ag_block.set_data( block_buf, block_size );
-   ag_block.set_size( block_size );
+   ag_block.set_data( block_buf, read_block_size );
+   ag_block.set_size( read_block_size );
+   
+   if( read_block_size != block_size ) {
+      dbprintf("WARN: block %" PRIu64 " looks to be EOF\n", rpc->ctx.reqdat.block_id );
+   }
    
    if( free_block_buf ) {
       free( block_buf );
