@@ -493,6 +493,7 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
 int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    // safe to free?
    if( dlctx->pending || dlctx->cancelling ) {
+      errorf("Download context %p pending=%d, cancelling=%d\n", dlctx, dlctx->pending, dlctx->cancelling );
       return -EAGAIN;
    }
    
