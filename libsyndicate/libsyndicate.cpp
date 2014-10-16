@@ -1879,7 +1879,7 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->verify_peer = false;
 #endif
    
-   conf->num_http_threads = 1;
+   conf->num_http_threads = sysconf( _SC_NPROCESSORS_CONF );
    
    conf->debug_lock = false;
 
