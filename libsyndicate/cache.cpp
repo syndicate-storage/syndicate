@@ -372,6 +372,7 @@ int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int
    
    char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
    char* block_path = GET_PATH( block_url );
+   
    int fd = 0;
    int rc = 0;
    
@@ -1378,6 +1379,9 @@ ssize_t md_cache_read_block( int block_fd, char** buf ) {
    
    ssize_t len = sb.st_size;
    char* block_buf = CALLOC_LIST( char, len );
+   if( block_buf == NULL ) {
+      return -ENOMEM;
+   }
    
    nr = md_read_uninterrupted( block_fd, block_buf, len );
    
