@@ -685,7 +685,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    fs_entry_unlock( child );
    
    free( path );
-   
+   free( parent_name );
    return ret;
 }
 
