@@ -100,6 +100,8 @@ static size_t curl_write_block( void* ptr, size_t size, size_t nmemb, void* data
 // return negative errno on failure, or if errno was not set, return positive curl status code on failure
 static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish_info* pub_info ) {
    
+   dbprintf("stat %s\n", url );
+   
    // set up the curl handle
    curl_easy_setopt( curl, CURLOPT_URL, url );
    curl_easy_setopt( curl, CURLOPT_NOBODY, 1L );
@@ -164,6 +166,8 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
 // return the number of bytes received on success
 // return negative errno on failure, or if errno was not set, return positive curl status code on failure
 static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, char* buf, uint64_t block_size, struct AG_driver_publish_info* pub_info ) {
+   
+   dbprintf("Get block %s\n", url );
    
    struct curl_write_context write_ctx;
    memset( &write_ctx, 0, sizeof(struct curl_write_context) );
@@ -315,25 +319,6 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    if( num_read < 0 ) {
       
       errorf("curl_download_block(%s, %" PRIu64 ") rc = %d\n", curl_ctx->url, block_id, num_read );
-   }
-   else {
-      
-      // got data!
-      // did we get any pubinfo?
-      if( pubinfo.mtime_sec > 0 && pubinfo.size > 0 ) {
-         
-         dbprintf("Update cached publish info for %s\n", curl_ctx->request_path );
-         
-         // update the cache
-         char* info_path = md_fullpath( curl_ctx->request_path, "curl-info", NULL );
-         
-         char* cache_chunk = CALLOC_LIST( char, sizeof(struct AG_driver_publish_info) );
-         memcpy( cache_chunk, &pubinfo, sizeof(struct AG_driver_publish_info) );
-      
-         AG_driver_cache_put_chunk_async( info_path, cache_chunk, sizeof(struct AG_driver_publish_info) );
-         
-         free( info_path );
-      }
    }
    
    curl_easy_cleanup( curl );
