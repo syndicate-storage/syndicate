@@ -388,9 +388,6 @@ int AG_reload( struct AG_state* state ) {
    // swap in the new one
    state->ag_fs = fs_clone;
    
-   // clear out reversioner entries and load the new ones
-   rc = AG_reversioner_add_map_infos( state->reversioner, state->ag_fs->fs );
-   
    AG_fs_unlock( fs_clone );
    
    AG_state_fs_unlock( state );
@@ -768,7 +765,7 @@ int AG_start( struct AG_state* state ) {
    }
    
    // start HTTP 
-   dbprintf("%s", "Starting HTTP server\n" );
+   dbprintf("Starting HTTP server (%d threads)\n", state->conf->num_http_threads );
    
    rc = md_start_HTTP( state->http, state->conf->portnum, state->conf );
    if( rc != 0 ) {
