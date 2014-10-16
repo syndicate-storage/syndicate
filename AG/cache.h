@@ -34,16 +34,13 @@ int AG_cache_promote_block( struct AG_state* state, char const* path, int64_t fi
 int AG_cache_put_block_async( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version, char* block, size_t block_len );
 int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file_version, uint64_t block_id, int64_t block_version );
 
-char* AG_cache_stat_path( char const* path );
+// driver manifest cache 
+int AG_cache_get_manifest( struct AG_state* state, char const* path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, char** serialized_manifest, size_t* serialized_manifest_len );
+int AG_cache_promote_manifest( struct AG_state* state, char const* path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec );
+int AG_cache_put_manifest_async( struct AG_state* state, char const* path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, char* serialized_manifest, size_t serialized_manifest_len );
+int AG_cache_manifest_block( struct AG_state* state, char const* path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec );
 
-/*
-// driver pubinfo cache
-int AG_cache_get_stat( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
-int AG_cache_promote_stat( struct AG_state* state, char const* path, int64_t file_version );
-int AG_cache_put_stat_async( struct AG_state* state, char const* path, int64_t file_version, struct AG_driver_publish_info* pubinfo );
-int AG_cache_evict_stat( struct AG_state* state, char const* path, int64_t file_version );
-*/
-
+// evict all blocks and the manifest
 int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_version );
 
 // MS metadata cache
