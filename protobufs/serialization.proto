@@ -34,11 +34,14 @@ message BlockInfo {
 }
 
 // block served from an AG.
-// the AG signs blocks on the fly.
+// the AG versions and signs blocks on the fly.
 message AG_Block {
    required bytes data = 1;
-   required int64 size = 2;
-   required string signature = 3;
+   required uint64 file_id = 2;
+   required int64 file_version = 3;
+   required uint64 block_id = 4;
+   required int64 block_version = 5;
+   required string signature = 6;
 }
 
 // truncate a file

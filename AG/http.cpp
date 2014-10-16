@@ -541,6 +541,43 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
 }
 
 
+// serialize a block 
+static int AG_serialize_block( struct AG_state* state, struct AG_connection_data* rpc, char const* block_buf, size_t block_len, char** serialized_block, size_t* serialized_block_len ) {
+   
+   dbprintf("Serialize block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
+            rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
+   
+   // generate an AG_Block 
+   Serialization::AG_Block ag_block;
+   
+   ag_block.set_data( block_buf, block_len );
+   ag_block.set_file_id( rpc->ctx.reqdat.file_id );
+   ag_block.set_file_version( rpc->ctx.reqdat.file_version );
+   ag_block.set_block_id( rpc->ctx.reqdat.block_id );
+   ag_block.set_block_version( rpc->ctx.reqdat.block_version );
+   
+   // sign it
+   int rc = md_sign< Serialization::AG_Block >( state->ms->my_key, &ag_block );
+   if( rc != 0 ) {
+      errorf("Failed to sign AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
+              rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
+      
+      return rc;
+   }
+   
+   // serialize
+   rc = md_serialize< Serialization::AG_Block >( &ag_block, serialized_block, serialized_block_len );
+   if( rc != 0 ) {
+      errorf("Failed to serialize AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
+              rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
+      
+      return rc;
+   }
+   
+   return 0;
+}
+
+
 // AG GET block handler 
 static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, struct AG_connection_data* rpc ) {
 
@@ -550,11 +587,15 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
    
    char* block_buf = NULL;
    size_t block_size = 0;
-   size_t read_block_size = 0;
-   bool free_block_buf = true;
    
-   // check cache 
-   ret = AG_cache_get_block( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, &block_buf, &block_size );
+   char* serialized_block = NULL;
+   size_t serialized_block_len = 0;
+   
+   char* http_reply = NULL;
+   size_t http_reply_len = 0;
+   
+   // check cache for the signed serialized block
+   ret = AG_cache_get_block( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, &serialized_block, &serialized_block_len );
    
    if( ret != 0 ) {
       // cache miss
@@ -580,21 +621,42 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
          memset( block_buf + ret, 0, block_size - ret ); 
       }
       
-      read_block_size = ret;
+      // serialize the block
+      rc = AG_serialize_block( state, rpc, block_buf, ret, &serialized_block, &serialized_block_len );
       
-      // cache the block for future use  
-      ret = AG_cache_put_block_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, block_buf, read_block_size );
+      free( block_buf );
+      
+      if( rc != 0 ) {
+         errorf("AG_serialize_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
+                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
+         
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
+         return resp;
+      }
+      
+      // duplicate: one for the cache, one for the HTTP server (!!)
+      http_reply = CALLOC_LIST( char, serialized_block_len );
+      if( http_reply == NULL ) {
+         errorf("%s\n", "OOM");
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
+         return resp;
+      }
+      
+      http_reply_len = serialized_block_len;
+      memcpy( http_reply, serialized_block, http_reply_len );
+      
+      // cache the serialized block for future use (NOTE: cache takes ownership on success)
+      ret = AG_cache_put_block_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, serialized_block, serialized_block_len );
       
       if( ret != 0 ) {
-         errorf("WARN: AG_cache_put_block_async(%s %" PRIX64 ".%" PRId64 ".%" PRId64 ".%" PRId64 ") rc = %d\n",
+         errorf("WARN: AG_cache_put_block_async(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, ret );
          
          // mask this, since this isn't necessary for correctness
          ret = 0;
-      }
-      else {
-         // NOTE: the cache takes ownership of the block buffer
-         free_block_buf = false;
+         
+         free( serialized_block );
+         serialized_block = NULL;
       }
    }
    else {
@@ -609,53 +671,16 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
          ret = 0;
       }
       
-      read_block_size = block_size;
-   }
-         
-   
-   // generate an AG_Block 
-   Serialization::AG_Block ag_block;
-   
-   ag_block.set_data( block_buf, read_block_size );
-   ag_block.set_size( read_block_size );
-   
-   if( read_block_size != block_size ) {
-      dbprintf("WARN: block %" PRIu64 " looks to be EOF\n", rpc->ctx.reqdat.block_id );
-   }
-   
-   if( free_block_buf ) {
-      free( block_buf );
-      block_buf = NULL;
-   }
-   
-   // sign it
-   rc = md_sign< Serialization::AG_Block >( state->ms->my_key, &ag_block );
-   if( rc != 0 ) {
-      errorf("Failed to sign AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
-              rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
-      
-      // clean up 
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
-      return resp;
-   }
-   
-   char* serialized_block = NULL;
-   size_t serialized_block_len = 0;
-   
-   // serialize
-   rc = md_serialize< Serialization::AG_Block >( &ag_block, &serialized_block, &serialized_block_len );
-   if( rc != 0 ) {
-      errorf("Failed to serialize AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
-              rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
-      
-      // clean up 
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
-      return resp;
+      http_reply = serialized_block;
+      http_reply_len = serialized_block_len;
    }
    
    // send it off 
    md_HTTP_add_header( resp, "Connection", "keep-alive" );
-   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, serialized_block, serialized_block_len );
+   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
+   
+   dbprintf("Send block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
+            rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
    
    return resp;
 }
@@ -677,35 +702,89 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       return resp;
    }
    
-   // populate the manifest
-   rc = AG_populate_manifest( &mmsg, rpc->ctx.reqdat.fs_path, rpc->mi, rpc->pubinfo );
-   if( rc != 0 ) {
-      
-      errorf("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%" PRId64 " ) rc = %d\n",
-             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
-      
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      return resp;
-   }
-   
    char* serialized_manifest = NULL;
    size_t serialized_manifest_len = 0;
    
-   // serialize the manifest 
-   rc = md_serialize< Serialization::ManifestMsg >( &mmsg, &serialized_manifest, &serialized_manifest_len );
+   char* http_reply = NULL;
+   size_t http_reply_len = 0;
+   
+   // cached manifest?
+   rc = AG_cache_get_manifest( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec,
+                               &serialized_manifest, &serialized_manifest_len );
+   
    if( rc != 0 ) {
       
-      errorf("Failed to serialize AG manifest %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%" PRId64 " rc = %d\n",
-             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+      // populate the manifest
+      rc = AG_populate_manifest( &mmsg, rpc->ctx.reqdat.fs_path, rpc->mi, rpc->pubinfo );
+      if( rc != 0 ) {
+         
+         errorf("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld ) rc = %d\n",
+               rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+         
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return resp;
+      }
       
-      // clean up 
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      return resp;
+      // serialize the manifest 
+      rc = md_serialize< Serialization::ManifestMsg >( &mmsg, &serialized_manifest, &serialized_manifest_len );
+      if( rc != 0 ) {
+         
+         errorf("Failed to serialize AG manifest %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld rc = %d\n",
+               rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+         
+         // clean up 
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return resp;
+      }
+      
+      // duplicate, since we need to hand off a copy to the HTTP server 
+      http_reply_len = serialized_manifest_len;
+      http_reply = CALLOC_LIST( char, http_reply_len );
+      if( http_reply == NULL ) {
+         
+         errorf("%s\n", "OOM");
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return resp;
+      }
+      
+      memcpy( http_reply, serialized_manifest, http_reply_len );
+      
+      // cache the manifest 
+      rc = AG_cache_put_manifest_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec,
+                                        serialized_manifest, serialized_manifest_len );
+      
+      if( rc != 0 ) {
+         errorf("WARN: AG_cache_put_manifest_async( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
+                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+         
+         // Not an error, since not needed for correctness
+         rc = 0;
+      }
    }
+   else {
+      
+      // hit the cache!  promote 
+      rc = AG_cache_promote_manifest( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec );
+      
+      if( rc != 0 ) {
+         errorf("WARN: AG_cache_promote_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
+                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+         
+         // not an error, since not required for correctness
+         rc = 0;
+      }
+      
+      http_reply = serialized_manifest;
+      http_reply_len = serialized_manifest_len;
+   }
+         
    
    // send it off 
    md_HTTP_add_header( resp, "Connection", "keep-alive" );
-   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, serialized_manifest, serialized_manifest_len );
+   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
+   
+   dbprintf("Send manifest %s.%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld\n",
+            rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec );
    
    return resp;
 }
