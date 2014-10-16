@@ -78,7 +78,7 @@ static int md_HTTP_default_send_response( struct MHD_Connection* connection, int
    return ret;
 }
 
-// make a RAM response which we'll defensively copy
+// make a RAM response which MHD will defensively copy
 int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_COPY );
    resp->status = status;
@@ -86,7 +86,7 @@ int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mime
    return 0;
 }
 
-// make a RAM response which we'll keep a pointer to and free later
+// make a RAM response which MHD keep a pointer to and free later
 int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_FREE );
    resp->status = status;
@@ -94,7 +94,7 @@ int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char cons
    return 0;
 }
 
-// make a RAM response which is persistent
+// make a RAM response which MHD should not copy, but the caller will not free
 int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_PERSISTENT );
    resp->status = status;
@@ -102,7 +102,7 @@ int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char cons
    return 0;
 }
 
-// make an FD-based response
+// make an file-descriptor-based response
 int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size ) {
    resp->resp = MHD_create_response_from_fd_at_offset( size, fd, offset );
    resp->status = status;
