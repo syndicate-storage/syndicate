@@ -362,7 +362,7 @@ class Gateway( storagetypes.Object ):
       
       # enforce ownership--make sure the calling user owns this gateway
       kwargs['owner_id'] = user.owner_id
-
+      
       # populate kwargs with default values for missing attrs
       cls.fill_defaults( kwargs )
       
@@ -382,6 +382,9 @@ class Gateway( storagetypes.Object ):
       # set capabilities correctly and safely
       kwargs['caps'] = cls.safe_caps( gateway_type, volume.default_gateway_caps )
       
+      # enforce cert generation 
+      kwargs['need_cert'] = Gateway.needs_cert( gateway_type, kwargs['caps'] )
+
       # ID...
       g_id = random.randint( 0, 2**63 - 1 )
       kwargs['g_id'] = g_id
