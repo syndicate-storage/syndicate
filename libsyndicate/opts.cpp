@@ -17,7 +17,7 @@
 #include "libsyndicate/opts.h"
 
 // fill opts with defaults
-static int md_default_opts( struct md_opts* opts ) {
+int md_default_opts( struct md_opts* opts ) {
    memset( opts, 0, sizeof(struct md_opts) );
    return 0;
 }
@@ -171,6 +171,8 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       {"debug-level",     required_argument,   0, 'd'},
       {"hostname",        required_argument,   0, 'H'},
       {"foreground",      no_argument,         0, 'f'},
+      {"cache-soft-limit",required_argument,   0, 'l'},
+      {"cache-hard-limit",required_argument,   0, 'L'},
       {0, 0, 0, 0}
    };
 
@@ -180,7 +182,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:g:m:V:G:S:K:T:C:r:RU:P:d:H:f";
+   char const* default_optstr = "c:v:u:p:g:m:V:G:S:K:T:C:r:RU:P:d:H:fl:L:";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -375,6 +377,30 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             opts->hostname = strdup( optarg );
             break;
          }
+         case 'l': {
+            long l = 0;
+            rc = md_opts_parse_long( c, optarg, &l );
+            if( rc == 0 ) {
+               opts->cache_soft_limit = l;
+            }
+            else {
+               errorf("Failed to parse -l, rc = %d\n", rc );
+               rc = -1;
+            }
+            break;
+         }
+         case 'L': {
+            long l = 0;
+            rc = md_opts_parse_long( c, optarg, &l );
+            if( rc == 0 ) {
+               opts->cache_hard_limit = l;
+            }
+            else {
+               errorf("Failed to parse -L, rc = %d\n", rc );
+               rc = -1;
+            }
+            break;
+         }
          default: {
             rc = -1;
             if( special_opt_handler ) {
@@ -414,6 +440,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
 
 // parse syndicate options
 int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
+   
    int rc = md_parse_opts_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
    if( rc != 0 ) {
       return rc;
@@ -501,6 +528,10 @@ Common optional arguments:\n\
             Pass 0 (the default) for no debugging output.\n\
             Pass 1 for global debugging messages.\n\
             Pass 2 to add locking debugging.\n\
+   -l, --cache-soft-limit LIMIT\n\
+            Soft on-disk cache size limit (in bytes)\n\
+   -L, --cache-hard-limit LIMIT\n\
+            Hard on-disk cache size limit (in bytes)\n\
 \n", progname );
 }
 
