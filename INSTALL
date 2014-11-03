@@ -19,8 +19,6 @@ yum install \
    xerces-c-devel \
    libmicrohttpd-devel \
    python-daemon \
-   unixODBC-devel \
-   libconfig-devel \
    Cython \
    python-devel \
    json-c \
