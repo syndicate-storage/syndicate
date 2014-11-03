@@ -38,12 +38,14 @@ CPPPATH = [
 
 # for protobufs...
 LIBPATH = [
+   "/usr/lib/x86_64-linux-gnu/",
+   "/usr/lib/i386-linux-gnu/",
    "/usr/local/lib",
    "/usr/lib"
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all -pthread"
 LIBS = ""
 LINK_FLAGS = ""
 
