@@ -1217,6 +1217,9 @@ int replica_wait_and_remove( struct rg_client* rp, struct replica_context* rctx,
 
 // initalize an RG client
 int rg_client_init( struct rg_client* rp, char const* name, struct md_syndicate_conf* conf, struct ms_client* client, uint64_t volume_id ) {
+   
+   memset( rp, 0, sizeof(struct rg_client) );
+   
    pthread_mutex_init( &rp->running_lock, NULL );
    pthread_mutex_init( &rp->pending_lock, NULL );
    pthread_mutex_init( &rp->cancel_lock, NULL );
