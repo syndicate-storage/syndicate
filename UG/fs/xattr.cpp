@@ -107,9 +107,9 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
          char* block_name = md_basename( block_path, NULL );
          
          // try to parse the ID
-         char* tmp = NULL;
-         int64_t id = (int64_t)strtoll( block_name, &tmp, 10 );
-         if( tmp != block_name ) {
+         int64_t id = 0;
+         int rc = sscanf( block_name, "%" PRId64, &id );
+         if( rc == 1 ) {
             // parsed!  This block is present
             if( (size_t)id < num_blocks ) {
                *(block_vector + id) = '1';
