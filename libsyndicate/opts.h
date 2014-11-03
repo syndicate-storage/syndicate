@@ -56,10 +56,14 @@ struct md_opts {
    bool read_stdin;     // if true, get arguments from stdin (i.e. to avoid them showing up in /proc/self/cmdline)
    int debug_level;     // if 0, no debugging.  if 1, set global debug.  If 2, then set global and locking debug
    bool foreground;     // if true, don't detach from the controlling terminal
+   
+   uint64_t cache_soft_limit;
+   uint64_t cache_hard_limit;
 };
 
 extern "C" {
 
+int md_default_opts( struct md_opts* opts );
 int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
 int md_cleanup_opts( struct md_opts* opts );
 void md_common_usage( char const* progname );
