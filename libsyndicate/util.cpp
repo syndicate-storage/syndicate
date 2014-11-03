@@ -1009,9 +1009,13 @@ char* response_buffer_to_string( response_buffer_t* rb ) {
 
 // free a response buffer
 void response_buffer_free( response_buffer_t* rb ) {
-   if( rb == NULL )
+   if( rb == NULL ) {
       return;
-      
+   }
+   if( rb->size() == 0 ) {
+      return;
+   }
+   
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       if( rb->at(i).first != NULL ) {
          free( rb->at(i).first );
