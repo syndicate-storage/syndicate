@@ -27,7 +27,7 @@
 #include "fs.h"
 #include "vacuumer.h"
 
-#define UG_SHORTOPTS "al:L:F"
+#define UG_SHORTOPTS "aF"
 
 #define UG_CACHE_DEFAULT_SOFT_LIMIT        50000000        // 50 MB
 #define UG_CACHE_DEFAULT_HARD_LIMIT       100000000        // 100 MB
@@ -35,8 +35,6 @@
 // UG-specific command-line options 
 struct UG_opts {
    
-   uint64_t cache_soft_limit;
-   uint64_t cache_hard_limit;
    bool anonymous;
    bool flush_replicas;
 };
@@ -68,6 +66,10 @@ struct syndicate_state {
 
    // statistics
    Stats* stats;
+   
+   // cache 
+   uint64_t cache_soft_limit;
+   uint64_t cache_hard_limit;
 };
 
 extern "C" {

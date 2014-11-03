@@ -341,13 +341,16 @@ cdef class Syndicate:
                        gateway_pkey_decryption_password=None,
                        volume_name=None,
                        volume_pubkey_path=None,
+                       volume_pubkey_pem=None,
                        config_file=None,
                        gateway_pkey_path=None,
+                       gateway_pkey_pem=None,
                        tls_pkey_path=None,
                        tls_cert_path=None,
                        storage_root=None,
                        debug_level=0,
                        syndicate_pubkey_path=None,
+                       syndicate_pubkey_pem=None,
                        hostname=None):
 
       '''
@@ -361,95 +364,55 @@ cdef class Syndicate:
       if syndicate_inited:
          raise Exception("Syndicate already initialized!  Use Syndicate.getinstance() to get a reference to the API.")
       
-      cdef:
-         char *c_gateway_name = NULL
-         char *c_ms_url = NULL
-         char *c_username = NULL
-         char *c_password = NULL
-         char *c_user_pkey_pem = NULL
-         char* c_gateway_pkey_decryption_password = NULL
-         char *c_volume_name = NULL
-         char *c_volume_pubkey_path = NULL
-         char *c_config_file = NULL
-         char *c_gateway_pkey_path = NULL
-         char *c_tls_pkey_path = NULL
-         char *c_tls_cert_path = NULL
-         char* c_storage_root = NULL
-         char* c_syndicate_pubkey_path = NULL
-         char* c_hostname = NULL
-
-      if gateway_name is not None:
-         c_gateway_name = gateway_name
-      
-      if ms_url is not None:
-         c_ms_url = ms_url
-
-      if username is not None:
-         c_username = username 
-         
-      if password is not None:
-         c_password = password
-
-      if user_pkey_pem is not None:
-         c_user_pkey_pem = user_pkey_pem
-
-      if gateway_pkey_decryption_password is not None:
-         c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
-         
-      if volume_name is not None:
-         c_volume_name = volume_name 
-         
-      if config_file is not None:
-         c_config_file = config_file 
-
-      if volume_pubkey_path is not None:
-         c_volume_pubkey_path = volume_pubkey_path
-      
-      if gateway_pkey_path is not None:
-         c_gateway_pkey_path = gateway_pkey_path
-         runtime_privkey_path = gateway_pkey_path
-         
-      if tls_pkey_path is not None:
-         c_tls_pkey_path = tls_pkey_path
-      
-      if tls_cert_path is not None:
-         c_tls_cert_path = tls_cert_path
-
-      if storage_root is not None:
-         c_storage_root = storage_root
-
-      if syndicate_pubkey_path is not None:
-         c_syndicate_pubkey_path = syndicate_pubkey_path
-
-      if hostname is not None:
-         c_hostname = hostname
-      
       # initialize configuration first
       md_default_conf( &self.conf_inst, gateway_type )
 
       # set the hostname, if needed
       if hostname is not None:
-         md_set_hostname( &self.conf_inst, c_hostname )
+         md_set_hostname( &self.conf_inst, hostname )
 
       # initialize debugging
       md_debug( &self.conf_inst, debug_level )
 
-      rc = md_init(  &self.conf_inst,
-                     &self.client_inst,
-                     c_ms_url,
-                     c_volume_name,
-                     c_gateway_name,
-                     c_username,
-                     c_password,
-                     c_user_pkey_pem,
-                     c_volume_pubkey_path,
-                     c_gateway_pkey_path,
-                     c_gateway_pkey_decryption_password,
-                     c_tls_pkey_path,
-                     c_tls_cert_path,
-                     c_storage_root,
-                     c_syndicate_pubkey_path)
+      cdef md_opts opts
+      memset( &opts, 0, sizeof(opts) )
       
+      opts.gateway_name = gateway_name
+      opts.ms_url = ms_url
+      opts.username = username
+      opts.volume_name = volume_name
+      opts.volume_pubkey_path = volume_pubkey_path
+      opts.volume_pubkey_pem = volume_pubkey_pem
+      opts.config_file = config_file
+      opts.storage_root = storage_root
+      opts.gateway_pkey_path = gateway_pkey_path
+      opts.tls_pkey_path = tls_pkey_path
+      opts.tls_cert_path = tls_cert_path
+      opts.syndicate_pubkey_path = syndicate_pubkey_path
+      opts.syndicate_pubkey_pem = syndicate_pubkey_pem
+
+      # NOTE: not mlock'ed!
+      cdef char* c_gateway_pkey_pem = gateway_pkey_pem
+      opts.gateway_pkey_pem.ptr = c_gateway_pkey_pem
+      opts.gateway_pkey_pem.len = len(gateway_pkey_pem)
+      
+      # NOTE: not mlock'ed!
+      cdef char* c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
+      opts.gateway_pkey_decryption_password.ptr = c_gateway_pkey_decryption_password
+      opts.gateway_pkey_decryption_password.len = len(gateway_pkey_decryption_password)
+
+      # NOTE: not mlock'ed!
+      cdef char* c_password = password
+      opts.password.ptr = c_password
+      opts.password.len = len(password)
+      
+      # NOTE: not mlock'ed
+      cdef char* c_user_pkey_pem = user_pkey_pem
+      opts.user_pkey_pem.ptr = c_user_pkey_pem
+      opts.user_pkey_pem.len = len(user_pkey_pem)
+
+      rc = md_init( &self.conf_inst, &self.client_inst, &opts );
+
       if rc != 0:
          raise Exception( "md_init rc = %d" % rc )
       
@@ -466,13 +429,16 @@ cdef class Syndicate:
                            gateway_pkey_decryption_password=None,
                            volume_name=None,
                            volume_pubkey_path=None,
+                           volume_pubkey_pem=None,
                            config_file=None,
                            gateway_pkey_path=None,
+                           gateway_pkey_pem=None,
                            tls_pkey_path=None,
                            tls_cert_path=None,
                            storage_root=None,
                            debug_level=0,
                            syndicate_pubkey_path=None,
+                           syndicate_pubkey_pem=None,
                            hostname=None):
       
       '''
@@ -492,14 +458,17 @@ cdef class Syndicate:
                                     user_pkey_pem=user_pkey_pem,
                                     volume_name=volume_name,
                                     volume_pubkey_path=volume_pubkey_path,
+                                    volume_pubkey_pem=volume_pubkey_pem,
                                     config_file=config_file,
                                     gateway_pkey_path=gateway_pkey_path,
+                                    gateway_pkey_pem=gateway_pkey_pem,
                                     gateway_pkey_decryption_password=gateway_pkey_decryption_password,
                                     tls_pkey_path=tls_pkey_path,
                                     tls_cert_path=tls_cert_path,
                                     storage_root=storage_root,
                                     debug_level=debug_level,
                                     syndicate_pubkey_path=syndicate_pubkey_path,
+                                    syndicate_pubkey_pem=syndicate_pubkey_pem,
                                     hostname=hostname)
          
       return syndicate_ref

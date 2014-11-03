@@ -16,6 +16,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/storage.h"
+#include "libsyndicate/opts.h"
 #include "libsyndicate/ms/ms-client.h"
 
 static int _signals = 1;
@@ -139,7 +140,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
       char* enc_gateway_key = (char*)gateway_key_mlock_buf.ptr;
       size_t enc_gateway_key_len = gateway_key_mlock_buf.len;
       
-      if( key_password ) {
+      if( key_password != NULL ) {
          // need to decrypt
          char* unencrypted_key = NULL;
          size_t unencrypted_key_len = 0;
@@ -1252,7 +1253,8 @@ off_t md_header_value_offset( char* header_buf, size_t header_len, char const* h
    return off;
 }
 
-// parse one value in a header
+// parse one value in a header (excluding UINT64_MAX)
+// return UINT64_MAX on error
 uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size ) {
    char* value = hdr + offset;
    size_t value_len = size - offset;
@@ -1261,18 +1263,23 @@ uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size ) {
    
    strncpy( value_str, value, value_len );
 
-   uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
-
+   uint64_t data = 0;
+   int rc = sscanf( value_str, "%" PRIu64, &data );
+   if( rc != 0 ) {
+      data = (uint64_t)(-1);
+   }
+   
    free( value_str );
    
    return data;
 }
 
 // read a csv of values
+// place UINT64_MAX in an element on failure to parse
 uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len ) {
    char* value = hdr + offset;
    size_t value_len = size - offset;
-
+   
    char* value_str = (char*)alloca( value_len + 1 );
    strcpy( value_str, value );
 
@@ -1297,8 +1304,10 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
       }
       
       tmp = NULL;
-
-      uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
+      
+      uint64_t data = (uint64_t)(-1);
+      sscanf( value_str, "%" PRIu64, &data );
+      
       ret[i] = data;
       i++;
    }
@@ -1432,6 +1441,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_name( string( ent->name ) );
    msent->set_write_nonce( ent->write_nonce );
    msent->set_xattr_nonce( ent->xattr_nonce );
+   msent->set_generation( ent->generation );
    return 0;
 }
 
@@ -1459,6 +1469,8 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->name = strdup( msent.name().c_str() );
    ent->write_nonce = msent.write_nonce();
    ent->xattr_nonce = msent.xattr_nonce();
+   ent->generation = msent.generation();
+   ent->num_children = msent.num_children();
    
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
@@ -1760,76 +1772,37 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    
    
 // initialize Syndicate
-int md_init( struct md_syndicate_conf* conf,
-             struct ms_client* client,
-             char const* ms_url,
-             char const* volume_name,
-             char const* gateway_name,
-             char const* oid_username,
-             char const* oid_password,
-             char const* user_pkey_pem,                 // NOTE: should be mlock'ed
-             char const* volume_pubkey_path,
-             char const* gateway_key_path,
-             char const* gateway_key_password,          // NOTE: should be mlock'ed
-             char const* tls_pkey_file,
-             char const* tls_cert_file,
-             char const* storage_root,
-             char const* syndicate_pubkey_path
-           ) {
-
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
-
+static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts, bool is_client ) {
+   
+   char const* ms_url = opts->ms_url;
+   char const* volume_name = opts->volume_name;
+   char const* gateway_name = opts->gateway_name;
+   char const* oid_username = opts->username;
+   char const* oid_password = (char const*)opts->password.ptr;
+   char const* user_pkey_pem = (char const*)opts->user_pkey_pem.ptr;
+   char const* volume_pubkey_path = opts->volume_pubkey_path;
+   char const* volume_pubkey_pem = opts->volume_pubkey_pem;
+   char const* gateway_key_path = opts->gateway_pkey_path;
+   char const* gateway_key_pem = (char const*)opts->gateway_pkey_pem.ptr;
+   char const* gateway_key_password = (char const*)opts->gateway_pkey_decryption_password.ptr;
+   char const* storage_root = opts->storage_root;
+   char const* syndicate_pubkey_path = opts->syndicate_pubkey_path;
+   char const* syndicate_pubkey_pem = opts->syndicate_pubkey_pem;
+   char const* tls_pkey_path = opts->tls_pkey_path;
+   char const* tls_cert_path = opts->tls_cert_path;
+   
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
+   
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
       return rc;
    }
    
-   conf->is_client = false;
-   
-   MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
-   
-
-   // set up libsyndicate runtime information
-   rc = md_runtime_init( conf, gateway_key_password );
-   if( rc != 0 ) {
-      errorf("md_runtime_init() rc = %d\n", rc );
-      return rc;
-   }
-   
-   return md_init_finish( conf, client, gateway_key_password );
-}
-
-
-// initialize syndicate as a client only
-int md_init_client( struct md_syndicate_conf* conf,
-                    struct ms_client* client,
-                    char const* ms_url,
-                    char const* volume_name, 
-                    char const* gateway_name,
-                    char const* ms_username,
-                    char const* ms_password,
-                    char const* user_pkey_pem,          // NOTE: should be mlock'ed
-                    char const* volume_pubkey_pem,
-                    char const* gateway_key_pem,        // NOTE: should be mlock'ed
-                    char const* gateway_key_password,   // NOTE: should be mlock'ed
-                    char const* storage_root,
-                    char const* syndicate_pubkey_pem
-                  ) {
-   
-   
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, ms_username, ms_password, user_pkey_pem, NULL, NULL, NULL, NULL, NULL );
-
-   if( rc != 0 ) {
-      errorf("md_init_begin() rc = %d\n", rc );
-      return rc;
-   }
-   
-   conf->is_client = true;
+   conf->is_client = is_client;
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
    MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
    MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey, syndicate_pubkey_pem );
-   MD_SYNDICATE_CONF_OPT( *conf, user_pkey, user_pkey_pem );
    
    if( conf->volume_pubkey ) {
       conf->volume_pubkey_len = strlen(conf->volume_pubkey);
@@ -1838,9 +1811,9 @@ int md_init_client( struct md_syndicate_conf* conf,
       conf->syndicate_pubkey_len = strlen(conf->syndicate_pubkey);
    }
    
-   if( gateway_key_pem ) {
+   if( gateway_key_pem != NULL ) {
       // special case: duplicate an mlock'ed buffer
-      conf->gateway_key_len = strlen(user_pkey_pem);
+      conf->gateway_key_len = strlen(gateway_key_pem);
       
       struct mlock_buf tmp;
       int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len + 1 );
@@ -1859,8 +1832,20 @@ int md_init_client( struct md_syndicate_conf* conf,
       return rc;
    }
    
-   return md_init_finish( conf, client, gateway_key_password );   
+   return md_init_finish( conf, client, gateway_key_password );
 }
+
+
+// initialize syndicate as a client only
+int md_init_client( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts ) {
+   return md_init_common( conf, client, opts, true );
+}
+
+// initialize syndicate as a full gateway 
+int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts ) {
+   return md_init_common( conf, client, opts, false );
+}
+
 
 
 

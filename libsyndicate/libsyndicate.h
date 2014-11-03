@@ -95,6 +95,8 @@ struct md_entry {
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
    int32_t error;       // error information with this md_entry
+   int64_t generation;  // n, as in, the nth item to ever be created in the parent directory
+   int64_t num_children; // number of children this entry has (if it's a directory)
    uint64_t parent_id;  // id of this file's parent directory
    char* parent_name;   // name of this file's parent directory
 };
@@ -278,19 +280,6 @@ struct md_syndicate_conf {
 // extract the filesystem path from a local url
 #define GET_FS_PATH( root, url ) ((char*)(url) + strlen(SYNDICATEFS_LOCAL_PROTO) + strlen(root) - 1)
 
-// is this a file path?
-#define IS_FILE_PATH( path ) (strlen(path) > 1 && (path)[strlen(path)-1] != '/')
-
-// is this a directory path?
-#define IS_DIR_PATH( path ) ((strlen(path) == 1 && (path)[0] == '/') || (path)[strlen(path)-1] == '/')
-
-// map a string to an md_entry
-typedef struct map<string, struct md_entry*> md_entmap;
-
-// list of path hashes is a set of path locks
-typedef vector<long> md_pathlist;
-
-
 extern "C" {
 
 // library config 
@@ -361,39 +350,10 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
 int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname );
 
 // top-level initialization
-int md_init( struct md_syndicate_conf* conf,
-             struct ms_client* client,
-             char const* ms_url,
-             char const* volume_name,
-             char const* gateway_name,
-             char const* ms_username,
-             char const* ms_password,
-             char const* user_pkey_pem,
-             char const* volume_pubkey_file,
-             char const* gateway_key_path,
-             char const* gateway_key_password,
-             char const* tls_pkey_file,
-             char const* tls_cert_file,
-             char const* storage_root,
-             char const* syndicate_pubkey_path
-           );
-
+int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
 // initialize syndicate as a client only
-int md_init_client( struct md_syndicate_conf* conf,
-                    struct ms_client* client,
-                    char const* ms_url,
-                    char const* volume_name,
-                    char const* gateway_name,
-                    char const* ms_username,
-                    char const* ms_password,
-                    char const* user_pkey_pem,
-                    char const* volume_pubkey_pem,
-                    char const* gateway_key_pem,
-                    char const* gateway_key_password,
-                    char const* storage_root,
-                    char const* syndicate_pubkey_pem
-                  );
+int md_init_client( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
 int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf, int gateway_type );
@@ -441,7 +401,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
    }
    
    if( !valid ) {
-      errorf("ParseFromString rc = %d\n", valid );
+      errorf("ParseFromString rc = %d (missing %s)\n", valid, protobuf->InitializationErrorString().c_str() );
       return -EINVAL;
    }
    

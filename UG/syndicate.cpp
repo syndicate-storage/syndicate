@@ -23,8 +23,6 @@ static struct UG_opts _internal_opts;           // accumulate options and feed t
 int UG_opts_init(void) {
    memset( &_internal_opts, 0, sizeof(struct UG_opts) );
    
-   _internal_opts.cache_soft_limit = UG_CACHE_DEFAULT_SOFT_LIMIT;
-   _internal_opts.cache_hard_limit = UG_CACHE_DEFAULT_HARD_LIMIT;
    _internal_opts.flush_replicas = true;
    
    return 0;
@@ -38,10 +36,6 @@ int UG_opts_get( struct UG_opts* opts ) {
 void UG_usage(void) {
    fprintf(stderr, "\n\
 UG-specific options:\
-   -l, --cache-soft-limit LIMIT\n\
-            Soft limit on the size of the local cache (bytes).\n\
-   -L, --cache-hard-limit LIMIT\n\
-            Hard limit on the size of the local cache (bytes).\n\
    -F, --no-flush-replicas\n\
             On shutdown, do NOT wait for pending replication\n\
             requests to finish.\n\
@@ -59,30 +53,7 @@ int UG_handle_opt( int opt_c, char* opt_s ) {
    dbprintf("UG opt: -%c\n", opt_c);
    
    switch( opt_c ) {
-      case 'l': {
-         long lim = 0;
-         rc = md_opts_parse_long( opt_c, opt_s, &lim );
-         if( rc == 0 ) {
-            _internal_opts.cache_soft_limit = (size_t)lim;
-         }
-         else {
-            errorf("Failed to parse -l, rc = %d\n", rc );
-            rc = -1;
-         }
-         break;
-      }
-      case 'L': {
-         long lim = 0;
-         rc = md_opts_parse_long( opt_c, opt_s, &lim );
-         if( rc == 0 ) {
-            _internal_opts.cache_hard_limit = (size_t)lim;
-         }
-         else {
-            errorf("Failed to parse -L, rc = %d\n", rc );
-            rc = -1;
-         }
-         break;
-      }
+      
       case 'F': {
          _internal_opts.flush_replicas = true;
          break;
@@ -183,7 +154,7 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    }
 
    // initialize and start caching
-   rc = md_cache_init( &state->cache, &state->conf, state->ug_opts.cache_soft_limit / block_size, state->ug_opts.cache_hard_limit / block_size );
+   rc = md_cache_init( &state->cache, &state->conf, state->cache_soft_limit / block_size, state->cache_hard_limit / block_size );
    if( rc != 0 ) {
       errorf("md_cache_init rc = %d\n", rc );
       return rc;  
@@ -300,9 +271,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    if( !ug_opts->anonymous ) {
       dbprintf("%s", "Not anonymous; initializing as peer\n");
       
-      int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, (char const*)opts->password.ptr, (char const*)opts->user_pkey_pem.ptr,
-                                          opts->volume_pubkey_path, opts->gateway_pkey_path, (char const*)opts->gateway_pkey_decryption_password.ptr,
-                                          opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root, opts->syndicate_pubkey_path );
+      int rc = md_init( &state->conf, ms, opts );
       if( rc != 0 ) {
          errorf("md_init rc = %d\n", rc );
          return rc;
@@ -335,7 +304,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
          }
       }
       
-      int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, NULL, NULL, NULL, NULL, volume_pubkey_pem, NULL, NULL, opts->storage_root, syndicate_pubkey_pem );
+      int rc = md_init_client( &state->conf, ms, opts );
       
       if( rc != 0 ) {
          errorf("md_init_client rc = %d\n", rc );
@@ -351,6 +320,15 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    if( rc != 0 ) {
       errorf("syndicate_init_state rc = %d\n", rc );
       return rc;
+   }
+   
+   // copy over opts
+   if( opts->cache_hard_limit == 0 ) {
+      state->cache_hard_limit = UG_CACHE_DEFAULT_HARD_LIMIT;
+   }
+   
+   if( opts->cache_soft_limit == 0 ) {
+      state->cache_soft_limit = (UG_CACHE_DEFAULT_SOFT_LIMIT < state->cache_hard_limit ? UG_CACHE_DEFAULT_SOFT_LIMIT : state->cache_hard_limit );
    }
    
    global_state = state;

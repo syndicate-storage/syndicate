@@ -637,7 +637,7 @@ int syndicate_fgetattr(struct syndicate_state* state, struct stat *statbuf, synd
 }
 
 // initialize syndicate
-int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts ) {
+int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts, struct UG_opts* ug_opts ) {
    
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
    
@@ -659,12 +659,24 @@ int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts )
       }
    }
    
+   // set opts 
+   memcpy( &state->ug_opts, ug_opts, sizeof(struct UG_opts) );
+   
+   // copy over opts
+   if( opts->cache_hard_limit == 0 ) {
+      state->cache_hard_limit = UG_CACHE_DEFAULT_HARD_LIMIT;
+   }
+   
+   if( opts->cache_soft_limit == 0 ) {
+      state->cache_soft_limit = (UG_CACHE_DEFAULT_SOFT_LIMIT < state->cache_hard_limit ? UG_CACHE_DEFAULT_SOFT_LIMIT : state->cache_hard_limit );
+   }
+   
    // set debug level
    md_debug( &state->conf, opts->debug_level );
    
    // initialize library
-   int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, (char*)opts->password.ptr, (char*)opts->user_pkey_pem.ptr,
-                                              opts->volume_pubkey_pem, (char*)opts->gateway_pkey_pem.ptr, (char*)opts->gateway_pkey_decryption_password.ptr, opts->storage_root, opts->syndicate_pubkey_pem );
+   int rc = md_init_client( &state->conf, ms, opts );
+   
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );
       return rc;
@@ -684,5 +696,10 @@ int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts )
 // destroy syndicate
 int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas ) {  
    syndicate_destroy_ex( state, wait_replicas );
+   
+   
+   dbprintf("%s", "library shutdown\n");
+   md_shutdown();
+   
    return 0;
 }

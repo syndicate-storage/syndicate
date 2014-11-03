@@ -31,6 +31,10 @@ cdef extern from "openssl/ssl.h":
    ctypedef EVP_PKEY_TAG EVP_PKEY
 
 # ------------------------------------------
+cdef extern from "string.h":
+   void* memset( void*, int, size_t )
+
+# ------------------------------------------
 cdef extern from "libsyndicate/ms/ms-client.h":
    cdef struct ms_client:
       EVP_PKEY* my_key
@@ -44,6 +48,37 @@ cdef extern from "libsyndicate/ms/ms-client.h":
    int ms_client_destroy( ms_client* client )
    char* ms_client_get_hostname( ms_client* client )
    int ms_client_get_portnum( ms_client* client )
+
+# ------------------------------------------
+cdef extern from "libsyndicate/util.h":
+
+   cdef struct mlock_buf:
+      void* ptr
+      size_t len
+      
+# ------------------------------------------   
+cdef extern from "libsyndicate/opts.h":
+   cdef struct md_opts:
+      char* config_file
+      char* username
+      mlock_buf password
+      char* volume_name
+      char* ms_url
+      char* gateway_name
+      char* volume_pubkey_path
+      char* gateway_pkey_path
+      mlock_buf gateway_pkey_decryption_password
+      char* volume_pubkey_pem
+      mlock_buf gateway_pkey_pem
+      char* syndicate_pubkey_path
+      char* syndicate_pubkey_pem
+      mlock_buf user_pkey_pem
+      char* tls_pkey_path
+      char* tls_cert_path
+      char* storage_root
+      bool flush_replicas
+      size_t cache_soft_limit
+      size_t cache_hard_limit
 
 # ------------------------------------------
 cdef extern from "libsyndicate/libsyndicate.h":
@@ -71,22 +106,7 @@ cdef extern from "libsyndicate/libsyndicate.h":
 
    int md_free_conf( md_syndicate_conf* conf )
    
-   int md_init(md_syndicate_conf* conf,
-               ms_client* client,
-               char* ms_url,
-               char* volume_name,
-               char* gateway_name,
-               char* ms_username,
-               char* ms_password,
-               char* user_pkey_pem,
-               char* volume_pubkey_file,
-               char* my_key_file,
-               char* my_key_password,
-               char* tls_key_file,
-               char* tls_cert_file,
-               char* storage_root,
-               char* syndicate_pubkey_path
-            ) 
+   int md_init(md_syndicate_conf* conf, ms_client* client, md_opts* opts) 
 
    int md_shutdown()
    
