@@ -44,8 +44,6 @@ struct AG_opts {
    char* logfile_path;
    char* driver_dir;
    char* spec_file_path;
-   size_t cache_soft_limit;
-   size_t cache_hard_limit;
    bool reversion_on_startup;
    bool quickstart;
    char* cached_metadata_path;

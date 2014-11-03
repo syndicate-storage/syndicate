@@ -623,8 +623,16 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    // set up block cache 
    state->cache = CALLOC_LIST( struct md_syndicate_cache, 1 );
    
+   if( opts->cache_hard_limit == 0 ) {
+      opts->cache_hard_limit = AG_CACHE_DEFAULT_HARD_LIMIT;
+   }
+   
+   if( opts->cache_soft_limit == 0 ) {
+      opts->cache_soft_limit = (AG_CACHE_DEFAULT_SOFT_LIMIT < opts->cache_hard_limit ? AG_CACHE_DEFAULT_SOFT_LIMIT : opts->cache_hard_limit );
+   }
+   
    uint64_t block_size = ms_client_get_volume_blocksize( client );
-   rc = md_cache_init( state->cache, conf, ag_opts->cache_soft_limit / block_size, ag_opts->cache_hard_limit / block_size );
+   rc = md_cache_init( state->cache, conf, opts->cache_soft_limit / block_size, opts->cache_hard_limit / block_size );
    
    if( rc != 0 ) {
       errorf("md_cache_init rc = %d\n", rc );
@@ -1009,11 +1017,7 @@ AG-specific options:\n\
             On start-up, queue all datasets for reversion.  This updates the\n\
             consistency information for each dataset on the MS, and invokes\n\
             each dataset driver's reversion method.\n\
-   -l NUM\n\
-            Soft size limit (in bytes) of the block cache.  Default is %ld\n\
-   -L NUM\n\
-            Hard size limit (in bytes) of the block cache.  Default is %ld\n\
-\n", AG_CACHE_DEFAULT_SOFT_LIMIT, AG_CACHE_DEFAULT_HARD_LIMIT );
+\n" );
 }
 
 // clear global AG opts buffer
@@ -1039,14 +1043,6 @@ int AG_opts_add_defaults( struct md_syndicate_conf* conf, struct AG_opts* ag_opt
    
    if( ag_opts->driver_dir == NULL ) {
       ag_opts->driver_dir = getcwd( NULL, 0 );     // look locally by default
-   }
-   
-   if( ag_opts->cache_soft_limit == 0 ) {
-      ag_opts->cache_soft_limit = AG_CACHE_DEFAULT_SOFT_LIMIT;
-   }
-   
-   if( ag_opts->cache_hard_limit == 0 ) {
-      ag_opts->cache_hard_limit = AG_CACHE_DEFAULT_HARD_LIMIT;
    }
    
    return 0;
@@ -1116,36 +1112,6 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          g_AG_opts.reversion_on_startup = true;
          break;
       }
-      case 'l': {
-         
-         long lim = 0;
-         rc = md_opts_parse_long( opt_c, opt_s, &lim );
-         if( rc == 0 ) {
-            
-            g_AG_opts.cache_soft_limit = (size_t)lim;
-         }
-         else {
-            
-            errorf("Failed to parse -l, rc = %d\n", rc );
-            rc = -1;
-         }
-         break;
-      }
-      case 'L': {
-         
-         long lim = 0;
-         rc = md_opts_parse_long( opt_c, opt_s, &lim );
-         if( rc == 0 ) {
-            
-            g_AG_opts.cache_hard_limit = (size_t)lim;
-         }
-         else {
-            
-            errorf("Failed to parse -L, rc = %d\n", rc );
-            rc = -1;
-         }
-         break;
-      }
       case 'q': {
          
          g_AG_opts.quickstart = true;
@@ -1198,7 +1164,7 @@ int AG_main( int argc, char** argv ) {
    memset( &opts, 0, sizeof(struct md_opts));
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:nqM:", AG_handle_opt );
+   rc = md_parse_opts( &opts, argc, argv, NULL, "e:i:D:s:nqM:", AG_handle_opt );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       AG_usage();
@@ -1221,9 +1187,7 @@ int AG_main( int argc, char** argv ) {
    }
    
    // initialize libsyndicate
-   rc = md_init( conf, ms, opts.ms_url, opts.volume_name, opts.gateway_name, opts.username, (char const*)opts.password.ptr, (char const*)opts.user_pkey_pem.ptr,
-                           opts.volume_pubkey_path, opts.gateway_pkey_path, (char const*)opts.gateway_pkey_decryption_password.ptr,
-                           opts.tls_pkey_path, opts.tls_cert_path, opts.storage_root, opts.syndicate_pubkey_path );
+   rc = md_init( conf, ms, &opts );
    
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
