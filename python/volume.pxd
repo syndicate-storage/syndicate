@@ -127,6 +127,9 @@ cdef extern from "syndicate.h":
    cdef struct syndicate_state:
       pass
 
+   cdef struct UG_opts:
+      pass 
+
 # ------------------------------------------   
 cdef extern from "libsyndicate/opts.h":
    cdef struct md_opts:
@@ -141,6 +144,7 @@ cdef extern from "libsyndicate/opts.h":
       mlock_buf gateway_pkey_decryption_password
       char* volume_pubkey_pem
       mlock_buf gateway_pkey_pem
+      mlock_buf user_pkey_pem
       char* syndicate_pubkey_path
       char* syndicate_pubkey_pem
       char* tls_pkey_path
@@ -158,7 +162,7 @@ cdef extern from "client.h":
    ctypedef syndicate_handle_t_TAG syndicate_handle_t
    ctypedef fs_dir_entry** syndicate_dir_listing_t
 
-   int syndicate_client_init( syndicate_state* state, md_opts* opts )
+   int syndicate_client_init( syndicate_state* state, md_opts* opts, UG_opts* ug_opts )
 
    int syndicate_client_shutdown( syndicate_state* state, int wait_replicas )
 
