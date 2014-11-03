@@ -676,7 +676,6 @@ int64_t AG_XMLMapParserHandler::parse_time(char *tm_str) {
    
    // Parse the string, any character can be in between different time units.
    int64_t secs = 0;
-   char* tmp = NULL;
    char* tm_tok = NULL;
    char* tm_tok_save = NULL;
    char const* delim = " \r\n\t";
@@ -720,10 +719,9 @@ int64_t AG_XMLMapParserHandler::parse_time(char *tm_str) {
          
          if( time_unit == time_units[j].unit_id ) {
             
-            tmp = NULL;
-            
-            int64_t n = (int64_t)strtoll( tok, &tmp, 10 );
-            if( tmp == NULL ) {
+            int64_t n = 0;
+            int rc = sscanf( tok, "%" PRId64, &n );
+            if( rc != 1 ) {
                errorf("Invalid time value '%s'\n", tok );
                
                free( tm_str_buf );
