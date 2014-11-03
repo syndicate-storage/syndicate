@@ -41,28 +41,49 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
    }
    
    free( fpath );
+   
+   
+   char* path_dirname = md_dirname( path, NULL );
+   char* path_basename = md_basename( path, NULL );
 
    int err = 0;
-   struct fs_entry* dent = fs_entry_resolve_path( core, path, user, volume, false, &err );
-   if( !dent || err ) {
-      return err;
-   }
-
-   if( dent->ftype != FTYPE_DIR ) {
-      fs_entry_unlock( dent );
-      return -ENOTDIR;
-   }
-
-   char* path_dirname = md_dirname( path, NULL );
-
+   
    struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, user, volume, true, &err );
 
    free( path_dirname );
 
    if( !parent || err ) {
-      fs_entry_unlock( dent );
+      
+      free( path_basename );
+      fs_entry_unlock( parent );
 
       return err;
+   }
+   
+   if( parent->ftype != FTYPE_DIR ) {
+      
+      free( path_basename );
+      fs_entry_unlock( parent );
+      
+      return -ENOTDIR;
+   }
+   
+   struct fs_entry* dent = fs_entry_set_find_name( parent->children, path_basename );
+   
+   free( path_basename );
+   
+   if( dent == NULL ) {
+      
+      fs_entry_unlock( parent );
+      return -ENOENT;
+   }
+   
+   fs_entry_wlock( dent );
+   
+   if( dent->ftype != FTYPE_DIR ) {
+      fs_entry_unlock( dent );
+      fs_entry_unlock( parent );
+      return -ENOTDIR;
    }
 
    // IS THE PARENT EMPTY?

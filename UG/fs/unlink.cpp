@@ -179,13 +179,40 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       
       return -EREMOTEIO;
    }
+   
+   // look up the parent
+   char* path_dirname = md_dirname( path, NULL );
+   char* path_basename = md_basename( path, NULL );
+   
+   struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, owner, volume, true, &err );
 
-   // get the fent...
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, true, &err );
-   if( !fent || err ) {
+   free( path_dirname );
+
+   if( !parent || err ) {
+
+      free( path_basename );
       return err;
    }
-
+   
+   if( parent->ftype != FTYPE_DIR ) {
+      fs_entry_unlock( parent );
+      free( path_basename );
+      return err;
+   }
+   
+   // get the child
+   struct fs_entry* fent = fs_entry_set_find_name( parent->children, path_basename );
+   
+   free( path_basename );
+   
+   if( fent == NULL ) {
+      fs_entry_unlock( fent );
+      fs_entry_unlock( parent );
+      return -ENOENT;
+   }
+   
+   fs_entry_wlock( fent );
+   
    bool local = FS_ENTRY_LOCAL( core, fent );
    int64_t version = fent->version;
    
@@ -193,12 +220,14 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       if( fent->file_id != file_id ) {
          errorf("Remote unlink to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", path, file_id, fent->file_id );
          fs_entry_unlock( fent );
+         fs_entry_unlock( parent );
          return -ESTALE;
       }
       
       if( fent->coordinator != coordinator_id ) {
          errorf("Remote unlink to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", path, coordinator_id, fent->coordinator );
          fs_entry_unlock( fent );
+         fs_entry_unlock( parent );
          return -ESTALE;
       }
    }
@@ -206,6 +235,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
       errorf("Remote unlink to file %s version %" PRId64 ", expected %" PRId64 "\n", path, known_version, fent->version );
       fs_entry_unlock( fent );
+      fs_entry_unlock( parent );
       return -ESTALE;
    }
    
@@ -227,22 +257,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          else {
             // some other problem
             fs_entry_unlock( fent );
+            fs_entry_unlock( parent );
             return err;
          }
       }
-   }
-   
-   // look up the parent
-   char* path_dirname = md_dirname( path, NULL );
-   
-   struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, owner, volume, true, &err );
-
-   free( path_dirname );
-
-   if( !parent || err ) {
-      fs_entry_unlock( fent );
-
-      return err;
    }
    
    // tell the driver we're deleting 
