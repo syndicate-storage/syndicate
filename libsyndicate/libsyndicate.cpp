@@ -21,6 +21,29 @@
 
 static int _signals = 1;
 
+// stacktrace for uncaught C++ exceptions 
+void md_uncaught_exception_handler(void) {
+   
+   #ifndef _SYNDICATE_NACL_ 
+   errorf("%s", "UNCAUGHT EXCEPTION!  Stack trace follows");
+   
+   void *trace_elems[32];
+   int trace_elem_count(backtrace( trace_elems, 32 ));
+   
+   char **stack_syms(backtrace_symbols( trace_elems, trace_elem_count ));
+   
+   for( int i = 0 ; i < trace_elem_count ; i++ ) {
+      
+      errorf("        %s\n", stack_syms[i] );
+   }
+   
+   free( stack_syms );
+   #endif 
+   
+   exit(1);
+   
+}
+
 // set the hostname 
 int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname ) {
    if( conf->hostname ) {
@@ -1415,12 +1438,16 @@ ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char** buf, ve
 // convert an md_entry to an ms_entry
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 
-   if( ent->parent_id != (uint64_t)(-1) )
+   if( ent->parent_id != (uint64_t)(-1) ) {
       msent->set_parent_id( ent->parent_id );
-
-   if( ent->parent_name != NULL )
+   }
+   
+   if( ent->parent_name != NULL ) {
       msent->set_parent_name( string(ent->parent_name) );
-
+   }
+   else {
+      msent->set_parent_name( string("") );
+   }
 
    msent->set_file_id( ent->file_id );
    msent->set_type( ent->type == MD_ENTRY_FILE ? ms::ms_entry::MS_ENTRY_TYPE_FILE : ms::ms_entry::MS_ENTRY_TYPE_DIR );
@@ -1438,10 +1465,17 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_size( ent->size );
    msent->set_max_read_freshness( ent->max_read_freshness );
    msent->set_max_write_freshness( ent->max_write_freshness );
-   msent->set_name( string( ent->name ) );
    msent->set_write_nonce( ent->write_nonce );
    msent->set_xattr_nonce( ent->xattr_nonce );
    msent->set_generation( ent->generation );
+   
+   if( ent->name != NULL ) {
+      msent->set_name( string( ent->name ) );
+   }
+   else {
+      msent->set_name( string("") );
+   }
+   
    return 0;
 }
 
@@ -1790,6 +1824,11 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    char const* syndicate_pubkey_pem = opts->syndicate_pubkey_pem;
    char const* tls_pkey_path = opts->tls_pkey_path;
    char const* tls_cert_path = opts->tls_cert_path;
+   
+   // early exception handling 
+   #ifndef _SYNDICATE_NACL_
+   set_terminate( md_uncaught_exception_handler );
+   #endif
    
    int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
    

@@ -53,6 +53,11 @@
 #include <netdb.h>
 #include <inttypes.h>
 #include <sys/resource.h>
+#include <stdexcept>
+
+#ifndef _SYNDICATE_NACL_
+#include <execinfo.h>
+#endif
 
 using namespace std;
 
