@@ -59,8 +59,8 @@ int ms_client_arg_concat( char* url, char const* arg, bool first ) {
    return 0;
 }
 
-// GET url for a file
-char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, int page_id, bool file_ids_only ) {
+// GETATTR url for a file
+char* ms_client_file_getattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce ) {
 
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
@@ -74,6 +74,42 @@ char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t 
    char write_nonce_str[60];
    sprintf( write_nonce_str, "%" PRId64, write_nonce );
 
+   char* volume_file_url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/GETATTR/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 +
+                                              strlen(version_str) + 1 + strlen(write_nonce_str) + 1 );
+
+   sprintf( volume_file_url, "%s/FILE/GETATTR/%s/%s/%s/%s", ms_url, volume_id_str, file_id_str, version_str, write_nonce_str );
+   
+   return volume_file_url;
+}
+
+
+// GETCHILD url for a file
+char* ms_client_file_getchild_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, char* name ) {
+
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char file_id_str[50];
+   sprintf( file_id_str, "%" PRIX64, file_id );
+
+   char* volume_file_url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/GETCHILD/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(name) + 1 );
+
+   sprintf( volume_file_url, "%s/FILE/GETCHILD/%s/%s/%s", ms_url, volume_id_str, file_id_str, name );
+   
+   return volume_file_url;
+}
+
+// LISTDIR url for a file
+// if page_id >= 0, include page_id=...
+// if least_unknown_generation >= 0, include lug=...
+char* ms_client_file_listdir_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int page_id, int least_unknown_generation ) {
+
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char file_id_str[50];
+   sprintf( file_id_str, "%" PRIX64, file_id );
+   
    size_t page_id_len = 0;
    size_t file_ids_only_len = 0;
    bool query_args = false;
@@ -82,27 +118,29 @@ char* ms_client_file_read_url( char const* ms_url, uint64_t volume_id, uint64_t 
       page_id_len = 50;
    }
    
-   if( file_ids_only ) {
-      file_ids_only_len = strlen("&file_ids_only=1") + 1;
+   if( least_unknown_generation >= 0 ) {
+      file_ids_only_len = strlen("&lug=") + 50;
    }
    
-   char* volume_file_url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 +
-                                              strlen(version_str) + 1 + strlen(write_nonce_str) + 1 + page_id_len + 1 + file_ids_only_len + 1 );
+   char* volume_file_url = CALLOC_LIST( char, strlen(ms_url) + 1 + strlen("/FILE/LISTDIR/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + page_id_len + 1 + file_ids_only_len + 1 );
 
-   sprintf( volume_file_url, "%s/FILE/RESOLVE/%s/%s/%s/%s", ms_url, volume_id_str, file_id_str, version_str, write_nonce_str );
+   sprintf( volume_file_url, "%s/FILE/LISTDIR/%s/%s", ms_url, volume_id_str, file_id_str );
    
    if( page_id_len > 0 ) {
       
-      char page_id_buf[50];
+      char page_id_buf[60];
       sprintf( page_id_buf, "page_id=%d", page_id );
       
       ms_client_arg_concat( volume_file_url, page_id_buf, !query_args );
       query_args = true;
    }
    
-   if( file_ids_only ) {
+   if( least_unknown_generation >= 0 ) {
       
-      ms_client_arg_concat( volume_file_url, "file_ids_only=1", !query_args );
+      char least_unknown_generation_buf[60];
+      sprintf( least_unknown_generation_buf, "lug=%d", least_unknown_generation );
+      
+      ms_client_arg_concat( volume_file_url, least_unknown_generation_buf, !query_args );
       query_args = true;
    }
    
