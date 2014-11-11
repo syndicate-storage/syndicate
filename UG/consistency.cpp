@@ -243,6 +243,8 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
    fent->max_read_freshness = ent->max_read_freshness;
    fent->max_write_freshness = ent->max_write_freshness;
    fent->file_id = ent->file_id;
+   fent->generation = ent->generation;
+   fent->ms_num_children = ent->num_children;
    
    // store these for subsequent manifest reload
    fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
@@ -410,7 +412,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    }
                               
    struct ms_path_ent path_ent;
-   ms_client_make_path_ent( &path_ent, fent->volume, fent->file_id, fent->version, fent->write_nonce, fent->name, cls );
+   ms_client_make_path_ent( &path_ent, fent->volume, 0, fent->file_id, fent->version, fent->write_nonce, fent->name, cls );
    
    ms_path->push_back( path_ent );
    
@@ -466,7 +468,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_pa
 
             struct ms_path_ent path_ent;
 
-            ms_client_make_path_ent( &path_ent, 0, 0, -1, 0, path_parts[i], cls );
+            ms_client_make_path_ent( &path_ent, 0, 0, 0, -1, 0, path_parts[i], cls );
 
             ms_path->push_back( path_ent );
          }
@@ -1206,7 +1208,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
 
    struct ms_path_ent child_path_ent2;
-   ms_client_make_path_ent( &child_path_ent2, child_fent->volume, child_fent->file_id, child_fent->version, child_fent->write_nonce, child_fent->name, child_listing_cls2 );
+   ms_client_make_path_ent( &child_path_ent2, child_fent->volume, 0, child_fent->file_id, child_fent->version, child_fent->write_nonce, child_fent->name, child_listing_cls2 );
    
    child_path.push_back( child_path_ent2 );
 
