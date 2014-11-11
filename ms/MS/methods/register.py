@@ -125,7 +125,7 @@ def protobuf_volume( volume_metadata, volume, root=None ):
    Given an ms_volume_metadata protobuf and a volume, populate the protobuf structure.
    """
    
-   if root != None:
+   if root is not None:
       root.protobuf( volume_metadata.root )
       
    volume.protobuf( volume_metadata )
@@ -158,12 +158,14 @@ def register_complete( gateway ):
    volume = storage.read_volume( gateway.volume_id )
    
    if volume == None:
+      logging.error("No such volume %s" % gateway.volume_id )
       return (404, None)
    
    root = storage.get_volume_root( volume )
    
-   if root == None:
-      return (404, None)
+   if root is None:
+      logging.error("BUG: no root for volume %s" % volume.name)
+      return (500, None)
 
    # add volume and contents
    protobuf_volume( registration_metadata.volume, volume, root )
