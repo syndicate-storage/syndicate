@@ -45,7 +45,7 @@ LIBPATH = [
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all -pthread"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all -pthread -rdynamic"
 LIBS = ""
 LINK_FLAGS = ""
 
