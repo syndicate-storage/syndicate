@@ -95,7 +95,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
    free( buf );
    
    if( !valid ) {
-      errorf("Invalid data for Volume %s\n", volume_name );
+      errorf("Invalid data for Volume %s (missing %s)\n", volume_name, volume_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
@@ -153,7 +153,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    free( buf );
    
    if( !valid ) {
-      errorf("Invalid data for Volume %" PRIu64 "\n", volume_id );
+      errorf("Invalid data for Volume %" PRIu64 " (missing %s)\n", volume_id, volume_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
