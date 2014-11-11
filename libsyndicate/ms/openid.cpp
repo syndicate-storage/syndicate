@@ -46,7 +46,7 @@ int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* 
 
    bool valid = oid_reply->ParseFromString( openid_redirect_reply_bits_str );
    if( !valid ) {
-      errorf("%s", "Invalid MS OpenID provider reply\n");
+      errorf("Invalid MS OpenID provider reply (missing %s)\n", oid_reply->InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
@@ -219,7 +219,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
    curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
    curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
    curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-   curl_easy_setopt( curl, CURLOPT_VERBOSE, (get_debug_level() > 0 ? 1L: 0L) );
+   // curl_easy_setopt( curl, CURLOPT_VERBOSE, (get_debug_level() > 0 ? 1L: 0L) );
 
    char* url_and_path = NULL;
    char* url_qs = NULL;
@@ -380,16 +380,17 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
    
    // perform
-   len = md_download_file( curl, &bits );
+   rc = md_download_file( curl, &bits, &len );
 
    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
 
-   if( len < 0 ) {
-      errorf("md_download_file rc = %zd\n", len );
+   if( rc < 0 ) {
+      errorf("md_download_file rc = %d\n", rc );
       free( return_to_url_and_path );
-      if( return_to_qs )
+      if( return_to_qs ) {
          free( return_to_qs );
-      return (int)len;
+      }
+      return rc;
    }
 
    if( http_response != 200 ) {
