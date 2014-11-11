@@ -37,6 +37,7 @@ SHARD_KEY_TEMPLATE = 'shard-{}-{:d}'
 # aliases for types
 Model = backend.Model
 Integer = backend.Integer
+Float = backend.Float
 String = backend.String
 Text = backend.Text
 Key = backend.Key
@@ -44,6 +45,8 @@ Boolean = backend.Boolean
 Json = backend.Json
 Blob = backend.Blob
 Cursor = backend.Cursor         # NOTE: need to have a constructor that takes urlsafe= as an argument for deserialization, and needs a urlsafe() method for serialization
+Computed = backend.Computed 
+Pickled = backend.Pickled
 
 # aliases for keys
 make_key = backend.make_key
@@ -69,6 +72,7 @@ memcache = backend.memcache
 
 # aliases for transaction
 transaction = backend.transaction
+transaction_async = backend.transaction_async
 transactional = backend.transactional
 
 # alises for query predicates
@@ -82,6 +86,7 @@ toplevel = backend.toplevel
 RequestDeadlineExceededError = backend.RequestDeadlineExceededError
 APIRequestDeadlineExceededError = backend.APIRequestDeadlineExceededError
 URLRequestDeadlineExceededError = backend.URLRequestDeadlineExceededError
+TransactionFailedError = backend.TransactionFailedError
 
 
 def clock_gettime():
@@ -95,7 +100,6 @@ def clock_gettime():
 def get_time():
    now_sec, now_nsec = clock_gettime()
    return float(now_sec) + float(now_nsec) / 1e9
-
 
 
 class Object( Model ):
@@ -183,13 +187,14 @@ class Object( Model ):
       if shards == None or len(shards) == 0:
          return
       
-      shards_existing = filter( lambda x: x != None, shards )
+      shards_existing = filter( lambda x: x is not None, shards )
       if len(shards_existing) == 0:
          raise Exception("No valid shards for %s" % self)
       
       # populate an instance with value from shards
       for (shard_field, shard_reader) in self.shard_readers.items():
-         setattr( self, shard_field, shard_reader( self, shards_existing ) )
+         val = shard_reader( self, shards_existing )
+         setattr( self, shard_field, val )
 
       
       
@@ -202,10 +207,14 @@ class Object( Model ):
       for (key, value) in attrs.items():
          if key not in self.shard_fields:
             base_attrs[key] = value
-
+         
       super( Object, self ).populate( **base_attrs )
-
       
+      for (key, value) in attrs.items():
+         if key not in self._properties.keys():
+            setattr( self, key, value )
+
+   
    @classmethod
    def get_shard_attrs( cls, inst, **attrs ):
       """
@@ -262,7 +271,7 @@ class Object( Model ):
          self.write_shard = self.shard_class( key=shard_key, **shard_attrs )
 
       else:
-         self.write_shard.populate( **shard_attrs )
+         self.write_shard.populate( num_shards, **shard_attrs )
          
 
    def populate(self, num_shards, **attrs):
