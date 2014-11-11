@@ -393,6 +393,8 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent,
    fent->xattr_cache = new xattr_cache_t();
    fent->write_nonce = write_nonce;
    fent->xattr_nonce = xattr_nonce;
+   fent->generation = -1;               // unknown
+   fent->ms_num_children = -1;             // unknown 
    
    fent->manifest->set_modtime( 0, 0 );
    
@@ -500,7 +502,9 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    
    fent->max_read_freshness = ent->max_read_freshness;
    fent->max_write_freshness = ent->max_write_freshness;
-
+   fent->generation = ent->generation;
+   fent->ms_num_children = ent->num_children;
+   
    return 0;
 }
 

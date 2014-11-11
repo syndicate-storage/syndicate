@@ -108,7 +108,8 @@ struct fs_entry {
    off_t size;                // how big is this file's content?
    int link_count;            // how many other fs_entry structures refer to this file
    int open_count;            // how many file descriptors refer to this file
-
+   int64_t generation;        // the generation number of this file (n, as in, the nth creat() in the parent directory)
+   
    int64_t mtime_sec;         // modification time (seconds)
    int32_t mtime_nsec;        // modification time (nanoseconds)
    int64_t ctime_sec;         // creation time (seconds)
@@ -136,7 +137,8 @@ struct fs_entry {
    
    sync_context_list_t* sync_queue;     // queue of synchronization requests (from truncate() and fsync()), used to ensure that we send metadata to the MS in program order
    
-   fs_entry_set* children;    // used only for directories--set of children
+   fs_entry_set* children;      // used only for directories--set of children
+   int64_t ms_num_children;     // the number of children the MS says this entry has
    
    pthread_rwlock_t xattr_lock;
    xattr_cache_t* xattr_cache;  // cached xattrs
