@@ -395,12 +395,12 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    }
    
    // got the data
-   bool valid = registration_md.ParseFromString( string(registration_md_buf, registration_md_buf_len) );
+   bool valid = registration_md.ParseFromArray( registration_md_buf, registration_md_buf_len );
    
    free( registration_md_buf );
   
    if( !valid ) {
-      errorf( "%s", "invalid registration metadata\n" );
+      errorf( "invalid registration metadata (missing %s)\n", registration_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
