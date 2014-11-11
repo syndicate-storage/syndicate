@@ -24,10 +24,13 @@ from google.appengine.datastore.datastore_query import Cursor as GoogleCursor
 def raise_(ex):
    raise ex
 
-class FutureWrapper( object ):
+class FutureWrapper( ndb.Future ):
+   
+   state = ndb.Future.FINISHING
+   _done = True 
+   
    def __init__( self, result ):
       self.result = result
-      self.state = ndb.Future.FINISHING
    
    def get_result( self ):
       return self.result
@@ -80,12 +83,15 @@ class FutureQueryWrapper( object ):
 # aliases for types
 Model = ndb.Model
 Integer = ndb.IntegerProperty
+Float = ndb.FloatProperty
 String = ndb.StringProperty
 Text = ndb.TextProperty
 Key = ndb.KeyProperty
 Boolean = ndb.BooleanProperty
 Json = ndb.JsonProperty
 Blob = ndb.BlobProperty
+Computed = ndb.ComputedProperty
+Pickled = ndb.PickleProperty
 Cursor = GoogleCursor
 
 # aliases for keys
@@ -127,6 +133,7 @@ memcache = google_memcache
 
 # aliases for transaction
 transaction = ndb.transaction
+transaction_async = ndb.transaction_async
 transactional = ndb.transactional
 
 # alises for query predicates
@@ -140,3 +147,4 @@ toplevel = ndb.toplevel
 RequestDeadlineExceededError = google.appengine.runtime.DeadlineExceededError
 APIRequestDeadlineExceededError = google.appengine.runtime.apiproxy_errors.DeadlineExceededError
 URLRequestDeadlineExceededError = google.appengine.api.urlfetch_errors.DeadlineExceededError
+TransactionFailedError = google.appengine.ext.db.TransactionFailedError
