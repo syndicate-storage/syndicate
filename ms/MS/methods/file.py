@@ -29,6 +29,7 @@ import random
 import os
 import errno
 
+import traceback
 import logging
 
 # ----------------------------------
@@ -91,41 +92,38 @@ def file_update_get_attrs( entry_dict, attr_list ):
 
 
 # ----------------------------------
-def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, file_ids_only=False ):
+def file_read_allowed( owner_id, file_data ):
    """
-   Read file and listing of the given file_id.
+   Can the user access the file?  Return the appropriate error code.
    """
+   error = -errno.EACCES
    
-   all_ents = []
-   file_fut = None
-   error = 0
-   need_refresh = True
-   file_data_fut = None
-   
+   if file_data.ftype == MSENTRY_TYPE_DIR:
+      # directory. check permissions
+      if file_data.owner_id == owner_id or (file_data.mode & 0055) != 0:
+         # readable
+         error = 0
 
-   file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
-   file_data = storagetypes.memcache.get( file_memcache )
+   elif file_data.ftype == MSENTRY_TYPE_FILE:
+      # file.  check permissions
+      if file_data.owner_id == owner_id or (file_data.mode & 0044) != 0:
+         # readable
+         error = 0
+
+   return error
+
+
+# ----------------------------------
+def _getattr( owner_id, volume, file_id, file_version, write_nonce ):
+   """
+   Read one file/directory's metadata, by file ID
+   """
    
-   # do we need to consult the datastore?
-   if file_data is None:
-      logging.info( "file %s not cached" % file_id )
-      
-      file_data_fut = MSEntry.Read( volume, file_id, futs_only=True )
-      all_futs = MSEntry.FlattenFuture( file_data_fut )
-      
-      storagetypes.wait_futures( all_futs )
-      
-      file_data = MSEntry.FromFuture( file_data_fut )
-      
-      if file_data is not None:
-         
-         cacheable = {
-            file_memcache: file_data
-         }
-         
-         logging.info( "cache file %s (%s)" % (file_id, file_data) )
-         storagetypes.memcache.set_multi( cacheable )
- 
+   error = 0
+   access_error = 0
+   need_refresh = True
+   
+   file_data = MSEntry.Read( volume, file_id )
    
    if file_data is not None:
       # got data...
@@ -138,59 +136,18 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, fil
       else:
          
          logging.info("%s has type %s version %s write_nonce %s, status=NEW" % (file_data.name, file_data.ftype, file_data.version, file_data.write_nonce))
-         
-         if file_data.ftype == MSENTRY_TYPE_DIR:
-            
-            error, listing, next_cursor = MSEntry.ListDir( volume, file_id, page_id, owner_id=owner_id, file_ids_only=file_ids_only )
-            
-            if error == 0:
-               if listing is not None:
-                  if file_ids_only:
-                     all_ents = [file_data.file_id] + listing
-                  else:
-                     all_ents = [file_data] + listing
-               else:
-                  if file_ids_only:
-                     all_ents = [file_data.file_id]
-                  else:
-                     all_ents = [file_data]
-         
-            #logging.info("listing of %s: %s" % (file_data.file_id, listing))
-            
-         else:
-            if file_ids_only:
-               all_ents = [file_data.file_id]
-            else:
-               all_ents = [file_data]
 
-
-   # check security
-   if error == 0:
+      error = file_read_allowed( owner_id, file_data )
       
-      error = -errno.EACCES
-      
-      if file_data is None:
-         # not found
-         error = -errno.ENOENT 
-         
-      elif file_data.ftype == MSENTRY_TYPE_DIR:
-         # directory. check permissions
-         if file_data.owner_id == owner_id or (file_data.mode & 0055) != 0:
-            # readable
-            error = 0
-
-      elif file_data.ftype == MSENTRY_TYPE_FILE:
-         # file.  check permissions
-         if file_data.owner_id == owner_id or (file_data.mode & 0044) != 0:
-            # readable
-            error = 0
-
-
+   else:
+      # not found
+      error = -errno.ENOENT 
+   
    reply = make_ms_reply( volume, error )
    
    if error == 0:
-      # all is well.
       
+      # all is well.
       reply.listing.ftype = file_data.ftype
       
       # modified?
@@ -199,34 +156,123 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, fil
          
       else:
          reply.listing.status = ms_pb2.ms_listing.NEW
-
-         for ent in all_ents:
-            if file_ids_only:
-               # just file ID 
-               reply.listing.file_ids.append( ent.file_id )
-               
-            else:
-               # full ent 
-               ent_pb = reply.listing.entries.add()
-               ent.protobuf( ent_pb )
          
-         # logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
-   
+         # child count if directory 
+         num_children = 0
+         if file_data.ftype == MSENTRY_TYPE_DIR:
+            num_children = MSEntry.GetNumChildren( volume, file_id )
+            
+         # full ent 
+         ent_pb = reply.listing.entries.add()
+         file_data.protobuf( ent_pb, num_children=num_children )
+         
+         # logging.info("Getattr %s: Serve back: %s" % (file_id, file_data))
+         
    else:
+      # not possible to reply
       reply.listing.ftype = 0
       reply.listing.status = ms_pb2.ms_listing.NONE
       
    # sign and deliver
    return (error, file_update_complete_response( volume, reply ))
+
+
+# ----------------------------------
+def _getchild( owner_id, volume, parent_id, name ):
+   """
+   Read one file/directory's metadata, by file name and parent ID
+   """
+   
+   error = 0
+   dir_data_fut = None
+   
+   dir_data = MSEntry.Read( volume, parent_id )
+   file_data = None
+      
+   if dir_data is not None:
+      
+      # got directory.  is it readable?
+      error = file_read_allowed( owner_id, dir_data )
+      
+      if error == 0:
+         # can read.  Get file data 
+         file_data = MSEntry.ReadByParent( volume, parent_id, name )
+         
+         if file_data is None:
+            error = -errno.ENOENT
+         
+         else:
+            error = file_read_allowed( owner_id, file_data )
+         
+   else:
+      error = -errno.ENOENT 
+   
+   reply = make_ms_reply( volume, error )
+   
+   if error == 0:
+      
+      # all is well.
+      reply.listing.ftype = file_data.ftype
+      reply.listing.status = ms_pb2.ms_listing.NEW
+
+      # child count if directory 
+      num_children = 0
+      if file_data.ftype == MSENTRY_TYPE_DIR:
+         num_children = MSEntry.GetNumChildren( volume, file_data.file_id )
+         
+      # full ent 
+      ent_pb = reply.listing.entries.add()
+      file_data.protobuf( ent_pb, num_children=num_children )
+      
+      # logging.info("Getchild %s: Serve back: %s" % (parent_id, file_data))
+   
+   else:
+      # not possible to reply
+      reply.listing.ftype = 0
+      reply.listing.status = ms_pb2.ms_listing.NONE
+      
+   # sign and deliver
+   return (error, file_update_complete_response( volume, reply ))
+
+
+# ----------------------------------
+def _listdir( owner_id, volume, file_id, page_id=None, least_unknown_generation=None ):
+   
+   error, listing = MSEntry.ListDir( volume, file_id, page_id=page_id, least_unknown_generation=least_unknown_generation )
+   
+   if error == 0:
+      # only give back visible entries
+      listing = filter( lambda ent: file_read_allowed( owner_id, ent ) == 0, listing )
+   
+   reply = make_ms_reply( volume, error )
+   
+   if error == 0:
+      
+      reply.listing.ftype = MSENTRY_TYPE_DIR
+      reply.listing.status = ms_pb2.ms_listing.NEW
+
+      for ent in listing:         
+         ent_pb = reply.listing.entries.add()
+         ent.protobuf( ent_pb )
+   
+         # logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
+   
+   else:
+      reply.listing.ftype = 0
+      reply.listing.status = ms_pb2.ms_listing.NONE
+   
+   # sign and deliver
+   return (error, file_update_complete_response( volume, reply ))
    
 
 # ----------------------------------
-def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_nonce_str, file_ids_only=False ):
+def file_getattr( gateway, volume, file_id, file_version_str, write_nonce_str ):
    """
-   Resolve a (volume_id, file_id, file_vesion, write_nonce) to file metadata.
+   Get all metadata for a file, given the (volume_id, file_id, file_vesion, write_nonce) key.
    This is part of the File Metadata API, so it takes strings for file_version_str and write_nonce_str.
    If these do not parse to Integers, then this method fails (returns None).
    """
+   
    file_version = -1
    write_nonce = -1
    try:
@@ -235,15 +281,54 @@ def file_resolve( gateway, volume, page_id, file_id, file_version_str, write_non
    except:
       return None 
    
-   logging.info("resolve /%s/%s/%s/%s" % (volume.volume_id, file_id, file_version, write_nonce) )
+   logging.info("getattr /%s/%s/%s/%s" % (volume.volume_id, file_id, file_version, write_nonce) )
    
    owner_id = msconfig.GATEWAY_ID_ANON
    if gateway != None:
       owner_id = gateway.owner_id
       
-   rc, reply = _resolve( owner_id, volume, file_id, file_version, write_nonce, page_id, file_ids_only=file_ids_only )
+   rc, reply = _getattr( owner_id, volume, file_id, file_version, write_nonce )
    
-   logging.info("resolve /%s/%s/%s/%s rc = %d" % (volume.volume_id, file_id, file_version, write_nonce, rc) )
+   logging.info("getattr /%s/%s/%s/%s rc = %d" % (volume.volume_id, file_id, file_version, write_nonce, rc) )
+   
+   return reply
+
+
+# ----------------------------------
+def file_getchild( gateway, volume, parent_id, name ):
+   """
+   Get all metadata for a file, given the its parent ID and name.
+   """
+   
+   logging.info("getchild /%s/%s/%s" % (volume.volume_id, parent_id, name) )
+   
+   owner_id = msconfig.GATEWAY_ID_ANON
+   if gateway != None:
+      owner_id = gateway.owner_id
+      
+   rc, reply = _getchild( owner_id, volume, parent_id, name )
+   
+   logging.info("getchild /%s/%s/%s rc = %d" % (volume.volume_id, parent_id, name, rc) )
+   
+   return reply
+
+
+# ----------------------------------
+def file_listdir( gateway, volume, file_id, page_id=None, least_unknown_generation=None ):
+   """
+   Get up to RESOLVE_MAX_PAGE_SIZE of (type, file ID) pairs.
+   when the caller last called listdir (or -1 if this is the first call to listdir).
+   """
+   
+   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s" % (volume.volume_id, file_id, page_id, least_unknown_generation) )
+   
+   owner_id = msconfig.GATEWAY_ID_ANON
+   if gateway != None:
+      owner_id = gateway.owner_id
+      
+   rc, reply = _listdir( owner_id, volume, file_id, page_id=page_id, least_unknown_generation=least_unknown_generation )
+   
+   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s rc = %d" % (volume.volume_id, file_id, page_id, least_unknown_generation, rc) )
    
    return reply
 
@@ -302,6 +387,7 @@ def file_create( reply, gateway, volume, update, async=False ):
          raise storagetypes.deferred.PermanentTaskFailure()
       
       else:
+         traceback.print_exc()
          raise e
 
 # ----------------------------------
@@ -428,9 +514,9 @@ def file_delete( reply, gateway, volume, update, async=False ):
    except Exception, e:
       
       logging.error("file_delete(async=%s) raised an exception" % async)
+      logging.exception(e)
       
       if async:
-         logging.exception(e)
          
          # stop trying
          raise storagetypes.deferred.PermanentTaskFailure()
@@ -502,6 +588,7 @@ def file_update_parse( request_handler ):
 
    if updates_field == None:
       # no valid data given (malformed)
+      logging.error("No 'ms-metadata-updates' field given")
       return None
 
    # extract the data
@@ -512,7 +599,8 @@ def file_update_parse( request_handler ):
 
    try:
       updates_set.ParseFromString( data )
-   except:
+   except Exception, e:
+      logging.exception(e)
       return None
    
    return updates_set

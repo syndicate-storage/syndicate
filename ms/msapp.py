@@ -39,7 +39,9 @@ except:
 VALID_PUNCTUATION = '!"#$%&\'\(\)\*\+,\-.:;<=>?@\[\\\]^_`\{\|\}~'         # missing '/'
 
 handlers = [
-    (r'[/]+FILE[/]+(RESOLVE)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([-0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for reading/resolving file metadata.
+    (r'[/]+FILE[/]+(GETCHILD)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([^/]+)[/]*', MSFileHandler ),                               # GET: for reading file metadata by name
+    (r'[/]+FILE[/]+(GETATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([-0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for refreshing file metadata.
+    (r'[/]+FILE[/]+(LISTDIR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                           # GET: for listing file metadata
     (r'[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([a-zA-Z0-9!\"#$%&\'\(\)\*\+,\-.:;<=>?@\[\\\]^_`\{\|\}~]+)[/]*', MSFileHandler ),  # GET: for getting xattrs.
     (r'[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                        # GET: for listing xattrs.
     (r'[/]+FILE[/]+(VACUUM)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),

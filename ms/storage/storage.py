@@ -31,6 +31,7 @@ from MS.entry import MSEntry, MSEntryShard, MSENTRY_TYPE_DIR
 from MS.volume import Volume, VolumeAccessRequest
 from MS.user import SyndicateUser
 from MS.gateway import Gateway
+from MS.index import MSEntryIndex
 
 import types
 import errno
@@ -569,3 +570,6 @@ def delete_gateway( g_id ):
 def get_volume_root( volume ):
    return MSEntry.Read( volume, 0 )
 
+# ----------------------------------
+def get_num_children( volume, file_id ):
+   return MSEntryIndex.GetNumChildren( volume.volume_id, file_id )

@@ -96,6 +96,13 @@ indexes:
   properties:
   - name: parent_id
   - name: volume_id
+  - name: dir_index
+  - name: file_id
+
+- kind: MSEntry
+  properties:
+  - name: parent_id
+  - name: volume_id
   - name: mode
 
 - kind: MSEntry
@@ -104,6 +111,20 @@ indexes:
   - name: volume_id
   - name: mode
   - name: file_id
+
+- kind: MSEntryDirEntIndex
+  properties:
+  - name: alloced
+  - name: parent_id
+  - name: volume_id
+  - name: dir_index
+
+- kind: MSEntryDirIndex
+  properties:
+  - name: alloced
+  - name: parent_id
+  - name: volume_id
+  - name: dir_index
 
 - kind: MSEntryVacuumLog
   properties:

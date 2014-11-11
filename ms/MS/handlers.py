@@ -293,8 +293,15 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
       self.setSessionCookie(session)
 
       status, gateway, user = register_load_objects( gateway_type_str, gateway_name, username )
-
+      
       if gateway == None or user == None or status != 200:
+         
+         if gateway is None:
+            logging.error("No such %s '%s'" % (gateway_type_str, gateway_name))
+         
+         if user is None:
+            logging.error("No such user '%s'" % (username))
+            
          response_user_error( self, status )
          return
 
@@ -341,7 +348,13 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
          status, data = register_complete( gateway )
          if status != 200:
             # failed 
-            response_user_error( self, 200 )
+            logging.error("Register complete for %s %s failed, status = %s" % (gateway_type_str, gateway_name, status))
+            
+            session.terminate()
+            
+            response_user_error( self, status )
+            
+            return
          
          # clear this OpenID session, since we're registered
          session.terminate()
@@ -418,19 +431,29 @@ class MSFileHandler(webapp2.RequestHandler):
    It does so via the GET and POST handlers only--GET for accessing data (read, get, list, resolve), and POST for mutating data (create, update, delete)
    """
    
+   cgi_args = {
+      "LISTDIR": {
+         "page_id":        lambda arg: int(arg),
+         "lug":            lambda arg: int(arg)
+       }
+   }
+   
    # these return a serialized response
    get_api_calls = {
-      "GETXATTR":       lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
-      "LISTXATTR":      lambda gateway, volume, file_id, args, page_id, file_ids_only: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
-      "RESOLVE":        lambda gateway, volume, file_id, args, page_id, file_ids_only: file_resolve( gateway, volume, page_id, file_id, *args, file_ids_only=file_ids_only ),  # args == [file_version_str, write_nonce]
-      
-      "VACUUM":         lambda gateway, volume, file_id, args, page_id, file_ids_only: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
+      "GETXATTR":       lambda gateway, volume, file_id, args, kw: file_xattr_getxattr( gateway, volume, file_id, *args, **kw ),    # args == [xattr_name]
+      "LISTXATTR":      lambda gateway, volume, file_id, args, kw: file_xattr_listxattr( gateway, volume, file_id, *args, **kw ),   # args == []
+      "GETATTR":        lambda gateway, volume, file_id, args, kw: file_getattr( gateway, volume, file_id, *args, **kw ),           # args == [file_version_str, write_nonce]
+      "GETCHILD":       lambda gateway, volume, file_id, args, kw: file_getchild( gateway, volume, file_id, *args, **kw ),          # args == [name]
+      "LISTDIR":        lambda gateway, volume, file_id, args, kw: file_listdir( gateway, volume, file_id, *args, **kw ),           # args == []
+      "VACUUM":         lambda gateway, volume, file_id, args, kw: file_vacuum_log_peek( gateway, volume, file_id, *args, **kw )    # args == []
    }
    
    get_benchmark_headers = {
       "GETXATTR":               "X-Getxattr-Time",
       "LISTXATTR":              "X-Listxattr-Time",
-      "RESOLVE":                "X-Resolve-Time",
+      "GETATTR":                "X-Getattr-Time",
+      "GETCHILD":               "X-Getchild-Time",
+      "LISTDIR":                "X-Listdir-Time",
       "VACUUM":                 "X-Vacuum-Time"
    }
    
@@ -496,6 +519,37 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.VACUUM:          "X-Vacuum-Times"
    }
    
+   @classmethod
+   def parse_cgi( cls, oper, request, parsers ):
+      """
+      parse CGI arguments with a dict of parser functions.
+      Return (200, args) on success
+      Return (not 200, None) on error
+      """
+      
+      # parse CGI args
+      kw = {}
+      
+      # find the parser for this operation 
+      parser = parsers.get(oper, None)
+      
+      if parser is not None:
+         
+         for cgi_arg in parser.keys():
+            
+            cgi_val = request.get( cgi_arg )
+            if cgi_val is not None and len(cgi_val) > 0:
+               
+               try:
+                  cgi_val = parser[cgi_arg]( cgi_val )
+               except:
+                  log.error("Invalid CGI argument '%s' (= '%s')" % (cgi_arg, cgi_val))
+                  return (400, None)
+               
+               kw[cgi_arg] = cgi_val
+            
+      return (200, kw)
+            
    
    @storagetypes.toplevel 
    def get( self, operation, volume_id_str, file_id_str, *args ):
@@ -524,38 +578,11 @@ class MSFileHandler(webapp2.RequestHandler):
          response_user_error( self, 403 )
          return 
       
-      # do we have a requested page for this request?
-      page_id = self.request.get('page_id')
-      file_ids_only = self.request.get('file_ids_only')
+      # parse CGI arguments 
+      status, kw = MSFileHandler.parse_cgi( operation, self.request, self.cgi_args )
       
-      if page_id is None or len(page_id) == 0:
-         log.error("No page ID given")
-         response_user_error( self, 400 )
-         return 
-      
-      if file_ids_only is None or len(file_ids_only) == 0:
-         file_ids_only = 0
-      else:
-         try:
-            file_ids_only = int(file_ids_only)
-         except:
-            log.error("Invalid file_ids_only value '%s'" % file_ids_only)
-            response_user_error( self, 400 )
-            return 
-            
-      if file_ids_only != 0:
-         file_ids_only = True 
-      else:
-         file_ids_only = False 
-         
-      # validate 
-      try:
-         page_id = int(page_id)
-         assert page_id >= 0, "Invalid page ID value"
-      except:
-         # needs to be a number 
-         log.error("Invalid page ID '%s'" % page_id)
-         response_user_error( self, 400 )
+      if status != 200:
+         response_user_error( self, status )
          return 
          
       benchmark_header = MSFileHandler.get_benchmark_headers[ operation ]
@@ -565,7 +592,7 @@ class MSFileHandler(webapp2.RequestHandler):
       
       # run and benchmark the operation
       try:
-         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, page_id, file_ids_only ) )
+         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args, kw ) )
          
       except storagetypes.RequestDeadlineExceededError, de:
          response_user_error( self, 503 )
@@ -577,7 +604,6 @@ class MSFileHandler(webapp2.RequestHandler):
          return
       
       # finish the reply 
-      
       timing_headers = benchmark_headers( timing )
       timing_headers.update( response_timing )
       
@@ -608,11 +634,13 @@ class MSFileHandler(webapp2.RequestHandler):
          response_user_error( self, 403 )
          return
 
-      # validate the message
+      # verify the message integrity and authenticity
       if not gateway.verify_message( update_set ):
          # authentication failure
          response_user_error( self, 401, "Signature verification failed")
          return
+      
+      # TODO: rate-limit
       
       # populate the reply
       reply = file_update_init_response( volume )
@@ -620,6 +648,7 @@ class MSFileHandler(webapp2.RequestHandler):
       
       # validate requests before processing them 
       for update in update_set.updates:
+         
          if update.type not in MSFileHandler.post_validators.keys():
             logging.error("Unrecognized update %s" % update.type)
             response_user_error( self, 501 )
@@ -634,7 +663,7 @@ class MSFileHandler(webapp2.RequestHandler):
       
       timing = {}
       
-      # carry out the operation(s)
+      # carry out the operation(s), and count them
       num_processed = 0
       types = {}
       for update in update_set.updates:
@@ -651,6 +680,8 @@ class MSFileHandler(webapp2.RequestHandler):
          # run the API call, but benchmark it too
          try:
             rc = benchmark( benchmark_header, timing, lambda: api_call( reply, gateway, volume, update ) )
+            reply.errors.append( rc )
+            
             num_processed += 1
             
          except storagetypes.RequestDeadlineExceededError, de:
@@ -660,16 +691,8 @@ class MSFileHandler(webapp2.RequestHandler):
             
          except Exception, e:
             logging.exception(e)
-            rc = -errno.EREMOTEIO
-            reply.error = rc
+            reply.error = -errno.EREMOTEIO
             break
-         
-         if rc < 0:
-            # error
-            reply.error = rc
-            break
-
-      reply.num_processed = num_processed
       
       log.info("Processed %s requests (%s)" % (num_processed, types))
       
