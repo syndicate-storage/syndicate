@@ -31,15 +31,20 @@ import errno
 import time
 import datetime
 import collections
+import pickle
+import base64
 
 from volume import Volume
 from gateway import Gateway, GATEWAY_CAP_COORDINATE
+from index import MSEntryIndex
 
 from common.msconfig import *
 
 MSENTRY_TYPE_FILE = ms_pb2.ms_entry.MS_ENTRY_TYPE_FILE
 MSENTRY_TYPE_DIR = ms_pb2.ms_entry.MS_ENTRY_TYPE_DIR
 MSENTRY_TYPE_NONE = ms_pb2.ms_entry.MS_ENTRY_TYPE_NONE
+
+MSEntryFutures = collections.namedtuple( 'MSEntryFutures', ['base_future', 'shard_futures', "num_children_future", 'num_shards'] )
 
 def is_readable( user_id, volume_owner_id, ent_owner_id, ent_mode ):
    return ent_owner_id == user_id or volume_owner_id == user_id or (ent_mode & 0044) != 0
@@ -209,6 +214,7 @@ class MSEntryNameHolder( storagetypes.Object ):
    """
    Exists to prove that an MSEntry record exists in a parent under a given name.
    There is one of these per MSEntry.
+   Index so that we can query by parent_id and name.
    """
    volume_id = storagetypes.Integer( default=-1 )
    parent_id = storagetypes.String( default="None", indexed=False )
@@ -223,13 +229,46 @@ class MSEntryNameHolder( storagetypes.Object ):
    def create_async( cls, _volume_id, _parent_id, _file_id, _name ):
       return MSEntryNameHolder.get_or_insert_async( MSEntryNameHolder.make_key_name( _volume_id, _parent_id, _name ), volume_id=_volume_id, parent_id=_parent_id, file_id=_file_id, name=_name )
    
+   @classmethod 
+   def Read( cls, volume_id, parent_id, name, async=False ):
+      """
+      Read a nameholder hitting memcache if we can.
+      """
+      key_name = cls.make_key_name( volume_id, parent_id, name )
+      nameholder = storagetypes.memcache.get( key_name )
+      
+      if nameholder is None:
+         # get from datastore 
+         nameholder_key = storagetypes.make_key( MSEntryNameHolder, key_name )
+         if async:
+            nameholder_fut = nameholder_key.get_async()
+            return nameholder_fut 
+         
+         else:
+            nameholder = nameholder_key.get()
+            
+            storagetypes.memcache.set( key_name, nameholder )
+            return nameholder 
+         
+      else:
+         if async:
+            return storagetypes.FutureWrapper( nameholder )
+         else:
+            return nameholder 
+         
+   
    @classmethod
    def Delete_ByVolume( cls, volume_id, async=False ):
       """
       Asynchronously delete by volume.
       """
       def __delete_nameholder_mapper( ent_nameholder_key ):
-         ent_nameholder_key.delete()
+         # TODO: obsolete this 
+         nameholder = ent_nameholder_key.get()
+         if nameholder is not None:
+            key_name = cls.make_key_name( nameholder.volume_id, nameholder.parent_id, nameholder.name )
+            storagetypes.memcache.delete( key_name )
+            ent_nameholder_key.delete()
          
       return MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, map_func=__delete_nameholder_mapper, keys_only=True, async=async )
       
@@ -273,7 +312,7 @@ class MSEntryXAttr( storagetypes.Object ):
             
          names_and_metadata = cls.ListAll( {"MSEntryXAttr.file_id ==": msent.file_id, "MSEntryXAttr.volume_id ==": msent.volume_id}, projection=["xattr_name", "owner", "mode"] )
          
-         storagetypes.memcache.set( cached_listing_name, names_and_metadata );
+         storagetypes.memcache.set( cached_listing_name, names_and_metadata )
       
       
       # return the list of attributes that we can access
@@ -605,6 +644,7 @@ class MSEntryXAttr( storagetypes.Object ):
       return cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'file_id'], map_func=__xattr_deferred_delete, async=async )
 
 
+
 class MSEntryVacuumLog( storagetypes.Object ):
    """
    Log of manifest metadata of an MSEntry, for use in garbage collection.
@@ -715,10 +755,8 @@ class MSEntryVacuumLog( storagetypes.Object ):
          
          MSEntryVacuumLog.delete_all( [log_ent_key] )
          return 0
-   
 
-# the page information we cache
-VersionedPage = collections.namedtuple( "VersionedPage", ["write_nonce", "file_ids"] )
+
 
 class MSEntry( storagetypes.Object ):
    """
@@ -734,10 +772,9 @@ class MSEntry( storagetypes.Object ):
    coordinator_id = storagetypes.Integer( default=1 )
    volume_id = storagetypes.Integer( default=-1 )
    mode = storagetypes.Integer( default=0 )
-   is_readable_in_list = storagetypes.Boolean( default=False )    # used to simplify queries
    parent_id = storagetypes.String( default="-1" )                # file_id value of parent directory
    deleted = storagetypes.Boolean( default=False, indexed=False ) # whether or not this directory is considered to be deleted
-   version = storagetypes.Integer( default=0, indexed=False )
+   version = storagetypes.Integer( default=0, indexed=False ) 
    
    # stuff that can be encrypted
    name = storagetypes.String( default="", indexed=False )
@@ -745,17 +782,24 @@ class MSEntry( storagetypes.Object ):
    ctime_nsec = storagetypes.Integer( default=0, indexed=False )
    max_read_freshness = storagetypes.Integer( default=0, indexed=False )
    max_write_freshness = storagetypes.Integer( default=0, indexed=False )
-
-   # stuff that can be filled in from a shard (but can't be encrypted)
-   mtime_sec = storagetypes.Integer( default=-1, indexed=False )
-   mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
-   manifest_mtime_sec = storagetypes.Integer( default=-1, indexed=False )               # NOTE: only used for files
-   manifest_mtime_nsec = storagetypes.Integer( default=-1, indexed=False )              # NOTE: only used for files
-   size = storagetypes.Integer( default=0, indexed=False )
-   write_nonce = storagetypes.Integer( default=0, indexed=False )
-   xattr_nonce = storagetypes.Integer( default=0, indexed=False )
-   nonce_ts = storagetypes.Integer( default=0, indexed=False )          # internal monotonically increasing timestamp from coordinator for nonces
-
+   generation = storagetypes.Integer( default=0, indexed=False )
+   
+   # filled in from a shard 
+   mtime_sec = None
+   mtime_nsec = None
+   manifest_mtime_sec = None               # NOTE: only used for files
+   manifest_mtime_nsec = None              # NOTE: only used for files
+   size = None
+   write_nonce = None
+   xattr_nonce = None
+   nonce_ts = None          # mostly-increasing timestamp from coordinator for xattr and write nonces
+   
+   # filled in from the index 
+   num_children = -1
+   
+   pickled = storagetypes.Text()           # for caching sharded and indexed data
+   
+   
    # attributes that must be supplied on creation
    required_attrs = [
       "ftype",
@@ -781,7 +825,7 @@ class MSEntry( storagetypes.Object ):
       "file_id",
    ]
 
-   # required for create/update/delete calls
+   # required for create/update/rename/chcoord calls
    call_attrs = [
       "volume_id",
       "file_id",
@@ -818,7 +862,7 @@ class MSEntry( storagetypes.Object ):
       "max_read_freshness",
       "max_write_freshness",
       "write_nonce",
-      "xattr_nonce"
+      "xattr_nonce",
    ]
 
    # publicly writable attributes, sharded or not
@@ -846,11 +890,16 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec",
       "mtime_nsec",
       "size",
-      "msentry_version",
-      "msentry_volume_id",
+      "msentry_version",                # prevent collisions with self.version 
+      "msentry_volume_id",              # prevent collisions with self.volume_id
       "write_nonce",
       "xattr_nonce",
       "nonce_ts"
+   ]
+   
+   # fields loaded from the directory index 
+   indexed_fields = [
+      "num_children"
    ]
 
    # functions that read a sharded value from shards for an instance of this ent
@@ -880,6 +929,13 @@ class MSEntry( storagetypes.Object ):
    }
    
    @classmethod 
+   def is_serialized_id( self, i ):
+      """
+      Is this a serialized ID?  i.e. is it an int?
+      """
+      return isinstance( i, types.IntType ) or isinstance( i, types.LongType )
+   
+   @classmethod 
    def unserialize_id( self, i ):
       """
       Convert a numeric file_id to a string
@@ -892,6 +948,54 @@ class MSEntry( storagetypes.Object ):
       Convert a file_id as a hex string to an int.
       """
       return int(i_str, 16)
+   
+   def to_dict( self ):
+      """
+      Overloaded to_dict to include shard fields
+      """
+      
+      attrs = super( MSEntry, self ).to_dict()
+      
+      for sf in self.shard_fields:
+         if hasattr( self, sf ):
+            attrs[ sf ] = getattr( self, sf )
+            
+      return attrs
+   
+   
+   def __getstate__( self ):
+      """
+      Populate the shard data before serializing 
+      """
+      pickle_data = {}
+      
+      for sf in self.shard_fields + self.indexed_fields:
+         if hasattr(self, sf):
+            pickle_data[sf] = getattr( self, sf )
+      
+      
+      serialized_str = pickle.dumps( pickle_data )
+      self.pickled = serialized_str
+      
+      return super( MSEntry, self ).__getstate__()
+   
+   
+   def __setstate__( self, state ):
+      """
+      Populate base data from cached shard data
+      """
+      super( MSEntry, self ).__setstate__( state )
+      
+      if self.pickled is not None:
+         
+         pickle_data = pickle.loads( self.pickled )
+         
+         for (sf, sv) in pickle_data.items():
+            setattr( self, sf, sv )
+            
+      self.pickled = None
+         
+      
    
    @classmethod 
    def protobuf_empty( cls, pbent, **kwargs ):
@@ -927,10 +1031,11 @@ class MSEntry( storagetypes.Object ):
       pbent.max_write_freshness = kwargs.get( 'max_write_freshness', self.max_write_freshness )
       pbent.write_nonce = kwargs.get( 'write_nonce', self.write_nonce )
       pbent.xattr_nonce = kwargs.get( 'xattr_nonce', self.xattr_nonce )
+      pbent.generation = kwargs.get( 'generation', self.generation )
+      pbent.num_children = kwargs.get( 'num_children', self.num_children )   
       
       pbent.parent_id = MSEntry.serialize_id( kwargs.get('parent_id', '0000000000000000') )
       pbent.file_id = MSEntry.serialize_id( kwargs.get( 'file_id', self.file_id ) )
-      
       
       return
       
@@ -962,9 +1067,9 @@ class MSEntry( storagetypes.Object ):
       ret.max_write_freshness = ent.max_write_freshness
       ret.write_nonce = ent.write_nonce
       ret.xattr_nonce = ent.xattr_nonce
+      ret.generation = ent.generation
       
-      if ent.HasField('parent_id'): # and ent.HasField('parent_name'):
-         #ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, ent.parent_id ) )
+      if ent.HasField('parent_id'):
          ret.parent_id = MSEntry.unserialize_id( ent.parent_id )
       
       return ret
@@ -1034,7 +1139,7 @@ class MSEntry( storagetypes.Object ):
       shard_key = shard_keys[ random.randint( 0, len(shard_keys)-1 ) ]
       
       shard = shard_key.get()
-      if shard == None:
+      if shard is None:
          shard = self.shard_class( key=shard_key )
       
       parent_attrs['nonce_ts'] = MSEntry.make_nonce_ts()
@@ -1067,6 +1172,9 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    @storagetypes.concurrent
    def __read_msentry( cls, volume_id, file_id, num_shards, **ctx_opts ):
+      
+      ent_key_name = MSEntry.make_key_name( volume_id, file_id )
+      
       ent, shards = yield MSEntry.__read_msentry_base( volume_id, file_id, **ctx_opts ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards, **ctx_opts )
       if ent is not None:
          ent.populate_from_shards( shards )
@@ -1093,12 +1201,6 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def preprocess_attrs( cls, ent_attrs ):
       # do some preprocessing on the ent attributes, autogenerating them if need be
-      if ent_attrs.has_key( "mode" ):
-         if (ent_attrs['mode'] & 0444) != 0:
-            ent_attrs['is_readable_in_list'] = True
-         else:
-            ent_attrs['is_readable_in_list'] = False
-         
       ent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
       ent_attrs['nonce_ts'] = cls.make_nonce_ts()
       
@@ -1114,9 +1216,9 @@ class MSEntry( storagetypes.Object ):
       attrs = {}
       attrs.update( ent.to_dict() )
       attrs.update( extra_shard_attrs )
-
+      
       now_sec, now_nsec = storagetypes.clock_gettime()
-
+      
       # verify that the clock advances
       if now_sec < attrs['mtime_sec'] or (now_sec == attrs['mtime_sec'] and now_nsec < attrs['mtime_nsec']):
          now_sec = max( now_sec, attrs['mtime_sec'] )
@@ -1153,10 +1255,50 @@ class MSEntry( storagetypes.Object ):
       shard_fut = shard.put_async()
       return shard_fut
       
+   @classmethod 
+   def IndexAbort( cls, volume_id, parent_id, file_id, index_fut ):
+      """
+      Roll back an index update.  Call this in a work queue.
+      """
+      if index_fut is not None:
+            
+         dir_index, generation = index_fut.get_result()
+         
+         if dir_index >= 0:
+            MSEntryIndex.Delete( volume_id, parent_id, file_id, dir_index )
+      
+   
+   @classmethod
+   def IndexPropagate( cls, volume_id, parent_id, file_id, generation, async=False ):
+      """
+      Propagate information from the directory index to the entry.
+      For now, this is just the generation number.
+      """
+      
+      @storagetypes.concurrent
+      def do_propagation():
+         
+         ent = yield MSEntry.ReadBase( volume_id, file_id, async=True )
+         
+         if ent is None or ent.deleted:
+            storagetypes.concurrent_return( -errno.ENOENT )
+         
+         ent.generation = generation
+         
+         yield ent.put_async()
+         
+         storagetypes.concurrent_return( 0 )
+      
+      if async:
+         return storagetypes.transaction_async( do_propagation, xg=True )
+      
+      else:
+         return storagetypes.transaction( do_propagation, xg=True )
       
       
    @classmethod
    def Create( cls, user_owner_id, volume, **ent_attrs ):
+      
       # return the file_id on success
       # coerce volume_id
       ent_attrs['volume_id'] = volume.volume_id
@@ -1201,38 +1343,48 @@ class MSEntry( storagetypes.Object ):
       # get the parent entry outside of the transaction
       parent_ent = None
       child_ent = None
+      nameholder = None
       parent_fut = None
       parent_key_name = MSEntry.make_key_name( volume_id, parent_id )
+      nameholder_key_name = MSEntryNameHolder.make_key_name( volume_id, parent_id, ent_attrs['name'] )
+      nameholder_key = storagetypes.make_key( MSEntryNameHolder, nameholder_key_name )
       futs = []
 
       parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
 
-      parent_ent = storagetypes.memcache.get( parent_cache_key_name )
+      try:
+         parent_ent = storagetypes.memcache.get( parent_cache_key_name )
 
-      if parent_ent == None:
-         parent_key = storagetypes.make_key( MSEntry, parent_key_name )
-         parent_fut = parent_key.get_async( use_memcache=False )
-         futs.append( parent_fut )
+         if parent_ent is None:
+            parent_fut = MSEntry.Read( volume, parent_id, futs_only=True )
+            futs.append( MSEntry.FlattenFuture( parent_fut ) )
+         
+         # do some preprocessing on the ent attributes...
+         MSEntry.preprocess_attrs( ent_attrs )
+         
+         # try to add a nameholder (should create a new one )
+         nameholder_fut = MSEntryNameHolder.create_async( volume_id, parent_id, child_id, ent_attrs['name'] )
+         futs.append( nameholder_fut )
+         
+         storagetypes.wait_futures( futs )
+         
+         # get futures...
+         if parent_ent is None:
+            parent_ent = MSEntry.FromFuture( parent_fut )
+            
+         nameholder = nameholder_fut.get_result()
       
+      except storagetypes.RequestDeadlineExceededError:
+         
+         # roll back 
+         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [nameholder_key] )
+         return (-errno.ETIMEDOUT, None)
       
-      # do some preprocessing on the ent attributes...
-      MSEntry.preprocess_attrs( ent_attrs )
-      
-      # try to add a nameholder (should create a new one )
-      nameholder_fut = MSEntryNameHolder.create_async( volume_id, parent_id, child_id, ent_attrs['name'] )
-      futs.append( nameholder_fut )
-      
-      storagetypes.wait_futures( futs )
-      
-      # get futures...
-      if parent_ent == None:
-         parent_ent = parent_fut.get_result()
-
-      nameholder = nameholder_fut.get_result()
       
       # if parent was deleted, then roll back
-      if parent_ent == None or parent_ent.deleted:
+      if parent_ent is None or parent_ent.deleted:
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
+         log.info("Parent /%s/%s does not exist" % (volume_id, parent_id ) )
          return (-errno.ENOENT, None)
 
       # if parent isn't writeable, then roll back
@@ -1247,49 +1399,77 @@ class MSEntry( storagetypes.Object ):
          
          return (-errno.EEXIST, None)
       
+      # no collision.  Create the child
+      
       # cache parent...
       storagetypes.memcache.add( parent_cache_key_name, parent_ent )
-
-      # no collision.  Create the child
-      child_ent = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, child_id ) ) )
-      child_ent.populate( volume.num_shards, **ent_attrs )
-      
-      parent_shard = MSEntry.update_shard( volume.num_shards, parent_ent )
-      
-      futs = storagetypes.put_multi_async( [child_ent, child_ent.write_shard, parent_shard] )
-      
-      # make sure parent still exists
-      parent_ent = storagetypes.memcache.get( parent_cache_key_name )
       
       delete = False 
-      ret = 0
+      index_fut = None 
       
-      if parent_ent == None:
-         parent_key = storagetypes.make_key( MSEntry, parent_key_name )
-         parent_ent = parent_key.get()
-      
-      if parent_ent == None or parent_ent.deleted:
-         # roll back...
-         delete = True 
-         ret = -errno.ENOENT
-      
-      else:
-         # increment the parent's child count 
-         count_fut = shardcounter.increment_async( parent_key_name, volume.num_shards )
-         futs.append( count_fut )
+      # need to try/catch timeouts here, so we can queue decrement and rollback on timeout
+      try:
          
-      # wait for operations to finish...
-      storagetypes.wait_futures( futs )
+         futs = []
+         ret = 0
+         
+         child_ent = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, child_id ) ) )
+         child_ent.populate( volume.num_shards, **ent_attrs )
+         
+         parent_shard = MSEntry.update_shard( volume.num_shards, parent_ent )
+         
+         futs = storagetypes.put_multi_async( [child_ent, child_ent.write_shard, parent_shard] )
+         
+         # update the index while we're at it 
+         index_fut = MSEntryIndex.Insert( volume_id, parent_id, child_id, async=True )
+         futs.append( index_fut )
+         
+         # make sure parent still exists
+         parent_ent = storagetypes.memcache.get( parent_cache_key_name )
+         
+         if parent_ent is None:
+            parent_ent = MSEntry.Read( volume, parent_id )
+         
+         if parent_ent is None or parent_ent.deleted:
+            # roll back...
+            log.info("Parent /%s/%s was deleted out from under us" % (volume_id, parent_id ) )
+            delete = True 
+            ret = -errno.ENOENT
+         
+         # wait for operations to finish...
+         storagetypes.wait_futures( futs )
+   
+      except storagetypes.RequestDeadlineExceededError:
+         
+         # roll back the index update
+         if index_fut is not None:
+            storagetypes.deferred.defer( MSEntry.IndexAbort, volume_id, parent_id, child_id, index_fut )
+         
+         storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key, child_ent.key, child_ent.write_shard.key] )
+         
+         return (-errno.ETIMEDOUT, None)
       
-      if delete:
-         # roll back
-         storagetypes.deferred.defer( MSEntry.delete_all, [fut.get_result().key for fut in futs] )
-
-      # invalidate caches
-      storagetypes.memcache.delete_multi( [MSEntry.cache_key_name( volume_id, parent_id ) ] )
-
-      # TODO: what if this times out?  need an abort?
-      return (0, child_ent)
+      finally:
+         
+         if delete:
+            # roll back on error
+            storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key, child_ent.key, child_ent.write_shard.key] )
+            
+            if index_fut is not None:
+               storagetypes.deferred.defer( MSEntry.IndexAbort, volume_id, parent_id, child_id, index_fut )
+         
+         
+         elif index_fut is not None:
+            # propagate the index data to the MSEntry we just created
+            dir_index, generation = index_fut.get_result()
+            storagetypes.deferred.defer( MSEntry.IndexPropagate, volume_id, parent_id, child_id, generation )
+            
+            
+         # invalidate caches
+         storagetypes.memcache.delete_multi( [MSEntry.cache_key_name( volume_id, parent_id ) ] )
+         
+      
+      return (ret, child_ent)
 
 
    @classmethod 
@@ -1328,7 +1508,10 @@ class MSEntry( storagetypes.Object ):
          "size": 4096,
          "max_read_freshness" : 5000,
          "max_write_freshness" : 0,
-         "nonce_ts": MSEntry.make_nonce_ts()
+         "nonce_ts": MSEntry.make_nonce_ts(),
+         "write_nonce": 0,
+         "xattr_nonce": 0,
+         "generation": 1
       }
 
       basic_root_attrs.update( **root_attrs )
@@ -1343,10 +1526,8 @@ class MSEntry( storagetypes.Object ):
       root_fut = root.put_async()
       root_shard_fut = root.put_shard_async()
       root_nameholder_fut = MSEntryNameHolder.create_async( volume.volume_id, basic_root_attrs['parent_id'], basic_root_attrs['file_id'], basic_root_attrs['name'] )
-      
-      root_child_count_fut = shardcounter.increment_async( root_key_name, volume.num_shards )
          
-      storagetypes.wait_futures( [root_fut, root_shard_fut, root_nameholder_fut, root_child_count_fut] )
+      storagetypes.wait_futures( [root_fut, root_shard_fut, root_nameholder_fut] )
 
       return 0
 
@@ -1651,20 +1832,21 @@ class MSEntry( storagetypes.Object ):
          return -errno.EACCES
       
       # if dest exists, it must be writable
-      if dest != None and not is_writable( user_owner_id, volume.owner_id, dest.owner_id, dest.mode ):
+      if dest is not None and not is_writable( user_owner_id, volume.owner_id, dest.owner_id, dest.mode ):
          return -errno.EACCES
       
       if src_file_id == dest_file_id:
          # no op
          return 0
       
-      if dest != None and src.ftype != dest.ftype:
+      if dest is not None and src.ftype != dest.ftype:
          # types must match 
          if src.ftype == MSENTRY_TYPE_DIR:
             return -errno.ENOTDIR
          else:
             return -errno.EISDIR
-         
+      
+      
       dest_delete_fut = None
       src_verify_absent = None
       
@@ -1712,7 +1894,7 @@ class MSEntry( storagetypes.Object ):
          "mtime_nsec": src_attrs['mtime_nsec']
       }
       
-      if dest != None:
+      if dest is not None:
          dest_delete_fut = MSEntry.__delete_finish_async( volume, dest_parent, dest )
       
       src_write_fut = MSEntry.__write_msentry_async( src, volume.num_shards, write_base=True, **src_write_attrs )
@@ -1737,7 +1919,7 @@ class MSEntry( storagetypes.Object ):
          MSEntry.cache_key_name( volume_id, dest_file_id )
       ]
       
-      storagetypes.memcache.delete_multi( cache_delete );
+      storagetypes.memcache.delete_multi( cache_delete )
       
       return 0
       
@@ -1765,7 +1947,7 @@ class MSEntry( storagetypes.Object ):
       if ent.ftype == MSENTRY_TYPE_DIR:
          
          # how many children are there?
-         num_expected_children = shardcounter.get_count( ent_key_name, volume.num_shards )
+         num_expected_children = MSEntryIndex.GetNumChildren( volume.volume_id, ent.file_id )
          
          if num_expected_children > 0:
             
@@ -1807,13 +1989,28 @@ class MSEntry( storagetypes.Object ):
       rc = delete_fut.get_result()
       return rc
    
+   @classmethod 
+   def __compactify_continuation_uncache( cls, replaced_index=None, compacted_index_node=None ):
+      """
+      Continuation called once a node in the index is compactified.
+      Leveraged here to uncache the now-invalid page data.
+      """
+      
+      if compacted_index_node is None:
+         return 
+      
+      # uncache the affected entries
+      updated_child_cache_key = MSEntry.cache_key_name( compacted_index_node.volume_id, compacted_index_node.file_id )
+      
+      storagetypes.memcache.delete( updated_child_cache_key )
+         
    
    @classmethod
    @storagetypes.concurrent
    def __delete_finish_async( cls, volume, parent_ent, ent ):
       """
       Finish deleting an entry.
-      Remove it and its nameholder and xattrs, update its parent's shard, and flush the cached entry, the cached parent entry, and the cached listing entry.
+      Remove it and its nameholder and xattrs, update its parent's shard, and update the index
       """
 
       if not ent.deleted:
@@ -1822,33 +2019,32 @@ class MSEntry( storagetypes.Object ):
       
       volume_id = volume.volume_id
       parent_id = parent_ent.file_id
+      
       ent_key_name = MSEntry.make_key_name( volume_id, ent.file_id )
       parent_key_name = MSEntry.make_key_name( volume_id, parent_ent.file_id )
       ent_shard_keys = MSEntry.get_shard_keys( volume.num_shards, ent_key_name )
       ent_cache_key_name = MSEntry.cache_key_name( volume_id, ent.file_id )
       
-      # update the parent shard...
-      # yield MSEntry.update_shard_async( volume.num_shards, parent_ent )
+      # get the index node...
+      ent_idx = yield MSEntryIndex.ReadIndex( volume_id, ent.file_id, async=True )
       
-      # delete this entry, its shards, its nameholder, and its xattrs
+      # update parent status and free the dead child's dir index
+      yield MSEntry.update_shard_async( volume.num_shards, parent_ent ), MSEntryIndex.Free( volume_id, parent_id, ent_idx.file_id, ent_idx.dir_index, async=True )
+      
       ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, ent.file_id ) )
       nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
       
+      # queue delete this entry and its nameholders
       storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
       
-      yield MSEntry.update_shard_async( volume.num_shards, parent_ent ), MSEntryXAttr.Delete_ByFile( volume.volume_id, ent.file_id, async=True ), shardcounter.delete_async( ent_key_name, volume.num_shards ), shardcounter.decrement_async( parent_key_name, volume.num_shards )
-         
-         
-      # delete any listings of this parent
+      # queue delete xattrs
+      storagetypes.deferred.defer( MSEntryXAttr.Delete_ByFile, volume.volume_id, ent.file_id )
+      
+      # uncache any listings of this parent
       storagetypes.memcache.delete_multi( [MSEntry.cache_key_name( volume_id, parent_id ), ent_cache_key_name] )
-      shardcounter.flush_cache( ent_key_name )
       
-      # blow away the child counter 
-      # yield shardcounter.delete_async( ent_key_name )
-      
-      # decrease child count 
-      # yield shardcounter.decrease_async( parent_key_name )
-      
+      # try to compactify the parent's directory index
+      MSEntryIndex.Compactify( volume_id, parent_id, ent_idx.file_id, ent_idx.dir_index, compactify_continuation=MSEntry.__compactify_continuation_uncache )
       storagetypes.concurrent_return( 0 )
       
       
@@ -1873,10 +2069,6 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    def Delete( cls, user_owner_id, volume, **ent_attrs ):
-
-      rc = MSEntry.check_call_attrs( ent_attrs )
-      if rc != 0:
-         return rc
       
       # delete an MSEntry.
       # A file will be deleted by at most one UG
@@ -1886,7 +2078,7 @@ class MSEntry( storagetypes.Object ):
       file_id = ent_attrs['file_id']
       parent_id = ent_attrs['parent_id']
       futs = []
-
+      
       # get ent, parent_ent from the cache
       ent_cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
       parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
@@ -1935,7 +2127,7 @@ class MSEntry( storagetypes.Object ):
       
       rc = MSEntry.__delete_begin( volume, ent )
       if rc == 0:
-         ret = MSEntry.__delete_finish( volume, parent_ent, ent );
+         ret = MSEntry.__delete_finish( volume, parent_ent, ent )
       else:
          ret = rc
          
@@ -1947,6 +2139,8 @@ class MSEntry( storagetypes.Object ):
       """
       Obliterate all MSEntry records in this Volume.
       It's best to do this as a deferred task, since it can take a while.
+      
+      TODO: break into multiple tasks
       """
       
       # caller must own the root
@@ -1980,360 +2174,127 @@ class MSEntry( storagetypes.Object ):
       storagetypes.wait_futures( futs )
       
       return 0
-      
    
-
-   @classmethod
-   @storagetypes.concurrent
-   def __read_msentry_key_mapper( cls, volume_id, file_id, num_shards ):
-      msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
+   
+   @classmethod 
+   @storagetypes.concurrent 
+   def __read_msentry_from_index_async( cls, dir_index_node, num_shards ):
+      
+      volume_id = dir_index_node.volume_id 
+      file_id = dir_index_node.file_id 
+      
+      # check cache first 
+      cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
+      msentry = storagetypes.memcache.get( cache_key_name )
+      shards = None 
       
       if msentry is None:
-         storagetypes.concurrent_return( (None, None) )
+         msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
       
-      msentry.populate_from_shards( shards )
-
-      cache_key = MSEntry.cache_key_name( msentry.volume_id, msentry.file_id )
-      storagetypes.concurrent_return( (cache_key, msentry) )
-
-
-   @classmethod 
-   def cached_listing_cursor_key_name( cls, volume_id, file_id, page_id, write_nonce ):
-      return "cursor-/%s/%s.%s-%s" % (volume_id, file_id, write_nonce, page_id)
-
-
-   @classmethod 
-   def __ListDir_query_children_page( cls, volume_id, file_id, owner_id, **q_opts ):
-      
-      # query a page of chilren 
-      qry_ents = MSEntry.query()
-      
-      qry_ents = qry_ents.filter( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id ) )
-      
-      if owner_id is not None:
-         # owner given
-         qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ), MSEntry.is_readable_in_list == True) )
-         qry_ents = qry_ents.order( MSEntry.mode, MSEntry.key )
-
-      else:
-         # no owner given
-         qry_ents = qry_ents.filter( MSEntry.is_readable_in_list == True)
-         qry_ents = qry_ents.order( MSEntry.key )
-      
-      # get the child file_ids
-      results, next_cursor, have_more = qry_ents.fetch_page( RESOLVE_MAX_PAGE_SIZE, **q_opts )
-      
-      return (results, next_cursor, have_more)
-      
+         if msentry is None:
+            storagetypes.concurrent_return( None )
+         
+         msentry.populate_from_shards( shards )
+         
+         # set index fields 
+         if msentry.ftype == MSENTRY_TYPE_DIR:
+            num_children_counter = yield MSEntryIndex.GetNumChildren( volume_id, file_id, async=True )
+            msentry.num_children = num_children_counter.value
+            
+         else:
+            msentry.num_children = 0
+         
+         msentry.generation = dir_index_node.generation 
+         
+         storagetypes.memcache.set( cache_key_name, msentry )
+         
+      storagetypes.concurrent_return( msentry )
       
    
-   @classmethod 
-   def __ListDir_lookup_and_cache_cursors( cls, volume_id, file_id, page_id, owner_id, num_children, write_nonce, **q_opts ):
-      
-      """
-      Generate and cache all cursors between the given page and the greatest prior page with a cached cursor.
-      Return the cursor to the given page.
-      
-      Return (error_code, cursor)
-      Return (1, None) if EOF
-      """
-      
-      # EOF?
-      if num_children <= page_id * RESOLVE_MAX_PAGE_SIZE:
-         return (1, None)
-      
-      # cached?
-      cached_cursor_name = MSEntry.cached_listing_cursor_key_name( volume_id, file_id, page_id, write_nonce )
-      cached_cursor = storagetypes.memcache.get( cached_cursor_name )
-      
-      if cached_cursor is None:
-         
-         log.info("Cursor for page %s of /%s/%s is not cached" % (page_id, volume_id, file_id))
-         
-         prior_cursor = None
-         prior_page_id = 0
-         page_cursor = None
-         
-         # not cached.  Find the greatest prior page's cursor
-         for i in xrange(page_id - 1, -1, -1):
-            prior_cursor_name = MSEntry.cached_listing_cursor_key_name( volume_id, file_id, i, write_nonce )
-            prior_cursor = storagetypes.memcache.get( prior_cursor_name )
-            
-            if prior_cursor is not None:
-               prior_page_id = i
-               break
-         
-         log.info("Greatest prior page of /%s/%s with a cached cursor is page %s" % (volume_id, file_id, prior_page_id))
-         
-         # generate cursors from the last cached cursor up to (but excluding) the one for this page
-         for i in xrange(prior_page_id, page_id, 1):
-            
-            if i > prior_page_id:
-               log.info("Cursor for page %s of /%s/%s is not cached" % (i, volume_id, file_id))
-            
-            results, page_cursor, have_more = MSEntry.__ListDir_query_children_page( volume_id, file_id, owner_id, start_cursor=prior_cursor, **q_opts )
-            prior_cursor = page_cursor
-            
-            if page_cursor is None:
-               # EOF 
-               return (1, None)
-            
-            # how many entries *should* this have returned?
-            expected_page_size = 0
-            
-            if (i + 1) * RESOLVE_MAX_PAGE_SIZE <= num_children:
-               # expect full page
-               expected_page_size = RESOLVE_MAX_PAGE_SIZE
-            
-            else:
-               # last page
-               expected_page_size = num_children % RESOLVE_MAX_PAGE_SIZE
-            
-            if len(results) != expected_page_size:
-               # query hasn't caught up with us yet 
-               return (-errno.EAGAIN, None)
-            
-            page_cursor_name = MSEntry.cached_listing_cursor_key_name( volume_id, file_id, i, write_nonce )
-            storagetypes.memcache.set( page_cursor_name, page_cursor )
-            
-         # all cursors between the prior cached cursor and the requested page have been cached 
-         # return the page cursor for the requested page
-         return (0, page_cursor)
-      
-      else:
-         return (0, cached_cursor)
-            
-
    @classmethod
-   def ListDir( cls, volume, file_id, page_id, owner_id=None, file_ids_only=False, no_check_memcache=False ):
+   def ListDir( cls, volume, file_id, page_id=None, least_unknown_generation=None ):
       """
-      Find a page of entries that are immediate children of this one, one page at a time.
-      Return a 4-tuple of (error_code, ret, next_cursor), where 
-      * error_code is 0 on success, negative on failure
-      * next_cursor is the cursor for fetching the next entries.
+      Generate a listing of directory entries, up to RESOLVE_MAX_PAGE_SIZE.
       
-      If file_ids_only is True, then (ret) is just the list of file IDs of the children of the given MSEntry.
-      Otherwise, the list of fully-loaded children is returned.
+      If page_id is not None, then generate the listing of entries whose dir_indexes are in the range [page_id * RESOLVE_MAX_PAGE_SIZE, (page_id + 1) * RESOLVE_MAX_PAGE_SIZE)
+      If least_unknown_generation is not None, then generate a listing of entries (at most RESOLVE_MAX_PAGE_SIZE) whose generation numbers are at least as high
       
-      The listing caching strategy is non-trival and warrants explanation:
-      
-      Directory listings are broken up into contiguous regions of entries called pages.  Each listing has 
-      one or more pages.  For small directory listings, there is only one page (page 0), and for 
-      larger directory listings, there exist page 1, page 2, page 3, etc.  Pages are named from 0 to n, where 
-      n = ceil((number of entries) / page_size), where page_size is fixed at msconfig.RESOLVE_MAX_PAGE_SIZE.
-      
-      A client gets the listing of a directory by repeatedly calling ListDir() for each page, until there 
-      are no entries left to query.  ListDir() caches each page as it is loaded, so subsequent clients listing 
-      the same directory will read from the cache.
-      
-      In addition, it caches the database cursor to each page.  Because we can't generate a cursor to a particular offset,
-      the ListDir() algorithm will re-generate and cache every cursor between page_id and the greatest prior page 
-      with a cached cursor.  For example, if page 3 has a cached cursor, but page 7 is requested, this algorithm will 
-      ensure that the database cursors for pages 3, 4, 5, 6, and 7 will be cached.  As an optimization, it will additionally 
-      cache page 8's cursor, since we have to calculate it anyway, and the reader often requests pages in order.
-      
-      A cached page and a cached cursor include the directory's write nonce, and ListDir() will need to check to see if
-      the page's write nonce is consistent with the directory (and invalidate the page if not).
-      
-      As for callers of this method, if we encounter a cache miss, then the cursor to the start of the next page 
-      will be returned, as well as a boolean indicating whether or not there is more data.  If we encounter a 
-      cache hit, then this method returns no cursor, and assumes that there will be more data by default.
+      Return (rc, listing), where rc is 0 on success, or negative on error.
+      Return (0, []) if least_unknown_generation or page_id is EOF.
       """
       
-      next_cursor = None
+      if page_id is not None and least_unknown_generation is not None:
+         return (-errno.EINVAL, None)
       
-      # make sure we're dealing with a file ID as a string
-      if not isinstance( file_id, types.StringType ):
+      if MSEntry.is_serialized_id( file_id ):
          file_id = MSEntry.unserialize_id( file_id )
       
       volume_id = volume.volume_id
       
-      # read the directory we're listing 
-      # try from cache first
-      cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
-
-      dirent = storagetypes.memcache.get( cache_ent_key )
+      # get the directory 
+      dirent = MSEntry.Read( volume, file_id )
+   
+      # must exist
       if dirent is None:
-         # not in the cache.  Get from the datastore
-         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
-         dirent = ent_fut.get_result()
-         
-         if dirent is None:
-            return (-errno.ENOENT, None, None)
-         
+         return (-errno.ENOENT, None)
+      
       # this had better be a directory...
       if dirent.ftype != MSENTRY_TYPE_DIR:
          log.error("Not a directory: %s" % file_id)
-         return (-errno.ENOTDIR, None, None)
+         return (-errno.ENOTDIR, None)
       
-      log.info("Request page %s of directory %s (%s)" % (page_id, file_id, dirent.name))
+      if least_unknown_generation is not None:
+         # want the next batch of entries created 
+         index_query = MSEntryIndex.GenerationQuery( dirent.volume_id, dirent.file_id, least_unknown_generation, least_unknown_generation + RESOLVE_MAX_PAGE_SIZE )
+         
+         @storagetypes.concurrent 
+         def walk_index( dir_index_node ):
+            
+            if dir_index_node is None:
+               storagetypes.concurrent_return( None )
+            
+            # walk the index within the query 
+            MSEntryIndex.SetCache( dir_index_node )
+            
+            msentry = yield MSEntry.__read_msentry_from_index_async( dir_index_node, volume.num_shards )
+            
+            storagetypes.concurrent_return( msentry )
+            
+         children = index_query.map( walk_index, limit=RESOLVE_MAX_PAGE_SIZE )
+         
+         
+      elif page_id is not None:
+         
+         # want a page 
+         dir_indexes = range( page_id * RESOLVE_MAX_PAGE_SIZE, (page_id + 1)* RESOLVE_MAX_PAGE_SIZE )
+            
+         # resolve an index node into the MSEntry, and cache both 
+         @storagetypes.concurrent 
+         def walk_index( dir_index ):
+            
+            if dir_index is None:
+               storagetypes.concurrent_return( None )
+            
+            dir_index_node = yield MSEntryIndex.Read( dirent.volume_id, dirent.file_id, dir_index, async=True )
+            
+            if dir_index_node is None:
+               storagetypes.concurrent_return( None )
+            
+            msentry = yield MSEntry.__read_msentry_from_index_async( dir_index_node, volume.num_shards )
+            
+            storagetypes.concurrent_return( msentry )
+         
+         children_futs = [ walk_index(i) for i in dir_indexes ]
+         
+         storagetypes.wait_futures( children_futs )
+         
+         children = [ c.get_result() for c in children_futs ]
       
-      # how many children?
-      dir_key_name = MSEntry.make_key_name( volume_id, file_id )
-      num_expected_children = shardcounter.get_count( dir_key_name, volume.num_shards )
       
-      # are we EOF?
-      if page_id * RESOLVE_MAX_PAGE_SIZE >= num_expected_children:
-         # page_id is off the end of the directory
-         return (0, [], None)
-      
-      # key to this page's entries
-      listing_cache_key = MSEntry.cache_listing_key_name( volume_id, file_id, page_id )
-      
-      # the page's file IDs, which we'll resolve into cached entries.
-      file_ids = None
-      
-      if not no_check_memcache:
-         
-         # get the cached page info
-         page_info = storagetypes.memcache.get( listing_cache_key )
-         
-         if page_info is not None:
-               
-            # is it consistent with the directory?
-            if dirent.write_nonce != page_info.write_nonce:
-               
-               # this page is stale.  evict it 
-               storagetypes.memcache.delete( listing_cache_key )
-               
-            else:
-               
-               # get the cached file IDs, and the hint as to whether or not there are more pgaes
-               file_ids = page_info.file_ids 
-               
-               log.info("Cache HIT page %d of /%s/%s (entries: %d)" % (page_id, volume_id, file_id, len(file_ids)))
-            
-      
-      if file_ids is None:
-         
-         # get the cursor to this page 
-         rc, page_cursor = MSEntry.__ListDir_lookup_and_cache_cursors( volume_id, file_id, page_id, owner_id, num_expected_children, dirent.write_nonce, projection=[MSEntry.file_id] )
-         
-         if rc < 0:
-            # NOTE: we could have more entries
-            return (rc, [], page_cursor)
-         
-         if rc == 0:
-            # got cursor; get entries 
-            ent_file_ids, next_cursor, have_more = MSEntry.__ListDir_query_children_page( volume_id, file_id, owner_id, projection=[MSEntry.file_id], start_cursor=page_cursor )
-            
-            if len(ent_file_ids) == 0 or next_cursor is None:
-               # definitely no more 
-               if len(ent_file_ids) == 0:
-                  log.info("No more entries for page %s of /%s/%s" % (page_id, volume_id, file_id))
-               
-               if next_cursor is None:
-                  log.info("No curser returned for page %s of /%s/%s" % (page_id, volume_id, file_id))
-                  
-               have_more = False
-            
-            # how many entries are expected in this page?
-            expected_page_size = 0
-            
-            if (page_id + 1) * RESOLVE_MAX_PAGE_SIZE <= num_expected_children:
-               expected_page_size = RESOLVE_MAX_PAGE_SIZE
-            
-            else:
-               expected_page_size = num_expected_children % RESOLVE_MAX_PAGE_SIZE
-            
-            
-            if expected_page_size != len( ent_file_ids ):
-               # the query doesn't have the right amount of data.
-               # have the reader try again, since query results are eventually consistent (i.e. a subsequent read might work)
-               log.info("Page %s of /%s/%s: expected %s entries; got %s" % (page_id, volume_id, file_id, expected_page_size, len(ent_file_ids)))
-               
-               storagetypes.memcache.delete( listing_cache_key )
-               shardcounter.flush_cache( dir_key_name )
-               return (-errno.EAGAIN, None, None)
-            
-            # extract file IDs 
-            file_ids = [ x.file_id for x in ent_file_ids ]
-            
-            if not no_check_memcache:
-               
-               # store this version of this page 
-               page_info = VersionedPage( write_nonce=dirent.write_nonce, file_ids=file_ids )
-               storagetypes.memcache.set( listing_cache_key, page_info )
-               
-               # store the cursor for the next page (since the reader will likely ask for it shortly)
-               next_page_cursor_name = MSEntry.cached_listing_cursor_key_name( volume_id, file_id, page_id + 1, dirent.write_nonce )
-               storagetypes.memcache.set( next_page_cursor_name, next_cursor )
-               
-               log.info("Cache PUT page %s of /%s/%s (entries: %s, have_more: %s)" % (page_id, volume_id, file_id, len(file_ids), have_more))
-         
-            else:
-               log.info("Read page %s of /%s/%s (entries: %s, have_more: %s)" % (page_id, volume_id, file_id, len(file_ids), have_more))
-            
-         else:
-            # EOF 
-            next_cursor = None 
-            file_ids = []
-            
-         # log.info("Page %s of /%s/%s: %s" % (page_id, volume_id, file_id, file_ids))
-         
-            
-      if file_ids_only:
-         # caller only wanted file IDs, not entire entries
-         # return (0, file_ids, next_cursor, have_more)
-         return (0, file_ids, next_cursor)
-      
-      # check memcache for cached entries...
-      missing = file_ids
-      ents = []
-      
-      if not no_check_memcache:
-         # check the cache for files
-         cache_lookup = [None] * len(file_ids)
-         
-         for i in xrange(0,len(file_ids)):
-            
-            cache_key = MSEntry.cache_key_name( volume_id, file_ids[i] )
-            cache_lookup[i] = cache_key
-         
-         ents_dict = storagetypes.memcache.get_multi( cache_lookup )
-         
-         # what's missing from the cache?
-         missing = []
-         for i in xrange(0,len(file_ids)):
-            ent = ents_dict.get( cache_lookup[i] )
-            if ent == None:
-               #logging.info("memcache Miss: %s" % file_ids[i])
-               missing.append( file_ids[i] )
-            else:
-               #logging.info("memcache HIT: %s, data = %s" % (file_ids[i], ent))
-               ents.append( ent )
-         
-      
-      if len(missing) > 0:
-         # fetch the rest from the datastore
-         
-         # get list of (cache key, ent) futures
-         ent_tuples = [MSEntry.__read_msentry_key_mapper( volume_id, fid, volume.num_shards ) for fid in missing]
-         
-         ent_futs = filter( lambda x: x is not None, ent_tuples )
-         
-         # wait for them all
-         storagetypes.wait_futures( ent_futs )
-         
-         # convert (cache key, ent) futures list into (cache key, ent) list
-         ent_results = filter( lambda x: x[0] is not None and x[1] is not None, [f.get_result() if f is not None else None for f in ent_tuples] )
-         
-         if not no_check_memcache:
-            # cache them, converting from [(string, MSEntry)] to {string: MSEntry}
-            
-            """
-            for (_, ent) in ent_results:
-               logging.info("memcache put: %s, data = %s" % (ent.file_id, ent))
-            """
-            
-            storagetypes.memcache.set_multi( dict( ent_results ) )
-         
-         # combine MSEntry results
-         ents += [result[1] for result in ent_results]
-         
-      return (0, ents, next_cursor)
+      children = filter( lambda x: x is not None, children )
+      return (0, children)
    
-
+   
    @classmethod
    def SetCache( cls, ent ):
       ent_cache_key_name = MSEntry.cache_key_name( ent.volume_id, ent.file_id )
@@ -2350,10 +2311,15 @@ class MSEntry( storagetypes.Object ):
          
       storagetypes.memcache.set_multi( ent_dict )
       return
+   
       
    @classmethod
    def ReadBase( cls, volume_id, file_id, async=False ):
-      if not isinstance( file_id, types.StringType ):
+      """
+      Read an MSEntry without merging in its shards.
+      """
+      
+      if MSEntry.is_serialized_id( file_id ):
          file_id = MSEntry.unserialize_id( file_id )
          
       ent_key_name = MSEntry.make_key_name( volume_id, file_id)
@@ -2374,81 +2340,83 @@ class MSEntry( storagetypes.Object ):
       
 
    @classmethod
-   def Read( cls, volume, file_id, memcache_keys_only=False, futs_only=False, no_check_memcache=False ):
+   def Read( cls, volume, file_id, volume_id=None, num_shards=None, futs_only=False ):
       """
-      Given an entry's key information, get the MSEntry
+      Given an entry's key information, get the MSEntry.
+      Return None if there is no such entry.
+      Return an MSEntryFutures if futs_only is True
       """
-
-      if not isinstance( file_id, types.StringType ):
+      
+      if volume is not None:
+         volume_id = volume.volume_id 
+         num_shards = volume.num_shards 
+      
+      if MSEntry.is_serialized_id( file_id ):
          file_id = MSEntry.unserialize_id( file_id )
          
-      ent_key_name = MSEntry.make_key_name( volume.volume_id, file_id)
-      ent_cache_key_name = MSEntry.cache_key_name( volume.volume_id, file_id )
+      ent_key_name = MSEntry.make_key_name( volume_id, file_id)
+      ent_cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
 
       ent_key = storagetypes.make_key( MSEntry, ent_key_name )
-      shard_keys = MSEntry.get_shard_keys( volume.num_shards, ent_key_name )
-
-      if memcache_keys_only:
-         return ent_cache_key_name
-         
-      ent = None
-      shard = None
-
-      if not futs_only:
-         # check cache?
-         if not no_check_memcache:
-            ent = storagetypes.memcache.get( ent_cache_key_name )
-            
-            """
-            if ent is not None:
-               log.info("memcache HIT: %s, data = %s" % (ent.file_id, ent))
-            """
-
+      shard_keys = MSEntry.get_shard_keys( num_shards, ent_key_name )
+      
+      ent = storagetypes.memcache.get( ent_cache_key_name )
+      if ent is not None:
+         if futs_only:
+            return MSEntryFutures( base_future=storagetypes.FutureWrapper( ent ), shard_futures=[], num_children_future=storagetypes.FutureWrapper( ent.num_children ), num_shards=num_shards )
+         else:
+            return ent
+      
       # get the values from the datastore, if they weren't cached 
       futs = {}
       all_futs = []
 
-      if ent is None or futs_only:
-         
-         # only get base if we have to
-         if ent is not None:
-            futs["base"] = storagetypes.FutureWrapper( ent )
-         else:
-            futs["base"] = ent_key.get_async()
-            all_futs.append( futs["base"] )
-
-         # get shards
-         futs["shard"] = [None] * len(shard_keys)
+      futs["base"] = ent_key.get_async()
+      all_futs.append( futs["base"] )
       
-         for i in xrange(0, len(shard_keys)):
-            shard_key = shard_keys[i]
-            fut = shard_key.get_async()
-            futs["shard"][i] = fut
-            all_futs.append( fut )
-
+      futs["num_children"] = MSEntryIndex.GetNumChildren( volume_id, file_id, async=True )
+      
+      # get shards
+      futs["shard"] = [None] * len(shard_keys)
+      
+      for i in xrange(0, len(shard_keys)):
+         shard_key = shard_keys[i]
+         fut = shard_key.get_async()
+         futs["shard"][i] = fut
+         all_futs.append( fut )
+      
+      ent_fut = MSEntryFutures( base_future=futs["base"], shard_futures=futs["shard"], num_children_future=futs["num_children"], num_shards=num_shards )
       if futs_only:
          # only want futures, but if we have the entries, then just return them
-         MSEntryFutures = collections.namedtuple( 'MSEntryFutures', ['base_future', 'shard_futures'] )
-         return MSEntryFutures( base_future=futs["base"], shard_futures=futs["shard"] )
+         return ent_fut
 
       # get the values
-      if len(all_futs) > 0:
-         storagetypes.wait_futures( all_futs )
-
-         if futs.get("base", None) is not None:
-            ent = futs["base"].get_result()
-
-         if ent is not None and futs.get("shard", None) is not None:
-            shards = filter( lambda x: x is not None, [x.get_result() for x in futs["shard"]] )
-            ent.populate_from_shards( shards )
-
+      storagetypes.wait_futures( all_futs )
+      ent = MSEntry.FromFuture( ent_fut )
+      
       # cache result
-      if not no_check_memcache:
-         #log.info("memcache put: %s, data = %s" % (ent.file_id, ent))
-         storagetypes.memcache.set( ent_cache_key_name, ent )
-
+      storagetypes.memcache.set( ent_cache_key_name, ent )
+      
       return ent
 
+
+   @classmethod 
+   def ReadByParent( cls, volume, parent_id, name, futs_only=False ):
+      """
+      Read an entry given its parent ID and the entry's name 
+      Return None if there is no such entry.
+      Return MSEntryFutures if futs_only is True
+      """
+      
+      # get the nameholder 
+      child_nameholder = MSEntryNameHolder.Read( volume.volume_id, parent_id, name )
+      if child_nameholder is None:
+         return None
+      
+      # get the child
+      child = MSEntry.Read( volume, child_nameholder.file_id, futs_only=futs_only )
+      return child
+      
 
    @classmethod
    def FlattenFuture( cls, ent_fut ):
@@ -2464,11 +2432,23 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def FromFuture( cls, ent_fut ):
       ent = ent_fut.base_future.get_result()
-      if ent != None:
+      
+      if ent is not None:
          shards = filter( lambda x: x is not None, [x.get_result() for x in ent_fut.shard_futures] )
-         ent.populate_from_shards( shards )
          
-         #logging.info("FromFuture: %s\nshards = %s" % (ent, shards))
+         ent.populate_from_shards( shards )
+         ent.populate_shard( ent_fut.num_shards, **ent.to_dict() )
+         
+         if ent.ftype == MSENTRY_TYPE_DIR:
+            num_children_counter = ent_fut.num_children_future.get_result()
+            
+            if num_children_counter is None:
+               ent.num_children = 0
+            
+            else:
+               ent.num_children = num_children_counter.value
+            
+         # logging.info("FromFuture: %s\nshards = %s" % (ent.to_dict(), shards))
       
       return ent
 
