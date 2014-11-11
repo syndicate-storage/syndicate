@@ -184,8 +184,10 @@ int ms_client_gateway_cert_download( struct ms_client* client, char const* url, 
    
    rc = 0;
    
-   if( !valid )
+   if( !valid ) {
+      errorf("failed to parse certificate from %s (missing %s)\n", url, ms_cert->InitializationErrorString().c_str());
       rc = -EINVAL;
+   }
    
    free( buf );
    
