@@ -92,6 +92,7 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    // make the logfile
    state->logfile = log_init( state->conf.logfile_path );
    if( state->logfile == NULL ) {
+      errorf("Failed to open the log at %s\n", state->conf.logfile_path);
       return -ENOMEM;
    }
    
