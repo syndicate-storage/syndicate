@@ -248,8 +248,8 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
    if( dlctx->finalized ) {
       md_downloader_cancelling_unlock( dl );
       
-      errorf("Download context %p is already finalized\n", dlctx );
-      return -EINVAL;
+      errorf("WARN: Download context %p is already finalized\n", dlctx );
+      return 0;
    }
    
    if( dlctx->cancelling ) {
@@ -301,6 +301,7 @@ int md_downloader_start_all_pending( struct md_downloader* dl ) {
          }
          
          curl_multi_add_handle( dl->curlm, dlctx->curl );
+         dlctx->running = true;
          dlctx->pending = false;
          
          (*dl->downloading)[ dlctx->curl ] = dlctx;
@@ -339,6 +340,7 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
          // update state
          dlctx->cancelling = false;
          dlctx->cancelled = true;
+         dlctx->running = false;
          
          // finalize, with -EAGAIN
          md_downloader_finalize_download_context( dlctx, -EAGAIN );
@@ -388,46 +390,6 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    return realsize;
 }
 
-
-// download data to a buffer
-size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data) {
-   struct md_download_buf* dlbuf = (struct md_download_buf*)user_data;
-   
-   size_t realsize = size * count;
-   
-   int new_size = realsize + dlbuf->len;
-   
-   if( dlbuf->data_len > 0 ) {
-      // have an upper bound on how much data to copy
-      if( dlbuf->len + realsize > (size_t)dlbuf->data_len ) {
-         realsize = dlbuf->data_len - dlbuf->len;
-      }
-      dbprintf("receive %zu to offset %zd of %zd\n", realsize, dlbuf->len, dlbuf->data_len);
-      memcpy( dlbuf->data + dlbuf->len, stream, realsize );
-      dlbuf->len += realsize;
-      return realsize;
-   }
-   else {
-      // expand   
-      char* new_buf = (char*)realloc( dlbuf->data, new_size );
-      if( new_buf == NULL ) {
-         free( dlbuf->data );
-         dlbuf->data = NULL;
-         dbprintf("out of memory for %p\n", user_data );
-         return 0;      // out of memory
-      }
-
-      else {
-         dlbuf->data = new_buf;
-         memcpy( dlbuf->data + dlbuf->len, stream, realsize );
-         dlbuf->len = new_size;
-         return realsize;
-      }
-   }
-   
-   return 0;
-}
-
 // initialize a download context.  Takes a CURL handle from the client.
 // The only things it sets in the CURL handle are:
 // * CURLOPT_WRITEDATA
@@ -461,6 +423,8 @@ int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_
 // reset a download context.
 int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl ) {
    
+   dbprintf("Reset download context %p\n", dlctx );
+   
    response_buffer_free( dlctx->brb.rb );
    dlctx->brb.size = 0;
    
@@ -474,6 +438,7 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
    dlctx->finalized = false;
    dlctx->pending = false;
    dlctx->cancelling = false;
+   dlctx->running = false;
    
    if( dlctx->effective_url ) {
       free( dlctx->effective_url );
@@ -519,6 +484,11 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    if( dlctx->effective_url != NULL ) {
       free( dlctx->effective_url );
       dlctx->effective_url = NULL;
+   }
+   
+   if( dlctx->__downloader_url != NULL ) {
+      free( dlctx->__downloader_url );
+      dlctx->__downloader_url = NULL;
    }
    
    dlctx->curl = NULL;
@@ -619,7 +589,7 @@ int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout
    }
    
    if( dlset->waiting->size() == 0 ) {
-      return -EINVAL;
+      return 0;
    }
    
    dbprintf("Wait on download set %p (%zu contexts)\n", dlset, dlset->waiting->size() );
@@ -911,13 +881,14 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    dlctx->http_status = (int)http_status;
    dlctx->transfer_errno = (int)os_errno;
    dlctx->finalized = true;
+   dlctx->running = false;
    dlctx->effective_url = NULL;
    
    if( url != NULL ) {
       dlctx->effective_url = strdup( url );
    }
    
-   dbprintf("Finalized download context %p (%s)\n", dlctx, url );
+   dbprintf("Finalized download context %p (%s)\n", dlctx, dlctx->effective_url );
    
    // release waiting thread
    sem_post( &dlctx->sem );
@@ -1100,6 +1071,21 @@ bool md_download_context_finalized( struct md_download_context* dlctx ) {
    return dlctx->finalized;
 }
 
+// is a download running?
+bool md_download_context_running( struct md_download_context* dlctx ) {
+   return dlctx->running;
+}
+
+// is a download pending?
+bool md_download_context_pending( struct md_download_context* dlctx ) {
+   return dlctx->pending;
+}
+
+// is a download cancelled?
+bool md_download_context_cancelled( struct md_download_context* dlctx ) {
+   return dlctx->cancelled;
+}
+
 // initialze a curl handle
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char const* url, time_t query_timeout ) {
    md_init_curl_handle2( curl_h, url, query_timeout, conf->verify_peer );
@@ -1109,7 +1095,11 @@ void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char con
 void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer ) {
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
    curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
-   curl_easy_setopt( curl_h, CURLOPT_URL, url );
+   
+   if( url != NULL ) {
+      curl_easy_setopt( curl_h, CURLOPT_URL, url );
+   }
+   
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_MAXREDIRS, 10L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
@@ -1132,42 +1122,41 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
 
 
 // download straight from an existing curl handle
-off_t md_download_file2( CURL* curl_h, char** buf, off_t max_len ) {
-   struct md_download_buf dlbuf;
-   dlbuf.len = 0;
+int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size ) {
    
-   if( max_len > 0 ) {
-      dbprintf("Download max %zd\n", max_len );
-      dlbuf.data = CALLOC_LIST( char, max_len );
-      dlbuf.data_len = max_len;
+   struct md_bound_response_buffer dlbuf;
+   memset( &dlbuf, 0, sizeof(struct md_bound_response_buffer) );
+   int rc = 0;
+   
+   rc = md_bound_response_buffer_init( &dlbuf, max_len );
+   if( rc != 0 ) {
+      return rc;
    }
-   else {
-      dlbuf.data = CALLOC_LIST( char, 1 );
-      dlbuf.data_len = -1;
-   }
-
-   if( dlbuf.data == NULL ) {
-      return -1;
-   }
-
+   
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, (void*)&dlbuf );
-   curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, md_default_get_callback_ram );
-   int rc = curl_easy_perform( curl_h );
+   curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, md_get_callback_bound_response_buffer );
+   
+   rc = curl_easy_perform( curl_h );
 
    if( rc != 0 ) {
       dbprintf("curl_easy_perform rc = %d\n", rc);
-      free( dlbuf.data );
-      dlbuf.data = NULL;
-      return -abs(rc);
+      
+      md_bound_response_buffer_free( &dlbuf );
+      
+      return rc;
    }
 
-   *buf = dlbuf.data;
-   return dlbuf.len;
+   *buf = response_buffer_to_string( dlbuf.rb );
+   *ret_size = response_buffer_size( dlbuf.rb );
+   
+   md_bound_response_buffer_free( &dlbuf );
+   
+   return 0;
 }
 
 // wrapper around md_download_file2
-off_t md_download_file( CURL* curl_h, char** buf ) {
-   return md_download_file2( curl_h, buf, -1 );
+int md_download_file( CURL* curl_h, char** buf, off_t* size ) {
+   return md_download_file2( curl_h, buf, -1, size );
 }
 
 
@@ -1503,6 +1492,496 @@ int md_download_manifest( struct md_syndicate_conf* conf,
       errorf("md_download_manifest_end(%s) rc = %d\n", manifest_url, rc );
       return rc;
    }
+   
+   return 0;
+}
+
+// default curl generator
+// download to RAM
+static CURL* md_download_default_curl_generator( void* ignored ) {
+   
+   CURL* curl = curl_easy_init();
+   
+   return curl;
+}
+
+// default curl release 
+static void md_download_default_curl_release( CURL* curl, void* ignored ) {
+   curl_easy_cleanup( curl );
+}
+
+// default post-processor 
+static int md_download_default_postprocess( struct md_download_context* dlctx, void* ignored ) {
+   return 0;
+}
+
+// fill in a download config with defaults 
+static int md_download_config_defaults( struct md_download_config* dlconf ) {
+   
+   if( dlconf->max_downloads <= 0 ) {
+      dlconf->max_downloads = MD_DOWNLOAD_DEFAULT_MAX_DOWNLOADS;
+   }
+   
+   if( dlconf->max_len <= 0 ) {
+      dlconf->max_len = -1;             // unlimited
+   }
+   
+   if( dlconf->curl_generator == NULL ) {
+      dlconf->curl_generator = md_download_default_curl_generator;
+      dlconf->curl_generator_cls = NULL;
+   }
+   
+   if( dlconf->curl_release == NULL ) {
+      dlconf->curl_release = md_download_default_curl_release;
+      dlconf->curl_release_cls = NULL;
+   }
+   
+   if( dlconf->postprocess_func == NULL ) {
+      dlconf->postprocess_func = md_download_default_postprocess;
+      dlconf->postprocess_func_cls = NULL;
+   }
+   
+   return 0;
+}
+
+// allocate downloads 
+static int md_download_context_alloc_all( struct md_download_context*** ret_downloads, int max_downloads ) {
+   
+   int rc = 0;
+   
+   // allocate downloads...
+   struct md_download_context** downloads = CALLOC_LIST( struct md_download_context*, max_downloads );
+   
+   if( downloads == NULL ) {
+      return -ENOMEM;
+   }
+   
+   for( int i = 0; i < max_downloads; i++ ) {
+      
+      struct md_download_context* dlctx = CALLOC_LIST( struct md_download_context, 1 );
+      if( dlctx == NULL ) {
+         rc = -ENOMEM;
+         break;
+      }
+      
+      downloads[i] = dlctx;
+   }
+   
+   if( rc != 0 ) {
+      
+      for( int i = 0; i < max_downloads; i++ ) {
+         
+         if( downloads[i] != NULL ) {
+            free( downloads[i] );
+            downloads[i] = NULL;
+         }
+      }
+      
+      free( downloads );
+      return rc;
+   }
+   
+   *ret_downloads = downloads;
+   
+   return 0;
+}
+   
+
+// cancel downloads 
+static int md_download_context_cancel_all( struct md_downloader* dl, struct md_download_context** downloads, int num_downloads, struct md_download_config* dlconf ) {
+   
+   int rc = 0;
+   
+   dbprintf("cancel %d downloads\n", num_downloads );
+   
+   for( int i = 0; i < num_downloads; i++ ) {
+      
+      if( !md_download_context_finalized( downloads[i] ) ) {
+         
+         rc = md_download_context_cancel( dl, downloads[i] );
+         if( rc != 0 ) {
+            
+            if( rc != -EINPROGRESS ) {
+               errorf("md_download_context_cancel(%p) rc = %d\n", downloads[i], rc );
+               break;
+            }
+            else {
+               rc = 0;
+            }
+         }
+         
+         if( dlconf->canceller_func != NULL ) {
+            // user-specific cancellation logic 
+            (*dlconf->canceller_func)( downloads[i], dlconf->canceller_func_cls );
+         }
+      }
+   }
+   
+   return rc;
+}
+
+// free up and deallocate downloads, including the given list.
+// if dlset is not NULL, then detach the downloads from it.
+static int md_download_context_free_all( struct md_download_set* dlset, struct md_download_context** downloads, int num_downloads, struct md_download_config* dlconf ) {
+   
+   int rc = 0;
+   
+   for( int i = 0; i < num_downloads; i++ ) {
+      
+      if( downloads[i] == NULL ) {
+         continue;
+      }
+      
+      if( dlset != NULL ) {
+         md_download_set_clear( dlset, downloads[i] );
+      }
+      else {
+         md_download_context_clear_set( downloads[i] );
+      }
+      
+      CURL* curl = NULL;
+      
+      rc = -EAGAIN;
+      while( rc == -EAGAIN ) {
+         rc = md_download_context_free( downloads[i], &curl );
+         if( rc != 0 ) {
+            
+            if( rc != -EAGAIN ) {
+               errorf("md_download_context_free(%p) rc = %d\n", downloads[i], rc );
+               return -i;
+            }
+            else {
+               sched_yield();
+            }
+         }
+      }
+      
+      (*dlconf->curl_release)( curl, dlconf->curl_release_cls );
+      
+      free( downloads[i] );
+      downloads[i] = NULL;
+   }
+   
+   free( downloads );
+   
+   return 0;
+}
+
+// initialize download contexts, using a function to generate curl handles
+static int md_download_context_init_all( struct md_download_context** downloads, int max_downloads, struct md_download_config* dlconf ) {
+   
+   int rc = 0;
+   
+   md_download_curl_generator_func curl_generator = dlconf->curl_generator;
+   void* curl_generator_cls = dlconf->curl_generator_cls;
+   
+   md_cache_connector_func cache_func           = dlconf->cache_func;
+   void* cache_func_cls                         = dlconf->cache_func_cls;
+   
+   off_t max_len                                = dlconf->max_len;
+   
+   // initialize downloads
+   for( int i = 0; i < max_downloads; i++ ) {
+      
+      // next CURL handle 
+      CURL* next_curl = (*curl_generator)( curl_generator_cls );
+      if( next_curl == NULL ) {
+         rc = -ENOTCONN;
+         break;
+      }
+      
+      rc = md_download_context_init( downloads[i], next_curl, cache_func, cache_func_cls, max_len );
+      if( rc != 0 ) {
+         errorf("md_download_context_init(%p) rc = %d\n", downloads[i], rc );
+         
+         curl_easy_cleanup( next_curl );
+         break;
+      }
+   }
+   
+   return rc;
+}
+
+// start downloads, tracking them with the given download set.
+// return the number started on success.
+// return negative on failure.
+static int md_download_context_start_all( struct md_downloader* dl, struct md_download_set* dlset, struct md_download_context** downloads, int max_downloads, struct md_download_config* dlconf ) {
+   
+   int num_running = 0;
+   int rc = 0;
+   
+   md_download_url_generator_func url_generator = dlconf->url_generator;
+   void* url_generator_cls                      = dlconf->url_generator_cls;
+   struct md_closure* cache_closure             = dlconf->cache_closure;
+   
+   // start up initial downloads 
+   for( int i = 0; i < max_downloads; i++ ) {
+      
+      char* next_url = NULL;
+      
+      if( url_generator != NULL ) {
+         
+         // next URL
+         next_url = (*url_generator)( downloads[i], url_generator_cls );
+         if( next_url == NULL ) {
+            // out of URLs 
+            break;
+         }
+      }
+      
+      // track this download 
+      md_download_set_add( dlset, downloads[i] );
+      
+      if( next_url != NULL ) {
+         // enable this URL 
+         curl_easy_setopt( downloads[i]->curl, CURLOPT_URL, next_url );
+      }
+      
+      // start this download 
+      rc = md_download_context_start( dl, downloads[i], cache_closure, next_url );
+      
+      if( rc != 0 ) {
+         errorf("md_download_context_start(%p, %s) rc = %d\n", downloads[i], next_url, rc );
+         
+         if( next_url != NULL ) {
+            free( next_url );
+         }
+         
+         break;
+      }
+      
+      // this one is running!
+      num_running++;
+      
+      downloads[i]->__downloader_url = next_url;
+   }
+   
+   if( rc == 0 ) {
+      
+      dbprintf("Started %d downloads\n", num_running);
+      return num_running;
+   }
+   else {
+      return rc;
+   }
+}
+
+// set up a download config 
+void md_download_config_init( struct md_download_config* dlconf ) {
+   
+   memset( dlconf, 0, sizeof(struct md_download_config) );
+   md_download_config_defaults( dlconf );
+}
+
+// set up a download config's URL generator
+void md_download_config_set_url_generator( struct md_download_config* dlconf, md_download_url_generator_func url_generator, void* url_generator_cls ) {
+   
+   dlconf->url_generator = url_generator;
+   dlconf->url_generator_cls = url_generator_cls;
+}
+
+// set up a download config's CURL generator 
+void md_download_config_set_curl_generator( struct md_download_config* dlconf, md_download_curl_generator_func curl_generator, void* curl_generator_cls ) {
+   
+   dlconf->curl_generator = curl_generator;
+   dlconf->curl_generator_cls = curl_generator_cls;
+}
+
+// set up a download config's cache connector 
+void md_download_config_set_cache_connector( struct md_download_config* dlconf, struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls ) {
+   
+   dlconf->cache_closure = cache_closure;
+   dlconf->cache_func = cache_func;
+   dlconf->cache_func_cls = cache_func_cls;
+}
+
+// set up a download config's download post-processor 
+void md_download_config_set_postprocessor( struct md_download_config* dlconf, md_download_postprocess_func postprocessor_func, void* postprocessor_func_cls ) {
+   
+   dlconf->postprocess_func = postprocessor_func;
+   dlconf->postprocess_func_cls = postprocessor_func_cls;
+}
+
+// set up a download config's download canceller 
+void md_download_config_set_canceller( struct md_download_config* dlconf, md_download_postprocess_func canceller_func, void* canceller_func_cls ) {
+   
+   dlconf->canceller_func = canceller_func;
+   dlconf->canceller_func_cls = canceller_func_cls;
+}
+
+// set flow control information 
+void md_download_config_set_limits( struct md_download_config* dlconf, int max_downloads, off_t max_len ) {
+   
+   dlconf->max_downloads = max_downloads;
+   dlconf->max_len = max_len;
+}
+
+// download a set of urls, in no particular order.
+// ensure that no more than max_downloads are running at a given time.
+int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, struct md_download_config* dlconf ) {
+   
+   int rc = 0;
+   struct md_download_set dlset;
+   struct md_download_context** downloads = NULL;
+   int num_running = 0;
+   int num_finalized = 0;
+   
+   // extract config values
+   int max_downloads = dlconf->max_downloads;
+   md_download_postprocess_func postprocess = dlconf->postprocess_func;
+   void* postprocess_cls = dlconf->postprocess_func_cls;
+   
+   // allocate downloads...
+   rc = md_download_context_alloc_all( &downloads, max_downloads );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   // initialize download contexts
+   rc = md_download_context_init_all( downloads, max_downloads, dlconf );
+   
+   // error? clean up 
+   if( rc != 0 ) {
+      md_download_context_free_all( NULL, downloads, max_downloads, dlconf );
+      return rc;
+   }
+   
+   // setup download set 
+   rc = md_download_set_init( &dlset );
+   if( rc != 0 ) {
+      errorf("md_download_set_init(%p) rc = %d\n", &dlset, rc );
+      
+      md_download_context_free_all( NULL, downloads, max_downloads, dlconf );
+      return rc;
+   }
+   
+   // start up initial downloads 
+   num_running = md_download_context_start_all( dl, &dlset, downloads, max_downloads, dlconf );
+   
+   // error? clean up 
+   if( num_running < 0 ) {
+      
+      errorf("md_download_context_start_all rc = %d\n", num_running );
+      
+      md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
+      md_download_context_free_all( &dlset, downloads, max_downloads, dlconf );
+      md_download_set_free( &dlset );
+      return num_running;
+   }
+   
+   // run the downloads!
+   while( num_running > 0 ) {
+      
+      // wait for some downloads to finish, but be resillent against deadlock
+      rc = md_download_context_wait_any( &dlset, 10000 );
+      if( rc != 0 && rc != -ETIMEDOUT ) {
+         
+         // failed
+         errorf("md_download_context_wait_any(%p) rc = %d\n", &dlset, rc );
+         break;
+      }
+   
+      else if( rc == -ETIMEDOUT ) {
+         
+         dbprintf("still waiting on download set %p\n", &dlset );
+         continue;
+      }
+      
+      // re-count up downloads
+      num_running = 0;
+      
+      for( int i = 0; i < max_downloads; i++ ) {
+         
+         if( downloads[i] == NULL ) {
+            continue;
+         }
+         
+         if( md_download_context_running( downloads[i] ) || md_download_context_pending( downloads[i] ) ) {
+            // NOTE: don't check finalization status, since a reset download is not finalized
+            num_running++;
+            continue;
+         }
+         
+         else if( md_download_context_finalized( downloads[i] ) ) {
+            // finalized!
+            num_finalized ++;
+            
+            // post-process
+            rc = (*postprocess)( downloads[i], postprocess_cls );
+            if( rc != 0 ) {
+               // abort 
+               errorf("post-processor(%p) rc = %d\n", downloads[i], rc );
+               break;
+            }
+            
+            // detach 
+            md_download_set_clear( &dlset, downloads[i] );
+            
+            // reset internal downloader state
+            md_download_context_reset( downloads[i], NULL );
+            
+            // start next download and reattach
+            rc = md_download_context_start_all( dl, &dlset, &downloads[i], 1, dlconf );
+            
+            if( rc >= 0 ) {
+               num_running += rc;
+               rc = 0;
+            }
+            else {
+               // error 
+               errorf("md_download_context_start_all(%p) rc = %d\n", downloads[i], rc );
+               break;
+            }
+         }
+      }
+      
+      if( rc != 0 ) {
+         // error 
+         break;
+      }
+      
+      dbprintf("Still running %d downloads\n", num_running);
+   }
+   
+   if( rc != 0 ) {
+      // cancel everything
+      md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
+   }
+   
+   // clean up
+   md_download_context_free_all( &dlset, downloads, max_downloads, dlconf );
+   md_download_set_free( &dlset );
+   
+   return rc;
+}
+
+
+// initialize a bound response buffer 
+// return 0 on success
+// return -ENOMEM if allocation failed 
+int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t max_size ) {
+   
+   memset( brb, 0, sizeof(struct md_bound_response_buffer) );
+   
+   brb->max_size = max_size;
+   brb->size = 0;
+   
+   brb->rb = new (nothrow) response_buffer_t();
+   if( brb == NULL ) {
+      return -ENOMEM;
+   }
+   
+   return 0;
+}
+
+int md_bound_response_buffer_free( struct md_bound_response_buffer* brb ) {
+   
+   if( brb->rb != NULL ) {
+      response_buffer_free( brb->rb );
+      delete brb->rb;
+   }
+   
+   memset( brb, 0, sizeof(struct md_bound_response_buffer) );
    
    return 0;
 }

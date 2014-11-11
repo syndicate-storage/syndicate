@@ -29,7 +29,7 @@ using namespace std;
 struct md_download_buf {
    off_t len;         // amount of data
    off_t data_len;    // size of data (if data was preallocated)
-   char* data;    // NOT null-terminated
+   char* data;        // NOT null-terminated
 };
 
 // bounded response buffer
@@ -64,9 +64,12 @@ struct md_download_context {
    
    bool pending;        // if true, then this download context is in the process of being started
    bool cancelling;     // if true, then this download context is in the process of being cancelled
+   bool running;        // if true, then this download is enqueued on the downloader
    bool finalized;      // if true, then this download has finished
    
    struct md_download_set* dlset;       // parent group containing this context
+   
+   char* __downloader_url;      // used internally by the md_download_all() suite of methods
 };
 
 typedef map<CURL*, struct md_download_context*> md_downloading_map_t;
@@ -102,6 +105,46 @@ struct md_downloader {
    
    bool running;        // if true, then this downloader is running
 };
+
+typedef char* (*md_download_url_generator_func)( struct md_download_context*, void* );
+typedef CURL* (*md_download_curl_generator_func)( void* );
+typedef void (*md_download_curl_release_func)( CURL*, void* );
+typedef int (*md_download_postprocess_func)( struct md_download_context*, void* );
+
+// mulit-download config 
+struct md_download_config {
+   
+   // generate URLs to download
+   md_download_url_generator_func url_generator;
+   void* url_generator_cls;
+   
+   // connect to the CDN 
+   struct md_closure* cache_closure;
+   md_cache_connector_func cache_func;
+   void* cache_func_cls;
+   
+   // get CURL handles
+   md_download_curl_generator_func curl_generator;
+   void* curl_generator_cls;
+   
+   // reclaim curl handles 
+   md_download_curl_release_func curl_release;
+   void* curl_release_cls;
+   
+   // post-process downloads
+   md_download_postprocess_func postprocess_func;
+   void* postprocess_func_cls;
+   
+   // cancel downloads 
+   md_download_postprocess_func canceller_func;
+   void* canceller_func_cls;
+   
+   // download control 
+   int max_downloads;
+   off_t max_len;
+};
+
+#define MD_DOWNLOAD_DEFAULT_MAX_DOWNLOADS       10
 
 extern "C" {
    
@@ -146,6 +189,9 @@ CURL* md_download_context_get_curl( struct md_download_context* dlctx );
 void* md_download_context_get_cache_cls( struct md_download_context* dlctx );
 bool md_download_context_succeeded( struct md_download_context* dlctx, int desired_HTTP_status );
 bool md_download_context_finalized( struct md_download_context* dlctx );
+bool md_download_context_running( struct md_download_context* dlctx );
+bool md_download_context_pending( struct md_download_context* dlctx );
+bool md_download_context_cancelled( struct md_download_context* dlctx );
 
 // low-level primitve for waiting on a semaphore (that tries again if interrupted)
 int md_download_sem_wait( sem_t* sem, int64_t timeout_ms );
@@ -172,7 +218,7 @@ int md_download_manifest_end( struct md_syndicate_conf* conf,
                               struct md_download_context* dlctx );
 
 // synchronously download
-off_t md_download_file( CURL* curl_h, char** buf );
+int md_download_file( CURL* curl_h, char** buf, off_t* size );
 int md_download( struct md_syndicate_conf* conf,
                  struct md_downloader* dl,
                  char const* base_url, off_t max_len,
@@ -191,8 +237,22 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
 
 // download/upload callbacks
 size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
-size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
 size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
+
+// high-level parallel download
+void md_download_config_init( struct md_download_config* dlconf );
+void md_download_config_set_url_generator( struct md_download_config* dlconf, md_download_url_generator_func url_generator, void* url_generator_cls );
+void md_download_config_set_curl_generator( struct md_download_config* dlconf, md_download_curl_generator_func curl_generator, void* curl_generator_cls );
+void md_download_config_set_cache_connector( struct md_download_config* dlconf, struct md_closure* closure, md_cache_connector_func cache_func, void* cache_func_cls );
+void md_download_config_set_postprocessor( struct md_download_config* dlconf, md_download_postprocess_func postprocessor_func, void* postprocessor_func_cls );
+void md_download_config_set_canceller( struct md_download_config* dlconf, md_download_postprocess_func canceller_func, void* canceller_func_cls );
+void md_download_config_set_limits( struct md_download_config* dlconf, int max_downloads, off_t max_len );
+
+int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, struct md_download_config* dlconf );
+
+// low-level misc 
+int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t max_size );
+int md_bound_response_buffer_free( struct md_bound_response_buffer* brb );
 
 }
 
