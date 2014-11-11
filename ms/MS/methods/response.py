@@ -25,22 +25,6 @@ from common.admin_info import *
 import logging
 import base64
 
-"""
-HTTP_MS_LASTMOD = "X-MS-LastMod"
-
-# ----------------------------------
-def get_client_lastmod( headers ):
-   Extract 
-   lastmod = headers.get( HTTP_MS_LASTMOD )
-   if lastmod == None:
-      return None
-
-   try:
-      lastmod_f = float( lastmod )
-      return lastmod_f
-   except:
-      return None
-"""
 
 # ----------------------------------
 def read_gateway_basic_auth( headers ):
