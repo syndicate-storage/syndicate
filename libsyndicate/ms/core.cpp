@@ -70,13 +70,23 @@ int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str ) {
 
 
 // set up secure CURL handle 
-int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url ) {
-   md_init_curl_handle( conf, curl, url, conf->connect_timeout);
+int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url ) {
+   
+   md_init_curl_handle( client->conf, curl, url, client->conf->connect_timeout);
    curl_easy_setopt( curl, CURLOPT_USE_SSL, 1L );
-   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, (client->conf->verify_peer ? 1L : 0L) );
    curl_easy_setopt( curl, CURLOPT_SSL_VERIFYHOST, 2L );
    curl_easy_setopt( curl, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( curl, CURLOPT_SSL_CIPHER_LIST, MS_CIPHER_SUITES );
+   
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
+   curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
+   curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
+   
+   curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
+   
+   
    return 0;
 }
 
@@ -363,7 +373,7 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
    // set up a cURL handle to the MS 
    // TODO: conection pool
    CURL* curl = curl_easy_init();
-   ms_client_init_curl_handle( client->conf, curl, url );
+   ms_client_init_curl_handle( client, curl, url );
    
    int rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
    if( rc != 0 ) {
@@ -375,7 +385,6 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
       return rc;
    }
    
-   curl_easy_setopt( curl, CURLOPT_URL, url );
    curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
    
    if( times != NULL ) {
@@ -383,13 +392,6 @@ int ms_client_download_begin( struct ms_client* client, char const* url, struct 
       curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
       curl_easy_setopt( curl, CURLOPT_WRITEHEADER, times );   
    }
-   
-   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
-   curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
-   curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
-   
-   curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
    
    if( opt_dlset != NULL ) {
       md_download_set_add( opt_dlset, dlctx );
@@ -525,7 +527,7 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
    // set up a cURL handle to the MS 
    // TODO: conection pool
    CURL* curl = curl_easy_init();
-   ms_client_init_curl_handle( client->conf, curl, url );
+   ms_client_init_curl_handle( client, curl, url );
    
    rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
    if( rc != 0 ) {
@@ -539,14 +541,6 @@ int ms_client_upload_begin( struct ms_client* client, char const* url, struct cu
    
    curl_easy_setopt( curl, CURLOPT_POST, 1L);
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, forms );
-   
-   curl_easy_setopt( curl, CURLOPT_URL, url );
-   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
-   curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
-   curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
-   
-   curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
    
    if( timing != NULL ) {
       curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
@@ -921,9 +915,11 @@ int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, 
    }
    
    char* tmp_response = NULL;
-   ssize_t tmp_response_len = md_download_file( curl, &tmp_response );
-   if( tmp_response_len < 0 ) {
-      errorf("md_download_file(%s) rc = %zd\n", ms_openid_url, tmp_response_len );
+   off_t tmp_response_len = 0;
+   
+   rc = md_download_file( curl, &tmp_response, &tmp_response_len );
+   if( rc < 0 ) {
+      errorf("md_download_file(%s) rc = %d\n", ms_openid_url, rc );
       rc = -ENODATA;
    }
    

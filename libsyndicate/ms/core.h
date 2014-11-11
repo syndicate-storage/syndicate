@@ -72,7 +72,7 @@ struct ms_client_network_context {
    struct ms_client_timing* timing;             // benchmark information 
    
    struct curl_httppost* forms;                 // HTTP forms (optional)
-   struct curl_slist* headers;                  // HTTP headers (optiona)
+   struct curl_slist* headers;                  // HTTP headers (optional)
    
    char* url;                                   // target URL
    
@@ -183,7 +183,7 @@ int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int 
 #define ms_client_view_unlock( fent ) ms_client_view_unlock2( fent, __FILE__, __LINE__ )
 
 // low-level network I/O
-int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url );
+int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url );
 
 int ms_client_download( struct ms_client* client, char const* url, char** buf, size_t* buflen );
 int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing );
