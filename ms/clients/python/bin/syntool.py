@@ -321,12 +321,12 @@ def setup_key_directories( config ):
    # validate key directories
    for key_type, key_dirname in conf.KEY_DIR_NAMES.items():
       key_dirname = conf.KEY_DIR_NAMES.get(key_type)
-      if key_dirname == None:
+      if key_dirname is None:
          # forgot to add an entry in KEY_DIR_NAMES for the given key type
          raise Exception("BUG: unknown key type %s" % key_type)
       
       key_dir = config.get(key_dirname, None)
-      if key_dir == None:
+      if key_dir is None:
          # forgot to set the path to this directory in the config
          raise Exception("BUG: unknown key directory %s" % key_dirname)
       
@@ -401,7 +401,7 @@ def load_options( argv, setup_methods=[], builtin_methods=[] ):
    config = {}
    method_name, args, kw = read_params( getattr(opts, 'params', [] ) )
    
-   if config_str == None:
+   if config_str is None:
       
       # possibly calling 'setup', so fill in empty information
       if method_name not in setup_methods:
@@ -425,7 +425,7 @@ def load_options( argv, setup_methods=[], builtin_methods=[] ):
       
    else:
       config = conf.load_config( config_file_path, config_str, opts )
-      if config == None:
+      if config is None:
          raise Exception("Failed to parse configuration from %s" % config_file_path)
    
    config['params'] = getattr( opts, 'params', [] )
@@ -510,7 +510,7 @@ def do_setup( config, all_params ):
    
    # check args...
    for required_key in ['syndicate_host', 'syndicate_port', 'user_id']:
-      if config.get(required_key, None) == None:
+      if config.get(required_key, None) is None:
          print >> sys.stderr, "Missing argument: %s" % required_key
          sys.exit(1)
    
@@ -691,7 +691,7 @@ def client_call( CONFIG, method_name, *args, **kw ):
    ret = call_method( CONFIG, client, method_name, args, kw ) 
    
    # failure? 
-   if ret == None:
+   if ret is None:
       raise Exception("No data returned from server")
    
    # process object-specific extra information
