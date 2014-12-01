@@ -1,0 +1,8 @@
+import os
+import sys
+
+lib = os.path.join(os.path.dirname(__file__), '../')
+sys.path.insert(0, lib)
+
+import google
+google.__path__.append(os.path.join(lib, 'google'))
