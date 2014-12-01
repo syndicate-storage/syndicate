@@ -24,7 +24,7 @@
 #include "replication.h"
 #include "syndicate.h"
 #include "server.h"
-#include "opts.h"
+#include "libsyndicate/opts.h"
 
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>

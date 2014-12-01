@@ -26,7 +26,7 @@
 #include "replication.h"
 #include "syndicate.h"
 #include "server.h"
-#include "opts.h"
+#include "libsyndicate/opts.h"
 
 #define FUSE_USE_VERSION 28
 

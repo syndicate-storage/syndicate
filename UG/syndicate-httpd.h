@@ -24,7 +24,7 @@
 #include "http-common.h"
 #include "fs_entry.h"
 #include "server.h"
-#include "opts.h"
+#include "libsyndicate/opts.h"
 
 #include <map>
 #include <sys/types.h>

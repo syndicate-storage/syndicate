@@ -377,6 +377,33 @@ static int ms_client_get_partial_results( ms::ms_reply* reply, struct ms_client_
    return 0;
 }
 
+// free a request and all of its data (assumed to be dynamically allocated) 
+int ms_client_request_free( struct ms_client_request* req ) { 
+    
+   if( req->ent != NULL ) { 
+       
+      md_entry_free( req->ent ); 
+      free( req->ent ); 
+      req->ent = NULL; 
+   } 
+    
+   if( req->dest != NULL ) { 
+    
+      md_entry_free( req->ent ); 
+      free( req->ent ); 
+      req->ent = NULL; 
+   } 
+    
+   if( req->affected_blocks != NULL ) { 
+       
+      free( req->affected_blocks ); 
+      req->affected_blocks = NULL; 
+   } 
+    
+   memset( req, 0, sizeof(struct ms_client_request) ); 
+    
+   return 0; 
+} 
 
 // free a multi-result 
 int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
