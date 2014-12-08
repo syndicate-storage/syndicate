@@ -34,9 +34,10 @@ struct filestat_cache {
 #define DIR_ENTRY_MODIFIED_FLAG_MODIFIED    1
 #define DIR_ENTRY_MODIFIED_FLAG_REMOVED     2
 
-typedef void (*PFN_DIR_ENTRY_MODIFIED_HANDLER)(int flag, std::string spath, struct filestat_cache *cache);
+typedef void (*PFN_DIR_ENTRY_MODIFIED_HANDLER)(int flag, const char *fpath, struct filestat_cache *cache);
 
 void init_monitor();
+void uninit_monitor();
 int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler);
 
 #endif	/* DIRECTORY_MONITOR_H */

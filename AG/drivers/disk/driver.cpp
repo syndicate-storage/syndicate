@@ -147,7 +147,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    uint64_t block_size = AG_driver_get_block_size();
    off_t block_offset = block_size * block_id;
    
-   int rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
+   off_t rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
    if( rc < 0 ) {
       rc = -errno;
       errorf("lseek errno = %d\n", rc );

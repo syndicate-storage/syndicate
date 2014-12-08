@@ -14,445 +14,283 @@
    limitations under the License.
 */
 
-#include <driver.h>
-#include <pthread.h>
+#include "driver.h"
+#include "directory_monitor.h"
+#include "timeout_event.h"
 
-// server config 
-extern struct md_syndicate_conf *global_conf;
- 
-// set of files we're exposing
-content_map DATA;
+#define DRIVER_QUERY_TYPE "diskpolling"
 
-// Metadata service client of the AG
-ms_client *mc = NULL;
-
-// Location of local files we're exposing 
-char *datapath = NULL;
-
-// Length of datapath varaiable
-size_t  datapath_len = 0;
-
-// publish_func exit code
-int pfunc_exit_code = 0;
-
-// Is false if the driver is not initialized
-bool initialized = false;
-
-// Disk driver's data_root
-char* data_root = NULL;
-
-// timeout pulse gen thread
-pthread_t timeout_pulse_gen_tid;
-
-
-// read dataset or manifest 
-extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
-
-   errorf("%s", "INFO: get_dataset\n"); 
-   ssize_t ret = 0;
-   struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)user_cls;
+// translate the requested path into an absolute path on disk, using our driver config 
+static char* get_request_abspath( char const* request_path ) {
    
-    if (ctx == NULL || dat->size == 0) {
-        dbprintf("ctx = %p, dat->size = %zu\n", ctx, dat->size );
-        return -1;
-    }
+   // where's our dataset root directory?
+   char* dataset_root = AG_driver_get_config_var( AG_CONFIG_DISK_DATASET_ROOT );
+   if( dataset_root == NULL ) {
+      errorf("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
+      return NULL;
+   }
    
-    dbprintf("request type %d\n", ctx->request_type );
-
-    cout << "get_dataset : dat size - " << dat->size << endl;
-
-    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
-        // read from disk
-        ssize_t nr = 0;
-        size_t num_read = 0;
-        while( num_read < len ) {
-            nr = read( ctx->fd, buf + num_read, len - num_read );
-            if( nr == 0 ) {
-                // EOF
-                break;
-            }
-            if( nr < 0 ) {
-                // error
-                int errsv = -errno;
-                errorf( "read(%d) errno = %d\n", ctx->fd, errsv );
-                ret = errsv;
-            }
-            num_read += nr;
-        }
-
-        if( ret == 0 )
-            ret = num_read;
-    } else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
-        cout << "get_dataset (manifest) : reading - " << MIN( len, ctx->data_len - ctx->data_offset ) << endl;
-        // read from RAM
-        size_t copy_len = MIN( len, ctx->data_len - ctx->data_offset );
-
-        dbprintf("memcpy from +%ld %zu bytes\n", ctx->data_offset, copy_len );
-        memcpy( buf, ctx->data + ctx->data_offset, copy_len );
-        ctx->data_offset += copy_len;
-        ret = (ssize_t)copy_len;
-    } else {
-        // invalid structure
-        ret = -EINVAL;
-    }
+   // path to the file 
+   char* dataset_path = md_fullpath( dataset_root, request_path, NULL );
+   free( dataset_root );
    
-    // ret can't be 0
-    if( ret == 0 )
-        ret = -1;
-
-    return ret;
+   return dataset_path;
 }
 
-// interpret an inbound GET request
-extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
+// translate an -errno into an HTTP status 
+// return 0 if supported 
+// return -1 if there wasn't a suitable HTTP status
+static int errno_to_HTTP_status( struct AG_connection_context* ag_ctx, int err ) {
 
-   errorf("%s", "INFO: connect_dataset\n");  
-   struct stat stat_buff;
-   struct AG_disk_polling_context* ctx = CALLOC_LIST( struct AG_disk_polling_context, 1 );
-
-    // is there metadata for this file?
-    cout << "connect_dataset : " << ag_ctx->reqdat.fs_path << endl;
+   // not found? give a 404 
+   if( err == -ENOENT ) {
+      AG_driver_set_HTTP_status( ag_ctx, 404 );
+      return 0;
+   }
+   // can't access? give a 403 
+   else if( err == -EACCES ) {
+      AG_driver_set_HTTP_status( ag_ctx, 403 );
+      return 0;
+   }
+   // out of memory?
+   else if( err == -ENOMEM ) {
+      AG_driver_set_HTTP_status( ag_ctx, 503 );
+      return 0;
+   }
+   // bad FD?
+   else if( err == -EBADF ) {
+      AG_driver_set_HTTP_status( ag_ctx, 500 );
+      return 0;
+   }
    
-    content_map::iterator itr = DATA.find( string(ag_ctx->reqdat.fs_path) );
-    if( itr == DATA.end() ) {
-        // no entry; nothing to do
-        ag_ctx->err = -404;
-        ag_ctx->http_status = 404;
-        errorf("Cannot find entry : %s\n", ag_ctx->reqdat.fs_path);
-        return NULL;
-    }
+   return -1;
+}
+
+// initialize the driver 
+int driver_init( void** driver_state ) {
+   dbprintf("%s driver init\n", DRIVER_QUERY_TYPE );
+   init_timeout();
+   init_monitor();
+
+   // where's our dataset root directory?
+   char* dataset_root = AG_driver_get_config_var( AG_CONFIG_DISK_DATASET_ROOT );
+   if( dataset_root == NULL ) {
+      errorf("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
+      return -1;
+   }
+
+   if (check_modified(dataset_root, entry_modified_handler) < 0) {
+      errorf("check_modified error: '%s'\n", dataset_root);
+      free(dataset_root);
+      return -1;        
+   }
+
+   free(dataset_root);
+
+   if (set_timeout_event(AG_DISKPOLLING_DRIVER_EVENT_ID, REFRESH_ENTRIES_TIMEOUT, timeout_handler) < 0) {
+      errorf("%s", "set_timeout_event error\n");
+      return -1;
+   }
+
+   return 0;
+}
+
+// shut down the driver 
+int driver_shutdown( void* driver_state ) {
+   dbprintf("%s driver shutdown\n", DRIVER_QUERY_TYPE );
+   uninit_timeout();
+   uninit_monitor();
+   return 0;
+}
+
+// set up an incoming connection.
+// try to open the file.
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    
-    struct md_entry* ent = itr->second;
-
-    // is this a request for a manifest?
-    if( AG_IS_MANIFEST_REQUEST( *ag_ctx ) ) {
-        // request for a manifest
-        int rc = generate_manifest( ag_ctx, ctx, ent );
-        if( rc != 0 ) {
-            // failed
-            errorf( "generate_manifest rc = %d\n", rc );
-
-            // meaningful error code
-            if( rc == -ENOENT )
-                ag_ctx->err = -404;
-            else if( rc == -EACCES )
-                ag_ctx->err = -403;
-            else
-                ag_ctx->err = -500;
-
-            free( ctx );
-
-            return NULL;
-        }
-
-        ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
-        ctx->data_offset = 0;
-        ctx->block_id = 0;
-        ctx->num_read = 0;
-        ag_ctx->size = ctx->data_len;
-
-        dbprintf("manifest size: %zu, blocksize: %zu\n", ag_ctx->size, global_conf->ag_block_size );
-    } else {
-        if ( !datapath) {
-            errorf( "Driver datapath = %s\n", datapath );
-            return NULL;
-        }
-
-        int rc = 0;
+   dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
+   
+   char* request_path = AG_driver_get_request_path( ag_ctx );
+   
+   // get the absolute path 
+   char* dataset_path = get_request_abspath( request_path );
+   
+   if( dataset_path == NULL ) {
+      errorf("Could not translate %s to absolute path\n", request_path );
       
-        // request for local file
-        char* fp = md_fullpath( datapath, ag_ctx->reqdat.fs_path, NULL );
-        ctx->fd = open( fp, O_RDONLY );
-        if( ctx->fd < 0 ) {
-            rc = -errno;
-            errorf( "open(%s) errno = %d\n", fp, rc );
-            free( fp );
-            free( ctx );
-            ag_ctx->err = -404;
-            ag_ctx->http_status = 404;
-            return NULL;
-        } else {
-            // Set blocking factor for this volume from ag_ctx
-            ctx->blocking_factor = global_conf->ag_block_size;
-            if ((rc = stat(fp, &stat_buff)) < 0) {
-                errorf( "stat errno = %d\n", rc );
-                perror("stat");
-                free( fp );
-                free( ctx );
-                ag_ctx->err = -404;
-                ag_ctx->http_status = 404;
-                return NULL;
-            }
-            free( fp );
-            if ((size_t)stat_buff.st_size < ctx->blocking_factor * ag_ctx->reqdat.block_id) {
-                free( ctx );
-                ag_ctx->size = 0;
-                return NULL;
-            } else if ((stat_buff.st_size - (ctx->blocking_factor * ag_ctx->reqdat.block_id))
-                        <= (size_t)ctx->blocking_factor) {
-                ag_ctx->size = stat_buff.st_size - (ctx->blocking_factor * ag_ctx->reqdat.block_id);
-            } else {
-                ag_ctx->size = ctx->blocking_factor;
-            }
-            // set up for reading
-            off_t offset = ctx->blocking_factor * ag_ctx->reqdat.block_id;
-            // lseek will return off_t type. Can't reuse rc.
-            off_t seekrc = lseek( ctx->fd, offset, SEEK_SET );
-            if( seekrc < 0 ) {
-                rc = -errno;
-                errorf( "lseek errno = %d\n", rc );
-                free( ctx );
-                ag_ctx->err = -404;
-                ag_ctx->http_status = 404;
-                return NULL;
-            }
-        }
-        ctx->num_read = 0;
-        ctx->block_id = ag_ctx->reqdat.block_id;
-        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-        ctx->blocking_factor = global_conf->ag_block_size;
-    }
+      free( request_path );
+      return -EINVAL;
+   }
+   
+   free( request_path );
+   
+   // open the file 
+   int fd = open( dataset_path, O_RDONLY );
+   if( fd < 0 ) {
+      fd = -errno;
+      errorf("Failed to open %s, errno = %d\n", dataset_path, fd );
+      
+      free( dataset_path );
+      return fd;
+   }
+   
+   free( dataset_path );
+   
+   // got it!
+   // set up a connection context 
+   struct AG_disk_polling_context* disk_ctx = CALLOC_LIST( struct AG_disk_polling_context, 1 );
+   
+   disk_ctx->fd = fd;
+   
+   *driver_connection_state = disk_ctx;
 
-    return ctx;
+   if( dataset_modified() ) {
+       handle_dataset_modified();
+   }
+
+   return 0;
 }
 
+// clean up a handled connection for a block 
+int close_dataset_block( void* driver_connection_state ) {
+   
+   dbprintf("%s close dataset block\n", DRIVER_QUERY_TYPE );
+   
+   
+   struct AG_disk_polling_context* disk_ctx = (struct AG_disk_polling_context*)driver_connection_state;
+   
+   if( disk_ctx != NULL ) {
+      close( disk_ctx->fd );
+      free( disk_ctx );
+   }
+   
+   return 0;
+}
 
-// clean up a transfer 
-extern "C" void cleanup_dataset( void* cls ) {
+// get information for creating and sending a block.
+// return the number of bytes read
+ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state ) {
    
-   dbprintf("%s", "INFO: cleanup_dataset\n"); 
-   struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)cls;
-   if (ctx) {
-      if( ctx->fd >= 0 ) {
-         close( ctx->fd );
-      }
-      if( ctx->data ) {
-        free( ctx->data );
-      }
-      ctx->data = NULL;
+   dbprintf("%s get dataset block %" PRIu64 "\n", DRIVER_QUERY_TYPE, block_id );
    
-      free( ctx );
+   struct AG_disk_polling_context* disk_ctx = (struct AG_disk_polling_context*)driver_connection_state;
+   
+   // seek to the appropriate offset 
+   uint64_t block_size = AG_driver_get_block_size();
+   off_t block_offset = block_size * block_id;
+   
+   off_t rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
+   if( rc < 0 ) {
+      rc = -errno;
+      errorf("lseek errno = %d\n", rc );
+      
+      errno_to_HTTP_status( ag_ctx, rc );
+      
+      return rc;
+   }
+   
+   // read in the buffer 
+   ssize_t num_read = md_read_uninterrupted( disk_ctx->fd, block_buf, buf_len );
+   if( num_read < 0 ) {
+      
+      errorf("md_read_uninterrupted rc = %zd\n", num_read );
+      errno_to_HTTP_status( ag_ctx, num_read );
+   }
+
+   if( dataset_modified() ) {
+       handle_dataset_modified();
+   }
+   
+   return num_read;
+}
+
+// get information for publishing a particular file to the MS 
+int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
+   
+   dbprintf("%s stat dataset %s\n", DRIVER_QUERY_TYPE, path );
+   
+   // get the absolute path 
+   char* dataset_path = get_request_abspath( path );
+   
+   if( dataset_path == NULL ) {
+      errorf("%s", "Could not translate request to absolute path\n" );
+      return -EINVAL;
+   }
+   
+   struct stat sb;
+   int rc = 0;
+   
+   // stat the path 
+   rc = stat( dataset_path, &sb );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("stat(%s) errno = %d\n", dataset_path, rc);
+      free( dataset_path );
+      return rc;
+   }
+   
+   free( dataset_path );
+   
+   // fill in the publish info
+   pub_info->size = sb.st_size;
+   pub_info->mtime_sec = sb.st_mtime;
+   pub_info->mtime_nsec = 0;
+
+   if( dataset_modified() ) {
+       handle_dataset_modified();
+   }
+
+   return 0;
+}
+
+// handle a driver-specfic event.
+// there are none for this driver.
+int handle_event( char* event_payload, size_t event_payload_len, void* driver_state ) {
+   return 0;
+}
+
+// what kind of query type does this driver support?
+char* get_query_type(void) {
+   return strdup(DRIVER_QUERY_TYPE);
+}
+
+void timeout_handler(struct timeout_event* event) {
+    cout << "waiting is over - start disk check" << endl;
+
+   // where's our dataset root directory?
+   char* dataset_root = AG_driver_get_config_var( AG_CONFIG_DISK_DATASET_ROOT );
+   if( dataset_root == NULL ) {
+      errorf("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
+      return;
+   }
+
+   check_modified(dataset_root, entry_modified_handler);
+   
+   free(dataset_root);
+
+   int rc = set_timeout_event(event->id, event->timeout, event->handler);
+   if(rc < 0) {
+      errorf("set timeout event error : %d", rc);
+      return;
    }
 }
 
-extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
-    char* dataset ) {
-    if (!initialized)
-        init();
-    
-    dbprintf("publish %s\n", dataset );
-    mc = client;
-    datapath = dataset;
-    datapath_len = strlen(datapath); 
-    if ( datapath[datapath_len - 1] == '/')
-        datapath_len--;
-
-    if (check_modified(datapath, entry_modified_handler) < 0) {
-        errorf("%s", "check_modified failed\n");
-        return pfunc_exit_code;        
-    }
-
-    dbprintf("set timeout schedule - %dseconds\n", REFRESH_ENTRIES_TIMEOUT);
-    if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, timeout_handler) < 0) {
-        errorf("%s", "set_timeout_event error\n");
-        return pfunc_exit_code;
-    }
-
-    //int flags = FTW_PHYS;
-    //if (nftw(dataset, publish_to_volumes, 20, flags) == -1) {
-    //    return pfunc_exit_code;
-    //}
-    return 0;
+//TODO: implement dataset republish to MS 
+bool dataset_modified() {
+   return false;
 }
 
-
-static int publish_to_volumes(const char *fpath, const struct stat *sb,
-    int tflag, struct FTW *ftwbuf, int mflag) {
-   
-    uint64_t volume_id = ms_client_get_volume_id(mc);
-    publish(fpath, sb, tflag, ftwbuf, volume_id, mflag);
-   
-    return 0;
+int handle_dataset_modified() {
+   return 0;
 }
 
-static int publish(const char *fpath, const struct stat *sb,
-    int tflag, struct FTW *ftwbuf, uint64_t volume_id, int mflag)
-{
-    int i = 0;
-    struct md_entry* ment = new struct md_entry;
-    memset( ment, 0, sizeof(struct md_entry) );
-    
-    size_t len = strlen(fpath);
-    if ( len < datapath_len ) { 
-        pfunc_exit_code = -EINVAL;
-        return -EINVAL;
-    }
-    if ( len == datapath_len ) {
-        pfunc_exit_code = 0;
-        return 0;
-    }
-    
-    //Set volume path
-    size_t path_len = ( len - datapath_len ) + 1; 
-    char* path = (char*)malloc( path_len );
-    memset( path, 0, path_len );
-    strncpy( path, fpath + datapath_len, path_len );
+void entry_modified_handler(int flag, const char* fpath, struct filestat_cache* pcache) {
+   printf("found changes: %s\n", fpath);
 
-    cout << "publish file entry : " << path << endl;
+   //publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL, flag);
+   //if( file was added ):
+   //  call AG_driver_request_publish (NOT YET IMPLEMENTED--I'm working on this)
+   //if( file was deleted ):
+   //  call AG_driver_request_delete (NOT YET IMPLEMENTED--I'm working on this)
 
-    char* parent_name_tmp = md_dirname( path, NULL );
-    ment->parent_name = md_basename( parent_name_tmp, NULL );
-    free( parent_name_tmp );
-
-    uint64_t parent_id = 0;
-    if(strcmp(ment->parent_name, "/") == 0) {
-        // root
-        parent_id = 0;    
-    } else {
-        char* parent_full_path = md_dirname( path, NULL );
-        
-        content_map::iterator itr = DATA.find( string(parent_full_path) );
-        free(parent_full_path);
-        
-        if( itr == DATA.end() ) {
-            errorf("cannot find parent entry : %s\n", ment->parent_name);
-            pfunc_exit_code = -EINVAL;
-            return -EINVAL;
-        }
-        
-        
-        struct md_entry* ment_parent = itr->second;
-        cout << "found parent entry : " << ment->parent_name << " -> " << ment_parent->name << endl;
-        
-        parent_id = ment_parent->file_id;
-    }
-    
-    ment->name = md_basename( path, NULL );
-    ment->parent_id = parent_id;    
-    
-    ment->coordinator = mc->gateway_id;
-    ment->owner = mc->owner_id;
-    
-    ment->ctime_sec = sb->st_ctime;
-    ment->ctime_nsec = 0;
-    ment->mtime_sec = sb->st_mtime;
-    ment->mtime_nsec = 0;
-    ment->mode = sb->st_mode;
-    ment->version = 1;
-    ment->max_read_freshness = 360000;
-    ment->max_write_freshness = 1;
-    ment->volume = volume_id;
-    ment->size = sb->st_size;
-
-    cout << "publish file entry (parent) : " << ment->parent_name << endl;
-    cout << "publish file entry (parent id) : " << ment->parent_id << endl;
-    cout << "publish file entry : " << ment->name << endl;
-
-    //TODO: When AG is restarted, DIR_ENTRY_MODIFIED_FLAG_NEW events will be raised.
-    // In this case, ms_client_mkdir/ms_client_create call will be failed.
-    // We need to check presence of files and get file id if exists.
-    // or create a new entry.
-    switch (tflag) {
-    case FTW_D:
-        ment->type = MD_ENTRY_DIR;
-        if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
-            uint64_t new_file_id = 0;
-            if ( (i = ms_client_mkdir(mc, &new_file_id, ment)) < 0 ) {
-                cout<<"ms client mkdir "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            } else {
-                ment->file_id = new_file_id;
-            }
-        } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
-            if ( (i = ms_client_update(mc, ment)) < 0 ) {
-                cout<<"ms client update "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            }
-        } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
-            if ( (i = ms_client_delete(mc, ment)) < 0 ) {
-                cout<<"ms client delete "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            }
-        }
-        break;
-    case FTW_F:
-        ment->type = MD_ENTRY_FILE;
-        if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
-            uint64_t new_file_id = 0;
-            if ( (i = ms_client_create(mc, &new_file_id, ment)) < 0 ) {
-                cout<<"ms client create "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            } else {
-                ment->file_id = new_file_id;
-            }
-        } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
-            if ( (i = ms_client_update(mc, ment)) < 0 ) {
-                cout<<"ms client update "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            }
-        } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
-            if ( (i = ms_client_delete(mc, ment)) < 0 ) {
-                cout<<"ms client delete "<<i<<endl;
-                pfunc_exit_code = -EINVAL;
-                return -EINVAL;
-            }
-        }
-        break;
-    case FTW_SL:
-        break;
-    case FTW_DP:
-        break;
-    case FTW_DNR:
-        break;
-    default:
-        break;
-    }
-    dbprintf("DATA[ '%s' ] = %p\n", path, ment);
-    DATA[ string(path) ] = ment;
-    //delete ment;
-    pfunc_exit_code = 0;
-    return 0;  
-}
-
-extern "C" int controller(pid_t pid, int ctrl_flag) {
-    return controller_signal_handler(pid, ctrl_flag);
-}
-
-void init() {
-    if (!initialized)
-        initialized = true;
-    else
-        return;
-
-    init_timeout();
-    init_monitor();
-
-    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
-    driver_event_start();
-}
-
-void timeout_handler(int sig_no, struct timeout_event* event) {
-    cout << "waiting is over - start disk check" << endl;
-    check_modified(datapath, entry_modified_handler);
-    
-    int rc = set_timeout_event(event->timeout, event->handler);
-    if(rc < 0) {
-        errorf("set timeout event error : %d", rc);
-    }
-}
-
-void entry_modified_handler(int flag, string spath, struct filestat_cache *pcache) {
-    cout << "found changes : " << spath << endl;
-    publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL, flag);
-}
-
-void* term_handler(void *cls) {
-    //Nothing to do here.
-    exit(0);
 }
 

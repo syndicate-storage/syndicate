@@ -29,7 +29,7 @@ source_files = """
 CPPPATH = """
    #build/out/lib/libsyndicate/
    #build/out/protobufs
-   #build/out/bin/AG/
+   #build/out/bin/AG
 """
 
 # add library paths here

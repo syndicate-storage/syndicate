@@ -19,25 +19,20 @@
 
 #include <unistd.h>
 
-#define THREAD_MODE
-//#define SIGNAL_MODE
-
-
-typedef void (*PFN_TIMEOUT_EVENT_HANDLER)(int sig_no);
 struct timeout_event;
-typedef void (*PFN_TIMEOUT_USER_EVENT_HANDLER)(int sig_no, struct timeout_event* event);
-
-void init_timeout();
-int set_timeout_event(int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler);
+typedef void (*PFN_TIMEOUT_USER_EVENT_HANDLER)(struct timeout_event* event);
 
 struct timeout_event {
-    // old signal handler backup
-    void (*timeout_handler_backup)(int);
+    int id;
     int timeout;
     PFN_TIMEOUT_USER_EVENT_HANDLER handler;
-    bool running;
+    pthread_t thread;
 };
 
+void init_timeout();
+void uninit_timeout();
+
+int set_timeout_event(int id, int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler);
 
 #endif	/* TIMEOUT_EVENT_H */
 

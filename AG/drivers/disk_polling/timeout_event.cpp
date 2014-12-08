@@ -14,94 +14,101 @@
    limitations under the License.
 */
 
+#include <map>
 #include <string.h>
 #include <stdio.h>
-#include "timeout_event.h"
-
-// use linux signal 
-#ifdef SIGNAL_MODE
-#include <signal.h>
-#endif
-
-// use pthread
-#ifdef THREAD_MODE
+#include <stdlib.h>
 #include <pthread.h>
-#endif
+#include "timeout_event.h"
 
 using namespace std;
 
-static struct timeout_event g_current_timeout_event;
+/****************************************
+ * Global Variables
+ ****************************************/
+static map<int, struct timeout_event*> timeout_events_map;
 
-#ifdef THREAD_MODE
-static pthread_t g_timeout_event_generator;
-#endif
-
-#ifdef SIGNAL_MODE
-static void handle_timeout_event(int sig_no);
-#endif
-
-#ifdef THREAD_MODE
+/****************************************
+ * Private Functions
+ ****************************************/
 static void* handle_timeout_event_generator_thread(void* param);
-#endif
+static void _clear_timeout_events();
 
+/****************************************
+ * Implementations of Public Functions
+ ****************************************/
 void init_timeout() {
-    memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
+    _clear_timeout_events();
 }
 
-int set_timeout_event(int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler) {
-    if(g_current_timeout_event.running) {
-        // error! already timer is running
-        return -1;
+void uninit_timeout() {
+    _clear_timeout_events();
+}
+
+int set_timeout_event(int id, int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler) {
+    bool bFound = false;
+
+    std::map<int, struct timeout_event*>::iterator found = timeout_events_map.find(id);
+    if(found != timeout_events_map.end()) {
+        if(found->second != NULL) {
+            bFound = true;
+        }
     }
-    
-#ifdef SIGNAL_MODE
-    g_current_timeout_event.timeout_handler_backup = signal(SIGALRM, handle_timeout_event);
-    if(g_current_timeout_event.timeout_handler_backup == SIG_ERR) {
-        return -1;
+
+    if(!bFound) {
+        // not found
+        struct timeout_event* event = (struct timeout_event*)malloc(sizeof(struct timeout_event));
+        memset(event, 0, sizeof(struct timeout_event));
+
+        event->id = id;
+        event->timeout = timeout;
+        event->handler = handler;
+        
+        pthread_create(&(event->thread), NULL, &handle_timeout_event_generator_thread, event);
+        
+        timeout_events_map[id] = event;
+        return 0;
     }
-#endif
-    
-    g_current_timeout_event.timeout = timeout;
-    g_current_timeout_event.handler = handler;
-    g_current_timeout_event.running = true;
-    
-#ifdef SIGNAL_MODE
-    alarm(timeout);
-#endif
-    
-#ifdef THREAD_MODE
-    printf("creating timeout thread\n");
-    pthread_create(&g_timeout_event_generator, NULL, &handle_timeout_event_generator_thread, &g_current_timeout_event);
-#endif
 
-    return 0;
+    return -1;
 }
 
-#ifdef SIGNAL_MODE
-static void handle_timeout_event(int sig_no) {
-    alarm(0);
-    struct timeout_event event_backup = g_current_timeout_event;
-    
-    // restore signal handler
-    signal(SIGALRM, g_current_timeout_event.timeout_handler_backup);
-    memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
-    
-    (*event_backup.handler)(sig_no, &event_backup);
-}
-#endif
-
-#ifdef THREAD_MODE
 static void* handle_timeout_event_generator_thread(void* param) {
     printf("timeout thread started\n");
-    struct timeout_event event_backup;
-    memcpy(&event_backup, (struct timeout_event*)param, sizeof(struct timeout_event));
-    sleep(event_backup.timeout);
+
+    struct timeout_event* event = (struct timeout_event*)param;
+    sleep(event->timeout);
     
     // waiting...
     printf("timeout thread woke up\n");
-    memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
-    (*event_backup.handler)(0, &event_backup);
+    
+    // remove from map
+    timeout_events_map[event->id] = NULL;
 
-    pthread_exit(NULL);
+    // detach
+    pthread_detach(pthread_self());
+
+    // func call
+    if(event->handler != NULL) {
+        (*(event->handler))(event);
+    }
+
+    // free structure
+    free(event);
+    
+    return NULL;
 }
-#endif
+
+/****************************************
+ * Implementations of Private Functions
+ ****************************************/
+static void _clear_timeout_events() {
+    std::map<int, struct timeout_event*>::iterator iter;
+    for(iter=timeout_events_map.begin();iter!=timeout_events_map.end();iter++) {
+        // free all
+        if(iter->second != NULL) {
+            pthread_cancel(iter->second->thread);
+        }
+    }
+    timeout_events_map.clear();
+}

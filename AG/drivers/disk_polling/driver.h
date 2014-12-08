@@ -14,62 +14,55 @@
    limitations under the License.
 */
 
-#ifndef _DISK_DRIVER_H_
-#define _DISK_DRIVER_H_
+#ifndef _AG_DISK_POLLING_DRIVER_H_
+#define _AG_DISK_POLLING_DRIVER_H_
 
 #include <map>
 #include <string>
 #include <sstream>
 
 #include <sys/types.h>
-#include <dirent.h>
 #include <errno.h>
-#include <ftw.h>
 
-#include <AG-core.h>
-#include <ms-client.h>
-#include <libsyndicate.h>
-#include <AG-util.h>
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/closure.h"
+#include "AG/driver.h"
 
-#include "directory_monitor.h"
-#include "timeout_event.h"
+#define AG_CONFIG_DISK_DATASET_ROOT "dataset_root"
+#define REFRESH_ENTRIES_TIMEOUT	60
+#define AG_DISKPOLLING_DRIVER_EVENT_ID 10
 
 using namespace std;
 
-#define REFRESH_ENTRIES_TIMEOUT	10
-
-
-#define GATEWAY_REQUEST_TYPE_NONE 0
-#define GATEWAY_REQUEST_TYPE_LOCAL_FILE 1
-#define GATEWAY_REQUEST_TYPE_MANIFEST 2
-
+// connection context for reading from disk
 struct AG_disk_polling_context {
-   int request_type;
-
-   // data buffer (manifest or remote block data)
-   char* data;
-   size_t data_len;
-   size_t data_offset;
-   off_t num_read;
-
-   // file block info
-   uint64_t block_id;
-
    // input descriptor
    int fd;
-   // blocking factor
-   ssize_t blocking_factor;
 };
 
-typedef map<string, struct md_entry*> content_map;
-static int publish_to_volumes(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf, int mflag); 
-static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf, uint64_t volume_id, int mflag);
-void init();
-void* term_handler(void *cls);
-void timeout_handler(int sig_no, struct timeout_event* event);
-void entry_modified_handler(int flag, string spath, struct filestat_cache *cache);
+extern "C" {
 
-#endif //_DISK_DRIVER_H_
+int driver_init( void** driver_state );
+int driver_shutdown( void* driver_state );
+
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state );
+
+int close_dataset_block( void* driver_connection_state );
+
+ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state );
+
+int stat_dataset( char const* path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state );
+
+int handle_event( char* event_payload, size_t event_payload_len, void* driver_state );
+
+char* get_query_type(void);
+
+bool dataset_modified();
+int handle_dataset_modified();
+void timeout_handler(struct timeout_event* event);
+void entry_modified_handler(int flag, const char* fpath, struct filestat_cache* pcache);
+
+}
+
+#endif //_AG_DISK_POLLING_DRIVER_H_
 
