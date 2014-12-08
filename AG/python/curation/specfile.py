@@ -222,11 +222,13 @@ def add_hierarchy_element( abs_path, is_directory, driver_name, include_cb, spec
    return True
 
 
-# generate a list of prefixes for a path 
+# generate a list of prefixes for a path
+# root has no prefixes
 def generate_prefixes( path ):
 
    prefixes = []
-   names = path.strip("/").split("/")
+   names = filter( lambda x: len(x) > 0, path.strip("/").split("/") )
+   
    p = "/"
    
    prefixes.append(p)
@@ -246,7 +248,7 @@ def add_hierarchy_prefixes( root_dir, driver_name, include_cb, specfile_cbs, hie
    added = []
    
    # build up the path to the root directory, if we need to 
-   if len(root_dir.strip("/")) > 0:
+   if root_dir == "/" or len(root_dir.strip("/")) > 0:
       
       prefixes = generate_prefixes(root_dir)
       prefixes.sort()
