@@ -206,10 +206,8 @@ def walk_dataset( context_list, root_dir, callbacks, max_retries ):
       
       i += 1
    
-   running[0].next_dir( root_dir )
+   dir_queue.append( root_dir )
    
-   num_running = lambda: len( filter( lambda th: th.is_working(), running ) )
-
    while True:
       
       time.sleep(1)
