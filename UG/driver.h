@@ -17,7 +17,7 @@
 #ifndef _DRIVER_H_
 #define _DRIVER_H_
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "fs_entry.h"
 
 #include <dlfcn.h>
