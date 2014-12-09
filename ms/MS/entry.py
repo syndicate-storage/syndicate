@@ -1345,33 +1345,50 @@ class MSEntry( storagetypes.Object ):
       child_ent = None
       nameholder = None
       parent_fut = None
+      child_fut = None
       parent_key_name = MSEntry.make_key_name( volume_id, parent_id )
+      child_key_name = MSEntry.make_key_name( volume_id, child_id );
       nameholder_key_name = MSEntryNameHolder.make_key_name( volume_id, parent_id, ent_attrs['name'] )
       nameholder_key = storagetypes.make_key( MSEntryNameHolder, nameholder_key_name )
       futs = []
 
       parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
+      child_cache_key_name = MSEntry.cache_key_name( volume_id, child_id );
 
       try:
          parent_ent = storagetypes.memcache.get( parent_cache_key_name )
-
+         child_ent = storagetypes.memcache.get( child_cache_key_name )
+         
+         # try to get the child--it shouldn't exist 
+         if child_ent is not None:
+            return (-errno.EEXIST, None)
+         else:
+            child_fut = MSEntry.Read( volume, child_id, futs_only=True )
+            futs.append( MSEntry.FlattenFuture( child_fut ) )
+            
          if parent_ent is None:
             parent_fut = MSEntry.Read( volume, parent_id, futs_only=True )
             futs.append( MSEntry.FlattenFuture( parent_fut ) )
-         
+            
          # do some preprocessing on the ent attributes...
          MSEntry.preprocess_attrs( ent_attrs )
          
-         # try to add a nameholder (should create a new one )
+         # try to add a nameholder (should create a new one)
          nameholder_fut = MSEntryNameHolder.create_async( volume_id, parent_id, child_id, ent_attrs['name'] )
          futs.append( nameholder_fut )
          
          storagetypes.wait_futures( futs )
          
          # get futures...
+         if child_fut is not None:
+            child_ent = MSEntry.FromFuture( child_fut )
+            
+            if child_ent is not None:
+               return (-errno.EEXIST, None)
+               
          if parent_ent is None:
             parent_ent = MSEntry.FromFuture( parent_fut )
-            
+         
          nameholder = nameholder_fut.get_result()
       
       except storagetypes.RequestDeadlineExceededError:
@@ -2198,8 +2215,7 @@ class MSEntry( storagetypes.Object ):
          
          # set index fields 
          if msentry.ftype == MSENTRY_TYPE_DIR:
-            num_children_counter = yield MSEntryIndex.GetNumChildren( volume_id, file_id, async=True )
-            msentry.num_children = num_children_counter.value
+            msentry.num_children = yield MSEntryIndex.GetNumChildren( volume_id, file_id, async=True )
             
          else:
             msentry.num_children = 0
@@ -2446,7 +2462,7 @@ class MSEntry( storagetypes.Object ):
                ent.num_children = 0
             
             else:
-               ent.num_children = num_children_counter.value
+               ent.num_children = num_children_counter
             
          # logging.info("FromFuture: %s\nshards = %s" % (ent.to_dict(), shards))
       
