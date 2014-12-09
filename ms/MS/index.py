@@ -112,15 +112,25 @@ class MSEntryIndexCounter( storagetypes.Object ):
          
       key = storagetypes.make_key( MSEntryIndexCounter, key_name )
       if async:
-         return key.get_async()
+         
+         @storagetypes.concurrent
+         def __read_async():
+            cnt = yield key.get_async()
+            
+            if cnt is not None:
+               storagetypes.concurrent_return( cnt.value )
+            else:
+               storagetypes.concurrent_return( 0 )
+         
+         return __read_async()
          
       else:
          result = key.get()
          if result is None:
-            return None 
+            return 0 
          
-         storagetypes.memcache.add( key_name, result )
-         return result
+         storagetypes.memcache.add( key_name, result.value )
+         return result.value
          
          
    @classmethod 
@@ -811,6 +821,12 @@ class MSEntryIndex( storagetypes.Object ):
       """
       return MSEntryIndexCounter.read_dir_index( volume_id, parent_id, async=async )
    
+   @classmethod 
+   def GetGeneration( cls, volume_id, parent_id, async=False ):
+      """
+      Get the generation number of a directory
+      """
+      return MSEntryIndexCounter.read_generation( volume_id, parent_id, async=async )
    
    @classmethod 
    def Read( cls, volume_id, parent_id, dir_index, async=False ):
