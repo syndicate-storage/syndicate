@@ -571,5 +571,9 @@ def get_volume_root( volume ):
    return MSEntry.Read( volume, 0 )
 
 # ----------------------------------
-def get_num_children( volume, file_id ):
-   return MSEntryIndex.GetNumChildren( volume.volume_id, file_id )
+def get_num_children( volume_id, file_id, async=False ):
+   return MSEntryIndex.GetNumChildren( volume_id, file_id, async=async )
+
+# ----------------------------------
+def get_generation( volume_id, file_id, async=False ):
+   return MSEntryIndex.GetGeneration( volume_id, file_id, async=async )
