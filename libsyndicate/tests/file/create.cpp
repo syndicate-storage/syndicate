@@ -57,6 +57,7 @@ int main( int argc, char** argv ) {
    // set up requests 
    num_requests = (argc - local_optind) / 2;
    requests = CALLOC_LIST( struct ms_client_request, num_requests );
+   results = CALLOC_LIST( struct ms_client_request_result, num_requests );
    
    if( num_requests > 1 ) {
       printf("\n\n\nBegin create multi\n\n\n");
@@ -105,12 +106,12 @@ int main( int argc, char** argv ) {
    if( num_requests > 1 ) {
       
       // multi RPC 
-      rc = ms_client_multi_run( state.ms, requests, num_requests, &results );
+      rc = ms_client_run_requests( state.ms, requests, results, num_requests );
       
-      printf("\n\n\nms_client_multi_run(CREATE) rc = %d\n\n\n", rc );
+      printf("\n\n\ms_client_run_requests(CREATE) rc = %d\n\n\n", rc );
       
       // print out 
-      for( unsigned int i = 0; i < results.size(); i++ ) {
+      for( unsigned int i = 0; i < num_requests; i++ ) {
          
          struct md_entry* ent = results[i].ent;
          
@@ -124,6 +125,8 @@ int main( int argc, char** argv ) {
          
          ms_client_request_result_free( &results[i] );
       }
+      
+      free( results );
    }
    else {
       

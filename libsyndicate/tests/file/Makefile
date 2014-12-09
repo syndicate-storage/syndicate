@@ -5,7 +5,7 @@ DEFS			:= -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_THREAD_SAFE -D_DISTRO_DEBIAN -D
 
 OBJ			:= $(patsubst %.c,%.o,$(wildcard *.c)) $(patsubst %.cpp,%.o,$(wildcard *.cpp))
 COMMON		:= common.o
-TARGETS	   := getattr getchild listdir create create_async delete delete_async update update_async chcoord rename
+TARGETS	   := getattr getchild listdir create create_async delete delete_async update update_async chcoord rename diffdir
 
 all: $(TARGETS)
 
@@ -17,6 +17,9 @@ getchild: $(OBJ)
 
 listdir: $(OBJ)
 	$(CPP) -o listdir listdir.o $(COMMON) $(LIB) $(LIBINC) 
+
+diffdir: $(OBJ)
+	$(CPP) -o diffdir diffdir.o $(COMMON) $(LIB) $(LIBINC)
 
 create: $(OBJ)
 	$(CPP) -o create create.o $(COMMON) $(LIB) $(LIBINC)

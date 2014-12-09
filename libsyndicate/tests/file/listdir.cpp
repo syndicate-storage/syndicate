@@ -18,7 +18,7 @@
 
 int usage( char const* prog_name ) {
    
-   fprintf(stderr, "Usage: %s [SYNDICATE_OPTS] FILE_ID [FILE_ID]\n");
+   fprintf(stderr, "Usage: %s [SYNDICATE_OPTS] FILE_ID\n");
    return 0;
 }
 
@@ -69,39 +69,26 @@ int main( int argc, char** argv ) {
       exit(1);
    }
    
-   printf("\n\n\nBegin listdir\n");
+   printf("\n\n\nBegin listdir\n\n\n");
    
-   // get each name
-   for( int i = local_optind; i < argc; i++ ) {
+   rc = ms_client_listdir( state.ms, parent_id, 0, 0, 100, &result );
       
-      // file ID 
-      rc = sscanf( argv[i], "%" PRIX64, &file_id );
-      if( rc != 1 ) {
-         errorf("failed to parse file_id ID '%s'\n", argv[i] );
-         exit(1);
-      }
-      
-      printf("\n\n\n");
-      
-      rc = ms_client_listdir( state.ms, file_id, 0, 0, 100, &result );
-         
-      if( rc != 0 ) {
-         errorf("ms_client_listdir rc = %d\n", rc );
-         exit(1);
-      }
-      
-      printf("\n\n\n");
-         
-      for( size_t i = 0; i < result.num_ents; i++ ) {
-         
-         if( result.ents[i].file_id != 0 ) {
-            printf("Entry: %" PRIX64 " %s mode=%o version=%" PRId64 " write_nonce=%" PRId64 " generation=%d\n",
-                  result.ents[i].file_id, result.ents[i].name, result.ents[i].mode, result.ents[i].version, result.ents[i].write_nonce, result.ents[i].generation );
-         }
-      }
-      
-      ms_client_multi_result_free( &result );
+   if( rc != 0 ) {
+      errorf("ms_client_listdir rc = %d\n", rc );
+      exit(1);
    }
+   
+   printf("\n\n\n");
+      
+   for( size_t i = 0; i < result.num_ents; i++ ) {
+      
+      if( result.ents[i].file_id != 0 ) {
+         printf("Entry: %" PRIX64 " %s mode=%o version=%" PRId64 " write_nonce=%" PRId64 " generation=%d\n",
+               result.ents[i].file_id, result.ents[i].name, result.ents[i].mode, result.ents[i].version, result.ents[i].write_nonce, result.ents[i].generation );
+      }
+   }
+   
+   ms_client_multi_result_free( &result );
    
    printf("\n\n\nEnd listdir\n\n\n");
    
