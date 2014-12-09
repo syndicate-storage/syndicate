@@ -158,13 +158,27 @@ def _getattr( owner_id, volume, file_id, file_version, write_nonce ):
          reply.listing.status = ms_pb2.ms_listing.NEW
          
          # child count if directory 
-         num_children = 0
+         num_children = file_data.num_children
+         generation = file_data.generation
+         
+         if num_children is None:
+            num_children = 0
+            
+         if generation is None:
+            generation = 0
+         
          if file_data.ftype == MSENTRY_TYPE_DIR:
-            num_children = MSEntry.GetNumChildren( volume, file_id )
+            num_children_fut = MSEntryIndex.GetNumChildren( volume.volume_id, file_id, async=True )
+            generation_fut = MSEntryIndex.GetGeneration( volume.volume_id, file_id, async=True )
+            
+            storagetypes.wait_futures( [num_children_fut, generation_fut] )
+            
+            num_children = num_children_fut.get_result()
+            generation = generation_fut.get_result()
             
          # full ent 
          ent_pb = reply.listing.entries.add()
-         file_data.protobuf( ent_pb, num_children=num_children )
+         file_data.protobuf( ent_pb, num_children=num_children, generation=generation )
          
          # logging.info("Getattr %s: Serve back: %s" % (file_id, file_data))
          
@@ -314,21 +328,21 @@ def file_getchild( gateway, volume, parent_id, name ):
 
 
 # ----------------------------------
-def file_listdir( gateway, volume, file_id, page_id=None, least_unknown_generation=None ):
+def file_listdir( gateway, volume, file_id, page_id=None, lug=None ):
    """
    Get up to RESOLVE_MAX_PAGE_SIZE of (type, file ID) pairs.
    when the caller last called listdir (or -1 if this is the first call to listdir).
    """
    
-   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s" % (volume.volume_id, file_id, page_id, least_unknown_generation) )
+   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s" % (volume.volume_id, file_id, page_id, lug) )
    
    owner_id = msconfig.GATEWAY_ID_ANON
    if gateway != None:
       owner_id = gateway.owner_id
       
-   rc, reply = _listdir( owner_id, volume, file_id, page_id=page_id, least_unknown_generation=least_unknown_generation )
+   rc, reply = _listdir( owner_id, volume, file_id, page_id=page_id, least_unknown_generation=lug )
    
-   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s rc = %d" % (volume.volume_id, file_id, page_id, least_unknown_generation, rc) )
+   logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s rc = %d" % (volume.volume_id, file_id, page_id, lug, rc) )
    
    return reply
 
