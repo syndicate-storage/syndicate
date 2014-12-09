@@ -444,7 +444,7 @@ class MSFileHandler(webapp2.RequestHandler):
       "LISTXATTR":      lambda gateway, volume, file_id, args, kw: file_xattr_listxattr( gateway, volume, file_id, *args, **kw ),   # args == []
       "GETATTR":        lambda gateway, volume, file_id, args, kw: file_getattr( gateway, volume, file_id, *args, **kw ),           # args == [file_version_str, write_nonce]
       "GETCHILD":       lambda gateway, volume, file_id, args, kw: file_getchild( gateway, volume, file_id, *args, **kw ),          # args == [name]
-      "LISTDIR":        lambda gateway, volume, file_id, args, kw: file_listdir( gateway, volume, file_id, *args, **kw ),           # args == []
+      "LISTDIR":        lambda gateway, volume, file_id, args, kw: file_listdir( gateway, volume, file_id, *args, **kw ),           # args == [], kw={page_id, lug}
       "VACUUM":         lambda gateway, volume, file_id, args, kw: file_vacuum_log_peek( gateway, volume, file_id, *args, **kw )    # args == []
    }
    
@@ -706,8 +706,7 @@ class MSFileHandler(webapp2.RequestHandler):
       response_end( self, status, reply_str, "application/octet-stream", timing_headers )
       
       return
-
-
+   
 
 # ----------------------------------
 class MSJSONRPCHandler(GAEOpenIDRequestHandler):
