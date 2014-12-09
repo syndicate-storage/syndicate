@@ -119,6 +119,12 @@ indexes:
   - name: volume_id
   - name: dir_index
 
+- kind: MSEntryDirEntIndex
+  properties:
+  - name: parent_id
+  - name: volume_id
+  - name: generation
+
 - kind: MSEntryDirIndex
   properties:
   - name: alloced
