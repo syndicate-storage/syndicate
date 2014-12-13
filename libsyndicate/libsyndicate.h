@@ -106,6 +106,8 @@ struct md_entry {
    char* parent_name;   // name of this file's parent directory
 };
 
+#define MD_ENTRY_INITIALIZED( ent ) ((ent).type != 0 && (ent).name != NULL)
+
 typedef list<struct md_entry*> md_entry_list;
 
 
