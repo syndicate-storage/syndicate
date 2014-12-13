@@ -185,7 +185,9 @@ int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_
    // evict all blocks
    rc = md_cache_evict_file( state->cache, file_id, file_version );
    if( rc != 0 ) {
-      errorf("md_cache_evict_file(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
+      if( rc != -ENOENT ) {
+         errorf("md_cache_evict_file(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
+      }
    }
    
    // evict the manifest 
@@ -195,7 +197,7 @@ int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_
    
    rc = md_cache_evict_file( state->cache, manifest_id, file_version );
    if( rc != 0 ) {
-      errorf("md_cache_evict_fil(%s/manifest.%" PRId64 ") rc = %d\n", path, file_version, rc );
+      errorf("md_cache_evict_file(%s/manifest.%" PRId64 ") rc = %d\n", path, file_version, rc );
    }
    
    return rc;
