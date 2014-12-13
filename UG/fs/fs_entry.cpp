@@ -128,6 +128,28 @@ long fs_entry_set_get_name_hash( fs_entry_set::iterator* itr ) {
    return (*itr)->first;
 }
 
+// get the maximum generation for an entry set 
+int64_t fs_entry_set_max_generation( fs_entry_set* children ) {
+   
+   int64_t ret = -1;
+   
+   for( unsigned int i = 0; i < children->size(); i++ ) {
+      
+      if( children->at(i).second == NULL ) {
+         continue;
+      }
+      if( strcmp( children->at(i).second->name, "." ) == 0 || strcmp( children->at(i).second->name, ".." ) == 0 ) {
+         continue;
+      }
+      
+      if( children->at(i).second->generation > ret ) {
+         ret = children->at(i).second->generation;
+      }
+   }
+   
+   return ret;
+}
+
 // calculate the block ID from an offset
 uint64_t fs_entry_block_id( struct fs_core* core, off_t offset ) {
    return ((uint64_t)offset) / core->blocking_factor;
@@ -937,11 +959,13 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
       name = strtok_r( NULL, "/", &tmp );
    }
 
-   if( name == NULL && writelock )
+   if( name == NULL && writelock ) {
       fs_entry_wlock( core->root );
-   else
+   }
+   else {
       fs_entry_rlock( core->root );
-
+   }
+   
    if( core->root->link_count == 0 ) {
       // filesystem was nuked
       free( fpath );

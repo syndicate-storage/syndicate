@@ -334,6 +334,7 @@ bool fs_entry_set_replace( fs_entry_set* set, char const* name, struct fs_entry*
 unsigned int fs_entry_set_count( fs_entry_set* set );
 struct fs_entry* fs_entry_set_get( fs_entry_set::iterator* itr );
 long fs_entry_set_get_name_hash( fs_entry_set::iterator* itr );
+int64_t fs_entry_set_max_generation( fs_entry_set* children );
 
 // conversion
 int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, char const* fs_path, uint64_t owner, uint64_t volume );
