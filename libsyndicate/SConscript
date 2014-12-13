@@ -22,6 +22,7 @@ BASE_FILES = """
    storage.cpp
    url.cpp
    util.cpp
+   workqueue.cpp
 """
 
 MS_CLIENT_FILES = Glob("ms/*.cpp")
