@@ -71,7 +71,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    }
 
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, vol, path );
+   int rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
@@ -442,7 +442,7 @@ int fs_entry_create_revalidate( struct fs_core* core, char const* path, uint64_t
    char* parent_path = md_dirname( path, NULL );
    
    // see that the parent still exists
-   rc = fs_entry_revalidate_path( core, vol, parent_path );
+   rc = fs_entry_revalidate_path( core, parent_path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", parent_path, rc );
       
@@ -462,7 +462,7 @@ int fs_entry_open_revalidate( struct fs_core* core, char const* path, uint64_t u
    struct fs_entry* fent = NULL;
    
    // see that the entry still exists
-   rc = fs_entry_revalidate_path( core, vol, path );
+   rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       

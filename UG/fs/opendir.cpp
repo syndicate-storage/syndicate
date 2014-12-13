@@ -46,15 +46,15 @@ int fs_dir_handle_open( struct fs_dir_handle* dirh )  {
 
 
 // open a directory, but fail-fast if we can't get path metadata
-struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int* err ) {
+struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* fs_path, uint64_t user, uint64_t vol, int* err ) {
 
    // ensure path ends in /
    char path[PATH_MAX];
-   strcpy( path, _path );
+   strcpy( path, fs_path );
 
    md_sanitize_path( path );
    
-   int rc = fs_entry_revalidate_path( core, vol, path );
+   int rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       return NULL;

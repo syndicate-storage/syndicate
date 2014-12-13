@@ -289,7 +289,7 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
    
    if( revalidate ) {
       // revalidate
-      rc = fs_entry_revalidate_path( core, volume, path );
+      rc = fs_entry_revalidate_path( core, path );
       if( rc != 0 ) {
          errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
          return rc;
@@ -376,7 +376,7 @@ int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat
    }
 
    // revalidate
-   rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
+   rc = fs_entry_revalidate_path( core, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
@@ -410,7 +410,7 @@ int fs_entry_fstat_dir( struct fs_core* core, struct fs_dir_handle* dh, struct s
    }
 
    // revalidate
-   int rc = fs_entry_revalidate_path( core, dh->volume, dh->path );
+   int rc = fs_entry_revalidate_path( core, dh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", dh->path, rc );
       fs_dir_handle_unlock( dh );

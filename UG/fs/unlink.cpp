@@ -170,7 +170,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    bool no_manifest = false;
    
    // consistency check
-   err = fs_entry_revalidate_path( core, volume, path );
+   err = fs_entry_revalidate_path( core, path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, err );
       

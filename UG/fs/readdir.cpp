@@ -15,6 +15,7 @@
 */
 
 #include "readdir.h"
+#include "consistency.h"
 
 // low-level read directory
 // dent must be read-locked
@@ -89,6 +90,9 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
 
 // read data from a directory
 struct fs_dir_entry** fs_entry_readdir( struct fs_core* core, struct fs_dir_handle* dirh, int* err ) {
+   
+   int rc = 0;
+   
    fs_dir_handle_rlock( dirh );
    if( dirh->dent == NULL || dirh->open_count <= 0 ) {
       // invalid
@@ -97,8 +101,29 @@ struct fs_dir_entry** fs_entry_readdir( struct fs_core* core, struct fs_dir_hand
       return NULL;
    }
 
+   // revalidate path metadata...
+   rc = fs_entry_revalidate_path( core, dirh->path );
+   if( rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", dirh->path, rc );
+      
+      fs_dir_handle_unlock( dirh );
+      *err = rc;
+      return NULL;
+   }
+   
+   // ensure that our listing metadata is up-to-date 
+   rc = fs_entry_revalidate_children( core, dirh->path );
+   if( rc != 0 ) {
+      errorf("fs_entry_revalidate_children(%s) rc = %d\n", dirh->path, rc );
+      
+      fs_dir_handle_unlock( dirh );
+      *err = rc;
+      return NULL;
+   }
+   
    fs_entry_rlock( dirh->dent );
 
+   // give back data 
    struct fs_dir_entry** dents = fs_entry_readdir_lowlevel( core, dirh->path, dirh->dent, dirh->parent_id, dirh->parent_name );
 
    fs_entry_unlock( dirh->dent );

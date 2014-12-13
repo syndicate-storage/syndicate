@@ -456,7 +456,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
       return -EPERM;
    }
    
-   int err = fs_entry_revalidate_path( core, volume, fs_path );
+   int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
@@ -517,7 +517,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
 // truncate an file
 int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, uint64_t user, uint64_t volume ) {
    
-   int err = fs_entry_revalidate_path( core, volume, fs_path );
+   int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;

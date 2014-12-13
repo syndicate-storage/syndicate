@@ -32,7 +32,7 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
    md_sanitize_path( fpath );
    
    // revalidate this path
-   rc = fs_entry_revalidate_path( core, volume, fpath );
+   rc = fs_entry_revalidate_path( core, fpath );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );

@@ -414,7 +414,7 @@ static ssize_t fs_entry_do_getxattr_and_unlock( struct fs_core* core, struct fs_
 ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
    
    // revalidate this path--make sure the ent exists
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
@@ -493,7 +493,7 @@ int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *na
    }
    
    // bring the metadata up to date
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
@@ -627,7 +627,7 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
 // listxattr
 ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, size_t size, uint64_t user, uint64_t volume ) {
    // bring the metadata up to date
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
@@ -705,7 +705,7 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
    }
    
    // bring the metadata up to date
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
@@ -760,7 +760,7 @@ int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* nam
    }
    
    // bring the metadata up to date
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
@@ -801,7 +801,7 @@ int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* nam
    }
    
    // bring the metadata up to date
-   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;

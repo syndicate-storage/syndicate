@@ -104,14 +104,14 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    int rc = 0;
    
    // consistency check
-   err = fs_entry_revalidate_path( core, volume, old_path );
+   err = fs_entry_revalidate_path( core, old_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", old_path, err );
       return err;
    }
 
    // consistency check
-   err = fs_entry_revalidate_path( core, volume, new_path );
+   err = fs_entry_revalidate_path( core, new_path );
    if( err != 0 && err != -ENOENT ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", new_path, err );
       return err;

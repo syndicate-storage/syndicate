@@ -61,7 +61,7 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
    md_sanitize_path( fpath );
    
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, vol, fpath );
+   int rc = fs_entry_revalidate_path( core, fpath );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
