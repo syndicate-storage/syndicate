@@ -19,6 +19,8 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/ms/ms-client.h"
+#include "libsyndicate/ms/file.h"
+#include "libsyndicate/ms/path.h"
 
 #include <algorithm>
 
@@ -33,56 +35,17 @@
 
 #define AG_REQUEST_MAX_RETRIES           5
 
-struct AG_request_stage;
-
-typedef vector<struct AG_request_stage*> AG_request_stage_list_t;
-typedef vector<struct ms_client_request> AG_request_list_t;
-
-typedef int (*AG_request_stage_generator_t)( struct ms_client*, AG_fs_map_t*, AG_fs_map_t*, AG_request_stage_list_t* );
-
-typedef map<uint64_t, char*> AG_request_parent_map_t;
-
-typedef set<int> AG_operational_error_set_t;
-
-// state associated with a batch request 
-struct AG_batch_request {
-   
-   struct ms_client_network_context* nctx;
-   
-   int retries;
-   
-   // NOTE: shallow data
-   struct ms_client_request* reqs;
-   size_t num_reqs;
-};
-
-// bundle of requests to execute at a given depth
-struct AG_request_stage {
-   
-   int file_oper;                   // MS operation to perform for the files 
-   int dir_oper;                    // MS operation to perform for the directories
-   
-   int flags;                       // operation flags (i.e. for xattrs)
-   
-   int depth;                           // what depth is this stage at?
-   AG_request_list_t* file_reqs;        // requests over files
-   AG_request_list_t* dir_reqs;         // requests over directories
-   AG_request_parent_map_t* parents;        // map file and directory requests to their parents' paths
-   
-   bool dirs_first;                     // run directories first if true.  Otherwise run files first.
-   
-   struct ms_client_multi_result* results;       // results of operation
-   
-   int error;                           // set to non-zero if there was a failure
-   AG_request_list_t* failed_reqs;      // points to either file_reqs or dir_reqs of one of them failed to process 
-};
-
 // hierarchy management 
-int AG_fs_create_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_publish, AG_fs_map_t* mi_reference );
-int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_update, AG_fs_map_t* mi_reference );
-int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* dest, AG_fs_map_t* to_delete, AG_fs_map_t* mi_reference );
+int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_map_t* to_publish );
+int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_map_t* to_update );
+int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_map_t* to_delete );
 
+// metadata generation 
+int AG_fs_publish_generate_metadata( AG_fs_map_t* to_publish );
+
+// one-off methods
+int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
-
+int AG_fs_delete( struct AG_fs* ag_fs, char const* path );
 
 #endif
