@@ -973,7 +973,6 @@ class MSEntry( storagetypes.Object ):
          if hasattr(self, sf):
             pickle_data[sf] = getattr( self, sf )
       
-      
       serialized_str = pickle.dumps( pickle_data )
       self.pickled = serialized_str
       

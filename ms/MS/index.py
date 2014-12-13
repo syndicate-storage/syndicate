@@ -59,6 +59,7 @@ class MSEntryIndexCounter( storagetypes.Object ):
       """
       Add the given value to the given counter.
       Optionally do so atomically, and/or asynchronously.
+      Return the new value, or a future for the new value
       """
       
       @storagetypes.concurrent
@@ -101,14 +102,16 @@ class MSEntryIndexCounter( storagetypes.Object ):
       """
       Read the value of the counter, optionally asynchronously.
       Use memcache whenever possible.
+      Return the value on success
+      Return None if it doesn't exist.
       """
       result = storagetypes.memcache.get( key_name )
       if result is not None:
          
          if async:
-            return storagetypes.FutureWrapper( result )
+            return storagetypes.FutureWrapper( result.value )
          else:
-            return result 
+            return result.value
          
       key = storagetypes.make_key( MSEntryIndexCounter, key_name )
       if async:
@@ -127,9 +130,9 @@ class MSEntryIndexCounter( storagetypes.Object ):
       else:
          result = key.get()
          if result is None:
-            return 0 
+            return None
          
-         storagetypes.memcache.add( key_name, result.value )
+         storagetypes.memcache.add( key_name, result )
          return result.value
          
          
@@ -635,13 +638,11 @@ class MSEntryIndex( storagetypes.Object ):
          
          # refresh the index max cutoff--it may have changed
          # NOTE: subtract 1, since this is the number of *allocated* index nodes the directory has (i.e. don't count the free one)
-         max_node = MSEntryIndexCounter.read_dir_index( volume_id, parent_id )
-         if max_node is None:
+         parent_max_cutoff = MSEntryIndexCounter.read_dir_index( volume_id, parent_id )
+         if parent_max_cutoff is None:
             # directory doesn't exist anymore...nothing to compactify 
             logging.info("Index node /%s/%s does not exist" % (volume_id, parent_id) )
             return 0
-            
-         parent_max_cutoff = max_node.value
          
          if parent_max_cutoff == 0:
             # nothing left to compactify!
@@ -665,7 +666,6 @@ class MSEntryIndex( storagetypes.Object ):
             rc_fut = cls.__compactify_remove_index_async( volume_id, parent_id, free_file_id, free_dir_index )
             storagetypes.wait_futures( [rc_fut] )
             return 0
-            
          
          old_max_cutoff = parent_max_cutoff 
          
@@ -679,13 +679,11 @@ class MSEntryIndex( storagetypes.Object ):
                
             # verify that we didn't leave a gap by compactifying
             # (can happen if another process creates an entry while we're compactifying)
-            new_max_node = MSEntryIndexCounter.read_dir_index( volume_id, parent_id )
-            if new_max_node is None:
+            new_parent_max_cutoff = MSEntryIndexCounter.read_dir_index( volume_id, parent_id )
+            if new_parent_max_cutoff is None:
                # directory doesn't exist anymore...nothing to compactify 
                logging.info("Index node /%s/%s does not exist" % (volume_id, parent_id) )
                return 0
-            
-            new_parent_max_cutoff = new_max_node.value 
             
             if parent_max_cutoff < new_parent_max_cutoff:
                
@@ -819,19 +817,31 @@ class MSEntryIndex( storagetypes.Object ):
       """
       Get the number of children in a directory
       """
-      return MSEntryIndexCounter.read_dir_index( volume_id, parent_id, async=async )
+      
+      num_children = MSEntryIndexCounter.read_dir_index( volume_id, parent_id, async=async )
+      
+      if num_children is None:
+         num_children = 0
+      
+      return num_children
    
    @classmethod 
    def GetGeneration( cls, volume_id, parent_id, async=False ):
       """
       Get the generation number of a directory
       """
-      return MSEntryIndexCounter.read_generation( volume_id, parent_id, async=async )
+      
+      generation = MSEntryIndexCounter.read_generation( volume_id, parent_id, async=async )
+      
+      if generation is None:
+         generation = 0
+      
+      return generation
    
    @classmethod 
    def Read( cls, volume_id, parent_id, dir_index, async=False ):
       """
-      Read a directory index node 
+      Read a directory index node.  Return the whole node, not the value
       """
       idx_key_name = MSEntryDirEntIndex.make_key_name( volume_id, parent_id, dir_index )
       idx_key = storagetypes.make_key( MSEntryDirEntIndex, idx_key_name )
