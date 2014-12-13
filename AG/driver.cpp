@@ -20,7 +20,7 @@
 #include "core.h"
 #include "cache.h"
 #include "http.h"
-#include "reversioner.h"
+#include "workqueue.h"
 
 MD_CLOSURE_PROTOTYPE_BEGIN( AG_CLOSURE_PROTOTYPE )
    MD_CLOSURE_CALLBACK( "get_dataset_block" ),
@@ -520,9 +520,9 @@ int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info
    }
    
    // enqueue it into the reversioner
-   int rc = AG_reversioner_add_map_info( state->reversioner, path, pubinfo );
+   int rc = AG_workqueue_add_reversion( state->wq, path, pubinfo );
    if( rc != 0 ) {
-      errorf("AG_reversioner_add_map_info(%s) rc = %d\n", path, rc );
+      errorf("AG_workqueue_add_reversion(%s) rc = %d\n", path, rc );
    }
    
    AG_release_state( state );

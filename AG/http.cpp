@@ -19,7 +19,7 @@
 #include "map-info.h"
 #include "core.h"
 #include "cache.h"
-#include "reversioner.h"
+#include "workqueue.h"
 
 static char const* AG_HTTP_DRIVER_ERROR = "AG driver error\n";
 
@@ -361,9 +361,9 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
       int http_status = MD_HTTP_TRYAGAIN;
       char const* http_msg = MD_HTTP_TRYAGAIN_MSG;
       
-      rc = AG_reversioner_add_map_info( state->reversioner, reqdat->fs_path, NULL );
+      rc = AG_workqueue_add_reversion( state->wq, reqdat->fs_path, NULL );
       if( rc != 0 && rc != -EEXIST ) {
-         errorf("AG_reversioner_add_map_info( %s ) rc = %d\n", reqdat->fs_path, rc );
+         errorf("AG_workqueue_add_reversion( %s ) rc = %d\n", reqdat->fs_path, rc );
          
          http_status = 500;
          http_msg = MD_HTTP_500_MSG;
