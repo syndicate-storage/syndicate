@@ -316,20 +316,19 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    // copy over options 
    memcpy( &state->ug_opts, ug_opts, sizeof(struct UG_opts) );
    
-   // initialize state
-   int rc = syndicate_setup_state( state, ms );
-   if( rc != 0 ) {
-      errorf("syndicate_init_state rc = %d\n", rc );
-      return rc;
-   }
-   
-   // copy over opts
    if( opts->cache_hard_limit == 0 ) {
       state->cache_hard_limit = UG_CACHE_DEFAULT_HARD_LIMIT;
    }
    
    if( opts->cache_soft_limit == 0 ) {
       state->cache_soft_limit = (UG_CACHE_DEFAULT_SOFT_LIMIT < state->cache_hard_limit ? UG_CACHE_DEFAULT_SOFT_LIMIT : state->cache_hard_limit );
+   }
+   
+   // initialize state
+   int rc = syndicate_setup_state( state, ms );
+   if( rc != 0 ) {
+      errorf("syndicate_init_state rc = %d\n", rc );
+      return rc;
    }
    
    global_state = state;
