@@ -16,6 +16,8 @@
 
 #include "getattr.h"
 
+#include "libsyndicate/ms/path.h"
+
 // getattr/getchild attempt count 
 static int ms_client_getattr_retry( struct ms_client_getattr_context* ctx, int i ) {
    
@@ -203,6 +205,7 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
    rc = ms_client_listing_read_entry( ctx->client, dlctx, &ent, &listing_error );
    
    if( rc != 0 ) {
+      
       errorf("ms_client_listing_read_entry(%p) rc = %d, listing_error = %d\n", dlctx, rc, listing_error);
       
       ctx->listing_error = listing_error;
@@ -210,8 +213,33 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
       return rc;
    }
    
-   // store it to the results buffer
-   ctx->results_buf[ ent_idx ] = ent;
+   if( listing_error == MS_LISTING_NONE ) {
+      
+      errorf("WARN: no data for %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
+      
+      ctx->results_buf[ent_idx].error = MS_LISTING_NONE;
+   }
+   else if( listing_error == MS_LISTING_NOCHANGE ) {
+      
+      dbprintf("WARN: no change in %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
+      
+      ctx->results_buf[ent_idx].error = MS_LISTING_NOCHANGE;
+   }
+   else if( listing_error == MS_LISTING_NEW ) {
+      
+      // got data! store it to the results buffer
+      ctx->results_buf[ ent_idx ] = ent;
+      ctx->results_buf[ ent_idx ].error = MS_LISTING_NEW;
+   }
+   else {
+      
+      errorf("ms_client_listing_read_entry(%p): Unknown listing error %d\n", dlctx, listing_error );
+      ctx->listing_error = listing_error;
+      
+      pthread_mutex_unlock( &ctx->lock );
+      return -EBADMSG;
+   }
+   
    ctx->num_downloaded++;
    
    // succeeded!
@@ -273,15 +301,16 @@ static int ms_client_getattr_context_free( struct ms_client_getattr_context* ctx
    return 0;
 }
 
-
 // download metadata for a set of entries. 
 // return partial results, even on error.
 // NOTE: path[i].file_id, .volume_id, .version, and .write_nonce must be defined for each entry
-int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result ) {
+static int ms_client_getattr_lowlevel( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result, bool run_single ) {
    
    int rc = 0;
    struct md_download_config dlconf;
    md_download_config_init( &dlconf );
+   
+   memset( result, 0, sizeof(struct ms_client_multi_result) );
    
    struct ms_client_getattr_context ctx;
    memset( &ctx, 0, sizeof(struct ms_client_getattr_context) );
@@ -298,7 +327,12 @@ int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct m
    md_download_config_set_canceller( &dlconf, ms_client_getattr_download_cancel, &ctx );
    md_download_config_set_limits( &dlconf, path->size(), -1 );
    
-   rc = md_download_all( &client->dl, client->conf, &dlconf );
+   if( run_single ) {
+      rc = md_download_single( client->conf, &dlconf );
+   }
+   else {
+      rc = md_download_all( &client->dl, client->conf, &dlconf );
+   }
    
    result->ents = result_ents;
    result->num_ents = path->size();
@@ -319,14 +353,40 @@ int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct m
    return rc;
 }
 
+// download multiple entries at once.
+// result->ents will be in the same order as the corresponding element in path.
+// path entries need:
+// * file_id 
+// * volume_id 
+// * version 
+// * write_nonce
+int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result ) {
+   return ms_client_getattr_lowlevel( client, path, result, false );
+}
+
+// download metadata for a single entry 
+// ms_ent needs:
+// * file_id 
+// * volume_id 
+// * version 
+// * write_nonce 
+int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result ) {
+   
+   ms_path_t path;
+   path.push_back( *ms_ent );
+   
+   return ms_client_getattr_lowlevel( client, &path, result, true );
+}
+
 
 // download metadata for a set of entries. 
 // return partial results, even on error.
 // NOTE: path[i].parent_id, .volume_id, and .name must be defined for each entry
-int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result ) {
+static int ms_client_getchild_lowlevel( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result, bool single ) {
    
    int rc = 0;
    struct md_download_config dlconf;
+   char const* method = NULL;
    md_download_config_init( &dlconf );
    
    struct ms_client_getattr_context ctx;
@@ -344,7 +404,14 @@ int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct 
    md_download_config_set_canceller( &dlconf, ms_client_getattr_download_cancel, &ctx );
    md_download_config_set_limits( &dlconf, path->size(), -1 );
    
-   rc = md_download_all( &client->dl, client->conf, &dlconf );
+   if( single ) {
+      method = "md_download_single";
+      rc = md_download_single( client->conf, &dlconf );
+   }
+   else {
+      method = "md_download_all";
+      rc = md_download_all( &client->dl, client->conf, &dlconf );
+   }
    
    result->ents = result_ents;
    result->num_ents = path->size();
@@ -357,11 +424,33 @@ int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct 
    else {
       result->reply_error = ctx.listing_error;
       
-      errorf("md_download_all rc = %d\n", rc );
+      errorf("%s rc = %d\n", method, rc );
    }
    
    ms_client_getattr_context_free( &ctx );
    
    return rc;
 }
+
+
+// download multiple entries at once
+// result->ents will be in the same order as the entries in path.
+int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result ) {
+   return ms_client_getchild_lowlevel( client, path, result, false );
+}
+
+// download metadata for a single entry 
+// ms_ent needs:
+// * file_id 
+// * volume_id 
+// * version 
+// * write_nonce 
+int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result ) {
+   
+   ms_path_t path;
+   path.push_back( *ms_ent );
+   
+   return ms_client_getchild_lowlevel( client, &path, result, true );
+}
+
 
