@@ -29,6 +29,15 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
 int ms_client_openid_complete( CURL* curl, char const* return_to_method, char const* return_to, char** response_body, size_t* response_body_len );
 
 int ms_client_openid_session( CURL* curl, char const* openid_url, char const* username, char const* password, char** response_buf, size_t* response_len, EVP_PKEY* syndicate_public_key );
+
+// generic access to MS RPC via OpenID
+int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
+                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
+                               char* syndicate_public_key_pem );
+
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
+                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
+
 }
 
 #endif
