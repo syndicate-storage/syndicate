@@ -476,7 +476,6 @@ int md_cache_file_blocks_apply( char const* local_path, int (*block_func)( char 
    DIR* dir = opendir( local_path );
    if( dir == NULL ) {
       int rc = -errno;
-      errorf( "opendir(%s) errno = %d\n", local_path, rc );
       return rc;
    }
 
