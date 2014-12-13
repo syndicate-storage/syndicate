@@ -364,588 +364,47 @@ int ms_client_destroy( struct ms_client* client ) {
    return 0;
 }
 
-
-// open a metadata connection to the MS.  Preserve all connection state in dlctx.  Optionally have opt_dlset track dlctx (if it's not NULL), so the caller can wait on batches of dlctx instances
-// return 0 on success, negative on error
-// if opt_dlset is not NULL, then add the resulting download context to it.  NOTE: opt_dlset must NOT be freed until ms_client_download_end() is called for this download context!
-int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* times ) {
-   
-   // set up a cURL handle to the MS 
-   // TODO: conection pool
-   CURL* curl = curl_easy_init();
-   ms_client_init_curl_handle( client, curl, url );
-   
-   int rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
-   if( rc != 0 ) {
-      errorf("md_download_context_init(%s) rc = %d\n", url, rc );
-      
-      // TODO: connection pool 
-      md_download_context_free( dlctx, NULL );
-      curl_easy_cleanup( curl );
-      return rc;
-   }
-   
-   curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
-   
-   if( times != NULL ) {
-      // benchmark
-      curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
-      curl_easy_setopt( curl, CURLOPT_WRITEHEADER, times );   
-   }
-   
-   if( opt_dlset != NULL ) {
-      md_download_set_add( opt_dlset, dlctx );
-   }
-   
-   ms_client_rlock( client );
-   
-   // start to download
-   rc = md_download_context_start( &client->dl, dlctx, NULL, url );
-   
-   ms_client_unlock( client );
-   
-   if( rc != 0 ) {
-      errorf("md_download_context_start(%s) rc = %d\n", url, rc );
-      
-      // TODO: connection pool 
-      if( opt_dlset != NULL ) {
-         md_download_set_clear( opt_dlset, dlctx );
-      }
-      
-      md_download_context_free( dlctx, NULL );
-      curl_easy_cleanup( curl );
-      return rc;
-      
-   }
-      
-   return 0;
-}
-
-// shut down a metadata connection to the MS.  Free up the state in dlctx.
-// this method returns:
-// * -EAGAIN if we got no data
-// * the negative errno if errno was set by a connection disruption
-// * the positive HTTP status if it's an error status (i.e. >= 400)
-// * the positive error code returned by libcurl (i.e. < 100)
-// * the positive HTTP status (between 200 and 399) if we succeeded
-int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len ) {
-   
-   // wait for the download to finish 
-   int rc = md_download_context_wait( dlctx, client->conf->transfer_timeout * 1000 );
-   if( rc != 0 ) {
-      
-      dbprintf("md_download_context_wait(%p) rc = %d\n", dlctx, rc );
-      
-      // timed out.  cancel 
-      md_download_context_cancel( &client->dl, dlctx );
-      
-      // if we were given a download set, then clear it 
-      md_download_context_clear_set( dlctx );
-      
-      // TODO: connection pool 
-      CURL* curl = NULL;
-      md_download_context_free( dlctx, &curl );
-      
-      if( curl != NULL ) {
-         curl_easy_cleanup( curl );
-      }
-      
-      return rc;
-   }
-   
-   // get data 
-   char* url = NULL;
-   int os_errno = md_download_context_get_errno( dlctx );
-   int http_status = md_download_context_get_http_status( dlctx );
-   int curl_rc = md_download_context_get_curl_rc( dlctx );
-   md_download_context_get_effective_url( dlctx, &url );
-   
-   // curl error?
-   if( curl_rc != 0 || http_status != 200 ) {
-      
-      errorf("Download of %p %s errno = %d, CURL rc = %d, HTTP status = %d\n", dlctx, url, os_errno, curl_rc, http_status );
-      
-      if( os_errno != 0 ) {
-         rc = -abs(os_errno);
-      }
-      else if( http_status >= 400 ) {
-         rc = http_status;
-      }
-      else if( curl_rc == CURLE_GOT_NOTHING || curl_rc == CURLE_OPERATION_TIMEDOUT ) {
-         // got disconnected; try again
-         rc = -EAGAIN;
-      }
-      else {
-         rc = curl_rc;
-      }
-   }
-   else {
-      // get the response 
-      off_t len = 0;
-      rc = md_download_context_get_buffer( dlctx, response_buf, &len );
-      
-      if( rc != 0 ) {
-         errorf("md_download_context_get_buffer(%p url=%s) rc = %d\n", dlctx, url, rc );
-      }
-      else {
-         *response_buf_len = len;
-      }
-   }
-   
-   // TODO: connection pool 
-   CURL* curl = NULL;
-   
-   // if we were given a download set, then clear it 
-   md_download_context_clear_set( dlctx );
-   
-   // clean up 
-   md_download_context_free( dlctx, &curl );
-   
-   if( curl != NULL ) {
-      curl_easy_cleanup( curl );
-   }
-   
-   if( url != NULL ) {
-      free( url );
-   }
-   
-   if( rc == 0 ) {
-      rc = http_status;
-   }
-   
-   return rc;
-}
-
-// begin uploading to the MS.
-// dlctx serves as the state to be preserved between ms_client_upload_begin and ms_client_upload_end.  Do not free it!
-// if opt_dlset is given, add dlctx to it (in which case, opt_dlset cannot be freed until calling ms_client_upload_end() with this dlctx)
-// return 0 on success; negative on failure
-int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing ) {
-   
-   int rc = 0;
-   
-   // set up a cURL handle to the MS 
-   // TODO: conection pool
-   CURL* curl = curl_easy_init();
-   ms_client_init_curl_handle( client, curl, url );
-   
-   rc = md_download_context_init( dlctx, curl, NULL, NULL, -1 );
-   if( rc != 0 ) {
-      errorf("md_download_context_init(%s) rc = %d\n", url, rc );
-      
-      // TODO: connection pool 
-      md_download_context_free( dlctx, NULL );
-      curl_easy_cleanup( curl );
-      return rc;
-   }
-   
-   curl_easy_setopt( curl, CURLOPT_POST, 1L);
-   curl_easy_setopt( curl, CURLOPT_HTTPPOST, forms );
-   
-   if( timing != NULL ) {
-      curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
-      curl_easy_setopt( curl, CURLOPT_WRITEHEADER, timing );      
-   }
-   
-   // if there's a download set, add the download context to it
-   if( opt_dlset != NULL ) {
-      md_download_set_add( opt_dlset, dlctx );
-   }
-   
-   ms_client_rlock( client );
-   
-   // start to download
-   rc = md_download_context_start( &client->dl, dlctx, NULL, url );
-   
-   ms_client_unlock( client );
-   
-   if( rc != 0 ) {
-      errorf("md_download_context_start(%s) rc = %d\n", url, rc );
-      
-      // TODO: connection pool 
-      if( opt_dlset != NULL ) {
-         md_download_set_clear( opt_dlset, dlctx );
-      }
-      
-      md_download_context_free( dlctx, NULL );
-      curl_easy_cleanup( curl );
-      return rc;
-      
-   }
-   
-   return rc;
-}
-
-
-// finish uploading from the MS.  Get back the HTTP status and response buffer.  Free up the state in dlctx.
-// return the HTTP response on success; negative on error
-int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen ) {
-   
-   // logically, this is the same as ending a download 
-   int rc = ms_client_download_end( client, dlctx, buf, buflen );
-   if( rc != 200 ) {
-      errorf("ms_client_download_end(%p) rc = %d\n", dlctx, rc );
-   }
-   return rc;
-}
-
-
 // synchronously download metadata from the MS
-// return the HTTP response on success; negative on error
-int ms_client_download( struct ms_client* client, char const* url, char** buf, size_t* buflen ) {
-   
-   struct md_download_context dlctx;
-   memset( &dlctx, 0, sizeof(struct md_download_context) );
-   
-   struct ms_client_timing times;
-   memset( &times, 0, sizeof(struct ms_client_timing) );
-   
-   // start downloading
-   int rc = ms_client_download_begin( client, url, NULL, &dlctx, NULL, &times );
-   if( rc != 0 ) {
-      errorf("ms_client_download_begin(%s) rc = %d\n", url, rc );
-      return rc;
-   }
-   
-   // finish downloading 
-   int http_response = ms_client_download_end( client, &dlctx, buf, buflen );
-
-   if( http_response < 0 ) {
-      errorf("ms_client_download_end rc = %d\n", http_response );
-      
-      ms_client_timing_free( &times );
-      return http_response;
-   }
-   
-   if( http_response != 200 ) {
-      errorf("ms_client_download_end HTTP response = %d\n", http_response );
-
-      if( http_response == 0 ) {
-         // really bad--MS bug
-         errorf("%s", "!!! likely an MS bug !!!\n");
-         http_response = 500;
-      }
-
-      ms_client_timing_free( &times );
-      return -http_response;
-   }
-   
-   ms_client_timing_log( &times );
-   ms_client_timing_free( &times );
-   
-   return http_response;
-}
-
-
-// set up a download
-int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers, struct md_download_set* dlset ) {
-   
-   memset( nctx, 0, sizeof(struct ms_client_network_context) );
-   
-   nctx->headers = headers;
-   
-   nctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
-   nctx->timing = CALLOC_LIST( struct ms_client_timing, 1 );
-   
-   nctx->upload = false;
-   nctx->url = strdup( url );
-   
-   nctx->ended = false;
-   
-   nctx->dlset = dlset;
-   
-   return 0;
-}
-
-// set up an upload 
-int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms, struct md_download_set* dlset ) {
-   
-   memset( nctx, 0, sizeof(struct ms_client_network_context) );
-   
-   nctx->forms = forms;
-   
-   nctx->dlctx = CALLOC_LIST( struct md_download_context, 1 );
-   nctx->timing = CALLOC_LIST( struct ms_client_timing, 1 );
-   
-   nctx->upload = true;
-   nctx->url = strdup( url );
-   
-   nctx->ended = false;
-   
-   nctx->dlset = dlset;
-   
-   return 0;
-}
-
-// cancel a running download
-int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx ) {
-   if( nctx->dlctx != NULL ) {
-      int rc = md_download_context_cancel( &client->dl, nctx->dlctx );
-      
-      if( rc == 0 ) {
-         
-         // safe to free
-         CURL* curl = NULL;
-         
-         if( nctx->dlset != NULL ) {
-            // remove ourselves from the download set
-            md_download_set_clear( nctx->dlset, nctx->dlctx );
-         }
-         
-         md_download_context_free( nctx->dlctx, &curl );
-         
-         // TODO: connection pool 
-         if( curl != NULL ) {
-            curl_easy_cleanup( curl );
-         }
-         
-         free( nctx->dlctx );
-         
-         nctx->ended = true;
-      }
-      return rc;
-   }
-   else {
-      return 0;
-   }
-}
-
-// free a network context 
-int ms_client_network_context_free( struct ms_client_network_context* nctx ) {
-   
-   
-   if( nctx->dlctx != NULL ) {
-      
-      if( !nctx->ended ) {
-         
-         if( !md_download_context_finalized( nctx->dlctx ) ) {
-            // not finalized.  cancel or wait for it to complete first.
-            return -EINVAL;
-         }
-         
-         CURL* curl = NULL;
-         
-         if( nctx->dlset != NULL ) {
-            // remove ourselves from the download set
-            md_download_set_clear( nctx->dlset, nctx->dlctx );
-         }
-         
-         md_download_context_free( nctx->dlctx, &curl );
-         
-         // TODO: connection pool 
-         if( curl != NULL ) {
-            curl_easy_cleanup( curl );
-         }
-         
-         free( nctx->dlctx );
-      }
-      
-      nctx->dlctx = NULL;
-   }
-   
-   if( nctx->headers != NULL ) {
-      curl_slist_free_all( nctx->headers );
-      nctx->headers = NULL;
-   }
-   
-   if( nctx->forms != NULL ) {
-      curl_formfree( nctx->forms );
-      nctx->forms = NULL;
-   }
-   
-   if( nctx->timing != NULL ) {
-      ms_client_timing_free( nctx->timing );
-      free( nctx->timing );
-      nctx->timing = NULL;
-   }
-   
-   if( nctx->url ) {
-      free( nctx->url );
-      nctx->url = NULL;
-   }
-   
-   nctx->dlset = NULL;
-   
-   return 0;
-}
-
-// start a context running 
-int ms_client_network_context_begin( struct ms_client* client, struct ms_client_network_context* nctx ) {
+// return 0 on success
+// return negative on error
+int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen ) {
    
    int rc = 0;
-   char const* method = NULL;
+   int curl_rc = 0;
+   CURL* curl = NULL;
+   struct ms_client_timing timing;
+   long curl_errno = 0;
+   long http_status = 0;
    
-   if( nctx->upload ) {
-      
-      method = "ms_client_upload_begin";
-      rc = ms_client_upload_begin( client, nctx->url, nctx->forms, nctx->dlctx, nctx->dlset, nctx->timing );
-   }
-   else {
-      
-      method = "ms_client_download_begin";
-      rc = ms_client_download_begin( client, nctx->url, nctx->headers, nctx->dlctx, nctx->dlset, nctx->timing );
-   }
+   memset( &timing, 0, sizeof(struct ms_client_timing) );
    
-   if( rc != 0 ) {
-      errorf("%s(%s) rc = %d\n", method, nctx->url, rc );
-   }
-   else {
-      nctx->started = true;
-      nctx->ended = false;
-   }
+   // connect (TODO: connection pool)
+   curl = curl_easy_init();  
+   ms_client_init_curl_handle( client, curl, url );
    
-   return rc;
-}
-
-
-// wait for and finish a network context
-// return the HTTP status on successful HTTP-level communication (could be an error, though)
-// return -errno on OS-level error (or if the connection timed out)
-// return positive error code (< 200) on CURL error
-int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len ) {
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &timing );
    
-   int http_status_or_error_code = 0;
-   char const* method = NULL;
+   // run 
+   curl_rc = md_download_file( curl, buf, buflen );
    
-   if( nctx->upload ) {
-      
-      method = "ms_client_upload_end";
-      http_status_or_error_code = ms_client_upload_end( client, nctx->dlctx, result_buf, result_len );
-   }
-   else {
-      
-      method = "ms_client_download_end";
-      http_status_or_error_code = ms_client_download_end( client, nctx->dlctx, result_buf, result_len );
-   }
+   // check download status
+   curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &curl_errno );
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_status );
    
-   if( http_status_or_error_code != 200 ) {
-      errorf("%s(%s) rc = %d\n", method, nctx->url, http_status_or_error_code );
-   }
-   
-   if( nctx->dlctx != NULL ) {
-      // done with this 
-      free( nctx->dlctx );
-      nctx->dlctx = NULL;
-   }
-   
-   nctx->started = false;
-   nctx->ended = true;
-   
-   return http_status_or_error_code;
-}
-
-
-// store app-specific context data to a network context 
-void ms_client_network_context_set_cls( struct ms_client_network_context* nctx, void* cls ) {
-   nctx->cls = cls;
-}
-
-// get app-specific context data out of a network context 
-void* ms_client_network_context_get_cls( struct ms_client_network_context* nctx ) {
-   return nctx->cls;
-}
-
-// do a one-off RPC call via OpenID
-// rpc_type can be "json" or "xml"
-int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
-                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
-                               char* syndicate_public_key_pem ) {
-   
-   CURL* curl = curl_easy_init();
-   
-   EVP_PKEY* pubkey = NULL;
-   int rc = 0;
-   
-   if( syndicate_public_key_pem != NULL ) {
-      rc = md_load_pubkey( &pubkey, syndicate_public_key_pem );
-   
-      if( rc != 0 ) {
-         errorf("Failed to load Syndicate public key, md_load_pubkey rc = %d\n", rc );
-         return -EINVAL;
-      }
-   }
-   
-   // TODO: elegant way to avoid hard constants?
-   md_init_curl_handle2( curl, NULL, 30, true );
-   
-   char* ms_openid_url_begin = CALLOC_LIST( char, strlen(ms_openid_url) + strlen("/begin") + 1 );
-   sprintf(ms_openid_url_begin, "%s/begin", ms_openid_url );
-   
-   rc = ms_client_openid_session( curl, ms_openid_url_begin, username, password, response_buf, response_len, pubkey );
-   
-   curl_easy_setopt( curl, CURLOPT_URL, NULL );
-   free( ms_openid_url_begin );
-   
-   if( pubkey )
-      EVP_PKEY_free( pubkey );
-   
-   if( rc != 0 ) {
-      errorf("ms_client_openid_session(%s) rc = %d\n", ms_openid_url, rc );
-      curl_easy_cleanup( curl );
-      return rc;
-   }
-   
-   // set the body contents
-   struct md_upload_buf upload;
-   memset( &upload, 0, sizeof(upload) );
-      
-   upload.text = request_buf;
-   upload.len = request_len;
-   upload.offset = 0;
-   
-   curl_easy_setopt(curl, CURLOPT_POST, 1L );
-   curl_easy_setopt(curl, CURLOPT_URL, ms_openid_url);
-   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_buf);
-   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, request_len);
-   
-   struct curl_slist* headers = NULL;
-   
-   // what kind of RPC?
-   if( strcasecmp( rpc_type, "json" ) == 0 ) {
-      // json rpc 
-      headers = curl_slist_append( headers, "content-type: application/json" );
-   }
-   else if( strcasecmp( rpc_type, "xml" ) == 0 ) {
-      // xml rpc
-      headers = curl_slist_append( headers, "content-type: application/xml" );
-   }
-   
-   if( headers != NULL ) {
-      curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
-   }
-   
-   char* tmp_response = NULL;
-   off_t tmp_response_len = 0;
-   
-   rc = md_download_file( curl, &tmp_response, &tmp_response_len );
-   if( rc < 0 ) {
-      errorf("md_download_file(%s) rc = %d\n", ms_openid_url, rc );
-      rc = -ENODATA;
-   }
-   
-   // clear headers
-   curl_easy_setopt( curl, CURLOPT_HTTPHEADER, NULL );
-   
-   if( headers ) {
-      curl_slist_free_all( headers );
-   }
+   rc = ms_client_download_interpret_errors( url, http_status, curl_rc, curl_errno );
    
    curl_easy_cleanup( curl );
    
-   if( rc == 0 ) {
-      *response_buf = tmp_response;
-      *response_len = tmp_response_len;
+   if( rc != 0 ) {
+      errorf("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+   }
+   else {
+      ms_client_timing_log( &timing );
    }
    
+   ms_client_timing_free( &timing );
    return rc;
-}
-
-// OpenID RPC, but don't verify 
-int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
-                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len ) {
-   
-   errorf("%s", "WARN: will not verify RPC result from Syndicate MS\n");
-   return ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, request_len, response_buf, response_len, NULL );
 }
 
 // read-lock a client context 
@@ -1117,117 +576,28 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
    return rc;
 }
 
-
-// asynchronously start fetching data from the MS 
-// client cannot be locked
-int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx, struct md_download_set* dlset ) {
+// synchronous method to GET data
+int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* reply ) {
    
-   // set up the download 
-   ms_client_network_context_download_init( nctx, url, NULL, dlset );
-   
-   // start downloading 
-   int rc = ms_client_network_context_begin( client, nctx );
-   if( rc != 0 ) {
-      errorf("ms_client_network_context_begin(%s) rc = %d\n", url, rc );
-      
-      ms_client_network_context_free( nctx );
-      return rc;
-   }
-   
-   return rc;
-}
- 
- 
-// wait for an asynchronously-started MS read to finish.  Parse and verify the MS reply
-// client cannot be locked 
-int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct ms_client_network_context* nctx ) {
-   
-   int rc = 0;
-   size_t len = 0;
    char* buf = NULL;
+   off_t buflen = 0;
    
-   int http_response = ms_client_network_context_end( client, nctx, &buf, &len );
+   int rc = ms_client_download( client, url, &buf, &buflen );
    
-   if( http_response <= 0 ) {
-      errorf("ms_client_network_context_end rc = %d\n", http_response );
-      
-      if( buf != NULL ) {
-         free( buf );
-      }
-      
-      ms_client_network_context_free( nctx );
-      return http_response;
-   }
-   
-   if( http_response == 200 ) {
-      // success!
-      // parse and verify
-      rc = ms_client_parse_reply( client, reply, buf, len, true );
-      if( rc != 0 ) {
-         errorf("ms_client_read rc = %d\n", rc );
-         free( buf );
-         
-         ms_client_network_context_free( nctx );
-         return -ENODATA;
-      }
-      
-      free( buf );
-      
-      // check errors
-      int err = reply->error();
-      if( err != 0 ) {
-         errorf("MS reply error %d\n", err );
-         
-         
-         ms_client_network_context_free( nctx );
-         return err;
-      }
-      
-      else {
-         // extract versioning information from the reply
-         ms_client_process_header( client, volume_id, reply->volume_version(), reply->cert_version() );
-      
-         ms_client_network_context_free( nctx );
-         return 0;
-      }
-   }
-   else {
-      // error 
-      errorf("ms_client_download_end rc = %d\n", http_response );
-      
-      if( http_response == 0 ) {
-         errorf("%s", "MS bug: HTTP response is zero!\n");
-         
-         http_response = -EIO;
-      }
-      
-      if( buf != NULL ) {
-         free( buf );
-      }
-      
-      ms_client_network_context_free( nctx );
-      return -http_response;
-   }
-}
-
-// synchronous wrapper around read_begin and read_end 
-int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply ) {
-   
-   int rc = 0;
-   struct ms_client_network_context nctx;
-   memset( &nctx, 0, sizeof(struct ms_client_network_context) );
-   
-   // start reading
-   rc = ms_client_read_begin( client, url, &nctx, NULL );
    if( rc != 0 ) {
-      errorf("ms_client_read_begin(%s) rc = %d\n", url, rc );
+      errorf("ms_client_download(%s) rc = %d\n", url, rc );
+      
       return rc;
    }
    
-   // finish reading
-   rc = ms_client_read_end( client, volume_id, reply, &nctx );
-   if( rc != 0) {
-      errorf("ms_client_read_end(%s) rc = %d\n", url, rc );
+   // parse and verify
+   rc = ms_client_parse_reply( client, reply, buf, buflen, true );
+   
+   free( buf );
+   buf = NULL;
+   
+   if( rc != 0 ) {
+      errorf("ms_client_parse_reply rc = %d\n", rc );
    }
    
    return rc;

@@ -60,6 +60,7 @@ struct ms_volume;
 // callback to be alerted when a Volume's metadata changes
 typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
 
+/*
 // context for performing network I/O with the MS
 struct ms_client_network_context {
    
@@ -78,7 +79,7 @@ struct ms_client_network_context {
    
    void* cls;                                   // app-defined context data
 };
-
+*/
 
 // MS client session
 struct ms_client {
@@ -152,14 +153,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 int ms_client_start_threads( struct ms_client* client );
 int ms_client_destroy( struct ms_client* client );
 
-// generic access to MS RPC via OpenID
-int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
-                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
-                               char* syndicate_public_key_pem );
-
-int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
-                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
-
 // key management 
 int ms_client_verify_key( EVP_PKEY* key );
 int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char** key_pem_dup, char const* key_pem, bool is_public );
@@ -185,35 +178,12 @@ int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int 
 // low-level network I/O
 int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url );
 
-int ms_client_download( struct ms_client* client, char const* url, char** buf, size_t* buflen );
-int ms_client_download_begin( struct ms_client* client, char const* url, struct curl_slist* headers, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing );
-int ms_client_download_end( struct ms_client* client, struct md_download_context* dlctx, char** response_buf, size_t* response_buf_len );
-
-int ms_client_upload_begin( struct ms_client* client, char const* url, struct curl_httppost* forms, struct md_download_context* dlctx, struct md_download_set* opt_dlset, struct ms_client_timing* timing );
-int ms_client_upload_end( struct ms_client* client, struct md_download_context* dlctx, char** buf, size_t* buflen );
-
+int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen );
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
-
 int ms_client_is_async_operation( int oper );
 
-// ioctls on network contexts 
-int ms_client_network_context_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
-
-// network contexts
-int ms_client_network_context_download_init( struct ms_client_network_context* nctx, char const* url, struct curl_slist* headers, struct md_download_set* dlset );
-int ms_client_network_context_upload_init( struct ms_client_network_context* nctx, char const* url, struct curl_httppost* forms, struct md_download_set* dlset );
-int ms_client_network_context_free( struct ms_client_network_context* nctx );
-
-int ms_client_network_context_begin( struct ms_client* client, struct ms_client_network_context* nctx );
-int ms_client_network_context_end( struct ms_client* client, struct ms_client_network_context* nctx, char** result_buf, size_t* result_len );
-
-void ms_client_network_context_set_cls( struct ms_client_network_context* nctx, void* cls );
-void* ms_client_network_context_get_cls( struct ms_client_network_context* nctx );
-
 // higher-level network I/O 
-int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply );
-int ms_client_read_begin( struct ms_client* client, char const* url, struct ms_client_network_context* nctx, struct md_download_set* dlset );
-int ms_client_read_end( struct ms_client* client, uint64_t volume_id, ms::ms_reply* reply, struct ms_client_network_context* nctx );
+int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* reply );
 
 // CDN access closure
 extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
