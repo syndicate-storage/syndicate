@@ -35,7 +35,6 @@
 
 // prototypes
 struct AG_event_listener;
-struct AG_reversioner;
 struct AG_driver;
 
 // AG-specific options 
@@ -58,7 +57,7 @@ struct AG_state {
    struct md_syndicate_cache* cache;
    
    struct AG_event_listener* event_listener;
-   struct AG_reversioner* reversioner;
+   struct md_wq* wq;
    struct AG_fs* ag_fs;
    struct AG_opts ag_opts;
    AG_config_t* config;

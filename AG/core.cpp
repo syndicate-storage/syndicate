@@ -22,7 +22,7 @@
 #include "events.h"
 #include "publish.h"
 #include "map-parser-xml.h"
-#include "reversioner.h"
+#include "workqueue.h"
 
 static struct AG_opts g_AG_opts;
 static struct AG_state global_state;
@@ -233,19 +233,20 @@ int AG_reload_specfile( struct AG_state* state, AG_fs_map_t** new_fs, AG_config_
 // MS anything that is in new_fs exclusively.  Update entries that are in the intersection.
 // neither AG_fs must be locked.
 // This does not affect cache validation flags or driver pointers of either FS
-int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_func_t mi_equ ) {
+int AG_resync( struct AG_state* state, struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_func_t mi_equ, bool force_refresh ) {
    
    int rc = 0;
    
    AG_fs_map_t to_delete;
    AG_fs_map_t to_publish;
    AG_fs_map_t to_update;
+   AG_fs_map_t to_remain;
    
    // find the difference between old_fs's contents and new_fs's contents
    AG_fs_rlock( old_fs );
    AG_fs_rlock( new_fs );
    
-   rc = AG_fs_map_transforms( old_fs->fs, new_fs->fs, &to_publish, &to_update, &to_delete, mi_equ );
+   rc = AG_fs_map_transforms( old_fs->fs, new_fs->fs, &to_publish, &to_remain, &to_update, &to_delete, mi_equ );
    
    AG_fs_unlock( new_fs );
    AG_fs_unlock( old_fs );
@@ -255,40 +256,63 @@ int AG_resync( struct AG_fs* old_fs, struct AG_fs* new_fs, AG_map_info_equality_
       return rc;
    }
    
-   AG_fs_wlock( new_fs );
+   // add metadata for the ones to publish
+   rc = AG_fs_publish_generate_metadata( &to_publish );
+   if( rc != 0 ) {
+      errorf("AG_fs_publish_generate_metadata rc = %d\n", rc );
+      return rc;
+   }
+   
+   dbprintf("%s", "To publish:\n");
+   AG_dump_fs_map( &to_publish );
+   
+   dbprintf("%s", "To remain:\n");
+   AG_dump_fs_map( &to_remain );
+   
+   dbprintf("%s", "To update:\n");
+   AG_dump_fs_map( &to_update );
+   
+   dbprintf("%s", "To delete:\n");
+   AG_dump_fs_map( &to_delete );
    
    // apply our changes to it.
    // add new entries, and delete old ones.
-   int publish_rc = AG_fs_create_all( new_fs->ms, new_fs->fs, &to_publish, new_fs->fs );
+   int publish_rc = AG_fs_publish_all( new_fs->ms, old_fs->fs, &to_publish );
    
    if( publish_rc != 0 ) {
-      errorf("ERR: AG_fs_create_all rc = %d\n", publish_rc );
+      errorf("ERR: AG_fs_publish_all rc = %d\n", publish_rc );
       
-      AG_fs_unlock( new_fs );
       return publish_rc;
    }
    
-   int update_rc = AG_fs_update_all( new_fs->ms, new_fs->fs, &to_update, new_fs->fs );
+   int update_rc = AG_fs_update_all( new_fs->ms, old_fs->fs, &to_update );
    if( update_rc != 0 ) {
       errorf("ERR: AG_fs_update_all rc = %d\n", update_rc );
       
-      AG_fs_unlock( new_fs );
       return update_rc;
    }
    
-   AG_fs_unlock( new_fs );
+   if( force_refresh ) {
+      
+      dbprintf("Forcing refresh of %zu fresh entries\n", to_remain.size() );
+      
+      // refresh fresh entries 
+      int fresh_rc = AG_fs_update_all( new_fs->ms, old_fs->fs, &to_remain );
+      
+      if( fresh_rc != 0 ) {
+         errorf("ERR: AG_fs_update_all rc = %d\n", fresh_rc );
+         
+         return fresh_rc;
+      }
+   }
    
-   AG_fs_wlock( old_fs );
-   
-   int delete_rc = AG_fs_delete_all( new_fs->ms, old_fs->fs, &to_delete, old_fs->fs );
+   int delete_rc = AG_fs_delete_all( new_fs->ms, new_fs->fs, &to_delete );
    if( delete_rc != 0 ) {
       errorf("ERR: AG_fs_delete_all rc = %d\n", delete_rc );
       
-      AG_fs_unlock( old_fs );
       return delete_rc;
    }
    
-   AG_fs_unlock( old_fs );
    return 0;
 }
 
@@ -333,7 +357,9 @@ int AG_reload( struct AG_state* state ) {
    if( rc == 0 ) {
       // copy all cached data from the current fs to the new fs (from the spec file),
       // since the current fs is coherent but the specfile-loaded mapping is not 
-      AG_fs_copy_cached_data( fs_clone, state->ag_fs );
+      AG_fs_copy_cached_data( fs_clone, state->ag_fs, AG_map_info_copy_MS_data );
+      AG_fs_copy_cached_data( fs_clone, state->ag_fs, AG_map_info_copy_driver_data );
+      AG_fs_copy_cached_data( fs_clone, state->ag_fs, AG_map_info_copy_AG_data );
    }
    
    AG_fs_unlock( state->ag_fs );
@@ -351,8 +377,8 @@ int AG_reload( struct AG_state* state ) {
    }
    
    
-   // for reloading, an element is in both the old and new fsmaps if it has the same AG-specific metadata 
-   struct AG_reload_comparator {
+   // for reloading, an element is fresh if it has the same AG-specific metadata 
+   struct AG_fresh_comparator {
       static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
          
          bool streq = true;
@@ -369,9 +395,10 @@ int AG_reload( struct AG_state* state ) {
    };
    
    // Evolve the current AG_fs into the one described by the specfile.
-   rc = AG_resync( state->ag_fs, fs_clone, AG_reload_comparator::equ );
+   rc = AG_resync( state, state->ag_fs, fs_clone, AG_fresh_comparator::equ, false );
    if( rc != 0 ) {
       errorf("WARN: AG_resync rc = %d\n", rc );
+      rc = 0;
    }
    
    // make the newly-loaded AG_fs the current AG_fs
@@ -406,10 +433,6 @@ int AG_reload( struct AG_state* state ) {
    free( old_fs );
    
    delete old_config;
-   
-   if( rc != 0 ) {
-      errorf("WARN: AG_reversioner_reload_map_infos rc = %d\n", rc );
-   }
    
    dbprintf("%s", "End reload state\n");
    return 0;
@@ -590,9 +613,6 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
       return rc;
    }
    
-   // dbprintf("Loaded the following file mapping into %p\n", state->ag_fs->fs );
-   // AG_dump_fs_map( state->ag_fs->fs );
-   
    // initialize HTTP 
    state->http = CALLOC_LIST( struct md_HTTP, 1 );
    
@@ -612,11 +632,11 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    }
    
    // initialize reversioner 
-   state->reversioner = CALLOC_LIST( struct AG_reversioner, 1 );
+   state->wq = CALLOC_LIST( struct md_wq, 1 );
    
-   rc = AG_reversioner_init( state->reversioner, state );
+   rc = md_wq_init( state->wq, state );
    if( rc != 0 ) {
-      errorf("AG_reversioner_init rc = %d\n", rc );
+      errorf("md_wq_init rc = %d\n", rc );
       return rc;
    }
    
@@ -655,6 +675,7 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
                        
    return 0;
 }
+
 
 // start the AG 
 int AG_start( struct AG_state* state ) {
@@ -710,7 +731,7 @@ int AG_start( struct AG_state* state ) {
       }
       
       // copy cached MS metadata into the specfile-generated fs map (so we can tell which metadata to download next)
-      AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
+      AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs, AG_map_info_copy_MS_data );
    }
    
    
@@ -731,12 +752,20 @@ int AG_start( struct AG_state* state ) {
          return rc;
       }
       
-      // copy all downloaded MS metadata into the specfile-generatd fs map
-      AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs );
+      // copy all downloaded MS metadata into the specfile-generated fs map.
+      AG_fs_copy_cached_data( state->ag_fs, &on_MS_fs, AG_map_info_copy_MS_data );
       
-      // for initializing, an entry is common to both the specfile and the MS-hosted copy
-      // if the MS entry's metadata reflects the entry's metadata in the specfile.
-      struct AG_reload_comparator {
+      // get all driver metadata for the specfile-generated fs map 
+      rc = AG_get_publish_info_all( state, state->ag_fs->fs );
+      if( rc != 0 ) { 
+         errorf("AG_get_publish_info_all(specfile) rc = %d\n", rc );
+         
+         AG_fs_free( &on_MS_fs );
+         return rc;
+      }
+      
+      // for initializing, an entry is fresh if the specfile matches the MS (update if not)
+      struct AG_fresh_comparator {
          static bool equ( struct AG_map_info* mi1, struct AG_map_info* mi2 ) {
             return (mi1->file_perm == mi2->file_perm &&
                     mi1->reval_sec == mi2->reval_sec &&
@@ -747,8 +776,9 @@ int AG_start( struct AG_state* state ) {
       // the AG_fs on the MS is the "old" mapping,
       // and the one we loaded from the spec file is
       // the "new" mapping.  Evolve the old into the new on the MS.
-      rc = AG_resync( &on_MS_fs, state->ag_fs, AG_reload_comparator::equ );
-   
+      // force refresh if asked via the command-line
+      rc = AG_resync( state, &on_MS_fs, state->ag_fs, AG_fresh_comparator::equ, state->ag_opts.reversion_on_startup );
+      
       if( rc != 0 ) {
          errorf("ERR: AG_resync rc = %d\n", rc );
          AG_fs_free( &on_MS_fs );
@@ -790,23 +820,13 @@ int AG_start( struct AG_state* state ) {
    
    rc = 0;
    
-   if( state->ag_opts.reversion_on_startup ) {
-      dbprintf("%s", "Queuing all datasets for reversion\n");
-      rc = AG_reversioner_add_map_infos( state->reversioner, state->ag_fs->fs );
-   }
-   
    AG_fs_unlock( state->ag_fs );
    AG_state_fs_unlock( state );
    
-   if( rc != 0 ) {
-      errorf("AG_reversioner_add_map_infos rc = %d\n", rc );
-      return rc;
-   }
+   // start the work queue 
+   dbprintf("%s", "Starting workqueue\n");
    
-   // start the reversioner 
-   dbprintf("%s", "Starting reversioner\n");
-   
-   rc = AG_reversioner_start( state->reversioner );
+   rc = md_wq_start( state->wq );
    if( rc != 0 ) {
       errorf("AG_reversioner_start rc = %d\n", rc );
       return rc;
@@ -850,8 +870,8 @@ int AG_stop( struct AG_state* state ) {
    dbprintf("%s", "Shutting down event listener\n");
    AG_event_listener_stop( state->event_listener );
    
-   dbprintf("%s", "Shutting down reversioner\n");
-   AG_reversioner_stop( state->reversioner );
+   dbprintf("%s", "Shutting down workqueue\n");
+   md_wq_stop( state->wq );
    
    dbprintf("%s", "Shutting down block cache\n");
    md_cache_stop( state->cache );
@@ -890,10 +910,10 @@ int AG_state_free( struct AG_state* state ) {
       state->event_listener = NULL;
    }
    
-   if( state->reversioner != NULL ) {
-      AG_reversioner_free( state->reversioner );
-      free( state->reversioner );
-      state->reversioner = NULL;
+   if( state->wq != NULL ) {
+      md_wq_free( state->wq, NULL );
+      free( state->wq );
+      state->wq = NULL;
    }
    
    if( state->drivers != NULL ) {
@@ -993,18 +1013,23 @@ static void AG_usage(void) {
 AG-specific options:\n\
    -e PATH\n\
             Path to a UNIX domain socket over which to send/receive events.\n\
+            \n\
    -i PATH\n\
             Path to which to log runtime information, if not running\n\
             in the foreground.\n\
+            \n\
    -D DIR\n\
             Path to the directory that contains the storage drivers.\n\
+            \n\
    -s PATH\n\
             Path to an on-disk hierarchy spec file to be used to populate\n\
             this AG's volume.  If not supplied, the MS-served hierarchy spec\n\
             file will be used instead (the default).\n\
+            \n\
    -q\n\
             Quick start: take no action on the specfile; just cache the entries\n\
             from the volume and begin serving requests.\n\
+            \n\
    -M PATH\n\
             Use cached data from the MS.  If PATH does not exist, then download and\n\
             cache metadata to PATH.  If PATH exists, then load metadata from PATH, and\n\
@@ -1013,9 +1038,10 @@ AG-specific options:\n\
             No consistency checks will be performed if you load cached data from\n\
             the MS.  This is meant for AGs that expose so much static data that re-syncing\n\
             it with the MS on every start-up is infeasible.\n\
+            \n\
    -n\n\
-            On start-up, queue all datasets for reversion.  This updates the\n\
-            consistency information for each dataset on the MS, and invokes\n\
+            Reversion all files, even if they appear to fresh according to the MS.\n\
+            This updates the consistency information for each file on the MS, and invokes\n\
             each dataset driver's reversion method.\n\
 \n" );
 }
