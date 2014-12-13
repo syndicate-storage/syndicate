@@ -16,8 +16,10 @@
 
 #include "listdir.h"
 
-// generate a URL for a batch to download 
-char* ms_client_listdir_generate_batch_url( struct md_download_context* dlctx, void* cls ) {
+#include "libsyndicate/ms/path.h"
+
+// generate a URL for a batch to download as part of listdir or diffdir
+char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx, void* cls, bool generation_url ) {
    
    struct ms_client_listdir_context* ctx = (struct ms_client_listdir_context*)cls;
    char* url = NULL;
@@ -27,12 +29,20 @@ char* ms_client_listdir_generate_batch_url( struct md_download_context* dlctx, v
    
    if( ctx->batches->size() > 0 ) {
    
-      // next batch 
+      // next batch--either a page ID or a least unknown generation 
       next_batch = ctx->batches->front();
       ctx->batches->pop();
       
-      // interpret batch as the page ID 
-      url = ms_client_file_listdir_url( ctx->client->url, ctx->volume_id, ctx->parent_id, next_batch, -1 );
+      if( generation_url ) {
+         
+         // interpret batch as the least unknown generation 
+         url = ms_client_file_listdir_url( ctx->client->url, ctx->volume_id, ctx->parent_id, -1, next_batch );
+      }
+      else {
+         
+         // interpret batch as the page ID 
+         url = ms_client_file_listdir_url( ctx->client->url, ctx->volume_id, ctx->parent_id, next_batch, -1 );
+      }
       
       // remember which download this was for
       (*ctx->downloading)[ dlctx ] = next_batch;
@@ -42,6 +52,13 @@ char* ms_client_listdir_generate_batch_url( struct md_download_context* dlctx, v
    return url;
 }
 
+char* ms_client_listdir_generate_batch_url( struct md_download_context* dlctx, void* cls ) {
+   return ms_client_listdir_generate_batch_url_ex( dlctx, cls, false );
+}
+
+char* ms_client_diffdir_generate_batch_url( struct md_download_context* dlctx, void* cls ) {
+   return ms_client_listdir_generate_batch_url_ex( dlctx, cls, true );
+}
 
 // listdir curl init'er 
 static CURL* ms_client_listdir_curl_generator( void* cls ) {
@@ -158,7 +175,17 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
       return rc;
    }
    
-   // merge them in 
+   if( listing_error != MS_LISTING_NEW ) {
+      
+      // somehow we didn't get data.  shouldn't happen in listdir
+      errorf("BUG: failed to get listing data for %" PRIX64 ", listing_error = %d\n", ctx->parent_id, listing_error );
+      
+      pthread_mutex_unlock( &ctx->lock );
+      ctx->listing_error = listing_error;
+      return -ENODATA;
+   }
+   
+   // merge children in 
    for( unsigned int i = 0; i < num_children; i++ ) {
       
       uint64_t file_id = children[i].file_id;
@@ -183,16 +210,16 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
 }
 
 
-// set up a listdir context 
-int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t version, int64_t write_nonce, int num_children ) {
+// set up a listdir or diffdir context 
+// if least_unknown_generation >= 0, then fetch by generation number 
+// otherwise, fetch by directory index
+int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation ) {
    
    memset( ctx, 0, sizeof(struct ms_client_listdir_context) );
    
    ctx->client = client;
    ctx->parent_id = parent_id;
    ctx->volume_id = ms_client_get_volume_id( client );
-   ctx->version = version;
-   ctx->write_nonce = write_nonce;
    
    ctx->downloading = new ms_client_listdir_batch_set();
    ctx->children = new vector<struct md_entry>();
@@ -200,14 +227,37 @@ int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struc
    ctx->batches = new queue<int>();
    ctx->children_ids = new set<uint64_t>();
    
-   // one batch == one page
-   size_t num_pages = num_children / client->page_size;
-   for( unsigned int i = 0; i <= num_pages; i++ ) {
-      ctx->batches->push( i );
+   if( least_unknown_generation >= 0 ) {
+      
+      // one batch == one page of generations 
+      int64_t curr_generation = least_unknown_generation;
+      while( curr_generation < num_children ) {
+         
+         ctx->batches->push( curr_generation );
+         curr_generation += client->page_size;
+      }
+   }
+   else {
+      
+      // one batch == one page
+      int64_t num_pages = num_children / client->page_size;
+      for( int64_t i = 0; i <= num_pages; i++ ) {
+         ctx->batches->push( i );
+      }
    }
       
    pthread_mutex_init( &ctx->lock, NULL );
    return 0;
+}
+
+// set up a listdir context 
+int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children ) {
+   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, -1 );
+}
+
+// set up a diffdir context 
+int ms_client_diffdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation ) {
+   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, least_unknown_generation );
 }
 
 // free a listdir context 
@@ -247,26 +297,38 @@ int ms_client_listdir_context_free( struct ms_client_listdir_context* ctx ) {
 }
 
 // download metadata for a directory.
+// if least_unknown_generation >= 0, then this is a diffdir operation.
+// otherwise, it's a listdir operation.
 // return partial results, even on error.
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t version, int64_t write_nonce, int64_t num_children, struct ms_client_multi_result* results ) {
+int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results ) {
    
    int rc = 0;
    struct md_download_config dlconf;
    struct md_entry* ents = NULL;
+   
+   memset( results, 0, sizeof(struct ms_client_multi_result) );
    
    md_download_config_init( &dlconf );
    
    struct ms_client_listdir_context ctx;
    memset( &ctx, 0, sizeof(struct ms_client_listdir_context) );
    
-   ms_client_listdir_context_init( &ctx, client, parent_id, version, write_nonce, num_children );
+   ms_client_listdir_context_init_ex( &ctx, client, parent_id, num_children, least_unknown_generation );
+   
+   if( least_unknown_generation > 0 ) {
+      // doing diffdir
+      md_download_config_set_url_generator( &dlconf, ms_client_diffdir_generate_batch_url, &ctx );
+   }
+   else {
+      // doing listdir 
+      md_download_config_set_url_generator( &dlconf, ms_client_listdir_generate_batch_url, &ctx );
+   }
    
    // setup downloads 
    md_download_config_set_curl_generator( &dlconf, ms_client_listdir_curl_generator, &ctx );
-   md_download_config_set_url_generator( &dlconf, ms_client_listdir_generate_batch_url, &ctx );
    md_download_config_set_postprocessor( &dlconf, ms_client_listdir_download_postprocess, &ctx );
    md_download_config_set_canceller( &dlconf, ms_client_listdir_download_cancel, &ctx );
-   md_download_config_set_limits( &dlconf, client->max_connections, -1 );
+   md_download_config_set_limits( &dlconf, MIN( (unsigned)client->max_connections, ctx.batches->size() ), -1 );
    
    // run downloads 
    rc = md_download_all( &client->dl, client->conf, &dlconf );
@@ -299,4 +361,13 @@ int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t ver
    
    ms_client_listdir_context_free( &ctx );
    return rc;
+}
+
+
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, struct ms_client_multi_result* results ) {
+   return ms_client_listdir_ex( client, parent_id, num_children, -1, results );
+}
+
+int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results ) {
+   return ms_client_listdir_ex( client, parent_id, num_children, least_unknown_generation, results );
 }

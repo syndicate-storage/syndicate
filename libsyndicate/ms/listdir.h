@@ -17,7 +17,9 @@
 #ifndef _LIBSYNDICATE_MS_LISTDIR_
 #define _LIBSYNDICATE_MS_LISTDIR_
 
+#include "libsyndicate/ms/core.h"
 #include "libsyndicate/ms/file.h"
+#include "libsyndicate/ms/path.h"
 #include "libsyndicate/ms/url.h"
 #include "libsyndicate/ms/volume.h"
 
@@ -31,8 +33,6 @@ struct ms_client_listdir_context {
    
    uint64_t volume_id;   
    uint64_t parent_id;
-   int64_t version;
-   int64_t write_nonce;
    
    queue<int>* batches;                         // which batches to download next
    
@@ -49,7 +49,8 @@ struct ms_client_listdir_context {
 
 extern "C" {
    
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t version, int64_t write_nonce, int64_t num_children, struct ms_client_multi_result* results );
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, struct ms_client_multi_result* results );
+int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results );
 
 }
 
