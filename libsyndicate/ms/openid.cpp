@@ -394,10 +394,14 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
 
    if( http_response != 200 ) {
+      
       errorf("md_download_file HTTP status = %ld\n", http_response );
+      
       free( return_to_url_and_path );
-      if( return_to_qs )
+      if( return_to_qs ) {
          free( return_to_qs );
+      }
+      
       return -abs( (int)http_response );
    }
 
@@ -458,4 +462,109 @@ int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const*
    }
    
    return 0;
+}
+
+
+
+// do a one-off RPC call via OpenID
+// rpc_type can be "json" or "xml"
+int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
+                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
+                               char* syndicate_public_key_pem ) {
+   
+   CURL* curl = curl_easy_init();
+   
+   EVP_PKEY* pubkey = NULL;
+   int rc = 0;
+   
+   if( syndicate_public_key_pem != NULL ) {
+      rc = md_load_pubkey( &pubkey, syndicate_public_key_pem );
+   
+      if( rc != 0 ) {
+         errorf("Failed to load Syndicate public key, md_load_pubkey rc = %d\n", rc );
+         return -EINVAL;
+      }
+   }
+   
+   // TODO: elegant way to avoid hard constants?
+   md_init_curl_handle2( curl, NULL, 30, true );
+   
+   char* ms_openid_url_begin = CALLOC_LIST( char, strlen(ms_openid_url) + strlen("/begin") + 1 );
+   sprintf(ms_openid_url_begin, "%s/begin", ms_openid_url );
+   
+   rc = ms_client_openid_session( curl, ms_openid_url_begin, username, password, response_buf, response_len, pubkey );
+   
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   free( ms_openid_url_begin );
+   
+   if( pubkey )
+      EVP_PKEY_free( pubkey );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_openid_session(%s) rc = %d\n", ms_openid_url, rc );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+   
+   // set the body contents
+   struct md_upload_buf upload;
+   memset( &upload, 0, sizeof(upload) );
+      
+   upload.text = request_buf;
+   upload.len = request_len;
+   upload.offset = 0;
+   
+   curl_easy_setopt(curl, CURLOPT_POST, 1L );
+   curl_easy_setopt(curl, CURLOPT_URL, ms_openid_url);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_buf);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, request_len);
+   
+   struct curl_slist* headers = NULL;
+   
+   // what kind of RPC?
+   if( strcasecmp( rpc_type, "json" ) == 0 ) {
+      // json rpc 
+      headers = curl_slist_append( headers, "content-type: application/json" );
+   }
+   else if( strcasecmp( rpc_type, "xml" ) == 0 ) {
+      // xml rpc
+      headers = curl_slist_append( headers, "content-type: application/xml" );
+   }
+   
+   if( headers != NULL ) {
+      curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+   }
+   
+   char* tmp_response = NULL;
+   off_t tmp_response_len = 0;
+   
+   rc = md_download_file( curl, &tmp_response, &tmp_response_len );
+   if( rc < 0 ) {
+      errorf("md_download_file(%s) rc = %d\n", ms_openid_url, rc );
+      rc = -ENODATA;
+   }
+   
+   // clear headers
+   curl_easy_setopt( curl, CURLOPT_HTTPHEADER, NULL );
+   
+   if( headers ) {
+      curl_slist_free_all( headers );
+   }
+   
+   curl_easy_cleanup( curl );
+   
+   if( rc == 0 ) {
+      *response_buf = tmp_response;
+      *response_len = tmp_response_len;
+   }
+   
+   return rc;
+}
+
+// OpenID RPC, but don't verify 
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
+                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len ) {
+   
+   errorf("%s", "WARN: will not verify RPC result from Syndicate MS\n");
+   return ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, request_len, response_buf, response_len, NULL );
 }
