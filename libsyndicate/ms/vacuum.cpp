@@ -84,7 +84,7 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
    ms::ms_reply reply;
    int rc = 0;
    
-   rc = ms_client_read( client, volume_id, vacuum_url, &reply );
+   rc = ms_client_read( client, vacuum_url, &reply );
    
    free( vacuum_url );
    

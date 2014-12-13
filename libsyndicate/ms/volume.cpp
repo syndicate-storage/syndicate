@@ -74,20 +74,19 @@ void ms_volume_free( struct ms_volume* vol ) {
 int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
-   size_t len = 0;
+   off_t len = 0;
    int rc = 0;
-   int http_status = 0;
 
    char* volume_url = ms_client_volume_url_by_name( client->url, volume_name );
 
-   http_status = ms_client_download( client, volume_url, &buf, &len );
+   rc = ms_client_download( client, volume_url, &buf, &len );
 
    free( volume_url );
    
-   if( http_status != 200 ) {
-      errorf("ms_client_download(%s) rc = %d\n", volume_url, http_status );
+   if( rc != 0 ) {
+      errorf("ms_client_download(%s) rc = %d\n", volume_url, rc );
 
-      return -abs(http_status);
+      return rc;
    }
 
    // extract the message
@@ -118,8 +117,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    int rc = 0;
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
-   size_t len = 0;
-   int http_status = 0;
+   off_t len = 0;
    
    ms_client_view_rlock( client );
  
@@ -138,16 +136,18 @@ int ms_client_reload_volume( struct ms_client* client ) {
 
    ms_client_view_unlock( client );
 
-   http_status = ms_client_download( client, volume_url, &buf, &len );
+   rc = ms_client_download( client, volume_url, &buf, &len );
+
+   if( rc != 0 ) {
+      errorf("ms_client_download(%s) rc = %d\n", volume_url, rc );
+
+      free( volume_url );
+   
+      return rc;
+   }
 
    free( volume_url );
    
-   if( http_status != 200 ) {
-      errorf("ms_client_download(%s) rc = %d\n", volume_url,http_status );
-
-      return -abs(http_status);
-   }
-
    // extract the message
    bool valid = volume_md.ParseFromString( string(buf, len) );
    free( buf );

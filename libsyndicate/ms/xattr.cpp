@@ -26,7 +26,7 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    ms::ms_reply reply;
    int rc = 0;
    
-   rc = ms_client_read( client, volume_id, getxattr_url, &reply );
+   rc = ms_client_read( client, getxattr_url, &reply );
    
    free( getxattr_url );
    
@@ -61,7 +61,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
    int rc = 0;
    ms::ms_reply reply;
    
-   rc = ms_client_read( client, volume_id, listxattr_url, &reply );
+   rc = ms_client_read( client, listxattr_url, &reply );
    
    free( listxattr_url );
    

@@ -257,13 +257,13 @@ static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client
    char* url = ms_client_syndicate_pubkey_url( client->url );
    
    char* bits = NULL;
-   size_t len = 0;
+   off_t len = 0;
    
-   int http_status = ms_client_download( client, url, &bits, &len );
-   if( http_status != 200 ) {
+   int rc = ms_client_download( client, url, &bits, &len );
+   if( rc != 0 ) {
       
-      errorf("ms_client_download(%s) rc = %d\n", url, http_status );
-      return -abs(http_status);
+      errorf("ms_client_download(%s) rc = %d\n", url, rc );
+      return -rc;
    }
    
    // add a \0 at the end...
