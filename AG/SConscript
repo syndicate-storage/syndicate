@@ -25,7 +25,7 @@ source_files = """
    map-info.cpp
    map-parser-xml.cpp
    publish.cpp
-   reversioner.cpp
+   workqueue.cpp
 """
 
 # add source file search paths here
