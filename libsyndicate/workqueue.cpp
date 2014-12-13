@@ -25,6 +25,8 @@ static void* md_wq_main( void* cls ) {
    struct md_wreq wreq;
    int rc = 0;
    
+   dbprintf("workqueue %p start\n", wq );
+   
    while( wq->running ) {
       
       // wait for work 
@@ -41,10 +43,10 @@ static void* md_wq_main( void* cls ) {
       work = wq->work;
       
       if( wq->work == wq->work_1 ) {
-         wq->work = wq->work_1;
+         wq->work = wq->work_2;
       }
       else {
-         wq->work = wq->work_2;
+         wq->work = wq->work_1;
       }
       
       pthread_mutex_unlock( &wq->work_lock );
@@ -59,6 +61,8 @@ static void* md_wq_main( void* cls ) {
          // carry out work 
          rc = (*wreq.work)( &wreq, wreq.work_data );
          
+         dbprintf("Processed work %p (arg %p), rc = %d\n", wreq.work, wreq.work_data, rc );
+         
          // is this a promise?  if so, tell the caller that we've fulfilled it 
          if( wreq.flags & MD_WQ_PROMISE ) {
             wreq.promise_ret = rc;
@@ -66,6 +70,8 @@ static void* md_wq_main( void* cls ) {
          }
       }
    }
+   
+   dbprintf("workqueue %p stop\n", wq );
    
    return NULL;
 }
@@ -186,15 +192,16 @@ int md_wq_free( struct md_wq* wq, void** ret_cls ) {
    }
    
    // free all 
-   md_wq_queue_free( wq->work_1 );
-   md_wq_queue_free( wq->work_2 );
-   
    if( wq->work_1 != NULL ) {
+      md_wq_queue_free( wq->work_1 );
       delete wq->work_1;
+      wq->work_1 = NULL;
    }
    
    if( wq->work_2 != NULL ) {
+      md_wq_queue_free( wq->work_2 );
       delete wq->work_2;
+      wq->work_2 = NULL;
    }
    
    pthread_mutex_destroy( &wq->work_lock );
@@ -271,10 +278,6 @@ int md_wreq_promise_ret( struct md_wreq* wreq ) {
 int md_wq_add( struct md_wq* wq, struct md_wreq* wreq ) {
    
    int rc = 0;
-   
-   if( !wq->running ) {
-      return -EINVAL;
-   }
    
    pthread_mutex_lock( &wq->work_lock );
    
