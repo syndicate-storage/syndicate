@@ -19,6 +19,9 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/ms/ms-client.h"
+#include "libsyndicate/ms/file.h"
+#include "libsyndicate/ms/path.h"
+#include "libsyndicate/ms/listdir.h"
 
 #include "AG.h"
 #include "driver.h"
@@ -43,6 +46,8 @@ struct AG_map_info {
    uint64_t file_id;            // ID of this file (obtained from the MS; initialized to 0)
    int64_t file_version;        // version of this file (obtained from the MS; initialized to 0)
    int64_t write_nonce;         // write nonce for this file (obtained from the MS; initialized to 0)
+   uint64_t num_children;       // number of children the MS says this inode has 
+   int64_t generation;          // generation number of this inode
    
    // cached driver fields
    bool driver_cache_valid;
@@ -53,12 +58,28 @@ struct AG_map_info {
    uint64_t refresh_deadline;           // when the next deadline to refresh is 
 };
 
+
+struct AG_path_filters {
+   // generate a path with stale entries.
+   // any path entries after the first encountered stale entries are stale.
+   static bool is_stale( struct AG_map_info* mi, void* cls ) {
+      
+      return !mi->cache_valid;
+   }
+   
+   // generate a path with fresh entries
+   static bool is_fresh( struct AG_map_info* mi, void* cls ) {
+      
+      return mi->cache_valid;
+   }
+};
+
 // static set of map info 
 struct AG_fs {
    AG_fs_map_t* fs;
    pthread_rwlock_t fs_lock;
    
-   struct ms_client* ms;
+   struct ms_client* ms;                // immutable; always safe to reference as long as the AG_fs exists
 };
 
 // comparator for equality between map_info 
@@ -82,27 +103,35 @@ int AG_fs_unlock( struct AG_fs* ag_fs );
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload );
 
 int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_info* ref_mi, struct AG_map_info* updated_mi );
-int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce );
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation );
 int AG_map_info_make_coherent_with_driver_data( struct AG_map_info* mi, size_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int AG_map_info_make_coherent_with_AG_data( struct AG_map_info* mi, int64_t block_version, uint64_t refresh_deadline );
 
 int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent );
-int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src );
+
+int AG_map_info_copy_MS_data( struct AG_map_info* dest, struct AG_map_info* src );
+int AG_map_info_copy_driver_data( struct AG_map_info* dest, struct AG_map_info* src );
+int AG_map_info_copy_AG_data( struct AG_map_info* dest, struct AG_map_info* src );
+int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src, int (*copy)( struct AG_map_info* dest, struct AG_map_info* src ) );
+
+int AG_invalidate_cached_metadata( struct AG_map_info* mi );
+int AG_invalidate_driver_metadata( struct AG_map_info* mi );
+int AG_invalidate_metadata_all( AG_fs_map_t* fs_map, int (*invalidator)( struct AG_map_info* ) );
 
 // validation 
 int AG_validate_map_info( AG_fs_map_t* fs );
 
 // tree operations
-int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ );
+int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_fresh, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ );
 int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* path_data );
 int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merge_new, AG_fs_map_t* not_merged );
+int AG_fs_map_delete_tree( AG_fs_map_t* fs_map, AG_fs_map_t* to_delete );
 
 // path operations 
 struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path );
 struct AG_map_info* AG_fs_lookup_path_in_map( AG_fs_map_t* map_info, char const* path );
 int AG_path_prefixes( char const* path, char*** ret_prefixes );
-bool AG_path_is_immediate_child( char const* parent, char const* child );
-int AG_fs_remove( struct AG_fs* ag_fs, char const* path );
+int AG_max_depth( AG_fs_map_t* map_infos );
 
 // entry operations 
 int64_t AG_map_info_make_deadline( int64_t reval_sec );
@@ -111,16 +140,13 @@ void AG_populate_md_entry_from_AG_info( struct md_entry* entry, struct AG_map_in
 void AG_populate_md_entry_from_MS_info( struct md_entry* entry, uint64_t file_id, int64_t file_version, int64_t write_nonce );
 void AG_populate_md_entry_from_driver_info( struct md_entry* entry, struct AG_driver_publish_info* pub_info );
 
-// directory searching 
-int AG_sort_paths_by_depth( AG_fs_map_t* directives, vector<string>* paths );
-int AG_pop_paths_by_depth( vector<string>* sorted_paths, vector<string>* path_list );
-int AG_pop_paths_by_parent( vector<string>* sorted_paths, vector<string>* path_list );
-
 // misc 
 int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* in_specfile, AG_fs_map_t* on_MS );
 int AG_get_publish_info( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info );
+int AG_get_publish_info_all( struct AG_state* state, AG_fs_map_t* fs_map );
 int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info );
 int AG_dump_fs_map( AG_fs_map_t* fs_map );
 int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root );
+int AG_fs_count_children( AG_fs_map_t* fs_map, map<string, int>* child_counts );
 
 #endif

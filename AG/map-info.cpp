@@ -23,7 +23,7 @@
 // is a path an immediate child of another?
 // return true if child refers to an immediate child in parent; false if not
 // parent and child must be normalized paths
-bool AG_path_is_immediate_child( char const* parent, char const* child ) {
+static bool AG_path_is_immediate_child( char const* parent, char const* child ) {
    
    char* child_parent = md_dirname( child, NULL );
    
@@ -34,6 +34,22 @@ bool AG_path_is_immediate_child( char const* parent, char const* child ) {
    return ret;
 }
 
+// get the maximum path depth over a set of paths
+int AG_max_depth( AG_fs_map_t* map_infos ) {
+   
+   int max_depth = 0;
+   
+   for( AG_fs_map_t::iterator itr = map_infos->begin(); itr != map_infos->end(); itr++ ) {
+      
+      int cur_depth = md_depth( itr->first.c_str() );
+      
+      if( cur_depth > max_depth ) {
+         max_depth = cur_depth;
+      }
+   }
+   
+   return max_depth;
+}
 
 // make a map info
 void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_string, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver ) {
@@ -84,7 +100,7 @@ void AG_map_info_merge( struct AG_map_info* dest, struct AG_map_info* src ) {
    
    if( !dest->cache_valid && src->cache_valid ) {
       
-      AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce );
+      AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation );
       AG_map_info_make_coherent_with_AG_data( dest, src->block_version, src->refresh_deadline );
    }
    
@@ -175,11 +191,11 @@ int AG_fs_map_dup( AG_fs_map_t* dest, AG_fs_map_t* src ) {
 // given two fs_maps--old_fs and new_fs--find out the set of operations needed to transform old into new.
 // that is, which elements must be deleted, updated, and published (to_delete, to_update, and to_publish, respectively).
 // to_delete will contain pointers to map_infos in old_fs
-// to_publish and to_update will contain pointers to map_infos in new_fs.
-// to be put into to_update, the elements mapped to the same path in old_fs and new_fs must FAIL the equality test mi_equ.
+// to_remain will contain pointers to map_infos from new_fs that are in both old_fs and new_fs, and ARE equal according to mi_equ
+// to_update will contain pointers to map_infos in new_fs that are in both old_fs and new_fs, but NOT equal according to mi_equ
 // to_publish, to_update, and to_delete should be empty when this method is called.
 // NOTE: to_publish, to_update, and to_delete SHOULD NOT BE FREED.
-int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ ) {
+int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_remain, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ ) {
    
    set<string> intersection;
    
@@ -198,9 +214,11 @@ int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t*
       else {
          
          // this old entry is also in the new fs.
-         // is there any difference between the two that warrants an update?
          if( !(*mi_equ)( old_mi, new_itr->second ) ) {
             (*to_update)[ old_path ] = new_itr->second;
+         }
+         else {
+            (*to_remain)[ old_path ] = new_itr->second;
          }
          
          // track intersection between old_fs and new_fs
@@ -248,21 +266,28 @@ int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent )
 }
 
 
-// invalidate cached data, so we get new listings for it when we ask the MS again 
-static int AG_invalidate_cached_metadata( struct AG_map_info* mi ) {
+// invalidate cached MS data, so we get new listings for it when we ask the MS again 
+int AG_invalidate_cached_metadata( struct AG_map_info* mi ) {
    mi->write_nonce = md_random64();
    mi->cache_valid = false;
    return 0;
 }
 
-
-// invalidate cached driver data 
-static int AG_invalidate_cached_driver_data( struct AG_map_info* mi ) {
+// invalidate driver metadata 
+int AG_invalidate_driver_metadata( struct AG_map_info* mi ) {
    mi->driver_cache_valid = false;
-   memset( &mi->pubinfo, 0, sizeof(struct AG_driver_publish_info) );
    return 0;
 }
 
+// invalidate all driver metadata 
+int AG_invalidate_metadata_all( AG_fs_map_t* fs_map, int (*invalidator)( struct AG_map_info* ) ) {
+   
+   for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
+      (*invalidator)( itr->second );
+   }
+   
+   return 0;
+}
 
 // invalidate a path's worth of metadata 
 static int AG_invalidate_path_metadata( AG_fs_map_t* fs_map, char const* path ) {
@@ -289,7 +314,6 @@ static int AG_invalidate_path_metadata( AG_fs_map_t* fs_map, char const* path ) 
    FREE_LIST( prefixes );
    return 0;
 }
-
 
 // extract root information from the ms client 
 int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root ) {
@@ -457,7 +481,10 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
       dbprintf("Cache HIT on driver metadata for %s\n", path );
       
       // get cached pubinfo 
-      memcpy( pub_info, &mi->pubinfo, sizeof(struct AG_driver_publish_info) );
+      if( pub_info != &mi->pubinfo ) {
+         memcpy( pub_info, &mi->pubinfo, sizeof(struct AG_driver_publish_info) );
+      }
+      
       return 0;
    }
    
@@ -476,7 +503,10 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
       else {
          
          // cache this 
-         memcpy( &mi->pubinfo, pub_info, sizeof(struct AG_driver_publish_info) );
+         if( pub_info != &mi->pubinfo ) {
+            memcpy( &mi->pubinfo, pub_info, sizeof(struct AG_driver_publish_info) );
+         }
+         
          mi->driver_cache_valid = true;
       }
    }
@@ -548,6 +578,24 @@ int AG_get_publish_info( char const* path, struct AG_map_info* mi, struct AG_dri
    }
    else {
       rc = 0;
+   }
+   
+   return rc;
+}
+
+
+// populate an fs_map with driver info 
+int AG_get_publish_info_all( struct AG_state* state, AG_fs_map_t* fs_map ) {
+   
+   int rc = 0;
+   
+   for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
+      
+      rc = AG_get_publish_info_lowlevel( state, itr->first.c_str(), itr->second, &itr->second->pubinfo );
+      if( rc != 0 ) {
+         errorf("AG_get_publish_info_lowlevel(%s) rc = %d\n", itr->first.c_str(), rc );
+         return rc;
+      }
    }
    
    return rc;
@@ -762,8 +810,11 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
          
          // consumed!
          itr->second = NULL;
-         AG_map_info_free( info );
-         free( info );
+         
+         if( old_info != info ) {
+            AG_map_info_free( info );
+            free( info );
+         }
       }
       else {
          if( !merge_new ) {
@@ -782,160 +833,78 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
    return 0;
 }
 
+
+// delete a tree of metadata 
+// succeeds even if the data in to_delete isn't present in fs_map.
+int AG_fs_map_delete_tree( AG_fs_map_t* fs_map, AG_fs_map_t* to_delete ) {
+   
+   for( AG_fs_map_t::iterator itr = to_delete->begin(); itr != to_delete->end(); itr++ ) {
+      
+      struct AG_map_info* mi = NULL;
+      
+      AG_fs_map_t::iterator found = fs_map->find( itr->first );
+      if( found != fs_map->end() ) {
+         
+         mi = found->second;
+         AG_map_info_free( mi );
+         free( mi );
+         
+         fs_map->erase( found );
+      }
+   }
+   
+   return 0;
+}
+
+
+// copy over MS cached metadata
+int AG_map_info_copy_MS_data( struct AG_map_info* dest, struct AG_map_info* src ) {
+   if( src->cache_valid ) {
+      return AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation );
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+// copy over driver cached metadata
+int AG_map_info_copy_driver_data( struct AG_map_info* dest, struct AG_map_info* src ) {
+   if( src->driver_cache_valid ) {
+      return AG_map_info_make_coherent_with_driver_data( dest, src->pubinfo.size, src->pubinfo.mtime_sec, src->pubinfo.mtime_nsec );
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+// copy over AG cached metadata
+int AG_map_info_copy_AG_data( struct AG_map_info* dest, struct AG_map_info* src ) {
+   return AG_map_info_make_coherent_with_AG_data( dest, src->block_version, src->refresh_deadline );
+}
+
+
 // copy a tree's cached data into an AG_fs_map.  Don't copy data that exists in src but not in dest.  Only copy if coherent.
-// dest cannot be locked.
-// src must be at least read-locked
-int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
+// src must be read-locked 
+// dest must be write-locked
+int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src, int (*copy)( struct AG_map_info* dest, struct AG_map_info* src ) ) {
    
    for( AG_fs_map_t::iterator itr = src->fs->begin(); itr != src->fs->end(); itr++ ) {
       
       const string& path_string = itr->first;
       struct AG_map_info* info = itr->second;
+      int rc = 0;
       
-      if( info->cache_valid && info->driver_cache_valid ) {
-         AG_fs_make_coherent( dest, path_string.c_str(), info, NULL );
+      // find the matching dest 
+      AG_fs_map_t::iterator dest_itr = dest->fs->find( path_string );
+      if( dest_itr == dest->fs->end() ) {
+         continue;
       }
-      else {
-         errorf("WARN: %s is not coherent with the MS (valid=%d) or the driver (valid=%d)\n", path_string.c_str(), info->cache_valid, info->driver_cache_valid );
-      }
-   }
-   
-   return 0;
-}
-
-
-// make an ms_path_ent from an AG_map_info 
-static int AG_map_info_to_ms_path_ent( struct ms_path_ent* path_ent, struct AG_map_info* mi, uint64_t volume_id ) {
-   
-   memset( path_ent, 0, sizeof(struct ms_path_ent) );
-   
-   path_ent->volume_id = volume_id;
-   path_ent->file_id = mi->file_id;
-   path_ent->version = mi->file_version;
-   path_ent->write_nonce = mi->write_nonce;
-   
-   return 0;
-}
-
-
-// find the deepest known map_info and path, and the shallowest unknown map_info and path in an AG_fs_map_t.
-// if all entries have fresh metadata, then *deepest_known_path points to a duplicate of the longest path in path_info, *deepest_known_mi points to the associated map_info, and 
-// *shallowest_unknown_mi and *shallowest_unknown_path are both set to NULL.
-// *deepest_known_path is always non-NULL, since root is always known.
-// NOTE: path_info must contain *only* the prefix set of a path.
-static int AG_find_refresh_point( AG_fs_map_t* path_info, char** deepest_known_path, struct AG_map_info** deepest_known_mi, char** shallowest_unknown_path, struct AG_map_info** shallowest_unknown_mi ) {
-   
-   // assert that root is here 
-   AG_fs_map_t::iterator root_itr = path_info->find( string("/") );
-   if( root_itr == path_info->end() ) {
-      return -EINVAL;
-   }
-   
-   char const* deepest_known_path_const = "/";
-   *deepest_known_mi = root_itr->second;
-   
-   // search in order shallowest to deepest
-   vector<string> paths;
-   
-   for( AG_fs_map_t::iterator itr = path_info->begin(); itr != path_info->end(); itr++ ) {
       
-      paths.push_back( itr->first );
-   }
-   
-   // comparator by string length 
-   struct local_string_length_comparator {
-      
-      static bool comp( const string& s1, const string& s2 ) {
-         return md_depth(s1.c_str()) < md_depth(s2.c_str());
-      }
-   };
-   
-   // sort them by increasing length 
-   sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
-   
-   for( unsigned int i = 0; i < paths.size(); i++ ) {
-      
-      char const* mi_path = paths[i].c_str();
-      struct AG_map_info* mi = (*path_info)[ paths[i] ];
-      
-      if( !mi->cache_valid ) {
-         
-         *shallowest_unknown_path = strdup( mi_path );
-         *shallowest_unknown_mi = mi;
-         
-         break;
-      }
-      else {
-         // we have cached data for these 
-         deepest_known_path_const = mi_path;
-         *deepest_known_mi = mi;
+      rc = (*copy)( dest_itr->second, info );
+      if( rc != 0 ) {
+         errorf("WARN: Failed to copy data from %p to %p (%s), rc = %d\n", info, dest_itr->second, path_string.c_str(), rc );
       }
    }
-   
-   *deepest_known_path = strdup( deepest_known_path_const );
-   
-   return 0;
-}
-
-// validate an ms_response listing against a requested path and its map info.
-// we should have gotten back a response that corresponds to the given map_info.
-// return 0 if we have a valid listing 
-// return 1 if the listing indicates that there has been no remote change on the MS.
-// return negative on error
-static int AG_validate_MS_response( char const* path, struct AG_map_info* mi, ms_response_t* ms_response ) {
-   
-   if( ms_response->size() != 1 ) {
-      errorf("MS replied with %zu entry listings\n", ms_response->size() );
-      return -EBADMSG;
-   }
-   
-   // get the response listing
-   uint64_t file_id = ms_response->begin()->first;
-   struct ms_listing* listing = &ms_response->begin()->second;
-   
-   // ignore if absent 
-   if( listing->status == MS_LISTING_NONE ) {
-      return -ENOENT;
-   }
-   
-   // ignore if unchanged (i.e. we had the right local info).
-   else if( listing->status == MS_LISTING_NOCHANGE ) {
-      dbprintf("Have fresh cached metadata for %s\n", path );
-      return 1;
-   }
-   
-   // the first entry corresponds to this path 
-   struct md_entry* ent = &(*listing->entries)[0];
-   if( ent == NULL || ent->name == NULL ) {
-      // nothing to load
-      errorf("MS missing data for entry %s\n", path );
-      return -ENODATA;
-   }
-   
-   // sanity check: this must be for us 
-   if( mi->file_id != file_id ) {
-      errorf("Requested listing for %" PRIX64 "; MS replied with listing for %" PRIX64 "\n", file_id, mi->file_id );
-      return -EBADMSG;
-   }
-   
-   // sanity check: types must match 
-   if( ent->type != mi->type ) {
-      // somehow the type changed 
-      errorf("Requested listing for %s the %s; MS replied as if it were a %s\n", path, (mi->type == MD_ENTRY_FILE ? "file" : "directory"), (ent->type == MD_ENTRY_DIR ? "file" : "directory") );
-      return -EBADMSG;
-   }
-      
-   char* name = md_basename( path, NULL );
-
-   // sanity check: file names must match 
-   if( strcmp(ent->name, name) != 0 ) {
-      errorf("Requested listing for '%s'; MS replied with a listing for '%s'\n", ent->name, name );
-      
-      free( name );
-      return -EBADMSG;
-   }
-   
-   free( name );
    
    return 0;
 }
@@ -974,221 +943,221 @@ static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* 
 }
 
 
-// merge data from an MS response listing for a path's shallowest unknown map_info.  This updates the given shallowest unknown map info and makes it coherent, if it isn't NULL.
-// return 0 if the response had the requested data.
-// return -ENOENT if it did not (indicating that the shallowest unknown map_info shouldn't exist)
-// if new_data is not NULL, copy over all newly-discovered map_info data that belongs to this gateway.  Map infos copied to new_data are marked as coherent.
-static int AG_accumulate_data_from_ms_response( char const* deepest_known_path, vector<struct md_entry>* deepest_known_entry_listing,
-                                                char const* shallowest_unknown_path, struct AG_map_info* shallowest_unknown_map_info,
-                                                uint64_t gateway_id, uint64_t volume_id,
-                                                AG_fs_map_t* new_data ) {
-
-   bool found = false;
+// convert a path and its associated AG map infos to an ms_path.
+// the data in path_info must be coherent.
+// return 0 on success
+// return -EINVAL if path_info is missing data referred to by path
+static int AG_path_info_to_ms_path_ex( uint64_t volume_id, char const* path, AG_fs_map_t* path_info, ms_path_t* ms_path, bool (*filter)(struct AG_map_info* mi, void* cls), void* cls ) {
    
-   char* shallowest_unknown_name = md_basename( shallowest_unknown_path, NULL );
+   char** prefixes = NULL;
+   int num_prefixes = 0;
+   struct ms_path_ent ms_ent;
+   AG_fs_map_t::iterator itr;
+   struct AG_map_info* mi = NULL;
+   uint64_t parent_id = 0;
+   char* name = NULL;
+   bool include = false;
    
-   dbprintf("Shallowest unknown path: %s, name: %s\n", shallowest_unknown_path, shallowest_unknown_name );
+   num_prefixes = AG_path_prefixes( path, &prefixes );
    
-   // find the entry for the shallowest unknown info 
-   // NOTE: deepest_known_entry_listing[0] is the deepest known entry's data
-   for( unsigned int i = 1; i < deepest_known_entry_listing->size(); i++ ) {
+   // verify they're all there 
+   for( int i = 0; i < num_prefixes; i++ ) {
       
-      struct md_entry* ent = &deepest_known_entry_listing->at(i);
+      if( path_info->find( string(prefixes[i]) ) == path_info->end() ) {
+         
+         FREE_LIST( prefixes );
+         return -EINVAL;
+      }
+   }
+   
+   // convert them 
+   for( int i = 0; i < num_prefixes; i++ ) {
       
-      // ignore entries that we aren't the coordinator of.
-      // track directories, however.
-      if( (ent->type == MD_ENTRY_FILE && ent->coordinator != gateway_id) || ent->volume != volume_id ) {
+      itr = path_info->find( string(prefixes[i]) );
+      mi = itr->second;
+      
+      // filter?
+      include = true;
+      
+      if( filter != NULL ) {
+         include = (*filter)( mi, cls );
+      }
+      
+      if( !include ) {
          continue;
       }
       
-      // match on name--is this the shallowest unknown listing?
-      if( strcmp( ent->name, shallowest_unknown_name ) == 0 && shallowest_unknown_map_info != NULL ) {
-         
-         dbprintf("Reload %s\n", shallowest_unknown_path );
-         
-         if( new_data ) {
-            AG_accumulate_data_from_md_entry( new_data, shallowest_unknown_path, shallowest_unknown_map_info, ent );
-         }
-         
-         // update in-place.  The shallowest unknown map_info is now cache-coherent, and thus known.
-         AG_copy_metadata_to_map_info( shallowest_unknown_map_info, ent );
-         
-         dbprintf("%s (%" PRIX64") at %p is now valid\n", shallowest_unknown_path, ent->file_id, shallowest_unknown_map_info );
-         
-         found = true;
-      }
-      else if( new_data ) {
-         
-         // what path is this entry at in this directory?
-         char* child_path = md_fullpath( deepest_known_path, ent->name, NULL );
-         
-         AG_accumulate_data_from_md_entry( new_data, child_path, NULL, ent );
-         
-         dbprintf("New valid data: %s (%" PRIX64 ")\n", child_path, ent->file_id );
-         
-         free( child_path );
-      }
+      memset( &ms_ent, 0, sizeof(struct ms_path_ent) );
+      
+      name = md_basename( prefixes[i], NULL );
+      
+      ms_client_make_path_ent( &ms_ent, volume_id, parent_id, mi->file_id, mi->file_version, mi->write_nonce, mi->num_children, mi->generation, name, NULL );
+      
+      free( name );
+      
+      ms_path->push_back( ms_ent );
+      
+      // next entry 
+      parent_id = mi->file_id;
    }
    
-   free( shallowest_unknown_name );
+   FREE_LIST( prefixes );
    
-   if( found ) {
-      return 0;
-   }
-   else {
-      return -ENOENT;
-   }
+   return 0;
 }
 
 
-// walk down a path and ensure that we have metadata for a path of map_infos.
-// download the metadata if we don't have it.
-// if new_data is not NULL, then new or refreshed map infos will be duplicated and copied to it.
-// if explore_last_directory is true, and the path refers to a directory, then this method downloads the directory's children
-// NOTE: path_info must contain *exactly* the prefix set of path
-static int AG_get_path_metadata( struct ms_client* client, char const* path, AG_fs_map_t* path_info, AG_fs_map_t* new_data, bool explore_last_directory ) {
+// given a path and path info for it, generate an ms_path such that:
+// * the first element has fresh data 
+// * all subsequent elements are stale
+// this is called a consistency work path, since it will be used as a work queue for consistency checks
+// return 0 on success
+// return -EINVAL if we failed to generate a path (can only be due to incomplete data from the caller)
+static int AG_consistency_work_path_init( struct ms_client* client, char const* path, AG_fs_map_t* path_info, ms_path_t* ms_path ) {
    
-   dbprintf("Get metadata for %s\n", path );
+   ms_path_t ms_path_fresh;
+   int rc = 0;
+   uint64_t volume_id = ms_client_get_volume_id( client );
+   
+   // convert fresh entries to ms_path_fresh 
+   rc = AG_path_info_to_ms_path_ex( volume_id, path, path_info, &ms_path_fresh, AG_path_filters::is_fresh, NULL );
+   if( rc != 0 ) {
+      errorf("AG_path_info_to_ms_path_ex(%s, fresh) rc = %d\n", path, rc );
+      return -EINVAL;
+   }
+   
+   // convert stale entries to ms_path
+   rc = AG_path_info_to_ms_path_ex( volume_id, path, path_info, ms_path, AG_path_filters::is_stale, NULL );
+   if( rc != 0 ) {
+      errorf("AG_path_info_to_ms_path_ex(%s, stale) rc = %d\n", path, rc );
+      
+      ms_client_free_path( &ms_path_fresh, NULL );
+      return -EINVAL;
+   }
+   
+   // include the deepest fresh path as the head of ms_path, so we can resolve the stale entries 
+   ms_path->insert( ms_path->begin(), ms_path_fresh[ ms_path_fresh.size() - 1 ] );
+   ms_path_fresh.pop_back();
+   
+   ms_client_free_path( &ms_path_fresh, NULL );
+   
+   return 0;
+}
+   
+
+// given a coherent AG_map_info and the path to it, list its contents.
+// merge the entries into new_data.
+// return 0 on success
+// return -EINVAL if dir_info isn't coherent
+// return negative on MS communication or protocol error
+static int AG_listdir( struct ms_client* client, char const* fs_path, struct AG_map_info* dir_info, AG_fs_map_t* new_data ) {
+   
+   int rc = 0;
+   struct ms_client_multi_result results;
+   char* fp = NULL;
+   
+   if( !dir_info->cache_valid ) {
+      errorf("Directory %s is not valid\n", fs_path );
+      return -EINVAL;
+   }
+   
+   memset( &results, 0, sizeof(struct ms_client_multi_result));
+   
+   // get the listing
+   rc = ms_client_listdir( client, dir_info->file_id, dir_info->num_children, &results );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
+      return rc;
+   }
+   
+   if( results.reply_error != 0 ) {
+      errorf("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
+      
+      ms_client_multi_result_free( &results );
+      return rc;
+   }
+   
+   // merge listing into new data
+   for( unsigned int i = 0; i < results.num_ents; i++ ) {
+      
+      fp = md_fullpath( fs_path, results.ents[i].name, NULL );
+      
+      AG_accumulate_data_from_md_entry( new_data, fp, NULL, &results.ents[i] );
+      
+      free( fp );
+   }
+   
+   ms_client_multi_result_free( &results );
+   return 0;
+}
+
+
+// get a path-worth of metadata, and merge it into ret_new_data.
+// merging is all-or-nothing.
+// return 0 on success
+// return negative on failure
+// return -EIO to indicate a bug
+static int AG_path_download( struct ms_client* client, char const* path, AG_fs_map_t* path_info, AG_fs_map_t* ret_new_data ) {
    
    int rc = 0;
    
-   // our volume and gateway IDs
-   uint64_t volume_id = ms_client_get_volume_id( client );
-   uint64_t gateway_id = client->gateway_id;
-   bool searching = true;
-   bool explored_children = false;
+   ms_path_t ms_path;           // all stale path entries
+   AG_fs_map_t new_data;        // downloaded data
    
-   // walk down the path and get metadata for its entries
-   while( searching ) {
-      
-      // find the point in the path where we need to refresh
-      struct AG_map_info* deepest_known_map_info = NULL;
-      struct AG_map_info* shallowest_unknown_map_info = NULL;
-      char* deepest_known_path = NULL;
-      char* shallowest_unknown_path = NULL;
-      
-      rc = AG_find_refresh_point( path_info, &deepest_known_path, &deepest_known_map_info, &shallowest_unknown_path, &shallowest_unknown_map_info );
-      if( rc != 0 ) {
-         errorf("AG_find_deepest_known_info(%s) rc = %d\n", path, rc );
-         break;
-      }
-      
-      if( shallowest_unknown_path == NULL || shallowest_unknown_map_info == NULL ) {
-         
-         // all metadata on this path is known 
-         // do we need to explore the children?
-         if( explore_last_directory && deepest_known_map_info->type == MD_ENTRY_DIR && !explored_children ) {
-            
-            dbprintf("Load children of %s\n", deepest_known_path );
-            
-            // this is a directory, and we should fetch its children
-            shallowest_unknown_path = strdup( deepest_known_path );
-            
-            // stop searching after this 
-            searching = false;
-         }
-         else {
-            dbprintf("All metadata is known for %s\n", path );
-            free( deepest_known_path );
-            
-            break;
-         }
-      }
-      
-      dbprintf("Deepest known path of '%s' is '%s'; shallowest unknown path is '%s'\n", path, deepest_known_path, shallowest_unknown_path );
-      
-      // prepare a request for the deepest known info's children, so we can populate the shallowest unknown info
-      ms_path_t ms_requests;
-      ms_response_t ms_response;
-      struct ms_path_ent path_ent;
-      
-      AG_map_info_to_ms_path_ent( &path_ent, deepest_known_map_info, volume_id );
-      
-      // make *sure* we get back data from the MS, instead of MS_LISTING_NOCHANGE
-      path_ent.write_nonce = md_random64();
-      
-      ms_requests.push_back( path_ent );
-      
-      // get the listing for this path 
-      rc = ms_client_get_listings( client, &ms_requests, &ms_response );
-      
-      if( rc != 0 ) {
-         errorf("ms_client_get_listings(%s) rc = %d\n", deepest_known_path, rc );
-         
-         free(deepest_known_path);
-         if( shallowest_unknown_path ) {
-            free( shallowest_unknown_path );
-         }
-         
-         ms_client_free_response( &ms_response );
-         break;
-      }
-      
-      // make sure this response is for the deepest_known_mi, and that it has data
-      rc = AG_validate_MS_response( deepest_known_path, deepest_known_map_info, &ms_response );
-      if( rc != 0 ) {
-         errorf("AG_validate_MS_response(%s) rc = %d\n", deepest_known_path, rc );
-         
-         free(deepest_known_path);
-         if( shallowest_unknown_path ) {
-            free( shallowest_unknown_path );
-         }
-         
-         ms_client_free_response( &ms_response );
-         break;
-      }
-      
-      // extract useful info 
-      vector<struct md_entry>* deepest_known_entry_listing = ms_response[ deepest_known_map_info->file_id ].entries;
-      struct md_entry* deepest_known_entry_metadata = &deepest_known_entry_listing->at(0);
-      
-      // merge response into deepest known info.  The deepest known info is now cache-coherent.
-      AG_copy_metadata_to_map_info( deepest_known_map_info, deepest_known_entry_metadata );
-      
-      dbprintf("%s at %p is now valid\n", deepest_known_path, deepest_known_map_info );
-      
-      // copy the deepest known path into new_data, if given 
-      if( new_data ) {
-         AG_accumulate_data_from_md_entry( new_data, deepest_known_path, deepest_known_map_info, deepest_known_entry_metadata );
-      }
-      
-      bool found = false;
-      
-      // if shallowest_unkown_path and deepest_known_path are the same, then we've found it and reloaded it already
-      if( shallowest_unknown_path != NULL && strcmp(shallowest_unknown_path, deepest_known_path) == 0 ) {
-         found = true;
-         
-         // we will have also explored any children of the shallowest unknown path as well (assuming its a directory).
-         explored_children = true;
-      }
-      
-      // verify that the MS gave back data for the shallowest unknown path, and get the new data.
-      // Mark the shallowest unknown map info as cache-coherent if we got back data for it, as well as any other listings 
-      // copied into new_data
-      rc = AG_accumulate_data_from_ms_response( deepest_known_path, deepest_known_entry_listing, shallowest_unknown_path, shallowest_unknown_map_info, gateway_id, volume_id, new_data );
-      
-      ms_client_free_response( &ms_response );
-      
-      if( !found && rc != 0 ) {
-         errorf("AG_accumulate_data_from_ms_response(%s) rc = %d\n", shallowest_unknown_path, rc );
-         
-         free(deepest_known_path);
-         if( shallowest_unknown_path ) {
-            free( shallowest_unknown_path );
-         }
-         
-         rc = -ENOENT;
-         break;
-      }
-      
-      free(deepest_known_path);
-      if( shallowest_unknown_path ) {
-         free( shallowest_unknown_path );
-      }
-      
-      rc = 0;
+   int download_rc = 0;
+   int download_error_idx = 0;
+   
+   dbprintf("Get metadata for %s\n", path );
+   
+   // make the work path 
+   rc = AG_consistency_work_path_init( client, path, path_info, &ms_path );
+   if( rc != 0 ) {
+      errorf("AG_consistency_work_path_init(%s, fresh) rc = %d\n", path, rc );
+      return -EINVAL;
    }
    
+   // download the path 
+   rc = ms_client_path_download( client, &ms_path, NULL, NULL, &download_rc, &download_error_idx );
+   if( rc != 0 ) {
+      errorf("ms_client_path_download(%s) rc = %d\n", path, rc );
+      
+      ms_client_free_path( &ms_path, NULL );
+      return rc;
+   }
+   
+   if( download_rc != 0 ) {
+      errorf("ms_client_path_download(%s) download rc = %d\n", path, download_rc );
+      
+      ms_client_free_path( &ms_path, NULL );
+      return download_rc;
+   }
+   
+   // merge the data (skip the first path entry, since it was fresh already)
+   for( unsigned int i = 1; i < ms_path.size(); i++ ) {
+      
+      char* prefix = ms_path_to_string( &ms_path, i );
+      struct AG_map_info* dup = AG_fs_lookup_path_in_map( path_info, prefix );
+      
+      if( dup == NULL ) {
+         // not found!  shouldn't happen, so this is a bug 
+         errorf("BUG: %s not found\n", prefix);
+         free( prefix );
+         rc = -EIO;
+         break;
+      }
+      
+      AG_map_info_make_coherent_with_MS_data( dup, ms_path[i].file_id, ms_path[i].version, ms_path[i].write_nonce, ms_path[i].num_children, ms_path[i].generation );
+      
+      new_data[ string(prefix) ] = dup;
+   }
+   
+   // success?  if so, merge in 
+   if( rc == 0 ) {
+      
+      AG_fs_map_merge_tree( ret_new_data, &new_data, true, NULL );
+   }
+  
    return rc;
 }
 
@@ -1222,9 +1191,9 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    }
    
    // get the metadata
-   rc = AG_get_path_metadata( ag_fs->ms, path, &path_info, &new_path_info, false );
+   rc = AG_path_download( ag_fs->ms, path, &path_info, &new_path_info );
    if( rc != 0 ) {
-      errorf("AG_get_path_metadata(%s) rc = %d\n", path, rc );
+      errorf("AG_path_download(%s) rc = %d\n", path, rc );
       
       AG_fs_map_free( &path_info );
       AG_fs_map_free( &new_path_info );
@@ -1235,7 +1204,7 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    
    AG_fs_map_t not_merged;
    
-   // merge the path back in.
+   // merge the path back in (do so here, to avoid locking the tree during I/O)
    // Do NOT merge new data--we should already know all map_infos
    AG_fs_wlock( ag_fs );
    rc = AG_fs_map_merge_tree( ag_fs->fs, &new_path_info, false, &not_merged );
@@ -1289,12 +1258,15 @@ struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
 
 
 // make a given map_info coherent with new MS data 
-int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation ) {
 
    // update the cache data
    mi->file_id = file_id;
    mi->file_version = file_version;
    mi->write_nonce = write_nonce;
+   mi->num_children = num_children;
+   mi->generation = generation;
+   
    mi->cache_valid = true;
    
    return 0;
@@ -1345,7 +1317,7 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_in
    // update the versions 
    struct AG_map_info* mi = child_itr->second;
    
-   AG_map_info_make_coherent_with_MS_data( mi, ref_mi->file_id, ref_mi->file_version, ref_mi->write_nonce );
+   AG_map_info_make_coherent_with_MS_data( mi, ref_mi->file_id, ref_mi->file_version, ref_mi->write_nonce, ref_mi->num_children, ref_mi->generation );
    AG_map_info_make_coherent_with_driver_data( mi, ref_mi->pubinfo.size, ref_mi->pubinfo.mtime_sec, ref_mi->pubinfo.mtime_nsec );
    AG_map_info_make_coherent_with_AG_data( mi, ref_mi->block_version, ref_mi->refresh_deadline );
    
@@ -1359,28 +1331,6 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_in
 }
 
 
-// remove an AG_map_info
-// return -ENOENT if not found.
-// NOTE: this doesn't consider directories.  Only do this operation of a corresponding ms_client_delete() succeeded for this path.
-int AG_fs_remove( struct AG_fs* ag_fs, char const* path ) {
-   
-   AG_fs_wlock( ag_fs );
-   
-   // do we have a map_info for this?
-   AG_fs_map_t::iterator child_itr = ag_fs->fs->find( string(path) );
-   if( child_itr == ag_fs->fs->end() ) {
-      
-      AG_fs_unlock( ag_fs );
-      return -ENOENT;
-   }
-   
-   ag_fs->fs->erase( child_itr );
-   
-   AG_fs_unlock( ag_fs );
-   
-   return 0;
-}
-
 // make an absolute reval deadline from a given map_info lifetime (reval_sec)
 int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
    
@@ -1391,115 +1341,8 @@ int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
 }
 
 
-// find and remove all entries from sorted_paths of the same depth, and put them into path_list
-// sorted_paths must be sorted by increasing path depth.
-int AG_pop_paths_by_depth( vector<string>* sorted_paths, vector<string>* path_list ) {
-   
-   if( sorted_paths->size() == 0 ) {
-      return -EINVAL;
-   }
-   
-   int depth = 0;
-   
-   // what's the depth of the head?
-   depth = md_depth( sorted_paths->at(0).c_str() );
-   
-   path_list->push_back( sorted_paths->at(0) );
-   
-   if( sorted_paths->size() > 1 ) {
-      // find all directories in sorted_paths that are have $depth.
-      // they will all be at the head.
-      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
-         
-         int next_depth = md_depth( sorted_paths->at(i).c_str() );
-         if( next_depth == depth ) {
-            
-            path_list->push_back( sorted_paths->at(i) );
-         }
-         else {
-            break;
-         }
-      }
-   }
-   
-   // pop all pushed paths 
-   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + path_list->size() );
-   
-   return 0;
-}
-
-
-// find and remove all entries from sorted_paths that share the same parent, and put them into path_list
-// sorted_paths must be sorted alphanumerically
-int AG_pop_paths_by_parent( vector<string>* sorted_paths, vector<string>* path_list ) {
-   
-   if( sorted_paths->size() == 0 ) {
-      return -EINVAL;
-   }
-   
-   // if well-formed, the first element is the parent directory (since its path will be shortest)
-   char* parent_dir = md_dirname( sorted_paths->at(0).c_str(), NULL );
-   
-   path_list->push_back( sorted_paths->at(0) );
-   
-   if( sorted_paths->size() > 0 ) {
-      // find all directories in sorted paths that have the parent directory $parent_dir 
-      // they will all be at the head.
-      for( unsigned int i = 1; i < sorted_paths->size(); i++ ) {
-         
-         if( AG_path_is_immediate_child( parent_dir, sorted_paths->at(i).c_str() ) ) {
-            
-            path_list->push_back( sorted_paths->at(i) );
-         }
-         else {
-            break;
-         }
-      }
-   }
-   
-   free( parent_dir );
-   
-   // pop all pushed paths 
-   sorted_paths->erase( sorted_paths->begin(), sorted_paths->begin() + path_list->size() );
-   
-   return 0;
-}
-
-
-// sort paths by depth.  put them into paths
-int AG_sort_paths_by_depth( AG_fs_map_t* directives, vector<string>* paths ) {
-   
-   // sanity check 
-   if( directives->size() == 0 ) {
-      // empty list
-      return 0;
-   }
-   
-   for( AG_fs_map_t::iterator itr = directives->begin(); itr != directives->end(); itr++ ) {
-      paths->push_back( itr->first );
-   }
-   
-   // put the FS paths into breadth-first order.
-   struct local_path_comparator {
-      
-      static bool comp_breadth_first( const string& s1, const string& s2 ) {
-         // s1 comes before s2 if s1 is shallower than s2
-         int depth_1 = md_depth( s1.c_str() );
-         int depth_2 = md_depth( s2.c_str() );
-         
-         return depth_1 < depth_2;
-      }
-   };
-   
-   // breadth-first order
-   sort( paths->begin(), paths->end(), local_path_comparator::comp_breadth_first );
-   
-   return 0;
-}
-
-
 // find all directories and the number of children they have in an fs_map 
-static int AG_fs_count_children( AG_fs_map_t* fs_map, map<string, int>* child_counts ) {
+int AG_fs_count_children( AG_fs_map_t* fs_map, map<string, int>* child_counts ) {
    
    // find all directories in the specfile, and count their children in specfile_child_counts
    for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
@@ -1658,16 +1501,6 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       }
    }
    
-   // invalidate the frontier so we can search them 
-   for( unsigned int i = 0; i < frontier.size(); i++ ) {
-      
-      // find the associated map info 
-      AG_fs_map_t::iterator itr = on_MS->find( frontier[i] );
-      if( itr != on_MS->end() ) {
-         AG_invalidate_cached_metadata( itr->second );
-      }
-   }
-   
    while( frontier.size() > 0 ) {
       
       // next directory 
@@ -1675,29 +1508,35 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       frontier.erase( frontier.begin() );
       
       char const* dir_path = dir_path_s.c_str();
+      struct AG_map_info* dir_info = NULL;
       
       dbprintf("Explore '%s'\n", dir_path );
          
-      // next directory's listing 
-      AG_fs_map_t dir_listing;
-      
       // newly-discovered data 
       AG_fs_map_t new_info;
       
-      // copy this path in 
-      rc = AG_fs_map_clone_path( on_MS, dir_path, &dir_listing );
-      if( rc != 0 ) {
-         errorf("AG_fs_map_clone_path(%s) rc = %d\n", dir_path, rc );
+      // children of the deepest directory
+      struct ms_client_multi_result children;
+      memset( &children, 0, sizeof(struct ms_client_multi_result) );
+      
+      // find this directory's info 
+      dir_info = AG_fs_lookup_path_in_map( on_MS, dir_path );
+      if( dir_info == NULL ) {
+         // not found 
+         errorf("Not found: %s\n", dir_path );
+         
+         rc = -ENOENT;
          break;
       }
       
-      // read this directory, and its immediate children
-      rc = AG_get_path_metadata( ms, dir_path, &dir_listing, &new_info, true );
+      // read this directory
+      rc = AG_listdir( ms, dir_path, dir_info, &new_info );
+      
+      AG_map_info_free( dir_info );
+      free( dir_info );
+      
       if( rc != 0 ) {
-         errorf("AG_get_path_metadata(%s) rc = %d\n", dir_path, rc );
-         
-         AG_fs_map_free( &dir_listing );
-         AG_fs_map_free( &new_info );
+         errorf("AG_listdir(%s) rc = %d\n", dir_path, rc );
          break;
       }
       
@@ -1724,9 +1563,7 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
          }
       }
       
-      AG_fs_map_free( &dir_listing );
-      
-      // merge discovered data back in 
+      // merge discovered data back in (NOTE: don't free new_info, since it will be merged)
       rc = AG_fs_map_merge_tree( on_MS, &new_info, true, NULL );
       
       if( rc != 0 ) {
