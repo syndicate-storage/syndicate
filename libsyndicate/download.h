@@ -62,10 +62,10 @@ struct md_download_context {
    bool cancelled;      // if true, this was cancelled
    char* effective_url; // stores final URL that resolved to data
    
-   bool pending;        // if true, then this download context is in the process of being started
-   bool cancelling;     // if true, then this download context is in the process of being cancelled
-   bool running;        // if true, then this download is enqueued on the downloader
-   bool finalized;      // if true, then this download has finished
+   volatile bool pending;        // if true, then this download context is in the process of being started
+   volatile bool cancelling;     // if true, then this download context is in the process of being cancelled
+   volatile bool running;        // if true, then this download is enqueued on the downloader
+   volatile bool finalized;      // if true, then this download has finished
    
    struct md_download_set* dlset;       // parent group containing this context
    
@@ -95,11 +95,11 @@ struct md_downloader {
    
    md_pending_set_t* pending;           // to be inserted into the downloading map
    pthread_rwlock_t pending_lock;       // guards pending
-   bool has_pending;
+   volatile bool has_pending;
    
    md_pending_set_t* cancelling;        // to be removed from the downloading map
    pthread_rwlock_t cancelling_lock;    // guards cancelling_lock
-   bool has_cancelling;
+   volatile bool has_cancelling;
    
    CURLM* curlm;        // multi-download
    
@@ -179,6 +179,9 @@ int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout
 int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout_ms );
 int md_download_context_cancel( struct md_downloader* dl, struct md_download_context* dlctx );
 
+// run a download synchronously 
+int md_download_context_run( struct md_download_context* dlctx );
+
 // get back data from a download context
 int md_download_context_get_buffer( struct md_download_context* dlctx, char** buf, off_t* buf_len );
 int md_download_context_get_http_status( struct md_download_context* dlctx );
@@ -192,6 +195,8 @@ bool md_download_context_finalized( struct md_download_context* dlctx );
 bool md_download_context_running( struct md_download_context* dlctx );
 bool md_download_context_pending( struct md_download_context* dlctx );
 bool md_download_context_cancelled( struct md_download_context* dlctx );
+
+int md_HTTP_status_code_to_error_code( int status_code );
 
 // low-level primitve for waiting on a semaphore (that tries again if interrupted)
 int md_download_sem_wait( sem_t* sem, int64_t timeout_ms );
@@ -249,6 +254,7 @@ void md_download_config_set_canceller( struct md_download_config* dlconf, md_dow
 void md_download_config_set_limits( struct md_download_config* dlconf, int max_downloads, off_t max_len );
 
 int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, struct md_download_config* dlconf );
+int md_download_single( struct md_syndicate_conf* conf, struct md_download_config* dlconf );
 
 // low-level misc 
 int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t max_size );
