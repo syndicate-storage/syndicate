@@ -44,7 +44,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
 int AG_fs_publish_generate_metadata( AG_fs_map_t* to_publish );
 
 // one-off methods
-int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
+int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path );
 

@@ -653,10 +653,79 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
 }
 
 // publish a path in the MS, using the given path and driver publish info.
-int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo ) {
+// NOTE: pubinfo must be given
+int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
-   // TODO
-   return -ENOSYS;
+   dbprintf("Publish %s in %p\n", path, ag_fs );
+   
+   struct md_entry entry;
+   memset( &entry, 0, sizeof(struct md_entry) );
+   
+   int rc = 0;
+   
+   // look up the parent map_info 
+   char* parent_path = md_dirname( path, NULL );
+   struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
+   free( parent_path );
+   
+   if( parent_mi == NULL ) {
+      errorf("No such parent entry at '%s'\n", parent_path );
+      
+      return -ENOENT;
+   }
+   
+   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, 0, pubinfo );
+   
+   AG_map_info_free( parent_mi );
+   
+   free( parent_mi );
+   
+   if( rc != 0 ) {
+      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      
+      md_entry_free( &entry );
+      return rc;
+   }
+   
+   // generate a new file and block version, randomly 
+   entry.version = (int64_t)md_random64();
+   int64_t block_version = (int64_t)md_random64();
+   int64_t write_nonce = 0;
+   uint64_t file_id = ms_client_make_file_id();
+   
+   // create 
+   rc = ms_client_create( ag_fs->ms, &file_id, &write_nonce, &entry );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_create(%s) rc = %d\n", path, rc );
+      
+      md_entry_free( &entry );
+      return rc;
+   }
+   
+   struct AG_map_info tmp;
+   memset( &tmp, 0, sizeof(struct AG_map_info) );
+   
+   AG_copy_metadata_to_map_info( &tmp, &entry );
+   AG_map_info_make_coherent_with_AG_data( &tmp, block_version, AG_map_info_make_deadline( mi->reval_sec ) );
+   
+   // update authoritative copy to keep it coherent
+   AG_fs_make_coherent( ag_fs, path, &tmp, mi );
+   
+   // insert it 
+   AG_fs_map_insert( ag_fs, path, mi );
+   
+   // evict cached blocks for this file 
+   struct AG_state* state = AG_get_state();
+   if( state != NULL ) {
+      AG_cache_evict_file( state, path, entry.version );
+      
+      AG_release_state( state );
+   }
+   
+   md_entry_free( &entry );
+   
+   return rc;
 }
 
 // reversion a (path, map_info) via the driver.
@@ -686,6 +755,14 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    char* parent_path = md_dirname( path, NULL );
    struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
    free( parent_path );
+   
+   if( parent_mi == NULL ) {
+      errorf("No such parent entry at '%s'\n", parent_path );
+      
+      AG_map_info_free( mi );
+      free( mi );
+      return -ENOENT;
+   }
    
    // get entry's revalidation time for reversioning
    int64_t mi_reval_sec = mi->reval_sec;
@@ -768,6 +845,76 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
 // delete a path in the MS 
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    
-   // TODO 
-   return -ENOSYS;
+   dbprintf("Delete %s in %p\n", path, ag_fs );
+   
+   struct md_entry entry;
+   memset( &entry, 0, sizeof(struct md_entry) );
+   
+   int rc = 0;
+   
+   // look up the map_info
+   struct AG_map_info* mi = AG_fs_lookup_path( ag_fs, path );
+   if( mi == NULL ) {
+      errorf("No such entry at '%s'\n", path );
+      return -ENOENT;
+   }
+   
+   // old file version 
+   int64_t file_version = mi->file_version;
+   
+   // look up the parent map_info 
+   char* parent_path = md_dirname( path, NULL );
+   struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
+   free( parent_path );
+   
+   if( parent_mi == NULL ) {
+      errorf("No such parent entry at '%s'\n", parent_path );
+      
+      AG_map_info_free( mi );
+      free( mi );
+      return -ENOENT;
+   }
+   
+   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, AG_POPULATE_SKIP_DRIVER_INFO, NULL );
+   
+   AG_map_info_free( mi );
+   AG_map_info_free( parent_mi );
+   
+   if( rc != 0 ) {
+      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      
+      md_entry_free( &entry );
+      return rc;
+   }
+   
+   // create 
+   rc = ms_client_delete( ag_fs->ms, &entry );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_delete(%s) rc = %d\n", path, rc );
+      
+      md_entry_free( &entry );
+      return rc;
+   }
+   
+   // remove from fs 
+   rc = AG_fs_map_remove( ag_fs, path, &mi );
+   if( mi != NULL ) {
+      
+      AG_map_info_free( mi );
+      free( mi );
+      mi = NULL;
+   }
+   
+   md_entry_free( &entry );
+   
+   // evict cached blocks for this file 
+   struct AG_state* state = AG_get_state();
+   if( state != NULL ) {
+      AG_cache_evict_file( state, path, file_version );
+      
+      AG_release_state( state );
+   }
+   
+   return rc;
 }
