@@ -511,6 +511,24 @@ int AG_driver_set_signal_handler( int signum, sighandler_t sighandler ) {
    return AG_add_signal_handler( signum, sighandler );
 }
 
+// stable API to request that a dataset be published 
+int AG_driver_request_publish( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
+   
+   struct AG_state* state = AG_get_state();
+   if( state == NULL ) {
+      return -ENOTCONN;
+   }
+   
+   // enqueue it into the publisher 
+   int rc = AG_workqueue_add_publish( state->wq, path, mi, pub_info );
+   if( rc != 0 ) {
+      errorf("AG_workqueue_add_publish(%s) rc = %d\n", path, rc );
+   }
+   
+   AG_release_state( state );
+   return rc;
+}
+
 // stable API to request that a dataset be republished 
 int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info* pubinfo ) {
    
@@ -530,6 +548,23 @@ int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info
    return rc;
 }
 
+// stable API to request that a dataset be deleted 
+int AG_driver_request_delete( char const* path ) {
+   
+   struct AG_state* state = AG_get_state();
+   if( state == NULL ) {
+      return -ENOTCONN;
+   }
+   
+   // enqueue it into the publisher 
+   int rc = AG_workqueue_add_delete( state->wq, path );
+   if( rc != 0 ) {
+      errorf("AG_workqueue_add_delete(%s) rc = %d\n", path, rc );
+   }
+   
+   AG_release_state( state );
+   return rc;
+}
 
 // stable API to get a chunk of data from the cache 
 int AG_driver_cache_get_chunk( char const* name, char** chunk, size_t* chunk_len ) {
@@ -626,4 +661,31 @@ char* AG_driver_map_info_get_query_string( struct AG_map_info* mi ) {
 int64_t AG_driver_map_info_get_file_version( struct AG_map_info* mi ) {
    
    return mi->file_version;
+}
+
+// stable API to create a map info 
+int AG_driver_map_info_init( struct AG_map_info* mi, int type, char* query_string, mode_t mode, int64_t reval_sec, char const* query_type ) {
+   
+   int rc = 0;
+   struct AG_state* state = AG_get_state();
+   
+   if( state == NULL ) {
+      return -ENOTCONN;
+   }
+      
+   // look up the driver 
+   AG_driver_map_t::iterator itr = state->drivers->find( string( query_type ) );
+   if( itr == state->drivers->end() ) {
+      return -ENOENT;
+   }
+   
+   // make the info 
+   AG_map_info_init( mi, type, query_string, mode, reval_sec, itr->second );
+   return rc;
+}
+
+// stable API to free a map info
+int AG_driver_map_info_free( struct AG_map_info* mi ) {
+   AG_map_info_free( mi );
+   return 0;
 }

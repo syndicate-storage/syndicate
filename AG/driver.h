@@ -103,7 +103,9 @@ void AG_driver_set_HTTP_status( struct AG_connection_context* ctx, int http_stat
 int AG_driver_set_signal_handler( int signum, sighandler_t sighandler );
 
 // driver-initiated reversion request
+int AG_driver_request_publish( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info );
 int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info* pub_info );
+int AG_driver_request_delete( char const* path );
 
 // cache API
 // NOTE: the AG already caches driver-given blocks and status information internally.
@@ -116,6 +118,8 @@ int AG_driver_cache_put_chunk_async( char const* name, char* chunk, size_t chunk
 int AG_driver_cache_evict_chunk( char const* name );
 
 // map info API 
+int AG_driver_map_info_init( struct AG_map_info* mi, int type, char* query_string, mode_t mode, int64_t reval_sec, char const* query_type );
+int AG_driver_map_info_free( struct AG_map_info* mi );
 char* AG_driver_map_info_get_query_string( struct AG_map_info* mi );
 int64_t AG_driver_map_info_get_file_version( struct AG_map_info* mi );
 
