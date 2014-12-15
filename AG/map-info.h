@@ -28,6 +28,7 @@
 
 #define AG_POPULATE_NO_DRIVER           0x1
 #define AG_POPULATE_USE_MS_CACHE        0x2
+#define AG_POPULATE_SKIP_DRIVER_INFO   0x4
 
 using namespace std;
 
@@ -126,6 +127,8 @@ int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t*
 int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* path_data );
 int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merge_new, AG_fs_map_t* not_merged );
 int AG_fs_map_delete_tree( AG_fs_map_t* fs_map, AG_fs_map_t* to_delete );
+int AG_fs_map_insert( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi );
+int AG_fs_map_remove( struct AG_fs* ag_fs, char const* path, struct AG_map_info** ret_mi );
 
 // path operations 
 struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path );

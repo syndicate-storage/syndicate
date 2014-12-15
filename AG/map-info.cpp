@@ -641,8 +641,11 @@ int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char con
    
    char* path_basename = md_basename( path, NULL );
    
-   // fill the entry with the driver-given data 
-   AG_populate_md_entry_from_driver_info( entry, &pub_info );
+   if( !(flags & AG_POPULATE_SKIP_DRIVER_INFO) ) {
+      
+      // fill the entry with the driver-given data 
+      AG_populate_md_entry_from_driver_info( entry, &pub_info );
+   }
    
    // fill in the entry with our AG-specific data 
    AG_populate_md_entry_from_AG_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
@@ -1330,6 +1333,58 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_in
    return 0;
 }
 
+
+// insert a map info into an fs map 
+// the fs_map takes ownership of the mi
+// return 0 on success
+// return -EEXIST if it's already present
+// ag_fs must not be locked
+int AG_fs_map_insert( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi ) {
+   
+   int rc = 0;
+   AG_fs_wlock( ag_fs );
+   
+   // do we have a map_info for this?
+   AG_fs_map_t::iterator child_itr = ag_fs->fs->find( string(path) );
+   if( child_itr != ag_fs->fs->end() ) {
+      
+      AG_fs_unlock( ag_fs );
+      return -EEXIST;
+   }
+   
+   (*ag_fs->fs)[ string(path) ] = mi;
+   
+   AG_fs_unlock( ag_fs );
+     
+   return rc;
+}
+
+
+// remove a map info from an fs_map
+// return 0 on success
+// return -ENOENT if it's not there 
+// ag_fs must not be locked
+int AG_fs_map_remove( struct AG_fs* ag_fs, char const* path, struct AG_map_info** ret_mi ) {
+   
+   int rc = 0;
+   AG_fs_wlock( ag_fs );
+   
+   // do we have a map_info for this?
+   AG_fs_map_t::iterator child_itr = ag_fs->fs->find( string(path) );
+   if( child_itr != ag_fs->fs->end() ) {
+      
+      AG_fs_unlock( ag_fs );
+      return -ENOENT;
+   }
+   
+   *ret_mi = child_itr->second;
+  
+   ag_fs->fs->erase( child_itr );
+   
+   AG_fs_unlock( ag_fs );
+     
+   return rc;
+}
 
 // make an absolute reval deadline from a given map_info lifetime (reval_sec)
 int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
