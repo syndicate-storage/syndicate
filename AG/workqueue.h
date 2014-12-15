@@ -38,9 +38,9 @@ struct AG_state;
 extern "C" {
 
 // high-level operations 
-int AG_workqueue_add_publish( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo );
+int AG_workqueue_add_publish( struct md_wq* wq, char const* fs_path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
 int AG_workqueue_add_reversion( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo );
-int AG_workqueue_add_delete( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo );
+int AG_workqueue_add_delete( struct md_wq* wq, char const* fs_path );
 
 }
 

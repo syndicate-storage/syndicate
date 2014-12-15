@@ -25,16 +25,18 @@ struct AG_path_map_info {
    
    struct AG_state* global_state;              // reference to global AG state
    char* path;
+   struct AG_map_info* mi;
    struct AG_driver_publish_info* pubinfo;        // optional
 };
 
 // allocate and set up a path map info 
-static int AG_path_map_info_init( struct AG_path_map_info* pinfo, struct AG_state* global_state, char const* path, struct AG_driver_publish_info* pubinfo ) {
+static int AG_path_map_info_init( struct AG_path_map_info* pinfo, struct AG_state* global_state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
    memset( pinfo, 0, sizeof(struct AG_path_map_info) );
    
    pinfo->path = strdup(path);
    pinfo->global_state = global_state;
+   pinfo->mi = mi;
    
    if( pubinfo != NULL ) {
       pinfo->pubinfo = CALLOC_LIST( struct AG_driver_publish_info, 1 );
@@ -64,7 +66,7 @@ static int AG_workqueue_work_publish( struct md_wreq* wreq, void* cls ) {
    struct AG_path_map_info* pinfo = (struct AG_path_map_info*)cls;
    int rc = 0;
    
-   rc = AG_fs_publish( pinfo->global_state->ag_fs, pinfo->path, pinfo->pubinfo );
+   rc = AG_fs_publish( pinfo->global_state->ag_fs, pinfo->path, pinfo->mi, pinfo->pubinfo );
    
    if( rc != 0 ) {
       errorf("ERR: AG_fs_publish(%s) rc = %d\n", pinfo->path, rc );
@@ -114,14 +116,14 @@ static int AG_workqueue_work_delete( struct md_wreq* wreq, void* cls ) {
 }
 
 // add a request to perform an AG operation
-static int AG_workqueue_add_operation( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo, md_wq_func_t op ) {
+static int AG_workqueue_add_operation( struct md_wq* wq, char const* fs_path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, md_wq_func_t op ) {
    
    struct AG_path_map_info* pinfo = CALLOC_LIST( struct AG_path_map_info, 1 );
    struct md_wreq wreq;
    
    struct AG_state* state = (struct AG_state*)md_wq_cls( wq );
    
-   AG_path_map_info_init( pinfo, state, fs_path, pubinfo );
+   AG_path_map_info_init( pinfo, state, fs_path, mi, pubinfo );
    
    md_wreq_init( &wreq, op, pinfo, 0 );
    
@@ -129,19 +131,19 @@ static int AG_workqueue_add_operation( struct md_wq* wq, char const* fs_path, st
 }
 
 // add a publish request to the queue 
-int AG_workqueue_add_publish( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo ) {
+int AG_workqueue_add_publish( struct md_wq* wq, char const* fs_path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
-   return AG_workqueue_add_operation( wq, fs_path, pubinfo, AG_workqueue_work_publish );
+   return AG_workqueue_add_operation( wq, fs_path, mi, pubinfo, AG_workqueue_work_publish );
 }
 
 // add a reversion request to the queue 
 int AG_workqueue_add_reversion( struct md_wq* wq, char const* fs_path, struct AG_driver_publish_info* pubinfo ) {
    
-   return AG_workqueue_add_operation( wq, fs_path, pubinfo, AG_workqueue_work_reversion );
+   return AG_workqueue_add_operation( wq, fs_path, NULL, pubinfo, AG_workqueue_work_reversion );
 }
 
 // add a deletion request to the queue
 int AG_workqueue_add_delete( struct md_wq* wq, char const* fs_path ) {
    
-   return AG_workqueue_add_operation( wq, fs_path, NULL, AG_workqueue_work_delete );
+   return AG_workqueue_add_operation( wq, fs_path, NULL, NULL, AG_workqueue_work_delete );
 }
