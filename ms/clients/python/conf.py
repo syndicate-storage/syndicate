@@ -67,6 +67,8 @@ CONFIG_OPTIONS = {
    "no_verify_result":  ("-n", 0, "If set, do not cryptographically verify data returned from Syndicate.  INSECURE!"),
    "url":               ("-l", 1, "URL to your Syndicate instance (overrides syndicate_host, syndicate_port, and no_verify_result)"),
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
+   "password":          ("-P", 1, "Syndicate OpenID password.  If not supplied, it will be prompted."),
+   "gateway_password":  ("-g", 1, "Syndicate gateway private key password (for create_gateway).  If not supplied, it will be prompted.")
 }
 
 # -------------------

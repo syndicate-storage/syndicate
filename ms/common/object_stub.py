@@ -940,7 +940,15 @@ class Gateway( StubObject ):
             raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
          
          if not hasattr(lib, "encryption_password") or lib.encryption_password is None:
-            password = getpass.getpass("Gateway private key password: ")
+            
+            # maybe given as config?
+            if lib.config is not None and lib.config.has_key('gateway_password'):
+               password = lib.config['gateway_password']
+            
+            else:
+               # nope. go get it
+               password = getpass.getpass("Gateway private key password: ")
+            
             lib.encryption_password = password
          
          encrypted_key_str = Gateway.seal_private_key( privkey_str, lib.encryption_password )

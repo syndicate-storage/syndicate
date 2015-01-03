@@ -480,6 +480,9 @@ def load_options( argv, setup_methods=[], builtin_methods=[] ):
       if not have_auth_tokens and not config.has_key('password') and msconfig.AUTH_METHOD_PASSWORD in auth_opts:
          config['password'] = getpass.getpass("Syndicate password: ")
          have_auth_tokens = True
+         
+      elif config.has_key('password') and msconfig.AUTH_METHOD_PASSWORD in auth_opts:
+         have_auth_tokens = True
       
    if not have_auth_tokens:
       raise Exception("Could not satisfy authentication requirements for %s (required: %s)"  % (method_name, auth_opts) )
