@@ -423,7 +423,7 @@ class Object( Model ):
       Fill in default values into a dictionary, given the class's default_values attr <--> function dictionary.
       """
       for (attr, value_func) in cls.default_values.items():
-         if attrdict.get( attr ) == None:
+         if not attrdict.has_key( attr ):
             value = value_func(cls, attrdict)
             attrdict[attr] = value
 
