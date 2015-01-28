@@ -45,8 +45,8 @@ class GeneralCounterShard(ndb.Model):
     """Shards for each named counter."""
     count = ndb.IntegerProperty(default=0)
 
-
-def _get_count(name, key_gen):
+@ndb.tasklet
+def _get_count_async(name, key_gen, use_memcache=True):
     """Retrieve the value for a given sharded counter.
 
     Args:
@@ -59,49 +59,34 @@ def _get_count(name, key_gen):
     
     # only cache if it exists at all 
     do_cache = False
-    total = memcache.get(name)
+    
+    total = None 
+    
+    if use_memcache:
+      total = memcache.get(name)
+      
     if total is None:
         total = 0
         all_keys = key_gen()
-        for counter in ndb.get_multi(all_keys, use_cache=False, use_memcache=False):
+        counters = yield ndb.get_multi_async( all_keys, use_cache=False, use_memcache=False )
+        for counter in counters:
             if counter is not None:
                 total += counter.count
                 do_cache = True 
                 
-        if do_cache:
+        if do_cache and use_memcache:
             memcache.set(name, total)
             
-    return total
+    raise ndb.Return( total )
 
 
-def get_count(name, num_shards):
-   return _get_count( name, lambda: _all_keys( name, num_shards ) )
-
-def _get_count_async(name, key_gen):
-    """Retrieve the value for a given sharded counter, asynchronously.
-
-    Args:
-        name: The name of the counter.
-        num_shards: the number of shards
-    Returns:
-        a list of futures or future wrappers for each shard
-    """
-    
-    # only cache if it exists at all 
-    total = memcache.get(name)
-    if total is None:
-        total = 0
-        all_keys = key_gen()
-        all_futs = ndb.get_multi_async( all_keys, use_cache=False, use_memcache=False )
-        
-    else:
-       all_futs = [backend.FutureWrapper(total)]
-       
-    return all_futs
+def get_count(name, num_shards, use_memcache=True):
+   count_fut = _get_count_async( name, lambda: _all_keys( name, num_shards ), use_memcache=use_memcache )
+   return count_fut.get_result()
  
 
-def get_count_async(name, num_shards):
-   return _get_count_async( name, lambda: _all_keys(name, num_shards) )
+def get_count_async(name, num_shards, use_memcache=True):
+   return _get_count_async( name, lambda: _all_keys(name, num_shards), use_memcache=use_memcache )
 
 
 def count_from_futures( name, futs, do_cache=True ):
@@ -126,7 +111,7 @@ def flush_cache(name):
    memcache.delete(name)
    
 
-def increment(name, num_shards, delta=1, do_transaction=True, fail_if_absent=False):
+def increment(name, num_shards, delta=1, do_transaction=True, use_memcache=True):
     """
     Increment the value for a given sharded counter.
     This will create the counter if it does not exist.
@@ -135,10 +120,10 @@ def increment(name, num_shards, delta=1, do_transaction=True, fail_if_absent=Fal
         name: The name of the counter.
         num_shards: the number of shards in the counter
     """
-    return _change(name, num_shards, delta, do_transaction=True, fail_if_absent=fail_if_absent)
+    return _change(name, num_shards, delta, do_transaction=True, use_memcache=use_memcache)
  
 
-def decrement(name, num_shards, delta=-1, do_transaction=True, fail_if_absent=False ):
+def decrement(name, num_shards, delta=-1, do_transaction=True, use_memcache=True ):
    """
     Decrement the value for a given sharded counter.
     This will create the counter if it does not exist.
@@ -147,7 +132,7 @@ def decrement(name, num_shards, delta=-1, do_transaction=True, fail_if_absent=Fa
         name: The name of the counter.
         num_shards: the number of shards in the counter
     """
-   return _change(name, num_shards, delta, do_transaction=True, fail_if_absent=fail_if_absent)
+   return _change(name, num_shards, delta, do_transaction=True, use_memcache=use_memcache )
 
 
 def delete(name, num_shards):
@@ -174,7 +159,7 @@ def create(name, do_transaction=False ):
    return _change(name, 1, 0, do_transaction=do_transaction )
 
 
-def increment_async(name, num_shards, delta=1, do_transaction=True, fail_if_absent=False):
+def increment_async(name, num_shards, delta=1, do_transaction=True, use_memcache=True):
     """
     Asynchronously increment the value for a given sharded counter.
     This will create the counter if it does not exist.
@@ -186,10 +171,10 @@ def increment_async(name, num_shards, delta=1, do_transaction=True, fail_if_abse
     Return:
         A future for the transaction 
     """
-    return _change_async(name, num_shards, delta, do_transaction=do_transaction, fail_if_absent=fail_if_absent)
+    return _change_async(name, num_shards, delta, do_transaction=do_transaction, use_memcache=use_memcache)
 
 
-def decrement_async(name, num_shards, delta=-1, do_transaction=True, fail_if_absent=False):
+def decrement_async(name, num_shards, delta=-1, do_transaction=True, use_memcache=True):
    """
     Asynchronously decrement the value for a given sharded counter.
     This will create the counter if it does not exist.
@@ -198,7 +183,7 @@ def decrement_async(name, num_shards, delta=-1, do_transaction=True, fail_if_abs
         name: The name of the counter.
         num_shards: the number of shards in the counter
     """
-   return _change_async(name, num_shards, delta, do_transaction=do_transaction, fail_if_absent=fail_if_absent)
+   return _change_async(name, num_shards, delta, do_transaction=do_transaction, use_memcache=use_memcache)
 
 
 def delete_async(name, num_shards):
@@ -228,7 +213,7 @@ def create_async(name, do_transaction=False ):
    return _change_async(name, 1, 0, do_transaction=do_transaction )
 
 
-def _change_async(name, num_shards, value, do_transaction=True):
+def _change_async(name, num_shards, value, do_transaction=True, use_memcache=True):
     """
     Asynchronous transaction helper to increment the value for a given sharded counter.
 
@@ -254,10 +239,14 @@ def _change_async(name, num_shards, value, do_transaction=True):
       counter.count += value
       yield counter.put_async()
       
-      if value > 0:
-         memcache.incr( name, delta=value )
-      elif value < 0:
-         memcache.decr( name, delta=-value )
+      if use_memcache:
+         if value > 0:
+            memcache.incr( name, delta=value )
+         elif value < 0:
+            memcache.decr( name, delta=-value )
+      
+      else:
+         memcache.delete( name )
          
       raise ndb.Return( True )
    
@@ -268,10 +257,10 @@ def _change_async(name, num_shards, value, do_transaction=True):
       return txn()
 
 
-def _change(name, num_shards, value, do_transaction=True):
+def _change(name, num_shards, value, do_transaction=True, use_memcache=True ):
    """
    Synchronous wrapper around _change_async
    """
-   tf = _change_async(name, num_shards, value, do_transaction=do_transaction)
+   tf = _change_async(name, num_shards, value, do_transaction=do_transaction, use_memcache=use_memcache)
    tf.wait()
    return tf.get_result()
