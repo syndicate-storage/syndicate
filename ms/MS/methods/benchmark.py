@@ -14,7 +14,7 @@
    limitations under the License.
 """
 
-from storage import storage 
+import storage.storagetypes as storagetypes
 
 # ----------------------------------
 def benchmark( category, benchmark_data, func ):
@@ -23,9 +23,9 @@ def benchmark( category, benchmark_data, func ):
    Store it in the given benchmark_data (dict) under the key 'category'.
    Return the result of func.
    """
-   start = storage.get_time()
+   start = storagetypes.get_time()
    rc = func()
-   t = storage.get_time() - start
+   t = storagetypes.get_time() - start
    
    if not benchmark_data.has_key(category):
       benchmark_data[category] = []
