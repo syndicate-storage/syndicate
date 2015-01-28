@@ -102,6 +102,7 @@ struct md_entry {
    int32_t error;       // error information with this md_entry
    int64_t generation;  // n, as in, the nth item to ever be created in the parent directory
    int64_t num_children; // number of children this entry has (if it's a directory)
+   int64_t capacity;    // maximum index number a child can have (i.e. used by listdir())
    uint64_t parent_id;  // id of this file's parent directory
    char* parent_name;   // name of this file's parent directory
 };
