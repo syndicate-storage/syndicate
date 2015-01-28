@@ -66,6 +66,7 @@ struct md_download_context {
    volatile bool cancelling;     // if true, then this download context is in the process of being cancelled
    volatile bool running;        // if true, then this download is enqueued on the downloader
    volatile bool finalized;      // if true, then this download has finished
+   volatile bool safe_to_free;   // if true, then this download context can be freed
    
    struct md_download_set* dlset;       // parent group containing this context
    
@@ -145,6 +146,8 @@ struct md_download_config {
 };
 
 #define MD_DOWNLOAD_DEFAULT_MAX_DOWNLOADS       10
+
+#define MD_DOWNLOAD_FINISH                      0x1
 
 extern "C" {
    
