@@ -123,6 +123,13 @@ indexes:
   properties:
   - name: parent_id
   - name: volume_id
+  - name: dir_index
+  - name: alloced
+
+- kind: MSEntryDirEntIndex
+  properties:
+  - name: parent_id
+  - name: volume_id
   - name: generation
 
 - kind: MSEntryDirIndex
