@@ -338,7 +338,9 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    }
                               
    struct ms_path_ent path_ent;
-   ms_client_make_path_ent( &path_ent, fent->volume, 0, fent->file_id, fent->version, fent->write_nonce, fent->ms_num_children, fent->generation, fent->name, cls );
+   memset( &path_ent, 0, sizeof(struct ms_path_ent) );
+   
+   ms_client_make_path_ent( &path_ent, fent->volume, 0, fent->file_id, fent->version, fent->write_nonce, fent->ms_num_children, fent->generation, fent->ms_capacity, fent->name, cls );
    
    ms_path->push_back( path_ent );
    
@@ -399,7 +401,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_pa
             struct ms_path_ent path_ent;
 
             // only supply path name
-            ms_client_make_path_ent( &path_ent, core->volume, 0, 0, 0, 0, 0, 0, path_parts[i], cls );
+            ms_client_make_path_ent( &path_ent, core->volume, 0, 0, 0, 0, 0, 0, 0, path_parts[i], cls );
 
             ms_path->push_back( path_ent );
          }
@@ -1097,7 +1099,7 @@ static int fs_entry_getattr_stale_children_to_path( char const* parent_path, str
          getattr_cls = CALLOC_LIST( struct fs_entry_getattr_cls, 1 );
          fs_entry_getattr_cls_init( getattr_cls, parent_path, child->name, true, true );
          
-         ms_client_make_path_ent( &ms_child, child->volume, parent->file_id, child->file_id, child->version, child->write_nonce, child->ms_num_children, child->generation, child->name, getattr_cls );
+         ms_client_make_path_ent( &ms_child, child->volume, parent->file_id, child->file_id, child->version, child->write_nonce, child->ms_num_children, child->generation, child->ms_capacity, child->name, getattr_cls );
          
          children->push_back( ms_child );
       }
@@ -1113,7 +1115,7 @@ static int fs_entry_getattr_stale_children_to_path( char const* parent_path, str
 // return 0 on success 
 // return negative if getattr_multi fails, or if diffdir fails
 static int fs_entry_revalidate_children_diffdir( struct fs_core* core, char const* fs_path, ms_path_t* stale_children_list,
-                                                 uint64_t parent_id, int64_t parent_ms_num_children, int64_t parent_max_generation,
+                                                 uint64_t parent_id, int64_t parent_ms_num_children, int64_t parent_max_generation, int64_t parent_capacity,
                                                  struct ms_client_multi_result* results ) {
    
    int rc = 0;
@@ -1181,6 +1183,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    uint64_t parent_ms_num_children = 0;         // MS-given number of children 
    uint64_t parent_num_children = 0;            // number of cached children (only relevant if it's empty)
    uint64_t parent_max_generation = 0;          // largest known generation
+   int64_t parent_capacity = 0;                 // largest index a child can have
    struct ms_client_multi_result results;
    struct timespec query_time;
    ms_path_t stale_children_list;
@@ -1199,6 +1202,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    parent_ms_num_children = parent->ms_num_children;
    parent_num_children = parent->children->size();
    parent_max_generation = fs_entry_set_max_generation( parent->children );
+   parent_capacity = parent->ms_capacity;
    
    // only do a diffdir (instead of a listdir) if we already have cached data
    bool do_diff_dir = (parent_num_children - 2 > 0);
@@ -1217,7 +1221,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    if( do_diff_dir ) {
       
       // have listed before; just get the difference
-      rc = fs_entry_revalidate_children_diffdir( core, path, &stale_children_list, parent_file_id, parent_ms_num_children, parent_max_generation, &results );
+      rc = fs_entry_revalidate_children_diffdir( core, path, &stale_children_list, parent_file_id, parent_ms_num_children, parent_max_generation, parent_capacity, &results );
       
       if( rc != 0 ) {
          
@@ -1231,7 +1235,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    else {
       
       // not listed yet
-      rc = ms_client_listdir( core->ms, parent_file_id, parent_ms_num_children, &results );
+      rc = ms_client_listdir( core->ms, parent_file_id, parent_ms_num_children, parent_capacity, &results );
 
       if( rc != 0 ) {
          
