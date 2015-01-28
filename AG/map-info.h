@@ -49,6 +49,7 @@ struct AG_map_info {
    int64_t write_nonce;         // write nonce for this file (obtained from the MS; initialized to 0)
    uint64_t num_children;       // number of children the MS says this inode has 
    int64_t generation;          // generation number of this inode
+   int64_t capacity;            // maximum index number of a child in a directory (only valid for directories)
    
    // cached driver fields
    bool driver_cache_valid;
@@ -104,7 +105,7 @@ int AG_fs_unlock( struct AG_fs* ag_fs );
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload );
 
 int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_info* ref_mi, struct AG_map_info* updated_mi );
-int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation );
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation, int64_t capacity );
 int AG_map_info_make_coherent_with_driver_data( struct AG_map_info* mi, size_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int AG_map_info_make_coherent_with_AG_data( struct AG_map_info* mi, int64_t block_version, uint64_t refresh_deadline );
 

@@ -98,17 +98,23 @@ void AG_fs_map_free( AG_fs_map_t* fs_map ) {
 // this is preferred to duplicating an AG_map_info with AG_map_info_dup
 void AG_map_info_merge( struct AG_map_info* dest, struct AG_map_info* src ) {
    
-   if( !dest->cache_valid && src->cache_valid ) {
+   if( src->cache_valid ) {
       
-      AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation );
+      AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation, src->capacity );
       AG_map_info_make_coherent_with_AG_data( dest, src->block_version, src->refresh_deadline );
    }
    
-   if( dest->query_string == NULL && src->query_string != NULL ) {
+   if( src->query_string != NULL ) {
+      
+      if( dest->query_string != NULL ) {
+         free( dest->query_string );
+      }
+      
       dest->query_string = strdup_or_null( src->query_string );
    }
    
-   if( dest->driver == NULL && src->query_string != NULL ) {
+   if( src->driver != NULL ) {
+      
       dest->driver = src->driver;
    }
    
@@ -116,7 +122,7 @@ void AG_map_info_merge( struct AG_map_info* dest, struct AG_map_info* src ) {
       dest->type = src->type;
    }
    
-   if( !dest->driver_cache_valid && src->driver_cache_valid ) {  
+   if( src->driver_cache_valid ) {  
       
       AG_map_info_make_coherent_with_driver_data( dest, src->pubinfo.size, src->pubinfo.mtime_sec, src->pubinfo.mtime_nsec );
    }
@@ -132,8 +138,8 @@ void AG_dump_map_info( char const* path, struct AG_map_info* mi ) {
       query_type = AG_driver_get_query_type( mi->driver );
    }
    
-   dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 " }\n",
-            path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce );
+   dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 ", num_children=%" PRId64 ", capacity=%" PRId64 " }\n",
+            path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce, mi->num_children, mi->capacity );
    
    if( query_type != NULL ) {
       free( query_type );
@@ -254,6 +260,9 @@ int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent )
    mi->file_version = ent->version;
    mi->write_nonce = ent->write_nonce;
    mi->type = ent->type;
+   mi->num_children = ent->num_children;
+   mi->generation = ent->generation;
+   mi->capacity = ent->capacity;
    mi->cache_valid = true;
    
    mi->pubinfo.size = ent->size;
@@ -370,10 +379,7 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
 // duplicate a map info
 void AG_map_info_dup( struct AG_map_info* dest, struct AG_map_info* src ) {
    AG_map_info_init( dest, src->type, src->query_string, src->file_perm, src->reval_sec, src->driver );
-   
-   if( src->cache_valid || src->driver_cache_valid ) {
-      AG_map_info_merge( dest, src );
-   }
+   AG_map_info_merge( dest, src );
 }
 
 
@@ -863,7 +869,7 @@ int AG_fs_map_delete_tree( AG_fs_map_t* fs_map, AG_fs_map_t* to_delete ) {
 // copy over MS cached metadata
 int AG_map_info_copy_MS_data( struct AG_map_info* dest, struct AG_map_info* src ) {
    if( src->cache_valid ) {
-      return AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation );
+      return AG_map_info_make_coherent_with_MS_data( dest, src->file_id, src->file_version, src->write_nonce, src->num_children, src->generation, src->capacity );
    }
    else {
       return -EINVAL;
@@ -994,7 +1000,7 @@ static int AG_path_info_to_ms_path_ex( uint64_t volume_id, char const* path, AG_
       
       name = md_basename( prefixes[i], NULL );
       
-      ms_client_make_path_ent( &ms_ent, volume_id, parent_id, mi->file_id, mi->file_version, mi->write_nonce, mi->num_children, mi->generation, name, NULL );
+      ms_client_make_path_ent( &ms_ent, volume_id, parent_id, mi->file_id, mi->file_version, mi->write_nonce, mi->num_children, mi->generation, mi->capacity, name, NULL );
       
       free( name );
       
@@ -1067,7 +1073,7 @@ static int AG_listdir( struct ms_client* client, char const* fs_path, struct AG_
    memset( &results, 0, sizeof(struct ms_client_multi_result));
    
    // get the listing
-   rc = ms_client_listdir( client, dir_info->file_id, dir_info->num_children, &results );
+   rc = ms_client_listdir( client, dir_info->file_id, dir_info->num_children, dir_info->capacity, &results );
    
    if( rc != 0 ) {
       errorf("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
@@ -1150,7 +1156,7 @@ static int AG_path_download( struct ms_client* client, char const* path, AG_fs_m
          break;
       }
       
-      AG_map_info_make_coherent_with_MS_data( dup, ms_path[i].file_id, ms_path[i].version, ms_path[i].write_nonce, ms_path[i].num_children, ms_path[i].generation );
+      AG_map_info_make_coherent_with_MS_data( dup, ms_path[i].file_id, ms_path[i].version, ms_path[i].write_nonce, ms_path[i].num_children, ms_path[i].generation, ms_path[i].capacity );
       
       new_data[ string(prefix) ] = dup;
    }
@@ -1261,7 +1267,7 @@ struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
 
 
 // make a given map_info coherent with new MS data 
-int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation ) {
+int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t file_id, int64_t file_version, int64_t write_nonce, uint64_t num_children, int64_t generation, int64_t capacity ) {
 
    // update the cache data
    mi->file_id = file_id;
@@ -1269,6 +1275,7 @@ int AG_map_info_make_coherent_with_MS_data( struct AG_map_info* mi, uint64_t fil
    mi->write_nonce = write_nonce;
    mi->num_children = num_children;
    mi->generation = generation;
+   mi->capacity = capacity;
    
    mi->cache_valid = true;
    
@@ -1320,7 +1327,7 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, struct AG_map_in
    // update the versions 
    struct AG_map_info* mi = child_itr->second;
    
-   AG_map_info_make_coherent_with_MS_data( mi, ref_mi->file_id, ref_mi->file_version, ref_mi->write_nonce, ref_mi->num_children, ref_mi->generation );
+   AG_map_info_make_coherent_with_MS_data( mi, ref_mi->file_id, ref_mi->file_version, ref_mi->write_nonce, ref_mi->num_children, ref_mi->generation, ref_mi->capacity );
    AG_map_info_make_coherent_with_driver_data( mi, ref_mi->pubinfo.size, ref_mi->pubinfo.mtime_sec, ref_mi->pubinfo.mtime_nsec );
    AG_map_info_make_coherent_with_AG_data( mi, ref_mi->block_version, ref_mi->refresh_deadline );
    
