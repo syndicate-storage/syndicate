@@ -36,7 +36,9 @@ void ms_client_free_listing( struct ms_listing* listing ) {
 
 // build a path ent
 // NOTE: not all fields are necessary for all operations
-int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t parent_id, uint64_t file_id, int64_t version, int64_t write_nonce, int64_t num_children, int64_t generation, char const* name, void* cls ) {
+int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t parent_id, uint64_t file_id, int64_t version, int64_t write_nonce,
+                             int64_t num_children, int64_t generation, int64_t capacity, char const* name, void* cls ) {
+   
    // build up the ms_path as we traverse our cached path
    path_ent->volume_id = volume_id;
    path_ent->file_id = file_id;
@@ -45,6 +47,7 @@ int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, u
    path_ent->write_nonce = write_nonce;
    path_ent->num_children = num_children;
    path_ent->generation = generation;
+   path_ent->capacity = capacity;
    
    if( name != NULL ) {
       if( path_ent->name != NULL ) {
