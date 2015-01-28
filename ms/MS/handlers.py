@@ -703,6 +703,9 @@ class MSFileHandler(webapp2.RequestHandler):
       timing_headers = benchmark_headers( timing )
       timing_headers.update( response_timing )
       
+      for h, v in timing_headers.items():
+         log.debug( "%s: %s" % (h, v) )
+         
       response_end( self, status, reply_str, "application/octet-stream", timing_headers )
       
       return
