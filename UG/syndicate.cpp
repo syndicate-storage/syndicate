@@ -29,7 +29,10 @@ int UG_opts_init(void) {
 }
 
 int UG_opts_get( struct UG_opts* opts ) {
-   memcpy( opts, &_internal_opts, sizeof(struct UG_opts));
+   
+   memset( opts, 0, sizeof(struct UG_opts));
+   
+   opts->flush_replicas = true;
    return 0;
 }
 
