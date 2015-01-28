@@ -168,13 +168,11 @@ def _getattr( owner_id, volume, file_id, file_version, write_nonce ):
             generation = 0
          
          if file_data.ftype == MSENTRY_TYPE_DIR:
-            num_children_fut = MSEntryIndex.GetNumChildren( volume.volume_id, file_id, async=True )
-            generation_fut = MSEntryIndex.GetGeneration( volume.volume_id, file_id, async=True )
+            num_children_fut = MSEntryIndex.GetNumChildren( volume.volume_id, file_id, volume.num_shards, async=True )
             
-            storagetypes.wait_futures( [num_children_fut, generation_fut] )
+            storagetypes.wait_futures( [num_children_fut] )
             
             num_children = num_children_fut.get_result()
-            generation = generation_fut.get_result()
             
          # full ent 
          ent_pb = reply.listing.entries.add()
@@ -388,7 +386,10 @@ def file_create( reply, gateway, volume, update, async=False ):
          return rc
       
       else:
-         assert rc == 0, "create /%s/%s (%s) failed, rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
+         # just log the error
+         if rc != 0:
+            logging.error( "create /%s/%s (%s) failed, rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            return rc
    
    except Exception, e:
       
@@ -464,7 +465,11 @@ def file_update( reply, gateway, volume, update, async=False ):
          return rc
       
       else:
-         assert rc == 0, "update /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
+         if rc != 0:
+            # just log the error 
+            logging.error( "update /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            
+         return rc
    
    except Exception, e:
       
@@ -523,7 +528,11 @@ def file_delete( reply, gateway, volume, update, async=False ):
          return rc
       
       else:
-         assert rc == 0, "delete /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc )
+         if rc != 0:
+            # just log it
+            logging.error( "delete /%s/%s (%s) failed, rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+         
+         return rc
    
    except Exception, e:
       
