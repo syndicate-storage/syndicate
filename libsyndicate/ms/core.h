@@ -60,27 +60,6 @@ struct ms_volume;
 // callback to be alerted when a Volume's metadata changes
 typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
 
-/*
-// context for performing network I/O with the MS
-struct ms_client_network_context {
-   
-   bool upload;                                 // if true, then this is an upload 
-   bool started;                                // if true, then a transfer has started
-   bool ended;                                  // if true, then the transfer has ended (i.e. dlctx will have been freed)
-   
-   struct md_download_context* dlctx;           // upload/download context
-   struct md_download_set* dlset;               // optional download set, which contains this dlctx.  If not null, then dlctx will get added to it.
-   struct ms_client_timing* timing;             // benchmark information 
-   
-   struct curl_httppost* forms;                 // HTTP forms (optional)
-   struct curl_slist* headers;                  // HTTP headers (optional)
-   
-   char* url;                                   // target URL
-   
-   void* cls;                                   // app-defined context data
-};
-*/
-
 // MS client session
 struct ms_client {
    
