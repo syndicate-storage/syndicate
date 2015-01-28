@@ -369,7 +369,8 @@ class StubObject( object ):
    def parse_or_generate_private_key( cls, pkey_str, pkey_generate_args, key_size ):
       """
       Check a private key (pkey_str) and verify that it has the appopriate security 
-      parameters.  If pkey_str is in pkey_generate_args, then generate a public/private key pair.
+      parameters.  If pkey_str is in pkey_generate_args (that is, pkey_str is a directive to generate a key pair),
+      then generate a public/private key pair.
       Return the key pair.
       """
       if pkey_str in pkey_generate_args:
