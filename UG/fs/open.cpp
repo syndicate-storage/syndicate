@@ -608,8 +608,14 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       
       if( rc != 0 ) {
          errorf("fs_entry_do_MS_create(%s) rc = %d\n", path, rc );
-         *err = -EREMOTEIO;
-
+         
+         if( rc == -EAGAIN ) {
+            *err = rc;
+         }
+         else {
+            *err = -EREMOTEIO;
+         }
+         
          // NOTE: parent is guaranteed to exist, since child is attached to it and is write-locked (so it can't be unlinked)
          fs_entry_wlock( parent );
          fs_entry_undo_create( core, path, parent, child );
