@@ -32,7 +32,6 @@ int AG_fs_publish_generate_metadata( AG_fs_map_t* to_publish ) {
    
    int rc = 0;
    map< string, int > child_counts;
-   map< string, int > generation_counts;
    
    rc = AG_fs_count_children( to_publish, &child_counts );
    if( rc != 0 ) {
@@ -52,10 +51,11 @@ int AG_fs_publish_generate_metadata( AG_fs_map_t* to_publish ) {
       int64_t write_nonce = md_random64();
       int64_t block_version = md_random64();
       uint64_t num_children = child_counts[ itr->first ];
-      int64_t generation = generation_counts[ itr->first ];
+      int64_t generation = -1;
+      int64_t capacity = 1L << (int64_t)(log2( (double)(num_children + 1) ) + 1);
       int64_t refresh_deadline = AG_map_info_make_deadline( itr->second->reval_sec );
       
-      AG_map_info_make_coherent_with_MS_data( itr->second, file_id, file_version, write_nonce, num_children, generation );
+      AG_map_info_make_coherent_with_MS_data( itr->second, file_id, file_version, write_nonce, num_children, generation, capacity );
       AG_map_info_make_coherent_with_AG_data( itr->second, block_version, refresh_deadline );
    }
    
@@ -193,6 +193,15 @@ static int AG_build_requests( struct ms_client* client, AG_fs_map_t* map_infos, 
       struct md_entry* ent = NULL;
       struct ms_client_request req;
       
+      // filter?
+      if( filter != NULL ) {
+         include = (*filter)( path, mi, filter_cls );
+      }
+      
+      if( !include ) {
+         continue;
+      }
+      
       // find parent 
       parent_path = md_dirname( path, NULL );
       parent_itr = map_infos->find( string( parent_path ) );
@@ -208,15 +217,6 @@ static int AG_build_requests( struct ms_client* client, AG_fs_map_t* map_infos, 
       
       free( parent_path );
       parent_mi = parent_itr->second;
-      
-      // filter?
-      if( filter != NULL ) {
-         include = (*filter)( path, mi, filter_cls );
-      }
-      
-      if( !include ) {
-         continue;
-      }
       
       // make request 
       ent = CALLOC_LIST( struct md_entry, 1 );
@@ -350,13 +350,13 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
          
          // no MS errors. Merge 
          for( unsigned int i = 0; i < num_requests; i++ ) {
-               
+            
             char* path = (char*)requests[i].cls;
             
             // sanity check--we did get a response, right?
             if( MS_CLIENT_OP_RETURNS_ENTRY( requests[i].op ) && results[i].ent == NULL ) {
                // shouldn't happen 
-               errorf("Expected metadata in response to request %d (op %d on %s)\n", i, requests[i].op, path );
+               errorf("Expected metadata in response to request %d (op %d on %s): operation rc = %d, request rc = %d\n", i, requests[i].op, path, results[i].rc, results[i].reply_error );
                rc = -ENODATA;
                break;
             }
@@ -380,7 +380,7 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
                mi = itr->second;
                
                // reload MS data
-               AG_map_info_make_coherent_with_MS_data( mi, ent->file_id, ent->version, ent->write_nonce, ent->num_children, ent->generation );
+               AG_map_info_make_coherent_with_MS_data( mi, ent->file_id, ent->version, ent->write_nonce, ent->num_children, ent->generation, ent->capacity );
             }
          }
       }
@@ -391,6 +391,24 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
    return rc;
 }
 
+
+// shallow-copy entries from one AG_fs_map_t to another that are of the same depth.
+// NOTE: duplicates are overwritten!
+static int AG_fs_find_entries_at_depth( AG_fs_map_t* dest, AG_fs_map_t* source, int depth ) {
+   
+   for( AG_fs_map_t::iterator itr = source->begin(); itr != source->end(); itr++ ) {
+      
+      char const* path = itr->first.c_str();
+      
+      if( md_depth(path) != depth ) {
+         continue;
+      }
+      
+      (*dest)[ itr->first ] = itr->second;
+   }
+   
+   return 0;
+}
 
 // Publish an fs_map of entries to the MS (to_publish).
 // Each entry in to_publish needs to have its driver-given metadata.  It does not need MS metadata--that will be obtained.
@@ -404,10 +422,17 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
    size_t num_requests = 0;
    int max_depth = AG_max_depth( to_publish );
    
+   // have map_infos reference the parents of all entries for which we have data
+   AG_fs_map_t parents;
+   
+   for( AG_fs_map_t::iterator itr = map_infos->begin(); itr != map_infos->end(); itr++ ) {
+      parents[ itr->first ] = itr->second;
+   }
+   
    for( depth = 0; depth <= max_depth; depth++ ) {
       
       // make directory requests
-      rc = AG_build_mkdir_requests_at_depth( client, map_infos, to_publish, depth, &requests, &num_requests );
+      rc = AG_build_mkdir_requests_at_depth( client, &parents, to_publish, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
          errorf("AG_build_mkdir_requests_at_depth(%d) rc = %d\n", depth, rc );
@@ -428,7 +453,7 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
       }
       
       // make file requests 
-      rc = AG_build_create_async_requests_at_depth( client, map_infos, to_publish, depth, &requests, &num_requests );
+      rc = AG_build_create_async_requests_at_depth( client, &parents, to_publish, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
          errorf("AG_build_create_async_requests_at_depth(%d) rc = %d\n", depth, rc );
@@ -447,6 +472,9 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
             break;
          }
       }
+      
+      // merge mkdir requests to parents, so we can look them up later when building the next generation of requests.
+      AG_fs_find_entries_at_depth( &parents, to_publish, depth );
    }
    
    return rc;
