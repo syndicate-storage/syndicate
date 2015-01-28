@@ -4,7 +4,7 @@ INC			:= -I/usr/local/include -I/usr/local/include/libsyndicateUG -I/usr/local/i
 LIB			:= -lpthread -lcurl -lssl -lmicrohttpd -lprotobuf -lrt -lm -ldl -lsyndicate -lsyndicateUG -lprofiler
 DEFS			:= -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_THREAD_SAFE -D_DISTRO_DEBIAN -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all -funwind-tables
 
-TARGETS	   := creat read write open-close mkdir readdir rmdir unlink getxattr setxattr listxattr removexattr chownxattr chmodxattr
+TARGETS	   := creat read write open-close mkdir readdir rmdir unlink getxattr setxattr listxattr removexattr chownxattr chmodxattr index-stress
 COMMON		:= common.o
 
 all: $(TARGETS)
@@ -51,6 +51,9 @@ chownxattr: chownxattr.o $(COMMON)
 chmodxattr: chmodxattr.o $(COMMON)
 	$(CPP) -o chmodxattr chmodxattr.o $(COMMON) $(LIB) $(LIBINC)
 
+index-stress: index-stress.o $(COMMON)
+	$(CPP) -o index-stress index-stress.o $(COMMON) $(LIB) $(LIBINC)
+
 %.o:	%.c
 	$(CPP) -o $@ $(INC) $(DEFS) -c $<
 
@@ -62,7 +65,7 @@ chmodxattr: chmodxattr.o $(COMMON)
 
 .PHONY : clean
 clean: oclean
-	/bin/rm $(TARGETS)
+	/bin/rm -f $(TARGETS)
 
 .PHONY : oclean
 oclean:
