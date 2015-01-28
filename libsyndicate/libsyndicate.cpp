@@ -1468,6 +1468,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_write_nonce( ent->write_nonce );
    msent->set_xattr_nonce( ent->xattr_nonce );
    msent->set_generation( ent->generation );
+   msent->set_capacity( ent->capacity );
    
    if( ent->name != NULL ) {
       msent->set_name( string( ent->name ) );
@@ -1505,6 +1506,7 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->xattr_nonce = msent.xattr_nonce();
    ent->generation = msent.generation();
    ent->num_children = msent.num_children();
+   ent->capacity = msent.capacity();
    
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
@@ -1907,11 +1909,11 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    
    conf->debug_lock = false;
 
-   conf->connect_timeout = 10;
+   conf->connect_timeout = 600;
    conf->replica_connect_timeout = 60;
    
    conf->portnum = -1;
-   conf->transfer_timeout = 300;
+   conf->transfer_timeout = 600;
 
    conf->owner = getuid();
    conf->usermask = 0377;
