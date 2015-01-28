@@ -129,7 +129,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
    
    // which batch does this download refer to?
    ms_client_listdir_batch_set::iterator itr = ctx->downloading->find( dlctx );
-   if( itr == ctx->downloading->end() ) {
+   if( itr == ctx->downloading->end() && !ctx->finished ) {
       
       errorf("BUG: %p is not downloading\n", dlctx );
       pthread_mutex_unlock( &ctx->lock );
@@ -201,6 +201,14 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
          ctx->children_ids->insert( file_id );
          ctx->children->push_back( children[i] );
       }
+      
+      // do we have all children?
+      if( ctx->children->size() >= (size_t)ctx->num_children ) {
+         
+         // can cancel all other downloads--they're empty 
+         rc = MD_DOWNLOAD_FINISH;
+         ctx->finished = true;
+      }
    }
    
    free( children );
@@ -213,7 +221,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
 // set up a listdir or diffdir context 
 // if least_unknown_generation >= 0, then fetch by generation number 
 // otherwise, fetch by directory index
-int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation ) {
+int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t parent_capacity ) {
    
    memset( ctx, 0, sizeof(struct ms_client_listdir_context) );
    
@@ -240,24 +248,29 @@ int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, st
    else {
       
       // one batch == one page
-      int64_t num_pages = num_children / client->page_size;
+      // request as many pages as the parent has capacity for,
+      // but stop requesting once we've gotten all the children
+      int64_t num_pages = parent_capacity / client->page_size;
       for( int64_t i = 0; i <= num_pages; i++ ) {
          ctx->batches->push( i );
       }
    }
+   
+   ctx->num_children = num_children;
+   ctx->capacity = parent_capacity;
       
    pthread_mutex_init( &ctx->lock, NULL );
    return 0;
 }
 
 // set up a listdir context 
-int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children ) {
-   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, -1 );
+int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity ) {
+   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, -1, parent_capacity );
 }
 
 // set up a diffdir context 
 int ms_client_diffdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation ) {
-   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, least_unknown_generation );
+   return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, least_unknown_generation, -1 );
 }
 
 // free a listdir context 
@@ -300,11 +313,13 @@ int ms_client_listdir_context_free( struct ms_client_listdir_context* ctx ) {
 // if least_unknown_generation >= 0, then this is a diffdir operation.
 // otherwise, it's a listdir operation.
 // return partial results, even on error.
-int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results ) {
+int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t parent_capacity, struct ms_client_multi_result* results ) {
    
    int rc = 0;
    struct md_download_config dlconf;
    struct md_entry* ents = NULL;
+   
+   dbprintf("listdir %" PRIX64 ", num_children = %" PRId64 ", l.u.g. = %" PRId64 ", parent_capacity = %" PRId64 "\n", parent_id, num_children, least_unknown_generation, parent_capacity );
    
    memset( results, 0, sizeof(struct ms_client_multi_result) );
    
@@ -313,7 +328,7 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    struct ms_client_listdir_context ctx;
    memset( &ctx, 0, sizeof(struct ms_client_listdir_context) );
    
-   ms_client_listdir_context_init_ex( &ctx, client, parent_id, num_children, least_unknown_generation );
+   ms_client_listdir_context_init_ex( &ctx, client, parent_id, num_children, least_unknown_generation, parent_capacity );
    
    if( least_unknown_generation > 0 ) {
       // doing diffdir
@@ -364,10 +379,10 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
 }
 
 
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, struct ms_client_multi_result* results ) {
-   return ms_client_listdir_ex( client, parent_id, num_children, -1, results );
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity, struct ms_client_multi_result* results ) {
+   return ms_client_listdir_ex( client, parent_id, num_children, -1, parent_capacity, results );
 }
 
 int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results ) {
-   return ms_client_listdir_ex( client, parent_id, num_children, least_unknown_generation, results );
+   return ms_client_listdir_ex( client, parent_id, num_children, least_unknown_generation, -1, results );
 }

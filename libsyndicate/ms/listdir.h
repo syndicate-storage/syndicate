@@ -34,22 +34,26 @@ struct ms_client_listdir_context {
    uint64_t volume_id;   
    uint64_t parent_id;
    
-   queue<int>* batches;                         // which batches to download next
+   queue<int>* batches;                         // which batches of the index to download next
    
    set<uint64_t>* children_ids;                 // file ids of downloaded children
    vector<struct md_entry>* children;           // downloaded children
    
-   ms_client_listdir_batch_set* downloading;    // which batches are downloading
+   ms_client_listdir_batch_set* downloading;    // which batches of the index are downloading
    ms_client_listdir_attempt_set* attempts;     // download attempts for a given batch
    
    int listing_error;
+   int64_t num_children;
+   int64_t capacity;
+   
+   bool finished;                              // set to true if we get all the children before we're done
    
    pthread_mutex_t lock;
 };
 
 extern "C" {
    
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, struct ms_client_multi_result* results );
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity, struct ms_client_multi_result* results );
 int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results );
 
 }
