@@ -139,6 +139,7 @@ struct fs_entry {
    
    fs_entry_set* children;      // used only for directories--set of children
    int64_t ms_num_children;     // the number of children the MS says this entry has
+   int64_t ms_capacity;            // maximum index number of a child in the MS
    
    pthread_rwlock_t xattr_lock;
    xattr_cache_t* xattr_cache;  // cached xattrs

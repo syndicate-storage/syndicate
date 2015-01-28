@@ -526,6 +526,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    fent->max_write_freshness = ent->max_write_freshness;
    fent->generation = ent->generation;
    fent->ms_num_children = ent->num_children;
+   fent->ms_capacity = ent->capacity;
    
    return 0;
 }
