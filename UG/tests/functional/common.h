@@ -19,6 +19,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/httpd.h"
+#include "libsyndicate/opts.h"
 
 #include "libsyndicateUG/fs/fs.h"
 #include "libsyndicateUG/syndicate.h"

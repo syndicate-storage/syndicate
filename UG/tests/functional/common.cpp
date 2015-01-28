@@ -18,21 +18,24 @@
 
 int syndicate_functional_test_init( int argc, char** argv, int* optind_out, struct md_HTTP* syndicate_http ) {
    
-   struct syndicate_opts syn_opts;
-   syndicate_default_opts( &syn_opts );
+   struct md_opts syn_opts;
+   struct UG_opts ug_opts;
+   
+   UG_opts_get( &ug_opts );
+   md_default_opts( &syn_opts );
    
    int rc = 0;
    
    // get options
-   rc = syndicate_parse_opts( &syn_opts, argc, argv, optind_out, NULL, NULL );
+   rc = md_parse_opts( &syn_opts, argc, argv, optind_out, NULL, NULL );
    if( rc != 0 ) {
-      syndicate_common_usage( argv[0] );
+      md_common_usage( argv[0] );
       exit(1);
    }
    
    
    // start core services
-   rc = syndicate_init( &syn_opts );
+   rc = syndicate_init( &syn_opts, &ug_opts );
    if( rc != 0 ) {
       fprintf(stderr, "Syndicate failed to initialize\n");
       exit(1);
