@@ -541,7 +541,7 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
             ent = CALLOC_LIST( struct md_entry, 1 );
             ms_entry_to_md_entry( reply->listing().entries(k), ent );
             
-            dbprintf("%s: output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, ent->file_id, ent->write_nonce, ent->coordinator );
+            dbprintf("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, rctx->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
             
             // next entry
             k++;
@@ -652,7 +652,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    }
    
    // extract results 
-   rc = ms_client_multi_parse_results( ctx, &reply, rctx, &reply_error );
+   rc = ms_client_multi_parse_results( ctx, &reply, rctx,  &reply_error );
    if( rc != 0 ) {
       
       // failed to process
@@ -731,7 +731,7 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
 
 
 // set up a request context 
-static int ms_client_request_context_init( struct ms_client* client, struct ms_client_request_context* rctx, ms_client_update_set* all_updates ) {
+static int ms_client_request_context_init( struct ms_client* client, struct ms_client_request_context* rctx, ms_client_update_set* all_updates, int64_t result_offset ) {
    
    int rc = 0;
    struct curl_httppost *post = NULL, *last = NULL;
@@ -750,6 +750,7 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
    rctx->serialized_updates_len = serialized_text_len;
    rctx->forms = post;
    rctx->num_ops = all_updates->size();
+   rctx->result_offset = result_offset; 
    
    // record order of operations on files 
    rctx->ops = CALLOC_LIST( int, rctx->num_ops );
@@ -899,6 +900,8 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       // next batch 
       ms_client_update_set updates;
       
+      int offset = i;
+      
       for( int j = 0; j < client->max_request_batch && (unsigned)i < num_requests; j++ ) {
          
          // generate our update
@@ -912,7 +915,7 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       }
       
       // stuff it into the next request 
-      rc = ms_client_request_context_init( client, &ctx->request_contexts[k], &updates );
+      rc = ms_client_request_context_init( client, &ctx->request_contexts[k], &updates, offset );
       if( rc != 0 ) {
          errorf("ms_client_request_context_init( batch=%d ) rc = %d\n", k, rc );
          break;
