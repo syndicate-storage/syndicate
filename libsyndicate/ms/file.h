@@ -77,9 +77,6 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
 int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest );
 
 // multi-RPC (i.e. POST) API
-// int ms_client_multi_begin( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* reqs, size_t num_reqs, struct ms_client_network_context* nctx, struct md_download_set* dlset );
-// int ms_client_multi_end( struct ms_client* client, struct ms_client_multi_result* results, struct ms_client_network_context* nctx );
-// int ms_client_multi_cancel( struct ms_client* client, struct ms_client_network_context* nctx );
 int ms_client_run_requests( struct ms_client* client, struct ms_client_request* requests, struct ms_client_request_result* results, size_t num_requests );
 
 // generate requests to be run
@@ -97,12 +94,10 @@ int ms_client_delete_async_request( struct ms_client* client, struct md_entry* e
 int ms_client_request_set_cls( struct ms_client_request* request, void* cls );
 
 // results 
-// int ms_client_multi_result_merge( struct ms_client_multi_result* dest, struct ms_client_multi_result* src );
 int ms_client_download_parse_errors( struct md_download_context* dlctx );
 int ms_client_download_interpret_errors( char const* url, int http_status, int curl_rc, int os_err );
 
 // memory management
-// int ms_client_request_free( struct ms_client_request* req );
 int ms_client_request_result_free( struct ms_client_request_result* result );
 int ms_client_request_result_free_all( struct ms_client_request_result* results, size_t num_results );
 int ms_client_multi_result_free( struct ms_client_multi_result* result );
