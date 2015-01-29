@@ -27,6 +27,23 @@ char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx
    
    pthread_mutex_lock( &ctx->lock );
    
+   if( ctx->batches->size() == 0 && ctx->children->size() < (size_t)ctx->num_children ) {
+      
+      if( ctx->downloading->size() == 0 ) {
+      
+         dbprintf("Only received %zu of %" PRId64 " children; searching the directory's capacity (%" PRId64 ")\n", ctx->children->size(), ctx->num_children, ctx->capacity );
+         
+         // we've asked for all pages, but we haven't gotten all children yet.
+         // queue some more pages
+         int64_t page_start = (ctx->num_children / ctx->client->page_size) + 2;
+         int64_t page_end = (ctx->capacity / ctx->client->page_size);
+         
+         for( int64_t i = page_start; i <= page_end; i++ ) {
+            ctx->batches->push( i );
+         }
+      }
+   }
+   
    if( ctx->batches->size() > 0 ) {
    
       // next batch--either a page ID or a least unknown generation 
@@ -248,12 +265,12 @@ int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, st
    else {
       
       // one batch == one page
-      // request as many pages as the parent has capacity for,
-      // but stop requesting once we've gotten all the children
-      int64_t num_pages = parent_capacity / client->page_size;
+      int64_t num_pages = (num_children / client->page_size) + 1;
       for( int64_t i = 0; i <= num_pages; i++ ) {
          ctx->batches->push( i );
       }
+      
+      dbprintf("Request %" PRId64 " pages of /%" PRIu64 "/%" PRIX64 "\n", num_pages, ctx->volume_id, parent_id );
    }
    
    ctx->num_children = num_children;
