@@ -497,22 +497,70 @@ int64_t fs_entry_next_block_version(void) {
    return fs_entry_next_random_version();
 }
 
+
+// reload information from an MS entry that might have changed 
+int fs_entry_ms_reload( struct fs_entry* fent, struct md_entry* ent ) {
+   
+   if( ent->type == MD_ENTRY_FILE ) {
+   
+      fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
+   
+      fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
+      fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
+      
+   }
+   
+   // only take the maximal size if we're dirty and we're the same version.  File size only increases within a single version.
+   if( fent->dirty && fent->version == ent->version ) {
+      fent->size = MAX( fent->size, ent->size );
+   }
+   else {
+      fent->size = ent->size;
+   }
+   
+   fent->owner = ent->owner;
+   fent->coordinator = ent->coordinator;
+   fent->mode = ent->mode;
+   fent->mtime_sec = ent->mtime_sec;
+   fent->mtime_nsec = ent->mtime_nsec;
+   fent->ctime_sec = ent->ctime_sec;
+   fent->ctime_nsec = ent->ctime_nsec;
+   fent->volume = ent->volume;
+   fent->max_read_freshness = ent->max_read_freshness;
+   fent->max_write_freshness = ent->max_write_freshness;
+   fent->file_id = ent->file_id;
+   fent->generation = ent->generation;
+   fent->ms_num_children = ent->num_children;
+   fent->ms_capacity = ent->capacity;
+   
+   fent->write_nonce = ent->write_nonce;
+   fent->xattr_nonce = ent->xattr_nonce;
+   
+   if( fent->name != NULL ) {
+      free( fent->name );
+   }
+   
+   fent->name = strdup( ent->name );
+   fent->version = ent->version;
+   
+   return 0;
+}
+
 // create an FS entry from an md_entry.
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent ) {
    
    if( ent->type == MD_ENTRY_DIR ) {
       // this is a directory
       fs_entry_init_dir( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
+      
+      fs_entry_ms_reload( fent, ent );
    }
    else if ( ent->type == MD_ENTRY_FILE ) {
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
       
       // add manifest mtime
-      fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
-      
-      fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
-      fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
+      fs_entry_ms_reload( fent, ent );
       
       // re-snapshot, now that we have more info
       fs_entry_replica_snapshot( core, fent, 0, 0, fent->old_snapshot );
@@ -520,13 +568,9 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    else if( S_ISFIFO(ent->mode) ) {
       // this is a FIFO 
       fs_entry_init_fifo( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
+      
+      fs_entry_ms_reload( fent, ent );
    }
-   
-   fent->max_read_freshness = ent->max_read_freshness;
-   fent->max_write_freshness = ent->max_write_freshness;
-   fent->generation = ent->generation;
-   fent->ms_num_children = ent->num_children;
-   fent->ms_capacity = ent->capacity;
    
    return 0;
 }

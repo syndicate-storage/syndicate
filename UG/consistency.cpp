@@ -216,45 +216,7 @@ int fs_entry_reload( struct fs_entry* fent, struct md_entry* ent ) {
             ent->name, fent->dirty, fent->version, ent->version, manifest_modtime_sec, manifest_modtime_nsec, ent->manifest_mtime_sec, ent->manifest_mtime_nsec,
             fent->write_nonce, ent->write_nonce, fent->xattr_nonce, ent->xattr_nonce );
    
-   // only take the maximal size if we're dirty and we're the same version.  File size only increases within a single version.
-   if( fent->dirty && fent->version == ent->version ) {
-      fent->size = MAX( fent->size, ent->size );
-   }
-   else {
-      fent->size = ent->size;
-   }
-   
-   // fill in some of the details
-   fent->owner = ent->owner;
-   fent->coordinator = ent->coordinator;
-   fent->mode = ent->mode;
-   fent->mtime_sec = ent->mtime_sec;
-   fent->mtime_nsec = ent->mtime_nsec;
-   fent->ctime_sec = ent->ctime_sec;
-   fent->ctime_nsec = ent->ctime_nsec;
-   fent->volume = ent->volume;
-   fent->max_read_freshness = ent->max_read_freshness;
-   fent->max_write_freshness = ent->max_write_freshness;
-   fent->file_id = ent->file_id;
-   fent->generation = ent->generation;
-   fent->ms_num_children = ent->num_children;
-   
-   // store these for subsequent manifest reload
-   fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
-   fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
-   
-   if( fent->name ) {
-      free( fent->name );
-   }
-   
-   fent->name = strdup( ent->name );
-   
-   // advance nonces
-   fent->write_nonce = ent->write_nonce;
-   fent->xattr_nonce = ent->xattr_nonce;
-   
-   // advance version 
-   fent->version = ent->version;
+   fs_entry_ms_reload( fent, ent );
    
    fs_entry_mark_read_fresh( fent );
    
