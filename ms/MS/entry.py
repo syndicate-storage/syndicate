@@ -2515,7 +2515,7 @@ class MSEntry( storagetypes.Object ):
       
       children = filter( lambda x: x is not None, children )
       
-      logging.info("/%s/%s page=%s l.u.g.=%s: %d children" % (dirent.volume_id, dirent.file_id, page_id, least_unknown_generation, len(children)) )
+      logging.info("/%s/%s page=%s l.u.g.=%s: num_children=%s capacity=%s" % (dirent.volume_id, dirent.file_id, page_id, least_unknown_generation, len(children), dirent.capacity) )
       
       return (0, children)
    
