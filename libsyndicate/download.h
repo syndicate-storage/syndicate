@@ -54,7 +54,6 @@ struct md_download_context {
    md_cache_connector_func cache_func;
    
    CURL* curl;
-   sem_t sem;   // client holds this to be woken up when the download finishes 
    
    int curl_rc;         // stores CURL error code
    int http_status;     // stores HTTP status 
@@ -68,9 +67,13 @@ struct md_download_context {
    volatile bool finalized;      // if true, then this download has finished
    volatile bool safe_to_free;   // if true, then this download context can be freed
    
+   pthread_mutex_t finalize_lock;       // lock to serialize operations that change the above flags (primarily related to finalization)
+   
    struct md_download_set* dlset;       // parent group containing this context
    
    char* __downloader_url;      // used internally by the md_download_all() suite of methods
+   
+   sem_t sem;   // client holds this to be woken up when the download finishes 
 };
 
 typedef map<CURL*, struct md_download_context*> md_downloading_map_t;
