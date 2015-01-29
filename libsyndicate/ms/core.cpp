@@ -409,19 +409,19 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
 
 // read-lock a client context 
 int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_rlock %p (from %s:%d)\n", client, from_str, lineno);
+   //dbprintf("ms_client_rlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
 int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_wlock %p (from %s:%d)\n", client, from_str, lineno);
+   //dbprintf("ms_client_wlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
 int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_unlock %p (from %s:%d)\n", client, from_str, lineno);
+   //dbprintf("ms_client_unlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_unlock( &client->lock );
 }
 
