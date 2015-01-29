@@ -257,6 +257,7 @@ int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent,
                         int64_t write_nonce, int64_t xattr_nonce );
 
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
+int fs_entry_ms_reload( struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);
 int64_t fs_entry_next_block_version(void);
