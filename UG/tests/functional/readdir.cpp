@@ -70,12 +70,17 @@ int main( int argc, char** argv ) {
    else {
       dbprintf("\n\n\nfs_entry_readdir( %s ) rc = %d\n\n", path, rc );
       
+      int64_t num_ents = 0;
+      
       // print them
       for( int i = 0; dirents[i] != NULL; i++ ) {
          printf("   type=%d name=%s\n", dirents[i]->ftype, dirents[i]->data.name );
+         num_ents++;
       }
       
       printf("\n\n");
+      
+      printf("read %" PRId64 " entries of %s\n", num_ents, path );
       
       // free them 
       fs_dir_entry_destroy_all( dirents );
