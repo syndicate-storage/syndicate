@@ -195,6 +195,7 @@ def walk_dataset( context_list, root_dir, callbacks, max_retries ):
    total_processed = 1
    
    running = []
+   walk_stats = {}      # map directories to child counts
    
    i = 0
    
@@ -264,6 +265,11 @@ def walk_dataset( context_list, root_dir, callbacks, max_retries ):
             if processed_here > 0:
                total_processed += processed_here
                log.info("%s: %s entries processed (total: %s)" % (running[i].get_cur_dir(), processed_here, total_processed))
+
+               if not walk_stats.has_key( running[i].get_cur_dir() ):
+                   walk_stats[ running[i].get_cur_dir() ] = processed_here
+               else:
+                   walk_stats[ running[i].get_cur_dir() ] += processed_here
                
             if len(explore) > 0:
                dir_queue += explore 
@@ -296,6 +302,13 @@ def walk_dataset( context_list, root_dir, callbacks, max_retries ):
       if not added_work and not thread_working:
          break
       
+   
+   stats_buf = ""
+   for (dirname, count) in walk_stats.items():
+       stats_buf += "% 15s %s\n" % (count, dirname)
+
+   log.info("Walk stats:\n%s" % stats_buf )
+
    log.info("Finished exploring %s, shutting down..." % root_dir)
    
    # stop all threads 
