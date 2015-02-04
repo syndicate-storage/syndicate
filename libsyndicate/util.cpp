@@ -20,26 +20,49 @@
 #include "libsyndicate/util.h"
 #include "libsyndicate/libsyndicate.h"
 
-int _DEBUG = 1;
+int _SG_DEBUG_MESSAGES = 0;
+int _SG_INFO_MESSAGES = 0;
 
-int _DEBUG_MESSAGES = 0;
-int _ERROR_MESSAGES = 1;
+// log all warnings and errors by default
+int _SG_WARN_MESSAGES = 1;
+int _SG_ERROR_MESSAGES = 1;
 
 
 void md_set_debug_level( int d ) {
-   _DEBUG_MESSAGES = d;
+   if( d == 0 ) {
+      // no debugging
+      _SG_DEBUG_MESSAGES = 0;
+      _SG_INFO_MESSAGES = 0;
+   }
+   else if( d >= 1 ) {
+      _SG_INFO_MESSAGES = 1;
+   }
+   else if( d >= 2 ) {
+      // info and debug 
+      _SG_DEBUG_MESSAGES = 1;
+   }
 }
 
 void md_set_error_level( int e ) {
-   _ERROR_MESSAGES = e;
+   if( e == 0 ) {
+      // no error 
+      _SG_ERROR_MESSAGES = 0;
+      _SG_WARN_MESSAGES = 0;
+   }
+   else if( e >= 1 ) {
+      _SG_ERROR_MESSAGES = 1;
+   }
+   else if( e >= 2 ) {
+      _SG_WARN_MESSAGES = 1;
+   }
 }
 
 int md_get_debug_level() {
-   return _DEBUG_MESSAGES;
+   return _SG_DEBUG_MESSAGES;
 }
 
 int md_get_error_level() {
-   return _ERROR_MESSAGES;
+   return _SG_ERROR_MESSAGES;
 }
 
 /* Converts a hex character to its integer value */

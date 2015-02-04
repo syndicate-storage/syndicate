@@ -240,21 +240,20 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
 // if level >= 1, this turns on debug messages.
 // if level >= 2, this turns on locking debug messages
 int md_debug( struct md_syndicate_conf* conf, int level ) {
-   int prev = md_get_debug_level();
    md_set_debug_level( level );
    
    conf->debug_lock = false;
-   if( level >= 2 )
+   if( level >= 2 ) {
       conf->debug_lock = true;
+   }
    
-   return prev;
+   return 0;
 }
 
 // if level >= 1, this turns on error messages
 int md_error( struct md_syndicate_conf* conf, int level ) {
-   int prev = md_get_error_level();
    md_set_error_level( level );
-   return prev;
+   return 0;
 }
 
 
