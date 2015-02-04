@@ -6,8 +6,8 @@
 int main(int argc, char** argv) {
    md_debug(1);
    md_error(1);
-   dbprintf("%s\n", "starting up debugging");
-   errorf("%s\n", "starting up errors");
+   SG_debug("%s\n", "starting up debugging");
+   SG_error("%s\n", "starting up errors");
 
    int c;
    char* config_file = (char*)CLIENT_DEFAULT_CONFIG;
@@ -130,11 +130,11 @@ int main(int argc, char** argv) {
 
    // write to the file
    ssize_t file_size = conf->blocking_factor * 100;
-   char* buf = CALLOC_LIST( char, file_size );
+   char* buf = SG_CALLOC( char, file_size );
    char fill = rand() % 26 + 'A';
    memset( buf, fill, file_size );
 
-   char* wbuf = CALLOC_LIST( char, conf->blocking_factor );
+   char* wbuf = SG_CALLOC( char, conf->blocking_factor );
    memset( wbuf, fill, conf->blocking_factor );
    
 
@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
    struct timespec ts, ts2;
    
    char const* cleanup_fmt = "/bin/rm -rf %s %s /tmp/localwrite";
-   char* cleanup_buf = CALLOC_LIST( char, strlen(cleanup_fmt) + strlen(conf->staging_root) + strlen(conf->data_root) + 1 );
+   char* cleanup_buf = SG_CALLOC( char, strlen(cleanup_fmt) + strlen(conf->staging_root) + strlen(conf->data_root) + 1 );
    sprintf(cleanup_buf, cleanup_fmt, conf->data_root, conf->staging_root);
 
    if( local_write_test ) {
@@ -154,12 +154,12 @@ int main(int argc, char** argv) {
       // local write without Syndicate, for comparison
       DATA_BLOCK("raw write");
 
-      BEGIN_TIMING_DATA(ts);
+      SG_BEGIN_TIMING_DATA(ts);
 
       rc = mkdir("/tmp/localwrite", 0777 );
       if( rc != 0 ) {
          rc = -errno;
-         errorf("mkdir /tmp/localwrite errno = %d\n", rc );
+         SG_error("mkdir /tmp/localwrite errno = %d\n", rc );
          syndicate_destroy();
          exit(1);
       }
@@ -173,13 +173,13 @@ int main(int argc, char** argv) {
          FILE* f = fopen( path, "w" );
          if( f == NULL ) {
             int errsv = errno;
-            errorf("fopen(%s) errno = %d\n", path, errsv);
+            SG_error("fopen(%s) errno = %d\n", path, errsv);
             exit(1);
          }
          ssize_t nw = fwrite( wbuf, 1, conf->blocking_factor, f );
          if( nw != conf->blocking_factor ) {
             int errsv = errno;
-            errorf("fwrite(%s) errno = %d\n", path, errsv );
+            SG_error("fwrite(%s) errno = %d\n", path, errsv );
             syndicate_destroy();
             exit(1);
          }
@@ -187,13 +187,13 @@ int main(int argc, char** argv) {
          fclose( f );
       }
 
-      END_TIMING_DATA(ts, ts2, "disk write, direct");
+      SG_END_TIMING_DATA(ts, ts2, "disk write, direct");
 
       // local read without Syndicate, for comparison
       DATA_BLOCK("raw read");
 
 
-      BEGIN_TIMING_DATA(ts);
+      SG_BEGIN_TIMING_DATA(ts);
 
       for( int i = 0; i < 100; i++ ) {
          memset(path, 0, PATH_MAX);
@@ -202,21 +202,21 @@ int main(int argc, char** argv) {
          FILE* f = fopen( path, "r" );
          if( f == NULL ) {
             int errsv = errno;
-            errorf("fopen(%s) errno = %d\n", path, errsv);
+            SG_error("fopen(%s) errno = %d\n", path, errsv);
             syndicate_destroy();
             exit(1);
          }
          ssize_t nr = fread( wbuf, 1, conf->blocking_factor, f );
          if( nr != conf->blocking_factor ) {
             int errsv = errno;
-            errorf("fread(%s) errno = %d\n", path, errsv );
+            SG_error("fread(%s) errno = %d\n", path, errsv );
             syndicate_destroy();
             exit(1);
          }
          fclose( f );
       }
 
-      END_TIMING_DATA(ts, ts2, "disk read, direct");
+      SG_END_TIMING_DATA(ts, ts2, "disk read, direct");
    }
 
    if( ping_test ) {
@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
             free( buf );
       }
       else {
-         errorf("not found: %s\n", "/tmp/ping.out" );
+         SG_error("not found: %s\n", "/tmp/ping.out" );
          syndicate_destroy();
          exit(1);
       }
@@ -268,30 +268,30 @@ int main(int argc, char** argv) {
    DATA_BLOCK("mkdir");
    
    // mkdir(dir)
-   BEGIN_TIMING_DATA(ts);
+   SG_BEGIN_TIMING_DATA(ts);
    
    rc = fs_entry_mkdir( state->core, dir, 0777, conf->owner, conf->volume );
    if( rc != 0 ) {
-      errorf("fs_entry_mkdir(%s) rc = %d\n", dir, rc );
+      SG_error("fs_entry_mkdir(%s) rc = %d\n", dir, rc );
       syndicate_destroy();
       exit(1);
    }
 
-   END_TIMING_DATA(ts, ts2, "mkdir");
+   SG_END_TIMING_DATA(ts, ts2, "mkdir");
 
    DATA_BLOCK("open");
 
-   BEGIN_TIMING_DATA(ts);
+   SG_BEGIN_TIMING_DATA(ts);
    
    // create the file
    fh = fs_entry_open( state->core, file, NULL, conf->owner, conf->volume, O_CREAT | O_SYNC | O_RDWR, 0666, &rc );
    if( rc != 0 ) {
-      errorf("fs_entry_open(%s) rc = %d\n", file, rc );
+      SG_error("fs_entry_open(%s) rc = %d\n", file, rc );
       syndicate_destroy();
       exit(1);
    }
 
-   END_TIMING_DATA(ts, ts2, "open");
+   SG_END_TIMING_DATA(ts, ts2, "open");
 
    DATA_BLOCK("local write");
 
@@ -300,17 +300,17 @@ int main(int argc, char** argv) {
    fs_entry_mark_read_stale( fh->fent );
    fs_entry_unlock( fh->fent );
    
-   BEGIN_TIMING_DATA(ts);
+   SG_BEGIN_TIMING_DATA(ts);
    
    // write the file
    nw = fs_entry_write( state->core, fh, buf, file_size, 0 );
    if( nw != file_size ) {
-      errorf("fs_entry_write(%s) rc = %ld\n", file, nw );
+      SG_error("fs_entry_write(%s) rc = %ld\n", file, nw );
       syndicate_destroy();
       exit(1);
    }
 
-   END_TIMING_DATA(ts, ts2, "local write + MS refresh");
+   SG_END_TIMING_DATA(ts, ts2, "local write + MS refresh");
 
    for( int i = 0; i < 10; i++ ) {
       char sbuf[1000];
@@ -324,17 +324,17 @@ int main(int argc, char** argv) {
       fs_entry_unlock( fh->fent );
 
 
-      BEGIN_TIMING_DATA(ts);
+      SG_BEGIN_TIMING_DATA(ts);
 
       nw = fs_entry_read( state->core, fh, buf, file_size, 0 );
       if( nw != file_size ) {
-         errorf("fs_entry_read(%s) rc = %ld\n", file, nw );
+         SG_error("fs_entry_read(%s) rc = %ld\n", file, nw );
          syndicate_destroy();
          exit(1);
       }
 
       sprintf(sbuf, "local read %d + MS refresh", i );
-      END_TIMING_DATA(ts, ts2, sbuf);
+      SG_END_TIMING_DATA(ts, ts2, sbuf);
    }
 
    DATA_BLOCK("close");
@@ -342,7 +342,7 @@ int main(int argc, char** argv) {
    // close
    rc = fs_entry_close( state->core, fh );
    if( rc != 0 ) {
-      errorf("fs_entry_close(%s) rc = %d\n", file, rc );
+      SG_error("fs_entry_close(%s) rc = %d\n", file, rc );
       syndicate_destroy();
       exit(1);
    }
@@ -352,31 +352,31 @@ int main(int argc, char** argv) {
 
    DATA_BLOCK("unlink");
 
-   BEGIN_TIMING_DATA(ts);
+   SG_BEGIN_TIMING_DATA(ts);
    
    // unlink
    rc = fs_entry_versioned_unlink( state->core, file, -1, conf->owner, conf->volume );
    if( rc != 0 ) {
-      errorf("fs_entry_unlock(%s) rc = %d\n", file, rc );
+      SG_error("fs_entry_unlock(%s) rc = %d\n", file, rc );
       syndicate_destroy();
       exit(1);
    }
 
-   END_TIMING_DATA(ts, ts2, "unlink");
+   SG_END_TIMING_DATA(ts, ts2, "unlink");
    
    DATA_BLOCK("rmdir");
 
-   BEGIN_TIMING_DATA(ts);
+   SG_BEGIN_TIMING_DATA(ts);
    
    // rmdir
    rc = fs_entry_rmdir( state->core, dir, conf->owner, conf->volume );
    if( rc != 0 ) {
-      errorf("fs_entry_rmdir(%s) rc = %d\n", dir, rc );
+      SG_error("fs_entry_rmdir(%s) rc = %d\n", dir, rc );
       syndicate_destroy();
       exit(1);
    }
 
-   END_TIMING_DATA(ts, ts2, "rmdir");
+   SG_END_TIMING_DATA(ts, ts2, "rmdir");
    
    DATA_BLOCK("");
 

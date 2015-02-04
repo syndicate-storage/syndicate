@@ -15,8 +15,8 @@ void sighandle( int value ) {
 int main(int argc, char** argv) {
    md_debug(1);
    md_error(1);
-   dbprintf("%s\n", "starting up debugging");
-   errorf("%s\n", "starting up errors");
+   SG_debug("%s\n", "starting up debugging");
+   SG_error("%s\n", "starting up errors");
 
    int c;
    char* config_file = (char*)CLIENT_DEFAULT_CONFIG;
@@ -115,11 +115,11 @@ int main(int argc, char** argv) {
 
    // write to the file
    ssize_t file_size = size;
-   char* buf = CALLOC_LIST( char, file_size );
+   char* buf = SG_CALLOC( char, file_size );
    char fill = rand() % 26 + 'A';
    memset( buf, fill, file_size );
 
-   char* wbuf = CALLOC_LIST( char, conf->blocking_factor );
+   char* wbuf = SG_CALLOC( char, conf->blocking_factor );
    memset( wbuf, fill, conf->blocking_factor );
 
 
@@ -129,23 +129,23 @@ int main(int argc, char** argv) {
    struct timespec ts, ts2;
 
    char const* cleanup_fmt = "/bin/rm -rf %s %s";
-   char* cleanup_buf = CALLOC_LIST( char, strlen(cleanup_fmt) + strlen(conf->staging_root) + strlen(conf->data_root) + 1 );
+   char* cleanup_buf = SG_CALLOC( char, strlen(cleanup_fmt) + strlen(conf->staging_root) + strlen(conf->data_root) + 1 );
    sprintf(cleanup_buf, cleanup_fmt, conf->data_root, conf->staging_root);
 
    system(cleanup_buf);
 
    DATA_BLOCK("open");
 
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
    // create the file
    fh = fs_entry_open( state->core, file, NULL, conf->owner, conf->volume, O_SYNC | O_RDWR, 0666, &rc );
    if( rc != 0 ) {
-      errorf("fs_entry_open(%s) rc = %d\n", file, rc );
+      SG_error("fs_entry_open(%s) rc = %d\n", file, rc );
       exit(1);
    }
 
-   END_TIMING_DATA( ts, ts2, "open + MS revalidate + manifest refresh" );
+   SG_END_TIMING_DATA( ts, ts2, "open + MS revalidate + manifest refresh" );
 
    DATA_BLOCK("write");
 
@@ -155,31 +155,31 @@ int main(int argc, char** argv) {
    fs_entry_unlock( fh->fent );
 
 
-   dbprintf("write %zd bytes at %lld\n", file_size, (int64_t)offset );
+   SG_debug("write %zd bytes at %lld\n", file_size, (int64_t)offset );
    
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
    // write the file
    nw = fs_entry_write( state->core, fh, buf, file_size, offset );
    if( nw != file_size ) {
-      errorf("fs_entry_write(%s) rc = %ld\n", file, nw );
+      SG_error("fs_entry_write(%s) rc = %ld\n", file, nw );
       exit(1);
    }
 
-   END_TIMING_DATA( ts, ts2, "write + MS revalidate" );
+   SG_END_TIMING_DATA( ts, ts2, "write + MS revalidate" );
 
    DATA_BLOCK("close");
 
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
    // close
    rc = fs_entry_close( state->core, fh );
    if( rc != 0 ) {
-      errorf("fs_entry_close(%s) rc = %d\n", file, rc );
+      SG_error("fs_entry_close(%s) rc = %d\n", file, rc );
       exit(1);
    }
 
-   END_TIMING_DATA( ts, ts2, "close" );
+   SG_END_TIMING_DATA( ts, ts2, "close" );
 
    free( fh );
 

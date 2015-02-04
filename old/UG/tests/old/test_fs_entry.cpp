@@ -209,7 +209,7 @@ void* thread_main( void* arg ) {
    struct stat sb;
    rc = stat( GET_PATH(origin_file_url), &sb );
    if( rc != 0 ) {
-      errorf("Could not stat %s\n", GET_PATH(origin_file_url) );
+      SG_error("Could not stat %s\n", GET_PATH(origin_file_url) );
       return NULL;
    }
    char* filebuf = (char*)calloc( sb.st_size, 1 );
@@ -374,7 +374,7 @@ int main( int argc, char** argv ) {
    const char* md_url = "http://localhost:8888/";
    
    if( chdir( TEST_DIR ) != 0 ) {
-      errorf("Missing directory: %s\n", TEST_DIR );
+      SG_error("Missing directory: %s\n", TEST_DIR );
       exit(1);
    }
    
