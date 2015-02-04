@@ -332,6 +332,18 @@ cdef class Syndicate:
       md_free_conf( &self.conf_inst )
       md_shutdown()
 
+   cdef char* string_or_null( self, s ):
+      if s is None:
+         return NULL
+      else:
+         return str(s)
+   
+   cdef size_t strlen_or_zero( self, s ):
+      if s is not None:
+         return len(s)
+      else:
+         return 0
+
    def __init__( self, gateway_type=0,
                        gateway_name=None,
                        ms_url=None,
@@ -377,39 +389,35 @@ cdef class Syndicate:
       cdef md_opts opts
       memset( &opts, 0, sizeof(opts) )
       
-      opts.gateway_name = gateway_name
-      opts.ms_url = ms_url
-      opts.username = username
-      opts.volume_name = volume_name
-      opts.volume_pubkey_path = volume_pubkey_path
-      opts.volume_pubkey_pem = volume_pubkey_pem
-      opts.config_file = config_file
-      opts.storage_root = storage_root
-      opts.gateway_pkey_path = gateway_pkey_path
-      opts.tls_pkey_path = tls_pkey_path
-      opts.tls_cert_path = tls_cert_path
-      opts.syndicate_pubkey_path = syndicate_pubkey_path
-      opts.syndicate_pubkey_pem = syndicate_pubkey_pem
+      opts.gateway_name = self.string_or_null( gateway_name )
+      opts.ms_url = self.string_or_null( ms_url )
+      opts.username = self.string_or_null( username )
+      opts.volume_name = self.string_or_null( volume_name )
+      opts.volume_pubkey_path = self.string_or_null( volume_pubkey_path )
+      opts.volume_pubkey_pem = self.string_or_null( volume_pubkey_pem )
+      opts.config_file = self.string_or_null( config_file )
+      opts.storage_root = self.string_or_null( storage_root )
+      opts.gateway_pkey_path = self.string_or_null( gateway_pkey_path )
+      opts.tls_pkey_path = self.string_or_null( tls_pkey_path )
+      opts.tls_cert_path = self.string_or_null( tls_cert_path )
+      opts.syndicate_pubkey_path = self.string_or_null( syndicate_pubkey_path )
+      opts.syndicate_pubkey_pem = self.string_or_null( syndicate_pubkey_pem )
 
       # NOTE: not mlock'ed!
-      cdef char* c_gateway_pkey_pem = gateway_pkey_pem
-      opts.gateway_pkey_pem.ptr = c_gateway_pkey_pem
-      opts.gateway_pkey_pem.len = len(gateway_pkey_pem)
+      opts.gateway_pkey_pem.ptr = self.string_or_null( gateway_pkey_pem )
+      opts.gateway_pkey_pem.len = self.strlen_or_zero(gateway_pkey_pem)
       
       # NOTE: not mlock'ed!
-      cdef char* c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
-      opts.gateway_pkey_decryption_password.ptr = c_gateway_pkey_decryption_password
-      opts.gateway_pkey_decryption_password.len = len(gateway_pkey_decryption_password)
+      opts.gateway_pkey_decryption_password.ptr = self.string_or_null( gateway_pkey_decryption_password )
+      opts.gateway_pkey_decryption_password.len = self.strlen_or_zero( gateway_pkey_decryption_password )
 
       # NOTE: not mlock'ed!
-      cdef char* c_password = password
-      opts.password.ptr = c_password
-      opts.password.len = len(password)
+      opts.password.ptr = self.string_or_null( password )
+      opts.password.len = self.strlen_or_zero(password)
       
       # NOTE: not mlock'ed
-      cdef char* c_user_pkey_pem = user_pkey_pem
-      opts.user_pkey_pem.ptr = c_user_pkey_pem
-      opts.user_pkey_pem.len = len(user_pkey_pem)
+      opts.user_pkey_pem.ptr = self.string_or_null( user_pkey_pem )
+      opts.user_pkey_pem.len = self.strlen_or_zero(user_pkey_pem)
 
       rc = md_init( &self.conf_inst, &self.client_inst, &opts );
 
@@ -607,6 +615,7 @@ cdef class Syndicate:
       
       return
    
+
    cpdef get_sd_path( self ):
       '''
          Get the location of our local storage drivers.
@@ -620,6 +629,7 @@ cdef class Syndicate:
          return py_sd_path
       
       return None
+
    
    cpdef get_gateway_private_key_pem( self ):
       '''
@@ -644,12 +654,14 @@ cdef class Syndicate:
       else:
          return (rc, None)
 
+
    cpdef get_gateway_type( self, gw_id ):
       '''
          Get the type of gateway, given its ID.
       '''
 
       return ms_client_get_gateway_type( &self.client_inst, gw_id )
+
 
    cpdef check_gateway_caps( self, gw_type, gw_id, caps ):
       '''
