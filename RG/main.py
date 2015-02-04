@@ -94,7 +94,7 @@ def validate_args( config ):
          except OSError:
             log.error("Cannot read '%s'" % (file_path))
             invalid = True
-         finally:
+         else:
             fd.close()
             
    # coerce integer 
@@ -190,28 +190,6 @@ def run_bjoern( hostname, portnum ):
    
    bjoern.run( rg_server.wsgi_handle_request, hostname, portnum )
 
-
-#-------------------------   
-def run_meinheld( hostname, portnum ):
-   """
-   Start the server, using the Meinheld server (https://pypi.python.org/pypi/meinheld)
-   """
-   log.info("Starting Meinheld server on %s:%s" % (hostname, portnum))
-   
-   import meinheld.server
-   
-   meinheld.server.listen( hostname, portnum )
-   meinheld.server.run( rg_server.wsgi_handle_request )
-   
-#-------------------------
-def run_uwsgi( hostname, portnum ):
-   """
-   Start the server, using the uWSGI server (https://github.com/unbit/uwsgi)
-   """
-   log.info("Starting uWSGI server on %s:%s" % (hostname, portnum))
-   
-   # TODO
-   #uwsgi_rc = subprocess.call("uwsgi --http-processes 1 --htt
 
 #-------------------------
 def build_config( argv ):
