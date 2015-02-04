@@ -50,16 +50,16 @@ int main( int argc, char** argv ) {
    struct syndicate_state* state = syndicate_get_state();
    
    // get the xattr size
-   dbprintf("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " )\n\n\n", path, xattr_name, xattr_owner );
+   SG_debug("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " )\n\n\n", path, xattr_name, xattr_owner );
    
    int rc = fs_entry_chownxattr( state->core, path, xattr_name, xattr_owner );
    if( rc < 0 ) {
-      errorf("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " ) rc = %d\n\n\n", path, xattr_name, xattr_owner, rc );
+      SG_error("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " ) rc = %d\n\n\n", path, xattr_name, xattr_owner, rc );
       syndicate_functional_test_shutdown( &syndicate_http );
       exit(1);
    }
    
-   errorf("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " ) rc = %d\n\n\n", path, xattr_name, xattr_owner, rc );
+   SG_error("\n\n\nfs_entry_chownxattr( %s, %s, owner=%" PRIu64 " ) rc = %d\n\n\n", path, xattr_name, xattr_owner, rc );
    
    // shut down the test 
    syndicate_functional_test_shutdown( &syndicate_http );

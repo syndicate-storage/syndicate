@@ -47,7 +47,7 @@ int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_
    }
 
    if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      SG_error("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
       exit(1);
    }
    
@@ -74,7 +74,7 @@ uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t 
    }
 
    if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      SG_error("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
       exit(1);
    }
    
@@ -113,7 +113,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
    if( sign ) {
       int rc = md_sign< Serialization::ManifestMsg >( core->ms->my_key, &mmsg );
       if( rc != 0 ) {
-         errorf("gateway_sign_manifest rc = %d\n", rc );
+         SG_error("gateway_sign_manifest rc = %d\n", rc );
          *manifest_bits = NULL;
          return rc;
       }
@@ -126,7 +126,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
    
    int rc = md_serialize< Serialization::ManifestMsg >( &mmsg, manifest_bits, &manifest_bits_len );
    if( rc != 0 ) {
-      errorf("md_serialize rc = %d\n", rc );
+      SG_error("md_serialize rc = %d\n", rc );
       return rc;
    }
    
@@ -200,7 +200,7 @@ int fs_entry_get_manifest_mod_time( struct fs_core* core, char const* fs_path, s
    }
    
    if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      SG_error("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
       exit(1);
    }
    
@@ -291,7 +291,7 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
       // revalidate
       rc = fs_entry_revalidate_path( core, path );
       if( rc != 0 ) {
-         errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
          return rc;
       }
    }
@@ -371,14 +371,14 @@ bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, u
 int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat* sb ) {
    int rc = fs_file_handle_rlock( fh );
    if( rc != 0 ) {
-      errorf("fs_file_handle_rlock rc = %d\n", rc );
+      SG_error("fs_file_handle_rlock rc = %d\n", rc );
       return -EBADF;
    }
 
    // revalidate
    rc = fs_entry_revalidate_path( core, fh->path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
       
       if( rc == -ENOENT ) {
@@ -391,7 +391,7 @@ int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat
    
    rc = fs_entry_rlock( fh->fent );
    if( rc != 0 ) {
-      errorf("fs_entry_rlock rc = %d\n", rc );
+      SG_error("fs_entry_rlock rc = %d\n", rc );
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
@@ -412,7 +412,7 @@ int fs_entry_fstat_dir( struct fs_core* core, struct fs_dir_handle* dh, struct s
    // revalidate
    int rc = fs_entry_revalidate_path( core, dh->path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", dh->path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", dh->path, rc );
       fs_dir_handle_unlock( dh );
       return -EREMOTEIO;
    }
@@ -518,7 +518,7 @@ int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint6
 
    int rc = ms_client_update( core->ms, &fent->write_nonce, &up );
    if( rc != 0 ) {
-      errorf("ms_client_update(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_update(%s) rc = %d\n", path, rc );
    }
 
    md_entry_free( &up );
@@ -558,7 +558,7 @@ int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint6
 
    int rc = ms_client_update( core->ms, &fent->write_nonce, &up );
    if( rc != 0 ) {
-      errorf("ms_client_update(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_update(%s) rc = %d\n", path, rc );
    }
 
    md_entry_free( &up );
@@ -613,7 +613,7 @@ int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, 
 
    int rc = ms_client_update( core->ms, &fent->write_nonce, &up );
    if( rc != 0 ) {
-      errorf("ms_client_update(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_update(%s) rc = %d\n", path, rc );
    }
 
    md_entry_free( &up );

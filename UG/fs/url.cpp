@@ -33,7 +33,7 @@ char* fs_entry_path_from_file_id( uint64_t file_id ) {
    uint16_t file_id_parts[4];
    fs_entry_split_uint64( file_id, file_id_parts );
 
-   char* ret = CALLOC_LIST( char, 21 );
+   char* ret = SG_CALLOC( char, 21 );
    sprintf(ret, "/%04X/%04X/%04X/%04X", file_id_parts[0], file_id_parts[1], file_id_parts[2], file_id_parts[3] );
    return ret;
 }
@@ -46,13 +46,13 @@ char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* 
 
    if( local ) {
       // local
-      ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
       sprintf(ret, "%s%s%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_id, file_version, block_id, block_version );
    }
    else {
       // remote data block
-      ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64,
             base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, file_version, block_id, block_version );
    }
@@ -98,7 +98,7 @@ char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* f
       return NULL;
    
    int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1 + 25 + 1;
-   char* ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
+   char* ret = SG_CALLOC( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
 
    sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, core->volume, fs_path, file_id, version, block_id, block_version );
 
@@ -112,7 +112,7 @@ char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t file
    if( base_url == NULL )
       return NULL;
    
-   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
+   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
    sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, core->volume, file_id, version, block_id, block_version );
    
    free( base_url );
@@ -128,7 +128,7 @@ int fs_entry_make_block_url( struct fs_core* core, char const* fs_path, uint64_t
    
    if( gateway_type < 0 ) {
       // unknown gateway---maybe try reloading the certs?
-      errorf("Unknown gateway %" PRIu64 "\n", coordinator_id );
+      SG_error("Unknown gateway %" PRIu64 "\n", coordinator_id );
       return -ENOENT;
    }
    
@@ -142,7 +142,7 @@ int fs_entry_make_block_url( struct fs_core* core, char const* fs_path, uint64_t
       block_url = fs_entry_AG_block_url( core, coordinator_id, fs_path, file_id, version, block_id, block_version );
    
    if( block_url == NULL ) {
-      errorf("Failed to compute block URL for Gateway %" PRIu64 " (type %d)\n", coordinator_id, gateway_type);
+      SG_error("Failed to compute block URL for Gateway %" PRIu64 " (type %d)\n", coordinator_id, gateway_type);
       return -ENOENT;
    }
 
@@ -159,13 +159,13 @@ char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* b
 
    if( local ) {
       // local block
-      ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64,
               SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_id, file_version );
    }
    else {
       // remote data block
-      ret = CALLOC_LIST( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64,
               base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, file_version );
    }
@@ -190,7 +190,7 @@ char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, uint6
 
 // basic manifest URL generator
 char* fs_entry_base_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(gateway_base_url) + 1 + strlen(fs_path) + 1 + 107 );
+   char* ret = SG_CALLOC( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(gateway_base_url) + 1 + strlen(fs_path) + 1 + 107 );
    sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", gateway_base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, version, (long)ts->tv_sec, (long)ts->tv_nsec );
    return ret;
 }
@@ -219,7 +219,7 @@ char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t f
    if( base_url == NULL )
       return NULL;
    
-   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 25 + 1 + 25 + 1 + 25 + 25 + 1 + strlen("manifest") + 25 + 1 + 25 );
+   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 25 + 1 + 25 + 1 + 25 + 25 + 1 + strlen("manifest") + 25 + 1 + 25 );
    sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, core->volume, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
    
    free( base_url );
@@ -233,7 +233,7 @@ char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const
       return NULL;
    }
    
-   char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 107 );
+   char* ret = SG_CALLOC( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 107 );
    sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, core->volume, fs_path, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
    
    free( base_url );
@@ -249,7 +249,7 @@ int fs_entry_make_manifest_url( struct fs_core* core, char const* fs_path, uint6
 
    if( gateway_type < 0 ) {
       // unknown gateway
-      errorf("Unknown Gateway %" PRIu64 "\n", coordinator_id );
+      SG_error("Unknown Gateway %" PRIu64 "\n", coordinator_id );
       return -ENOENT;
    }
    
@@ -264,7 +264,7 @@ int fs_entry_make_manifest_url( struct fs_core* core, char const* fs_path, uint6
    
    if( manifest_url == NULL ) {
       // gateway not found 
-      errorf("Unknown Gateway %" PRIu64 " of type %d\n", coordinator_id, gateway_type );
+      SG_error("Unknown Gateway %" PRIu64 " of type %d\n", coordinator_id, gateway_type );
       return -ENOENT;
    }
    

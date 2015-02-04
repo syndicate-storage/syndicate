@@ -46,29 +46,29 @@ int main( int argc, char** argv ) {
    int rc = 0;
    
    // open the directory 
-   dbprintf("\n\n\nfs_entry_opendir( %s )\n\n\n", path );
+   SG_debug("\n\n\nfs_entry_opendir( %s )\n\n\n", path );
    
    struct fs_dir_handle* fdh = fs_entry_opendir( state->core, path, SYS_USER, state->core->volume, &rc );
    
    if( rc != 0 ) {
-      errorf("\n\n\fs_entry_opendir( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\fs_entry_opendir( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\fs_entry_opendir( %s ) rc = %d\n\n\n", path, rc );
+      SG_debug("\n\n\fs_entry_opendir( %s ) rc = %d\n\n\n", path, rc );
    }
    
    // read the directory 
-   dbprintf("\n\n\nfs_entry_readdir( %s )\n\n\n", path );
+   SG_debug("\n\n\nfs_entry_readdir( %s )\n\n\n", path );
    
    struct fs_dir_entry** dirents = fs_entry_readdir( state->core, fdh, &rc );
    
    if( rc != 0 ) {
-      errorf("\n\n\nfs_entry_readdir( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\nfs_entry_readdir( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\nfs_entry_readdir( %s ) rc = %d\n\n", path, rc );
+      SG_debug("\n\n\nfs_entry_readdir( %s ) rc = %d\n\n", path, rc );
       
       int64_t num_ents = 0;
       
@@ -90,11 +90,11 @@ int main( int argc, char** argv ) {
    // close the directory 
    rc = fs_entry_closedir( state->core, fdh );
    if( rc != 0 ) {
-      errorf("\n\n\fs_entry_closedir( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\nfs_entry_closedir( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\fs_entry_closedir( %s ) rc = %d\n\n\n", path, rc );
+      SG_debug("\n\n\nfs_entry_closedir( %s ) rc = %d\n\n\n", path, rc );
       free( fdh );
    }
    

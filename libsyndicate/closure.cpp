@@ -26,7 +26,7 @@ static struct md_closure_callback_entry* md_closure_callback_table_from_prototyp
       num_cbs++;
    }
    
-   struct md_closure_callback_entry* ret = CALLOC_LIST( struct md_closure_callback_entry, num_cbs + 1 );
+   struct md_closure_callback_entry* ret = SG_CALLOC( struct md_closure_callback_entry, num_cbs + 1 );
    
    for( int i = 0; prototype[i].sym_name != NULL; i++ ) {
       ret[i].sym_name = strdup( prototype[i].sym_name );
@@ -50,7 +50,7 @@ static void md_closure_callback_table_free( struct md_closure_callback_entry* ca
 // load a string as a JSON object 
 static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_json, size_t obj_json_len ) {
    
-   char* tmp = CALLOC_LIST( char, obj_json_len + 1 );
+   char* tmp = SG_CALLOC( char, obj_json_len + 1 );
    
    for( size_t i = 0; i < obj_json_len; i++ ) {
       tmp[i] = obj_json[i];
@@ -65,7 +65,7 @@ static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_
    
    if( jobj == NULL ) {
       
-      errorf("Failed to parse JSON object %p '%s'\n", obj_json, tmp );
+      SG_error("Failed to parse JSON object %p '%s'\n", obj_json, tmp );
       
       free( tmp );
       
@@ -77,7 +77,7 @@ static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_
    // should be an object
    enum json_type jtype = json_object_get_type( jobj );
    if( jtype != json_type_object ) {
-      errorf("%s", "JSON config is not a JSON object\n");
+      SG_error("%s", "JSON config is not a JSON object\n");
       
       json_object_put( jobj );
       return -EINVAL;
@@ -97,13 +97,13 @@ static int md_parse_b64_object( struct json_object** jobj_ret, char const* obj_b
    
    rc = md_base64_decode( obj_b64, obj_b64_len, &obj_json, &obj_json_len );
    if( rc != 0 ) {
-      errorf("md_base64_decode rc = %d\n", rc );
+      SG_error("md_base64_decode rc = %d\n", rc );
       return -EINVAL;
    }
    
    rc = md_parse_json_object( jobj_ret, obj_json, obj_json_len );
    if( rc != 0 ) {
-      errorf("md_parse_json_object rc = %d\n", rc );
+      SG_error("md_parse_json_object rc = %d\n", rc );
    }
    
    free( obj_json );
@@ -119,7 +119,7 @@ static int md_parse_closure_config( md_closure_conf_t* closure_conf, char const*
    
    int rc = md_parse_b64_object( &jobj, closure_conf_b64, closure_conf_b64_len );
    if( rc != 0 ) {
-      errorf("Failed to parse JSON object, rc = %d\n", rc );
+      SG_error("Failed to parse JSON object, rc = %d\n", rc );
       return rc;
    }
    
@@ -128,7 +128,7 @@ static int md_parse_closure_config( md_closure_conf_t* closure_conf, char const*
       // each field needs to be a string...
       enum json_type jtype = json_object_get_type( val );
       if( jtype != json_type_string ) {
-         errorf("%s is not a JSON string\n", key );
+         SG_error("%s is not a JSON string\n", key );
          rc = -EINVAL;
          break;
       }
@@ -161,7 +161,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    
    rc = md_base64_decode( closure_secrets_b64, closure_secrets_b64_len, &obj_ctext, &obj_ctext_len );
    if( rc != 0 ) {
-      errorf("md_base64_decode rc = %d\n", rc );
+      SG_error("md_base64_decode rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -174,7 +174,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    free( obj_ctext );
    
    if( rc != 0 ) {
-      errorf("md_decrypt rc = %d\n", rc );
+      SG_error("md_decrypt rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -183,7 +183,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    free( obj_json );
    
    if( rc != 0 ) {
-      errorf("md_parse_json_object rc = %d\n", rc );
+      SG_error("md_parse_json_object rc = %d\n", rc );
    }
    
    return rc;
@@ -196,7 +196,7 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
    
    int rc = md_decrypt_secrets( gateway_pubkey, gateway_pkey, &jobj, closure_secrets_b64, closure_secrets_b64_len );
    if( rc != 0 ) {
-      errorf("Failed to decrypt, rc = %d\n", rc );
+      SG_error("Failed to decrypt, rc = %d\n", rc );
       return rc;
    }
    
@@ -205,7 +205,7 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
       // each field needs to be a string...
       enum json_type jtype = json_object_get_type( val );
       if( jtype != json_type_string ) {
-         errorf("%s is not a JSON string\n", key );
+         SG_error("%s is not a JSON string\n", key );
          rc = -EINVAL;
          break;
       }
@@ -236,14 +236,14 @@ static char const* md_load_json_string_by_key( struct json_object* obj, char con
    struct json_object* key_obj = NULL;
    key_obj = json_object_object_get( obj, key );
    if( key_obj == NULL ) {
-      errorf("No such key '%s'\n", key );
+      SG_error("No such key '%s'\n", key );
       return NULL;
    }
    
    // verify it's a string 
    enum json_type jtype = json_object_get_type( key_obj );
    if( jtype != json_type_string ) {
-      errorf("'%s' is not a string\n", key );
+      SG_error("'%s' is not a string\n", key );
       return NULL;
    }
    
@@ -263,7 +263,7 @@ static int md_parse_json_b64_string( struct json_object* toplevel_obj, char cons
    char const* b64 = md_load_json_string_by_key( toplevel_obj, key, &b64_len );
    
    if( b64 == NULL || b64_len == 0 ) {
-      errorf("No value for '%s'\n", key);
+      SG_error("No value for '%s'\n", key);
       rc = -ENOENT;
    }
    else {
@@ -273,7 +273,7 @@ static int md_parse_json_b64_string( struct json_object* toplevel_obj, char cons
       // load it directly...
       rc = md_base64_decode( b64, b64_len, &tmp, &tmp_len );
       if( rc != 0 ) {
-         errorf("md_base64_decode('%s') rc = %d\n", key, rc );
+         SG_error("md_base64_decode('%s') rc = %d\n", key, rc );
       }
       else {
          *val = tmp;
@@ -296,7 +296,7 @@ static int md_parse_closure( md_closure_conf_t* closure_conf,
    
    int rc = md_parse_json_object( &toplevel_obj, closure_text, closure_text_len );
    if( rc != 0 ) {
-      errorf("md_parse_json_object rc = %d\n", rc );
+      SG_error("md_parse_json_object rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -310,7 +310,7 @@ static int md_parse_closure( md_closure_conf_t* closure_conf,
          // load it
          rc = md_parse_closure_config( closure_conf, json_b64, json_b64_len );
          if( rc != 0 ) {
-            errorf("md_parse_closure_config rc = %d\n", rc );
+            SG_error("md_parse_closure_config rc = %d\n", rc );
          }
       }
    }
@@ -325,7 +325,7 @@ static int md_parse_closure( md_closure_conf_t* closure_conf,
          // load it 
          rc = md_parse_closure_secrets( pubkey, privkey, closure_secrets, json_b64, json_b64_len );
          if( rc != 0 ) {
-            errorf("md_parse_closure_config rc = %d\n", rc );
+            SG_error("md_parse_closure_config rc = %d\n", rc );
          }
       }
    }
@@ -384,7 +384,7 @@ int md_closure_init( struct md_closure* closure,
    
    int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
-      errorf("md_parse_closure rc = %d\n", rc );
+      SG_error("md_parse_closure rc = %d\n", rc );
       
       delete closure_conf;
       
@@ -410,7 +410,7 @@ int md_closure_init( struct md_closure* closure,
    // initialize the driver
    rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
-      errorf("md_closure_driver_reload rc = %d\n", rc );
+      SG_error("md_closure_driver_reload rc = %d\n", rc );
       
       md_closure_shutdown( closure );
    }
@@ -432,13 +432,13 @@ int md_closure_load_AG_specfile( char* specfile_json, size_t specfile_json_len, 
    
    int rc = md_parse_json_object( &toplevel_obj, specfile_json, specfile_json_len );
    if( rc != 0 ) {
-      errorf("md_parse_json_object rc = %d\n", rc );
+      SG_error("md_parse_json_object rc = %d\n", rc );
       return -EINVAL;
    }
    
    rc = md_parse_json_b64_string( toplevel_obj, "spec", specfile_text, specfile_text_len );
    if( rc != 0 ) {
-      errorf("md_parse_json_b64_string rc = %d\n", rc );
+      SG_error("md_parse_json_b64_string rc = %d\n", rc );
    }
    
    json_object_put( toplevel_obj );
@@ -464,7 +464,7 @@ int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* clos
    // initialize the driver
    int rc = md_closure_driver_reload( conf, closure, NULL, 0 );
    if( rc != 0 ) {
-      errorf("md_closure_driver_reload rc = %d\n", rc );
+      SG_error("md_closure_driver_reload rc = %d\n", rc );
       
       md_closure_shutdown( closure );
    }
@@ -486,7 +486,7 @@ int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char c
    int rc = md_write_to_tmpfile( so_path, driver_text, driver_text_len, _so_path_ret );
    
    if( rc != 0 ) {
-      errorf("md_write_to_tmpfile(%s) rc = %d\n", so_path, rc );
+      SG_error("md_write_to_tmpfile(%s) rc = %d\n", so_path, rc );
    }
    
    free( so_path );
@@ -497,7 +497,7 @@ int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char c
 int md_load_driver( struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* closure_symtable ) {
    closure->so_handle = dlopen( so_path, RTLD_LAZY );
    if ( closure->so_handle == NULL ) {
-      errorf( "dlopen error = %s\n", dlerror() );
+      SG_error( "dlopen error = %s\n", dlerror() );
       return -ENODATA;
    }
    
@@ -510,10 +510,10 @@ int md_load_driver( struct md_closure* closure, char const* so_path, struct md_c
       if( closure_symtable[i].sym_ptr == NULL ) {
          
          if( closure->ignore_stubs ) {
-            errorf("WARN: unable to resolve method '%s', error = %s\n", closure_symtable[i].sym_name, dlerror() );
+            SG_error("WARN: unable to resolve method '%s', error = %s\n", closure_symtable[i].sym_name, dlerror() );
          }
          else {
-            errorf("dlsym(%s) error = %s\n", closure_symtable[i].sym_name, dlerror());
+            SG_error("dlsym(%s) error = %s\n", closure_symtable[i].sym_name, dlerror());
          
             dlclose( closure->so_handle );
             closure->so_handle = NULL;
@@ -521,7 +521,7 @@ int md_load_driver( struct md_closure* closure, char const* so_path, struct md_c
          }
       }
       else {
-         dbprintf("Loaded '%s' at %p\n", closure_symtable[i].sym_name, closure_symtable[i].sym_ptr );
+         SG_debug("Loaded '%s' at %p\n", closure_symtable[i].sym_name, closure_symtable[i].sym_ptr );
       }
    }
    
@@ -566,7 +566,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
       // store to disk    
       rc = md_write_driver( conf, &new_so_path, driver_text, driver_text_len );
       if( rc != 0 && rc != -ENOENT ) {
-         errorf("Failed to save driver, rc = %d\n", rc);
+         SG_error("Failed to save driver, rc = %d\n", rc);
          return -ENODATA;
       }
       
@@ -592,7 +592,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
          int closure_shutdown_rc = shutdown_cb( closure->cls );
          
          if( closure_shutdown_rc != 0 ) {
-            errorf("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
+            SG_error("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
          }
       }
       
@@ -601,7 +601,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
       
       rc = md_load_driver( &new_closure, new_so_path, new_closure.callbacks );
       if( rc != 0 ) {
-         errorf("closure_load(%s) rc = %d\n", new_so_path, rc );
+         SG_error("closure_load(%s) rc = %d\n", new_so_path, rc );
          
          if( stored_to_disk ) {
             unlink( new_so_path );
@@ -619,7 +619,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
             int closure_init_rc = init_cb( &new_closure, &new_closure.cls );
             
             if( closure_init_rc != 0 ) {
-               errorf("closure->init() rc = %d\n", closure_init_rc );
+               SG_error("closure->init() rc = %d\n", closure_init_rc );
                rc = closure_init_rc;
             }  
          }
@@ -652,7 +652,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
                   unlink( closure->so_path );
                   
                   if( closure->on_disk ) {
-                     errorf("WARN: Replaced %s with caller-supplied code\n", closure->so_path );
+                     SG_error("WARN: Replaced %s with caller-supplied code\n", closure->so_path );
                   }
                   
                   closure->on_disk = false;
@@ -709,7 +709,7 @@ int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* con
    
    int rc = md_parse_closure( closure_conf, pubkey, privkey, closure_secrets, &driver_bin, &driver_bin_len, closure_text, closure_text_len );
    if( rc != 0 ) {
-      errorf("md_parse_closure rc = %d\n", rc );
+      SG_error("md_parse_closure rc = %d\n", rc );
       
       delete closure_conf;
       delete closure_secrets;
@@ -728,7 +728,7 @@ int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* con
    // attempt to reload the driver...
    rc = md_closure_driver_reload( conf, closure, driver_bin, driver_bin_len );
    if( rc != 0 ) {
-      errorf("md_closure_driver_reload rc = %d\n", rc );
+      SG_error("md_closure_driver_reload rc = %d\n", rc );
       
       // revert 
       closure->closure_conf = old_closure_conf;
@@ -773,7 +773,7 @@ int md_closure_shutdown( struct md_closure* closure ) {
       int closure_shutdown_rc = shutdown_cb( closure->cls );
       
       if( closure_shutdown_rc != 0 ) {
-         errorf("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
+         SG_error("WARN: closure->shutdown rc = %d\n", closure_shutdown_rc );
       }
    }
    
@@ -852,7 +852,7 @@ int md_closure_get_config( struct md_closure* closure, char const* key, char** v
    if( itr != closure->closure_conf->end() ) {
       
       size_t ret_len = itr->second.size() + 1;
-      char* ret = CALLOC_LIST( char, ret_len );
+      char* ret = SG_CALLOC( char, ret_len );
       memcpy( ret, itr->second.data(), ret_len );
       
       *value = ret;
@@ -883,7 +883,7 @@ int md_closure_get_secret( struct md_closure* closure, char const* key, char** v
    if( itr != closure->closure_secrets->end() ) {
       
       size_t ret_len = itr->second.size() + 1;
-      char* ret = CALLOC_LIST( char, ret_len );
+      char* ret = SG_CALLOC( char, ret_len );
       memcpy( ret, itr->second.data(), ret_len );
       
       *value = ret;

@@ -56,7 +56,7 @@ void AG_death_signal_handler( int signum ) {
 int AG_state_fs_rlock( struct AG_state* state ) {
    int rc = pthread_rwlock_rdlock( &state->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_rdlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_rdlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -65,7 +65,7 @@ int AG_state_fs_rlock( struct AG_state* state ) {
 int AG_state_fs_wlock( struct AG_state* state ) {
    int rc = pthread_rwlock_wrlock( &state->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_wrlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_wrlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -74,7 +74,7 @@ int AG_state_fs_wlock( struct AG_state* state ) {
 int AG_state_fs_unlock( struct AG_state* state ) {
    int rc = pthread_rwlock_unlock( &state->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_unlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_unlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -83,7 +83,7 @@ int AG_state_fs_unlock( struct AG_state* state ) {
 int AG_state_config_rlock( struct AG_state* state ) {
    int rc = pthread_rwlock_rdlock( &state->config_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_rdlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_rdlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -92,7 +92,7 @@ int AG_state_config_rlock( struct AG_state* state ) {
 int AG_state_config_wlock( struct AG_state* state ) {
    int rc = pthread_rwlock_wrlock( &state->config_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_wrlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_wrlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -101,7 +101,7 @@ int AG_state_config_wlock( struct AG_state* state ) {
 int AG_state_config_unlock( struct AG_state* state ) {
    int rc = pthread_rwlock_unlock( &state->config_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_unlock(AG_state %p) rc = %d\n", state, rc );
+      SG_error("pthread_rwlock_unlock(AG_state %p) rc = %d\n", state, rc );
    }
    return rc;
 }
@@ -120,7 +120,7 @@ int AG_get_spec_file_text_from_MS( struct ms_client* client, char** out_specfile
    // get the json
    rc = ms_client_get_closure_text( client, &specfile_text_json, &specfile_text_json_len );
    if( rc != 0 ) {
-      errorf("ms_client_get_closure_text rc = %d\n", rc );
+      SG_error("ms_client_get_closure_text rc = %d\n", rc );
       return rc;
    }
    
@@ -129,7 +129,7 @@ int AG_get_spec_file_text_from_MS( struct ms_client* client, char** out_specfile
    free( specfile_text_json );
    
    if( rc != 0 ) {
-      errorf("md_closure_load_AG_specfile rc = %d\n", rc );
+      SG_error("md_closure_load_AG_specfile rc = %d\n", rc );
       
       return rc;
    }
@@ -143,7 +143,7 @@ int AG_get_spec_file_text_from_MS( struct ms_client* client, char** out_specfile
    free( specfile_text );
    
    if( zrc != 0 ) {
-      errorf("md_inflate(%zu bytes) rc = %d\n", specfile_text_len, zrc );
+      SG_error("md_inflate(%zu bytes) rc = %d\n", specfile_text_len, zrc );
       
       return zrc;
    }
@@ -163,15 +163,15 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
    if( state->ag_opts.spec_file_path != NULL ) {
       
       // read from disk
-      size_t txt_len = 0;
+      off_t txt_len = 0;
       char* txt = md_load_file( state->ag_opts.spec_file_path, &txt_len );
       
       if( txt == NULL ) {
-         errorf("Failed to load spec file text from %s\n", state->ag_opts.spec_file_path );
+         SG_error("Failed to load spec file text from %s, rc = %d\n", state->ag_opts.spec_file_path, (int)txt_len );
          rc = -ENODATA;
       }
       else {
-         dbprintf("Loaded %zu-byte specfile from %s\n", txt_len, state->ag_opts.spec_file_path );
+         SG_debug("Loaded %zu-byte specfile from %s\n", txt_len, state->ag_opts.spec_file_path );
          
          *specfile_text = txt;
          *specfile_text_len = txt_len;
@@ -183,16 +183,16 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
       rc = AG_get_spec_file_text_from_MS( state->ms, specfile_text, specfile_text_len );
       
       if( rc != 0 ) {
-         errorf("AG_get_spec_file_text_from_MS rc = %d\n", rc );
+         SG_error("AG_get_spec_file_text_from_MS rc = %d\n", rc );
       }
       else {
-         dbprintf("Loaded %zu-byte specfile from the MS\n", *specfile_text_len );
+         SG_debug("Loaded %zu-byte specfile from the MS\n", *specfile_text_len );
       }
    }
    
    if( rc != 0 ) {
       // can't reload--didn't get the text
-      errorf("Failed to get spec file text, rc = %d\n", rc );
+      SG_error("Failed to get spec file text, rc = %d\n", rc );
    }
    
    return rc;
@@ -203,7 +203,7 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
 // NOTE: state only needs .ms and .ag_opts to be initialized for this method to work.
 int AG_reload_specfile( struct AG_state* state, AG_fs_map_t** new_fs, AG_config_t** new_config ) {
    
-   dbprintf("%s", "Reloading AG spec file...\n");
+   SG_debug("%s", "Reloading AG spec file...\n");
    
    int rc = 0;
    char* new_specfile_text = NULL;
@@ -212,14 +212,14 @@ int AG_reload_specfile( struct AG_state* state, AG_fs_map_t** new_fs, AG_config_
    // get the text 
    rc = AG_load_spec_file_text( state, &new_specfile_text, &new_specfile_text_len );
    if( rc != 0 ) {
-      errorf("AG_load_spec_file_text rc = %d\n", rc );
+      SG_error("AG_load_spec_file_text rc = %d\n", rc );
       return rc;
    }
    
    // try to parse the text 
    rc = AG_parse_spec( state, new_specfile_text, new_specfile_text_len, new_fs, new_config );
    if( rc != 0 ) {
-      errorf("AG_parse_spec rc = %d\n", rc );
+      SG_error("AG_parse_spec rc = %d\n", rc );
    }
    
    free( new_specfile_text );
@@ -252,27 +252,27 @@ int AG_resync( struct AG_state* state, struct AG_fs* old_fs, struct AG_fs* new_f
    AG_fs_unlock( old_fs );
    
    if( rc != 0 ) {
-      errorf("AG_fs_map_transforms rc = %d\n", rc );
+      SG_error("AG_fs_map_transforms rc = %d\n", rc );
       return rc;
    }
    
    // add metadata for the ones to publish
    rc = AG_fs_publish_generate_metadata( &to_publish );
    if( rc != 0 ) {
-      errorf("AG_fs_publish_generate_metadata rc = %d\n", rc );
+      SG_error("AG_fs_publish_generate_metadata rc = %d\n", rc );
       return rc;
    }
    
-   dbprintf("%s", "To publish:\n");
+   SG_debug("%s", "To publish:\n");
    AG_dump_fs_map( &to_publish );
    
-   dbprintf("%s", "To remain:\n");
+   SG_debug("%s", "To remain:\n");
    AG_dump_fs_map( &to_remain );
    
-   dbprintf("%s", "To update:\n");
+   SG_debug("%s", "To update:\n");
    AG_dump_fs_map( &to_update );
    
-   dbprintf("%s", "To delete:\n");
+   SG_debug("%s", "To delete:\n");
    AG_dump_fs_map( &to_delete );
    
    // apply our changes to it.
@@ -280,27 +280,27 @@ int AG_resync( struct AG_state* state, struct AG_fs* old_fs, struct AG_fs* new_f
    int publish_rc = AG_fs_publish_all( new_fs->ms, old_fs->fs, &to_publish );
    
    if( publish_rc != 0 ) {
-      errorf("ERR: AG_fs_publish_all rc = %d\n", publish_rc );
+      SG_error("ERR: AG_fs_publish_all rc = %d\n", publish_rc );
       
       return publish_rc;
    }
    
    int update_rc = AG_fs_update_all( new_fs->ms, old_fs->fs, &to_update );
    if( update_rc != 0 ) {
-      errorf("ERR: AG_fs_update_all rc = %d\n", update_rc );
+      SG_error("ERR: AG_fs_update_all rc = %d\n", update_rc );
       
       return update_rc;
    }
    
    if( force_refresh ) {
       
-      dbprintf("Forcing refresh of %zu fresh entries\n", to_remain.size() );
+      SG_debug("Forcing refresh of %zu fresh entries\n", to_remain.size() );
       
       // refresh fresh entries 
       int fresh_rc = AG_fs_update_all( new_fs->ms, old_fs->fs, &to_remain );
       
       if( fresh_rc != 0 ) {
-         errorf("ERR: AG_fs_update_all rc = %d\n", fresh_rc );
+         SG_error("ERR: AG_fs_update_all rc = %d\n", fresh_rc );
          
          return fresh_rc;
       }
@@ -308,7 +308,7 @@ int AG_resync( struct AG_state* state, struct AG_fs* old_fs, struct AG_fs* new_f
    
    int delete_rc = AG_fs_delete_all( new_fs->ms, new_fs->fs, &to_delete );
    if( delete_rc != 0 ) {
-      errorf("ERR: AG_fs_delete_all rc = %d\n", delete_rc );
+      SG_error("ERR: AG_fs_delete_all rc = %d\n", delete_rc );
       
       return delete_rc;
    }
@@ -324,19 +324,19 @@ int AG_reload( struct AG_state* state ) {
    AG_fs_map_t* new_fs = NULL;
    AG_config_t* new_config = NULL;
    
-   dbprintf("%s", "Begin reload state\n");
+   SG_debug("%s", "Begin reload state\n");
    
    // get the new fs data 
    rc = AG_reload_specfile( state, &new_fs, &new_config );
    if( rc != 0 ) {
-      errorf("AG_reload_specfile rc = %d\n", rc );
+      SG_error("AG_reload_specfile rc = %d\n", rc );
       return rc;
    }
    
    // verify its integrity 
    rc = AG_validate_map_info( new_fs );
    if( rc != 0 ) {
-      errorf("AG_validate_map_info rc = %d\n", rc );
+      SG_error("AG_validate_map_info rc = %d\n", rc );
       
       AG_fs_map_free( new_fs );
       
@@ -346,7 +346,7 @@ int AG_reload( struct AG_state* state ) {
    }
    
    // wrap the new mapping into an AG_fs
-   struct AG_fs* fs_clone = CALLOC_LIST( struct AG_fs, 1 );
+   struct AG_fs* fs_clone = SG_CALLOC( struct AG_fs, 1 );
    
    // clone the fs (but prevent another thread from replacing state->ag_fs)
    AG_state_fs_rlock( state );
@@ -366,7 +366,7 @@ int AG_reload( struct AG_state* state ) {
    AG_state_fs_unlock( state );
    
    if( rc != 0 ) {
-      errorf("AG_fs_map_dup rc = %d\n", rc );
+      SG_error("AG_fs_map_dup rc = %d\n", rc );
       
       AG_fs_free( fs_clone );   // NOTE: frees new_fs 
       free( fs_clone );
@@ -397,7 +397,7 @@ int AG_reload( struct AG_state* state ) {
    // Evolve the current AG_fs into the one described by the specfile.
    rc = AG_resync( state, state->ag_fs, fs_clone, AG_fresh_comparator::equ, false );
    if( rc != 0 ) {
-      errorf("WARN: AG_resync rc = %d\n", rc );
+      SG_error("WARN: AG_resync rc = %d\n", rc );
       rc = 0;
    }
    
@@ -434,7 +434,7 @@ int AG_reload( struct AG_state* state ) {
    
    delete old_config;
    
-   dbprintf("%s", "End reload state\n");
+   SG_debug("%s", "End reload state\n");
    return 0;
 }
 
@@ -444,7 +444,7 @@ void* AG_reload_thread_main( void* arg ) {
    
    struct AG_state* state = (struct AG_state*)arg;
    
-   dbprintf("%s\n", "Starting specfile reload thread\n");
+   SG_debug("%s\n", "Starting specfile reload thread\n");
    
    while( state->specfile_reload_thread_running ) {
       
@@ -461,7 +461,7 @@ void* AG_reload_thread_main( void* arg ) {
    }
    
    
-   dbprintf("%s\n", "Specfile reload thread exit\n");
+   SG_debug("%s\n", "Specfile reload thread exit\n");
    return NULL;
 }
 
@@ -481,7 +481,7 @@ int AG_view_change_callback( struct ms_client* ms, void* arg ) {
 // terminate on command--send ourselves a SIGTERM
 int AG_event_handler_terminate( char* event_payload, void* unused ) {
    
-   dbprintf("%s\n", "EVENT: Terminate\n");
+   SG_debug("%s\n", "EVENT: Terminate\n");
    
    pid_t my_pid = getpid();
    
@@ -492,7 +492,7 @@ int AG_event_handler_terminate( char* event_payload, void* unused ) {
 // pass an event to the driver 
 int AG_event_handler_driver_ioctl( char* event_payload, void* unused ) {
    
-   dbprintf("%s\n", "EVENT: Driver ioctl\n");
+   SG_debug("%s\n", "EVENT: Driver ioctl\n");
    
    struct AG_state* state = AG_get_state();
    if( state == NULL ) {
@@ -509,20 +509,20 @@ int AG_event_handler_driver_ioctl( char* event_payload, void* unused ) {
    // parse the payload 
    rc = AG_parse_driver_ioctl( event_payload, &query_type, &payload, &payload_len );
    if( rc != 0 ) {
-      errorf("AG_parse_driver_ioctl rc = %d\n", rc );
+      SG_error("AG_parse_driver_ioctl rc = %d\n", rc );
       return rc;
    }
    
    struct AG_driver* driver = AG_lookup_driver( state->drivers, query_type );
    if( driver == NULL ) {
-      errorf("No such driver '%s'\n", query_type );
+      SG_error("No such driver '%s'\n", query_type );
       return -EPERM;
    }
    
    // call the driver's event handler 
    rc = AG_driver_handle_event( driver, payload, payload_len );
    if( rc != 0 ) {
-      errorf("AG_driver_handle_event( driver = '%s' ) rc = %d\n", query_type, rc );
+      SG_error("AG_driver_handle_event( driver = '%s' ) rc = %d\n", query_type, rc );
    }
    
    return rc;
@@ -553,10 +553,10 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    pthread_rwlock_init( &state->config_lock, NULL );
    
    // make the instance nonce
-   char* tmp = CALLOC_LIST( char, 16 );
+   char* tmp = SG_CALLOC( char, 16 );
    rc = md_read_urandom( tmp, 16 );
    if( rc != 0 ) {
-      errorf("md_read_urandom rc = %d\n", rc );
+      SG_error("md_read_urandom rc = %d\n", rc );
       free( tmp );
       return rc;
    }
@@ -565,35 +565,35 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    free( tmp );
    
    if( rc != 0 ) {
-      errorf("md_base64_encode rc = %d\n", rc );
+      SG_error("md_base64_encode rc = %d\n", rc );
       return rc;
    }
    
-   dbprintf("Initializing AG instance %s\n", state->inst_nonce );
+   SG_debug("Initializing AG instance %s\n", state->inst_nonce );
    
    // initialize drivers 
    state->drivers = new AG_driver_map_t();
    
    rc = AG_load_drivers( state->conf, state->drivers, state->ag_opts.driver_dir );
    if( rc != 0 ) {
-      errorf("AG_load_drivers(%s) rc = %d\n", state->ag_opts.driver_dir, rc );
+      SG_error("AG_load_drivers(%s) rc = %d\n", state->ag_opts.driver_dir, rc );
       return rc;
    }
    
    // initialize the path-mapping 
-   state->ag_fs = CALLOC_LIST( struct AG_fs, 1 );
+   state->ag_fs = SG_CALLOC( struct AG_fs, 1 );
 
    // get the new FS mapping and config 
    rc = AG_reload_specfile( state, &parsed_map, &state->config );
    if( rc != 0 ) {
-      errorf("AG_reload_specfile rc = %d\n", rc );
+      SG_error("AG_reload_specfile rc = %d\n", rc );
       return rc;
    }
    
    // verify its integrity 
    rc = AG_validate_map_info( parsed_map );
    if( rc != 0 ) {
-      errorf("AG_validate_map_info rc = %d\n", rc );
+      SG_error("AG_validate_map_info rc = %d\n", rc );
       
       AG_fs_map_free( parsed_map );
       delete parsed_map;
@@ -605,7 +605,7 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    rc = AG_fs_init( state->ag_fs, parsed_map, state->ms );
    
    if( rc != 0 ) {
-      errorf("AG_fs_init rc = %d\n", rc );
+      SG_error("AG_fs_init rc = %d\n", rc );
       
       AG_fs_map_free( parsed_map );
       delete parsed_map;
@@ -614,34 +614,34 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    }
    
    // initialize HTTP 
-   state->http = CALLOC_LIST( struct md_HTTP, 1 );
+   state->http = SG_CALLOC( struct md_HTTP, 1 );
    
    rc = AG_http_init( state->http, state->conf );
    if( rc != 0 ) {
-      errorf("AG_http_init rc = %d\n", rc );
+      SG_error("AG_http_init rc = %d\n", rc );
       return rc;
    }
    
    // initialize event listener 
-   state->event_listener = CALLOC_LIST( struct AG_event_listener, 1 );
+   state->event_listener = SG_CALLOC( struct AG_event_listener, 1 );
    
    rc = AG_event_listener_init( state->event_listener, ag_opts );
    if( rc != 0 ) {
-      errorf("AG_event_listener_init rc = %d\n", rc );
+      SG_error("AG_event_listener_init rc = %d\n", rc );
       return rc;
    }
    
    // initialize reversioner 
-   state->wq = CALLOC_LIST( struct md_wq, 1 );
+   state->wq = SG_CALLOC( struct md_wq, 1 );
    
    rc = md_wq_init( state->wq, state );
    if( rc != 0 ) {
-      errorf("md_wq_init rc = %d\n", rc );
+      SG_error("md_wq_init rc = %d\n", rc );
       return rc;
    }
    
    // set up block cache 
-   state->cache = CALLOC_LIST( struct md_syndicate_cache, 1 );
+   state->cache = SG_CALLOC( struct md_syndicate_cache, 1 );
    
    if( opts->cache_hard_limit == 0 ) {
       opts->cache_hard_limit = AG_CACHE_DEFAULT_HARD_LIMIT;
@@ -655,7 +655,7 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    rc = md_cache_init( state->cache, conf, opts->cache_soft_limit / block_size, opts->cache_hard_limit / block_size );
    
    if( rc != 0 ) {
-      errorf("md_cache_init rc = %d\n", rc );
+      SG_error("md_cache_init rc = %d\n", rc );
       return rc;
    }
                        
@@ -683,26 +683,26 @@ int AG_start( struct AG_state* state ) {
    int rc = 0;
    
    // start event listener before reloading--the driver might need it
-   dbprintf("%s", "Starting event listener\n");
+   SG_debug("%s", "Starting event listener\n");
    
    rc = AG_event_listener_start( state->event_listener );
    if( rc != 0 ) {
-      errorf("AG_event_listener_start rc = %d\n", rc );
+      SG_error("AG_event_listener_start rc = %d\n", rc );
       
       return rc;
    }
    
    // start up the block cache 
-   dbprintf("%s", "Starting block cache\n");
+   SG_debug("%s", "Starting block cache\n");
    
    rc = md_cache_start( state->cache );
    if( rc != 0) {
-      errorf("md_cache_start rc = %d\n", rc );
+      SG_error("md_cache_start rc = %d\n", rc );
       
       return rc;
    }
    
-   dbprintf("%s", "(Re)synchronizing dataset\n");
+   SG_debug("%s", "(Re)synchronizing dataset\n");
    
    // get the list of entries that are already on the MS 
    AG_fs_map_t* on_MS = new AG_fs_map_t();
@@ -713,7 +713,7 @@ int AG_start( struct AG_state* state ) {
    rc = AG_fs_init( &on_MS_fs, on_MS, state->ms );
    
    if( rc != 0 ) {
-      errorf("AG_fs_init(on_MS) rc = %d\n", rc );
+      SG_error("AG_fs_init(on_MS) rc = %d\n", rc );
       
       AG_fs_map_free( on_MS );
       delete on_MS;
@@ -726,7 +726,7 @@ int AG_start( struct AG_state* state ) {
       // populate on_MS with cached data 
       rc = AG_MS_cache_load( state->ag_opts.cached_metadata_path, on_MS_fs.fs );
       if( rc != 0 ) {
-         errorf("WARN: AG_MS_cache_load(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
+         SG_error("WARN: AG_MS_cache_load(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
          rc = 0;
       }
       
@@ -745,7 +745,7 @@ int AG_start( struct AG_state* state ) {
       AG_fs_unlock( state->ag_fs );
       
       if( rc != 0 ) {
-         errorf("AG_download_existing_fs_map rc = %d\n", rc );
+         SG_error("AG_download_existing_fs_map rc = %d\n", rc );
          
          AG_fs_free( &on_MS_fs );
          
@@ -758,7 +758,7 @@ int AG_start( struct AG_state* state ) {
       // get all driver metadata for the specfile-generated fs map 
       rc = AG_get_publish_info_all( state, state->ag_fs->fs );
       if( rc != 0 ) { 
-         errorf("AG_get_publish_info_all(specfile) rc = %d\n", rc );
+         SG_error("AG_get_publish_info_all(specfile) rc = %d\n", rc );
          
          AG_fs_free( &on_MS_fs );
          return rc;
@@ -780,7 +780,7 @@ int AG_start( struct AG_state* state ) {
       rc = AG_resync( state, &on_MS_fs, state->ag_fs, AG_fresh_comparator::equ, state->ag_opts.reversion_on_startup );
       
       if( rc != 0 ) {
-         errorf("ERR: AG_resync rc = %d\n", rc );
+         SG_error("ERR: AG_resync rc = %d\n", rc );
          AG_fs_free( &on_MS_fs );
          return rc;
       }
@@ -795,7 +795,7 @@ int AG_start( struct AG_state* state ) {
       // save the cached data 
       rc = AG_MS_cache_store( state->ag_opts.cached_metadata_path, state->ag_fs->fs );
       if( rc != 0 ) {
-         errorf("WARN: AG_MS_cache_store(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
+         SG_error("WARN: AG_MS_cache_store(%s) rc = %d\n", state->ag_opts.cached_metadata_path, rc );
          rc = 0;
       }
       
@@ -803,11 +803,11 @@ int AG_start( struct AG_state* state ) {
    }
    
    // start HTTP 
-   dbprintf("Starting HTTP server (%d threads)\n", state->conf->num_http_threads );
+   SG_debug("Starting HTTP server (%d threads)\n", state->conf->num_http_threads );
    
    rc = md_start_HTTP( state->http, state->conf->portnum, state->conf );
    if( rc != 0 ) {
-      errorf("ERR: md_start_HTTP rc = %d\n", rc );
+      SG_error("ERR: md_start_HTTP rc = %d\n", rc );
       return rc;
    }
    
@@ -815,7 +815,7 @@ int AG_start( struct AG_state* state ) {
    AG_state_fs_rlock( state );
    AG_fs_rlock( state->ag_fs );
    
-   // dbprintf("%s", "Starting with the following FS map:\n");
+   // SG_debug("%s", "Starting with the following FS map:\n");
    // AG_dump_fs_map( state->ag_fs->fs );
    
    rc = 0;
@@ -824,21 +824,21 @@ int AG_start( struct AG_state* state ) {
    AG_state_fs_unlock( state );
    
    // start the work queue 
-   dbprintf("%s", "Starting workqueue\n");
+   SG_debug("%s", "Starting workqueue\n");
    
    rc = md_wq_start( state->wq );
    if( rc != 0 ) {
-      errorf("AG_reversioner_start rc = %d\n", rc );
+      SG_error("AG_reversioner_start rc = %d\n", rc );
       return rc;
    }
    
    // start the reloader 
-   dbprintf("%s", "Starting specfile reload thread\n");
+   SG_debug("%s", "Starting specfile reload thread\n");
    
    state->specfile_reload_thread = md_start_thread( AG_reload_thread_main, state, false );
    
    if( state->specfile_reload_thread < 0 ) {
-      errorf("ERR: md_start_thread rc = %d\n", (int)state->specfile_reload_thread );
+      SG_error("ERR: md_start_thread rc = %d\n", (int)state->specfile_reload_thread );
       return (int)state->specfile_reload_thread;
    }
 
@@ -851,7 +851,7 @@ int AG_start( struct AG_state* state ) {
 // shut down the AG
 int AG_stop( struct AG_state* state ) {
    
-   dbprintf("%s", "Shutting down specfile reloader\n");
+   SG_debug("%s", "Shutting down specfile reloader\n");
    
    // wake up the reload callback and tell it to exit
    state->specfile_reload_thread_running = false;
@@ -864,16 +864,16 @@ int AG_stop( struct AG_state* state ) {
    pthread_cancel( state->specfile_reload_thread );
    pthread_join( state->specfile_reload_thread, NULL );
    
-   dbprintf("%s", "Shutting down HTTP server\n");
+   SG_debug("%s", "Shutting down HTTP server\n");
    md_stop_HTTP( state->http );
    
-   dbprintf("%s", "Shutting down event listener\n");
+   SG_debug("%s", "Shutting down event listener\n");
    AG_event_listener_stop( state->event_listener );
    
-   dbprintf("%s", "Shutting down workqueue\n");
+   SG_debug("%s", "Shutting down workqueue\n");
    md_wq_stop( state->wq );
    
-   dbprintf("%s", "Shutting down block cache\n");
+   SG_debug("%s", "Shutting down block cache\n");
    md_cache_stop( state->cache );
    
    state->running = false;
@@ -890,7 +890,7 @@ int AG_state_free( struct AG_state* state ) {
       return -EINVAL;
    }
    
-   dbprintf("Freeing AG instance %s\n", state->inst_nonce );
+   SG_debug("Freeing AG instance %s\n", state->inst_nonce );
    
    // state can no longer be referenced 
    state->referenceable = false;
@@ -978,13 +978,13 @@ int AG_state_free( struct AG_state* state ) {
 // dump config to stdout 
 void AG_dump_config( AG_config_t* config ) {
    
-   dbprintf("Begin dump config %p\n", config );
+   SG_debug("Begin dump config %p\n", config );
    
    for( AG_config_t::iterator itr = config->begin(); itr != config->end(); itr++ ) {
-      dbprintf("'%s' = '%s'\n", itr->first.c_str(), itr->second.c_str() );
+      SG_debug("'%s' = '%s'\n", itr->first.c_str(), itr->second.c_str() );
    }
    
-   dbprintf("End dump config %p\n", config );
+   SG_debug("End dump config %p\n", config );
 }
 
 // get a config variable 
@@ -1079,9 +1079,9 @@ int AG_opts_get( struct AG_opts* opts ) {
    memcpy( opts, &g_AG_opts, sizeof(struct AG_opts) );
    
    // deep-copy dynamically-allocatd fields 
-   opts->sock_path = strdup_or_null( g_AG_opts.sock_path );
-   opts->logfile_path = strdup_or_null( g_AG_opts.logfile_path );
-   opts->driver_dir = strdup_or_null( g_AG_opts.driver_dir );
+   opts->sock_path = SG_strdup_or_null( g_AG_opts.sock_path );
+   opts->logfile_path = SG_strdup_or_null( g_AG_opts.logfile_path );
+   opts->driver_dir = SG_strdup_or_null( g_AG_opts.driver_dir );
    
    return 0;
 }
@@ -1153,7 +1153,7 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          break;
       }
       default: {
-         errorf("Unrecognized option '%c'\n", opt_c );
+         SG_error("Unrecognized option '%c'\n", opt_c );
          rc = -1;
          break;
       }
@@ -1180,8 +1180,8 @@ int AG_main( int argc, char** argv ) {
    memset( state, 0, sizeof(struct AG_state) );
    
    // syndicate config and MS client
-   struct md_syndicate_conf* conf = CALLOC_LIST( struct md_syndicate_conf, 1 );
-   struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
+   struct md_syndicate_conf* conf = SG_CALLOC( struct md_syndicate_conf, 1 );
+   struct ms_client* ms = SG_CALLOC( struct ms_client, 1 );
    
    // parse options
    struct md_opts opts;
@@ -1207,7 +1207,7 @@ int AG_main( int argc, char** argv ) {
    if( opts.config_file != NULL ) {
       rc = md_read_conf( opts.config_file, conf );
       if( rc != 0 ) {
-         errorf("ERR: md_read_conf(%s) rc = %d\n", opts.config_file, rc );
+         SG_error("ERR: md_read_conf(%s) rc = %d\n", opts.config_file, rc );
          exit(1);
       }
    }
@@ -1216,7 +1216,7 @@ int AG_main( int argc, char** argv ) {
    rc = md_init( conf, ms, &opts );
    
    if( rc != 0 ) {
-      errorf("md_init rc = %d\n", rc );
+      SG_error("md_init rc = %d\n", rc );
       exit(1);
    }
    
@@ -1231,7 +1231,7 @@ int AG_main( int argc, char** argv ) {
    rc = AG_signal_listener_init();
    
    if( rc != 0 ) {
-      errorf("AG_signal_listener_init rc = %d\n", rc );
+      SG_error("AG_signal_listener_init rc = %d\n", rc );
       exit(1);
    }
    
@@ -1239,7 +1239,7 @@ int AG_main( int argc, char** argv ) {
    rc = AG_state_init( state, &opts, &ag_opts, conf, ms );
    
    if( rc != 0 ) {
-      errorf("AG_state_init rc = %d\n", rc );
+      SG_error("AG_state_init rc = %d\n", rc );
       exit(1);
    }
    
@@ -1247,7 +1247,7 @@ int AG_main( int argc, char** argv ) {
    rc = AG_signal_listener_start();
    
    if( rc != 0 ) {
-      errorf("AG_signal_listener_start rc = %d\n", rc );
+      SG_error("AG_signal_listener_start rc = %d\n", rc );
       exit(1);
    }
    
@@ -1255,7 +1255,7 @@ int AG_main( int argc, char** argv ) {
    rc = AG_start( state );
    
    if( rc != 0 ) {
-      errorf("AG_start rc = %d\n", rc );
+      SG_error("AG_start rc = %d\n", rc );
    }
    
    else {
@@ -1282,26 +1282,26 @@ int AG_main( int argc, char** argv ) {
    rc = AG_stop( state );
    
    if( rc != 0 ) {
-      errorf("WARN: AG_stop rc = %d\n", rc );
+      SG_error("WARN: AG_stop rc = %d\n", rc );
    }
    
    // stop signal handlers and restore old ones 
    rc = AG_signal_listener_stop();
    if( rc != 0 ) {
-      errorf("WARN: AG_signal_listener_stop rc = %d\n", rc );
+      SG_error("WARN: AG_signal_listener_stop rc = %d\n", rc );
    }
    
    // shut down AG
    rc = AG_state_free( state );
    
    if( rc != 0 ) {
-      errorf("WARN: AG_state_free rc = %d\n", rc );
+      SG_error("WARN: AG_state_free rc = %d\n", rc );
    }
    
    // shut down signal handlers 
    rc = AG_signal_listener_free();
    if( rc != 0 ) {
-      errorf("WARN: AG_signal_listener_free rc = %d\n", rc );
+      SG_error("WARN: AG_signal_listener_free rc = %d\n", rc );
    }
    
    // shutdown libsyndicate

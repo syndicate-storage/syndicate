@@ -78,7 +78,7 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
 
    if( client->volume->volume_id != volume_id ) {
       // not from this volume
-      errorf("Message from outside Volume %" PRIu64 "\n", volume_id );
+      SG_error("Message from outside Volume %" PRIu64 "\n", volume_id );
       ms_client_view_unlock( client );
       return -ENOENT;
    }
@@ -96,7 +96,7 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
       bundle = client->volume->AG_certs;
    }
    else {
-      errorf("Invalid Gateway type %" PRIu64 "\n", gateway_type );
+      SG_error("Invalid Gateway type %" PRIu64 "\n", gateway_type );
       ms_client_view_unlock( client );
       return -EINVAL;
    }
@@ -106,7 +106,7 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
    if( itr == bundle->end() ) {
       // not found here--probably means we need to reload our certs
       
-      dbprintf("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
+      SG_debug("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
       // try reloading
       sem_post( &client->uploader_sem );

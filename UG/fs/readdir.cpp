@@ -37,7 +37,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
 
       // handle . and .. separately--we only want to lock children (not the current or parent directory)
       if( fent_name_hash == fs_entry_name_hash( "." ) ) {
-         d_ent = CALLOC_LIST( struct fs_dir_entry, 1 );
+         d_ent = SG_CALLOC( struct fs_dir_entry, 1 );
          d_ent->ftype = FTYPE_DIR;
          fs_entry_to_md_entry( core, &d_ent->data, dent, parent_id, parent_name );
 
@@ -45,7 +45,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
          d_ent->data.name = strdup(".");
       }
       else if( fent_name_hash == fs_entry_name_hash( ".." ) ) {
-         d_ent = CALLOC_LIST( struct fs_dir_entry, 1 );
+         d_ent = SG_CALLOC( struct fs_dir_entry, 1 );
          d_ent->ftype = FTYPE_DIR;
          char* parent_path = md_dirname( fs_path, NULL );
 
@@ -66,7 +66,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
             continue;
          }
          else if( fent->name != NULL && !fent->deletion_in_progress ) {    // only show entries that exist
-            d_ent = CALLOC_LIST( struct fs_dir_entry, 1 );
+            d_ent = SG_CALLOC( struct fs_dir_entry, 1 );
             d_ent->ftype = fent->ftype;
             fs_entry_to_md_entry( core, &d_ent->data, fent, parent_id, parent_name );
 
@@ -79,7 +79,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
 
       if( d_ent != NULL ) {
          dents[cnt] = d_ent;
-         dbprintf( "in '%s': '%s'\n", dent->name, d_ent->data.name );
+         SG_debug( "in '%s': '%s'\n", dent->name, d_ent->data.name );
          cnt++;
       }
    }
@@ -104,7 +104,7 @@ struct fs_dir_entry** fs_entry_readdir( struct fs_core* core, struct fs_dir_hand
    // revalidate path metadata...
    rc = fs_entry_revalidate_path( core, dirh->path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", dirh->path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", dirh->path, rc );
       
       fs_dir_handle_unlock( dirh );
       *err = rc;
@@ -114,7 +114,7 @@ struct fs_dir_entry** fs_entry_readdir( struct fs_core* core, struct fs_dir_hand
    // ensure that our listing metadata is up-to-date 
    rc = fs_entry_revalidate_children( core, dirh->path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_children(%s) rc = %d\n", dirh->path, rc );
+      SG_error("fs_entry_revalidate_children(%s) rc = %d\n", dirh->path, rc );
       
       fs_dir_handle_unlock( dirh );
       *err = rc;

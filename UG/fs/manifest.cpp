@@ -57,10 +57,10 @@ void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file
    this->start_id = start;
    this->end_id = end;
    this->file_version = file_version;
-   this->block_versions = CALLOC_LIST( int64_t, end - start );
+   this->block_versions = SG_CALLOC( int64_t, end - start );
    memcpy( this->block_versions, bv, sizeof(int64_t) * (end - start) );
    
-   this->block_hashes = CALLOC_LIST( unsigned char, (end - start) * BLOCK_HASH_LEN() );
+   this->block_hashes = SG_CALLOC( unsigned char, (end - start) * BLOCK_HASH_LEN() );
    memcpy( this->block_hashes, hashes, (end - start) * BLOCK_HASH_LEN() );
 }
 
@@ -101,13 +101,13 @@ int block_url_set::hash_cmp( uint64_t block_id, unsigned char* hash ) {
    if( this->in_range( block_id ) ) {
       int rc = memcmp( hash_at( this->block_hashes, block_id - this->start_id ), hash, BLOCK_HASH_LEN() );
       if( rc != 0 ) {
-         unsigned char* expected_hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+         unsigned char* expected_hash = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
          memcpy( expected_hash, hash_at( this->block_hashes, block_id - this->start_id ), BLOCK_HASH_LEN() );
          
          char* expected_hash_printable = BLOCK_HASH_TO_STRING( expected_hash );
          char* got_hash_printable = BLOCK_HASH_TO_STRING( hash );
          
-         errorf("hash mismatch for %" PRIX64 "[%" PRId64 "]: expected %s, got %s\n", this->file_id, block_id, expected_hash_printable, got_hash_printable );
+         SG_error("hash mismatch for %" PRIX64 "[%" PRId64 "]: expected %s, got %s\n", this->file_id, block_id, expected_hash_printable, got_hash_printable );
          
          free( expected_hash );
          free( expected_hash_printable );
@@ -127,7 +127,7 @@ int block_url_set::hash_cmp( uint64_t block_id, unsigned char* hash ) {
 // duplicate a hash
 unsigned char* block_url_set::hash_dup( uint64_t block_id ) {
    if( this->in_range( block_id ) ) {
-      unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+      unsigned char* ret = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
       memcpy( ret, hash_at( this->block_hashes, block_id - this->start_id ), BLOCK_HASH_LEN() );
       return ret;
    }
@@ -180,11 +180,11 @@ bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t 
       // shift everyone down
       this->start_id--;
       
-      int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+      int64_t* new_versions = SG_CALLOC( int64_t, this->end_id - this->start_id );
       new_versions[ 0 ] = block_version;
       memcpy( new_versions + 1, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
 
-      unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+      unsigned char* new_hashes = SG_CALLOC( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
       memcpy( new_hashes, hash, BLOCK_HASH_LEN() );
       memcpy( hash_at( new_hashes, 1 ), this->block_hashes, (this->end_id - this->start_id - 1) * BLOCK_HASH_LEN() );
       
@@ -220,13 +220,13 @@ bool block_url_set::shrink_left() {
 
    this->start_id++;
 
-   int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+   int64_t* new_versions = SG_CALLOC( int64_t, this->end_id - this->start_id );
 
    memcpy( new_versions, this->block_versions + 1, sizeof(int64_t) * (this->end_id - this->start_id) );
    free( this->block_versions );
    this->block_versions = new_versions;
 
-   unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   unsigned char* new_hashes = SG_CALLOC( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
    
    memcpy( new_hashes, hash_at( this->block_hashes, 1 ), (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
    free( this->block_hashes );
@@ -244,13 +244,13 @@ bool block_url_set::shrink_right() {
    // TODO: realloc instead?
    
    this->end_id--;
-   int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+   int64_t* new_versions = SG_CALLOC( int64_t, this->end_id - this->start_id );
 
    memcpy( new_versions, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id) );
    free( this->block_versions );
    this->block_versions = new_versions;
 
-   unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   unsigned char* new_hashes = SG_CALLOC( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
    
    memcpy( new_hashes, this->block_hashes, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
    free( this->block_hashes );
@@ -395,7 +395,7 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
 
       if( block_version == 0 ) {
          // no such block
-         errorf("No version for block %" PRIu64 "\n", block_id );
+         SG_error("No version for block %" PRIu64 "\n", block_id );
          return NULL;
       }
 
@@ -408,14 +408,14 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
             char* ret = NULL;
             int rc = md_url_make_block_url( core->ms, fs_path, itr->second->gateway_id, fent->file_id, fent->version, block_id, block_version, &ret );
             if( rc != 0 ) {
-               errorf("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+               SG_error("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
                return NULL;
             }
             
             return ret;
          }
          else {
-            errorf("%s", "No fs_path given\n");
+            SG_error("%s", "No fs_path given\n");
             return NULL;
          }
       }
@@ -461,7 +461,7 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
 
    pthread_rwlock_rdlock( &this->manifest_lock );
 
-   int64_t* ret = CALLOC_LIST( int64_t, end_id - start_id );
+   int64_t* ret = SG_CALLOC( int64_t, end_id - start_id );
 
    int i = 0;
    uint64_t curr_id = start_id;
@@ -498,7 +498,7 @@ unsigned char* file_manifest::get_block_hash( uint64_t block_id ) {
       return NULL;
    }
    
-   unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+   unsigned char* ret = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
    memcpy( ret, hash_at( itr->second->block_hashes, block_id - itr->second->start_id ), BLOCK_HASH_LEN() );
    
    pthread_rwlock_unlock( &this->manifest_lock );
@@ -507,12 +507,13 @@ unsigned char* file_manifest::get_block_hash( uint64_t block_id ) {
 
 // get the set of block hashes
 unsigned char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end_id ) {
-   if( end_id <= start_id )
+   if( end_id <= start_id ) {
       return NULL;
-
+   }
+   
    pthread_rwlock_rdlock( &this->manifest_lock );
 
-   unsigned char** ret = CALLOC_LIST( unsigned char*, end_id - start_id + 1 );
+   unsigned char** ret = SG_CALLOC( unsigned char*, end_id - start_id + 1 );
 
    int i = 0;
    uint64_t curr_id = start_id;
@@ -520,13 +521,14 @@ unsigned char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end
    while( curr_id < end_id ) {
       block_map::iterator itr = this->find_block_set( curr_id );
       if( itr == this->block_urls.end() ) {
-         FREE_LIST( ret );
+         
+         SG_FREE_LIST( ret, free );
          ret = NULL;
          break;
       }
 
       for( uint64_t j = 0; j < itr->second->end_id - itr->second->start_id && curr_id < end_id; j++ ) {
-         unsigned char* hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+         unsigned char* hash = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
          memcpy( hash, hash_at( itr->second->block_hashes, j ), BLOCK_HASH_LEN() );
          
          ret[i] = hash;
@@ -569,7 +571,7 @@ unsigned char* file_manifest::hash_dup( uint64_t block_id ) {
       return NULL;
    }
    
-   unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+   unsigned char* ret = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
    memcpy( ret, hash_at( itr->second->block_hashes, block_id - itr->second->start_id ), BLOCK_HASH_LEN() );
 
    pthread_rwlock_unlock( &this->manifest_lock );
@@ -651,8 +653,8 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
        left->file_version == right->file_version) {
       
       // these block URL sets refer to blocks on the same host.  merge them
-      int64_t *bvec = CALLOC_LIST( int64_t, right->end_id - left->start_id );
-      unsigned char* hashes = CALLOC_LIST( unsigned char, (right->end_id - left->start_id) * BLOCK_HASH_LEN() );
+      int64_t *bvec = SG_CALLOC( int64_t, right->end_id - left->start_id );
+      unsigned char* hashes = SG_CALLOC( unsigned char, (right->end_id - left->start_id) * BLOCK_HASH_LEN() );
 
       // TODO: optimize into four memcpy() calls
       
@@ -718,7 +720,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
 
    // sanity check
    if( fent->version != this->file_version ) {
-      errorf("Invalid version (%" PRId64 " != %" PRId64 ")\n", this->file_version, fent->version );
+      SG_error("Invalid version (%" PRId64 " != %" PRId64 ")\n", this->file_version, fent->version );
       pthread_rwlock_unlock( &this->manifest_lock );
       return -EINVAL;
    }
@@ -746,8 +748,8 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
                // blank hashes and versions...
                uint64_t num_holes = block_id - last_range->end_id;
                
-               int64_t* versions = CALLOC_LIST( int64_t, num_holes );
-               unsigned char* hashes = CALLOC_LIST( unsigned char, num_holes * BLOCK_HASH_LEN() );
+               int64_t* versions = SG_CALLOC( int64_t, num_holes );
+               unsigned char* hashes = SG_CALLOC( unsigned char, num_holes * BLOCK_HASH_LEN() );
                
                // add the write-holes
                this->block_urls[ last_range->end_id ] = new block_url_set( core->volume, 0, fent->file_id, this->file_version, last_range->end_id, block_id, versions, hashes );
@@ -901,11 +903,11 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
    
    pthread_rwlock_unlock( &this->manifest_lock );
    
-   dbprintf("put %" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] from %" PRIu64 "\n", core->volume, fent->file_id, fent->version, block_id, block_version, gateway );
+   SG_debug("put %" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] from %" PRIu64 "\n", core->volume, fent->file_id, fent->version, block_id, block_version, gateway );
    
    /*
    char* data = this->serialize_str();
-   dbprintf( "Manifest is now:\n%s\n", data);
+   SG_debug( "Manifest is now:\n%s\n", data);
    free( data );
    */
 
@@ -953,7 +955,7 @@ void file_manifest::truncate_smaller( uint64_t new_end_id ) {
 
    /*
    char* data = this->serialize_str();
-   dbprintf( "Manifest is now:\n%s\n", data);
+   SG_debug( "Manifest is now:\n%s\n", data);
    free( data );
    */
 }
@@ -1061,7 +1063,7 @@ void file_manifest::copy_old_blocks( modification_map* snapshot, modification_ma
             struct fs_entry_block_info* old_binfo = &mitr->second;
             
             // NOTE: need to duplicate this
-            unsigned char* hash_copy = CALLOC_LIST( unsigned char, old_binfo->hash_len );
+            unsigned char* hash_copy = SG_CALLOC( unsigned char, old_binfo->hash_len );
             memcpy( hash_copy, old_binfo->hash, old_binfo->hash_len );
             
             fs_entry_block_info_garbage_init( &binfo, old_binfo->version, hash_copy, old_binfo->hash_len, old_binfo->gateway_id );
@@ -1173,12 +1175,12 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
    
    // validate
    if( mmsg->volume_id() != core->volume ) {
-      errorf("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg->volume_id(), core->volume );
+      SG_error("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg->volume_id(), core->volume );
       return -EINVAL;
    }
    
    if( mmsg->size() < 0 && !is_AG ) {
-      errorf("Invalid Manifest: coorinator is not an AG, but size is %" PRId64 "\n", mmsg->size() );
+      SG_error("Invalid Manifest: coorinator is not an AG, but size is %" PRId64 "\n", mmsg->size() );
       return -EINVAL;
    }
    
@@ -1187,20 +1189,20 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
       // make sure version and hash lengths match up
       if( !is_AG && busmsg.block_versions_size() != busmsg.block_hashes_size() ) {
-         errorf("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
+         SG_error("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
          return -EINVAL;
       }
       
       if( mmsg->size() >= 0 ) {
-         int64_t* block_versions = CALLOC_LIST( int64_t, busmsg.end_id() - busmsg.start_id() );
-         unsigned char* block_hashes = CALLOC_LIST( unsigned char, (busmsg.end_id() - busmsg.start_id()) * BLOCK_HASH_LEN() );
+         int64_t* block_versions = SG_CALLOC( int64_t, busmsg.end_id() - busmsg.start_id() );
+         unsigned char* block_hashes = SG_CALLOC( unsigned char, (busmsg.end_id() - busmsg.start_id()) * BLOCK_HASH_LEN() );
 
          for( int j = 0; j < busmsg.block_versions_size(); j++ ) {
             
             // get block hashes, if we're not an AG
             if( !is_AG ) {
                if( busmsg.block_hashes(j).size() != BLOCK_HASH_LEN() ) {
-                  errorf("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
+                  SG_error("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
                   free( block_versions );
                   free( block_hashes );
                   return -EINVAL;
@@ -1237,7 +1239,7 @@ int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, stru
    
    int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, block_hash );
    if( rc != 0 ) {
-      errorf("manifest::put_block(%" PRId64 ".%" PRIu64 ") rc = %d\n", block_id, block_version, rc );
+      SG_error("manifest::put_block(%" PRId64 ".%" PRIu64 ") rc = %d\n", block_id, block_version, rc );
       return rc;
    }
    

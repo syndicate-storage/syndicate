@@ -375,11 +375,11 @@ template <class T> int md_serialize( T* protobuf, char** bits, size_t* bits_len 
       protobuf->SerializeToString( &msgbits );
    }
    catch( exception& e ) {
-      errorf("SerializeToString exception: %s\n", e.what() );
+      SG_error("SerializeToString exception: %s\n", e.what() );
       return -EINVAL;
    }
    
-   char* ret = CALLOC_LIST( char, msgbits.size() );
+   char* ret = SG_CALLOC( char, msgbits.size() );
    if( ret == NULL ) {
       return -ENOMEM;
    }
@@ -401,12 +401,12 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
       valid = protobuf->ParseFromString( string(bits, bits_len) );
    }
    catch( exception& e ) {
-      errorf("ParseFromString exception: %s\n", e.what() );
+      SG_error("ParseFromString exception: %s\n", e.what() );
       return -EINVAL;
    }
    
    if( !valid ) {
-      errorf("ParseFromString rc = %d (missing %s)\n", valid, protobuf->InitializationErrorString().c_str() );
+      SG_error("ParseFromString rc = %d (missing %s)\n", valid, protobuf->InitializationErrorString().c_str() );
       return -EINVAL;
    }
    

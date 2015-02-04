@@ -35,7 +35,7 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    char* request_path = AG_driver_get_request_path( ag_ctx );
    char* url = AG_driver_get_query_string( ag_ctx );
    
-   struct curl_connection_context* curl_ctx = CALLOC_LIST( struct curl_connection_context, 1 );
+   struct curl_connection_context* curl_ctx = SG_CALLOC( struct curl_connection_context, 1 );
    
    curl_ctx->request_path = request_path;
    curl_ctx->url = url;
@@ -89,7 +89,7 @@ static size_t curl_write_block( void* ptr, size_t size, size_t nmemb, void* data
    }
    else {
       // not enough space
-      errorf("Not enough space (have %zu bytes, but need at least %zu)\n", write_ctx->buf_len, write_ctx->num_written + total_available );
+      SG_error("Not enough space (have %zu bytes, but need at least %zu)\n", write_ctx->buf_len, write_ctx->num_written + total_available );
       return 0;
    }
 }
@@ -100,7 +100,7 @@ static size_t curl_write_block( void* ptr, size_t size, size_t nmemb, void* data
 // return negative errno on failure, or if errno was not set, return positive curl status code on failure
 static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish_info* pub_info ) {
    
-   dbprintf("stat %s\n", url );
+   SG_debug("stat %s\n", url );
    
    // set up the curl handle
    curl_easy_setopt( curl, CURLOPT_URL, url );
@@ -118,11 +118,11 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
       curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &oserr );
       
       if( oserr != 0 ) {
-         errorf("curl_easy_perform(%s) rc = %d, errno = %ld\n", url, rc, -oserr );
+         SG_error("curl_easy_perform(%s) rc = %d, errno = %ld\n", url, rc, -oserr );
          return (int)(-oserr);
       }
       else {
-         errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
+         SG_error("curl_easy_perform(%s) rc = %d\n", url, rc );
          return rc;
       }
    }
@@ -140,11 +140,11 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
       rc = -ENODATA;
       
       if( filetime_rc != 0 ) {
-         errorf("curl_easy_getinfo( CURLINFO_FILETIME ) rc = %d\n", filetime_rc );
+         SG_error("curl_easy_getinfo( CURLINFO_FILETIME ) rc = %d\n", filetime_rc );
          rc = filetime_rc;
       }
       if( filesize_rc != 0 ) {
-         errorf("curl_easy_getinfo( CURLINFO_CONTENT_LENGTH_DOWNLOAD ) rc = %d\n", filesize_rc );
+         SG_error("curl_easy_getinfo( CURLINFO_CONTENT_LENGTH_DOWNLOAD ) rc = %d\n", filesize_rc );
          rc = filesize_rc;
       }
       
@@ -167,7 +167,7 @@ static int curl_stat_file( CURL* curl, char const* url, struct AG_driver_publish
 // return negative errno on failure, or if errno was not set, return positive curl status code on failure
 static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, char* buf, uint64_t block_size, struct AG_driver_publish_info* pub_info ) {
    
-   dbprintf("Get block %s\n", url );
+   SG_debug("Get block %s\n", url );
    
    struct curl_write_context write_ctx;
    memset( &write_ctx, 0, sizeof(struct curl_write_context) );
@@ -201,18 +201,18 @@ static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, 
       curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &oserr );
       
       if( oserr != 0 ) {
-         errorf("curl_easy_perform(%s) rc = %d, errno = %ld\n", url, rc, -oserr );
+         SG_error("curl_easy_perform(%s) rc = %d, errno = %ld\n", url, rc, -oserr );
          return (int)(-oserr);
       }
       else {
          if( rc == CURLE_BAD_DOWNLOAD_RESUME ) {
             // EOF 
-            errorf("WARN: Block %" PRIu64 " is off the end of the file\n", block_id );
+            SG_error("WARN: Block %" PRIu64 " is off the end of the file\n", block_id );
             
             write_ctx.num_written = 0;
          }
          else {
-            errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
+            SG_error("curl_easy_perform(%s) rc = %d\n", url, rc );
             return -rc;
          }
       }
@@ -261,7 +261,7 @@ int curl_get_pubinfo( char const* request_path, char const* url, struct AG_drive
          return 0;
       }
       else {
-         errorf("WARN: got invalid data for %s\n", info_path );
+         SG_error("WARN: got invalid data for %s\n", info_path );
          AG_driver_cache_evict_chunk( info_path );
          
          rc = 0;
@@ -276,17 +276,17 @@ int curl_get_pubinfo( char const* request_path, char const* url, struct AG_drive
    // not cached
    rc = curl_stat_file( curl, url, pubinfo );
    if( rc != 0 ) {
-      errorf("ERR: curl_stat_file(%s, %s) rc = %d\n", info_path, url, rc );
+      SG_error("ERR: curl_stat_file(%s, %s) rc = %d\n", info_path, url, rc );
    }
    else {
       // success! cache it 
       
-      char* cache_chunk = CALLOC_LIST( char, sizeof(struct AG_driver_publish_info) );
+      char* cache_chunk = SG_CALLOC( char, sizeof(struct AG_driver_publish_info) );
       memcpy( cache_chunk, &pubinfo, sizeof(struct AG_driver_publish_info) );
       
       AG_driver_cache_put_chunk_async( info_path, cache_chunk, sizeof(struct AG_driver_publish_info) );
       
-      dbprintf("Got pubinfo for %s: { size = %jd, mtime_sec = %" PRId64 ", mtime_nsec = %" PRId32 " }\n", request_path, pubinfo->size, pubinfo->mtime_sec, pubinfo->mtime_nsec );
+      SG_debug("Got pubinfo for %s: { size = %jd, mtime_sec = %" PRId64 ", mtime_nsec = %" PRId32 " }\n", request_path, pubinfo->size, pubinfo->mtime_sec, pubinfo->mtime_nsec );
    }
    
    curl_easy_cleanup( curl );
@@ -318,7 +318,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    
    if( num_read < 0 ) {
       
-      errorf("curl_download_block(%s, %" PRIu64 ") rc = %d\n", curl_ctx->url, block_id, num_read );
+      SG_error("curl_download_block(%s, %" PRIu64 ") rc = %d\n", curl_ctx->url, block_id, num_read );
    }
    
    curl_easy_cleanup( curl );
@@ -333,7 +333,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    char* url = AG_driver_map_info_get_query_string( map_info );
    
    
-   dbprintf("stat %s (url: %s)\n", path, url );
+   SG_debug("stat %s (url: %s)\n", path, url );
    
    if( url == NULL ) {
       
@@ -363,7 +363,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
       int rc = curl_get_pubinfo( path, url, pub_info );
       
       if( rc != 0 ) {
-         errorf("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
+         SG_error("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
       }
       
    }

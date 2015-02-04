@@ -30,11 +30,11 @@
 static int fs_entry_get_truncated_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, off_t block_zero_offset, char** _block_buf, size_t* _block_len ) {
    
    // go get the block 
-   char* block_buf = CALLOC_LIST( char, core->blocking_factor );
+   char* block_buf = SG_CALLOC( char, core->blocking_factor );
    int rc = fs_entry_read_block( core, fs_path, fent, block_id, block_buf, core->blocking_factor );
    
    if( rc != 0 ) {
-      errorf("fs_entry_read_block( %s %" PRIu64 " ) rc = %d\n", fs_path, block_id, rc );
+      SG_error("fs_entry_read_block( %s %" PRIu64 " ) rc = %d\n", fs_path, block_id, rc );
       
       free( block_buf );
       
@@ -85,7 +85,7 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
       
       (*garbage_blocks)[block_id] = old_binfo;
       
-      dbprintf("Garbage collect %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, old_block_version );
+      SG_debug("Garbage collect %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, old_block_version );
    }
    
    // cut off the records in the manifest
@@ -119,7 +119,7 @@ static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, stru
    rc = fs_entry_get_truncated_block( core, fs_path, fent, start_id, block_truncate_offset, &truncated_block, &truncated_block_len );
    if( rc != 0 ) {
       // failed
-      errorf("fs_entry_get_truncated_block( %s %" PRIu64 " ) rc = %d\n", fs_path, start_id, rc );
+      SG_error("fs_entry_get_truncated_block( %s %" PRIu64 " ) rc = %d\n", fs_path, start_id, rc );
       return -ENODATA;
    }
    
@@ -135,7 +135,7 @@ static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, stru
    
    // did it work?  If not, bail
    if( rc != 0 || cache_fut == NULL ) {
-      errorf("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] rc = %d\n",
+      SG_error("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] rc = %d\n",
               fs_path, fent->file_id, fent->version, start_id, rc );
       
       return -EIO;
@@ -172,7 +172,7 @@ static int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, s
    int rc = md_cache_reversion_file( core->cache, fent->file_id, fent->version, new_version );
    if( rc != 0 ) {
       if( rc != -ENOENT ) {
-         errorf("md_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
+         SG_error("md_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
          return rc;
       }
    }
@@ -193,7 +193,7 @@ static int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, s
 
    if( rc != 0 ) {
       // failed to reversion remotely
-      errorf("ms_client_update( %s %" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, rc );
+      SG_error("ms_client_update( %s %" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, rc );
       
       // recover 
       fent->version = old_version;
@@ -214,7 +214,7 @@ static int fs_entry_truncate_local_sync( struct fs_core* core, char const* fs_pa
    
    int rc = fs_entry_sync_data_begin( core, fs_path, fent, parent_id, parent_name, &sync_ctx );
    if( rc < 0 ) {
-      errorf("fs_entry_sync_data_begin( %s ) rc = %d\n", fs_path, rc );
+      SG_error("fs_entry_sync_data_begin( %s ) rc = %d\n", fs_path, rc );
       
       return -EIO;
    }
@@ -222,7 +222,7 @@ static int fs_entry_truncate_local_sync( struct fs_core* core, char const* fs_pa
    // wait for synchronization to finish 
    rc = fs_entry_sync_data_finish( core, &sync_ctx );
    if( rc != 0 ) {
-      errorf("fs_entry_sync_data_finish( %s ) rc = %d\n", fs_path, rc );
+      SG_error("fs_entry_sync_data_finish( %s ) rc = %d\n", fs_path, rc );
       
       // revert 
       fs_entry_sync_data_revert( core, fent, &sync_ctx );
@@ -236,7 +236,7 @@ static int fs_entry_truncate_local_sync( struct fs_core* core, char const* fs_pa
    rc = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
    
    if( rc != 0 ) {
-      errorf("fs_entry_reversion_file( %s %" PRId64 " --> %" PRId64 " ) rc = %d\n", fs_path, fent->version, new_version, rc );
+      SG_error("fs_entry_reversion_file( %s %" PRId64 " --> %" PRId64 " ) rc = %d\n", fs_path, fent->version, new_version, rc );
       
       // undo truncate
       fs_entry_sync_data_revert( core, fent, &sync_ctx );
@@ -280,7 +280,7 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
       rc = fs_entry_shrink_file( core, fs_path, fent, size, &garbage_blocks );
       
       if( rc != 0 ) {
-         errorf("fs_entry_shrink_file( %s to %jd ) rc = %d\n", fs_path, size, rc );
+         SG_error("fs_entry_shrink_file( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
          return -EIO;
       }
@@ -291,7 +291,7 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
       rc = fs_entry_expand_file( core, fs_path, fent, size, &dirty_blocks, &garbage_blocks, &cache_fut );
       
       if( rc != 0 ) {
-         errorf("fs_entry_expand_file( %s to %jd ) rc = %d\n", fs_path, size, rc );
+         SG_error("fs_entry_expand_file( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
          if( rc == -ENODATA ) {
             // remote IO error
@@ -305,7 +305,7 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
       // flush the write
       rc = md_cache_flush_write( cache_fut );
       if( rc != 0 ) {
-         errorf( "md_cache_flush_write( %s %" PRIu64 " ) rc = %d\n", fs_path, max_block, rc );
+         SG_error( "md_cache_flush_write( %s %" PRIu64 " ) rc = %d\n", fs_path, max_block, rc );
          
          md_cache_block_future_free( cache_fut );
          return -EIO;
@@ -320,7 +320,7 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
    rc = fs_entry_truncate_local_sync( core, fs_path, fent, parent_id, parent_name );
    if( rc != 0 ) {
       
-      errorf("fs_entry_truncate_local_sync( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
+      SG_error("fs_entry_truncate_local_sync( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
       return rc;
    }
    
@@ -358,16 +358,16 @@ int fs_entry_truncate_remote( struct fs_core* core, char const* fs_path, struct 
    }
    
    if( err != 0 ) {
-      errorf( "fs_entry_post_write(%" PRIu64 "-%" PRIu64 ") rc = %d\n", new_max_block, max_block, err );
+      SG_error( "fs_entry_post_write(%" PRIu64 "-%" PRIu64 ") rc = %d\n", new_max_block, max_block, err );
       err = -EIO;
    }
    else if( withdraw_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
       if( withdraw_ack->type() == Serialization::WriteMsg::ERROR ) {
-         errorf( "remote truncate failed, error = %d (%s)\n", withdraw_ack->errorcode(), withdraw_ack->errortxt().c_str() );
+         SG_error( "remote truncate failed, error = %d (%s)\n", withdraw_ack->errorcode(), withdraw_ack->errortxt().c_str() );
          err = withdraw_ack->errorcode();
       }
       else {
-         errorf( "remote truncate invalid message %d\n", withdraw_ack->type() );
+         SG_error( "remote truncate invalid message %d\n", withdraw_ack->type() );
          err = -EIO;
       }
    }
@@ -406,7 +406,7 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
    
    err = fs_entry_revalidate_manifest( core, fs_path, fent );
    if( err != 0 ) {
-      errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, err );
+      SG_error( "fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, err );
       
       return err;
    }
@@ -420,7 +420,7 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
       rc = fs_entry_truncate_remote( core, fs_path, fent, size );
       
       if( rc < 0 ) {
-         errorf("fs_entry_truncate_remote( %s to %jd ) rc = %d\n", fs_path, size, rc );
+         SG_error("fs_entry_truncate_remote( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
          return rc;
       }
@@ -436,7 +436,7 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
       rc = fs_entry_truncate_local( core, fs_path, fent, size, parent_id, parent_name );
       
       if( rc != 0 ) {
-         errorf("fs_entry_truncate_local( %s to %jd ) rc = %d\n", fs_path, size, rc );
+         SG_error("fs_entry_truncate_local( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
          return rc;
       }
@@ -452,13 +452,13 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
 
    
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Truncating is forbidden for anonymous gateways\n");
+      SG_error("%s", "Truncating is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
    int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
    }
 
@@ -469,21 +469,21 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
    
    struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, user, volume, true, &err, &parent_id, &parent_name );
    if( fent == NULL || err ) {
-      errorf( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
+      SG_error( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
       return err;
    }
    
    // validate input
    if( check_file_id_and_coordinator_id ) {
       if( fent->file_id != file_id ) {
-         errorf("Remote truncate to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
+         SG_error("Remote truncate to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
          fs_entry_unlock( fent );
          free( parent_name );
          return -ESTALE;
       }
       
       if( fent->coordinator != coordinator_id ) {
-         errorf("Remote truncate to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
+         SG_error("Remote truncate to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
          fs_entry_unlock( fent );
          free( parent_name );
          return -ESTALE;
@@ -491,7 +491,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
    }
    
    if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
-      errorf("Remote truncate to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, known_version, fent->version );
+      SG_error("Remote truncate to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, known_version, fent->version );
       fs_entry_unlock( fent );
       free( parent_name );
       return -ESTALE;
@@ -502,7 +502,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
    free( parent_name );
    
    if( rc != 0 ) {
-      errorf( "fs_entry_truncate(%s) rc = %d\n", fs_path, rc );
+      SG_error( "fs_entry_truncate(%s) rc = %d\n", fs_path, rc );
 
       fs_entry_unlock( fent );
       return rc;
@@ -519,7 +519,7 @@ int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, ui
    
    int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
    }
 
@@ -530,7 +530,7 @@ int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, ui
    
    struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, user, volume, true, &err, &parent_id, &parent_name );
    if( fent == NULL || err ) {
-      errorf( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
+      SG_error( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
       return err;
    }
    

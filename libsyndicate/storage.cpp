@@ -23,7 +23,7 @@ char* md_load_file_as_string( char const* path, size_t* size ) {
    char* buf = md_load_file( path, &size_or_error );
 
    if( buf == NULL ) {
-      errorf("md_load_file('%s') rc = %d\n", path, (int)size_or_error );
+      SG_error("md_load_file('%s') rc = %d\n", path, (int)size_or_error );
       return NULL;
    }
 
@@ -47,7 +47,7 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
    int rc = stat( path, &statbuf );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("stat(%s) errno = %d\n", path, rc );
+      SG_error("stat(%s) errno = %d\n", path, rc );
       return rc;
    }
    
@@ -56,14 +56,14 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
    if( buf->ptr == NULL ) {
       rc = mlock_calloc( buf, statbuf.st_size + 1 );
       if( rc != 0 ) {
-         errorf("mlock_calloc rc = %d\n", rc );
+         SG_error("mlock_calloc rc = %d\n", rc );
          return -ENODATA;
       }
       
       alloced = true;
    }
    else if( buf->len <= (size_t)statbuf.st_size ) {
-      errorf("insufficient space for %s\n", path );
+      SG_error("insufficient space for %s\n", path );
       return -EOVERFLOW;
    }
    
@@ -74,7 +74,7 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
       if( alloced )
          mlock_free( buf );
       
-      errorf("fopen(%s) errno = %d\n", path, rc );
+      SG_error("fopen(%s) errno = %d\n", path, rc );
       return -ENODATA;
    }
    
@@ -108,7 +108,7 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    }
    else {
       if( strlen(c->storage_root) >= PATH_MAX - 20 ) {          // - 20 for any schema prefixes we'll apply; shouldn't be a problem otherwise
-         errorf("Directory '%s' too long\n", c->storage_root );
+         SG_error("Directory '%s' too long\n", c->storage_root );
          return -EINVAL;
       }
       
@@ -127,8 +127,8 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    free( data_root );
    free( logfile_path );
 
-   dbprintf("data root:     %s\n", c->data_root );
-   dbprintf("access log:    %s\n", c->logfile_path );
+   SG_debug("data root:     %s\n", c->data_root );
+   SG_debug("access log:    %s\n", c->logfile_path );
 
    // make sure the storage roots exist
    if( rc == 0 ) {
@@ -140,7 +140,7 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       for( int i = 0; dirs[i] != NULL; i++ ) {         
          rc = md_mkdirs( dirs[i] );
          if( rc != 0 ) {
-            errorf("md_mkdirs(%s) rc = %d\n", dirs[i], rc );
+            SG_error("md_mkdirs(%s) rc = %d\n", dirs[i], rc );
             return rc;
          }
       }

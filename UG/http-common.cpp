@@ -166,7 +166,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    
    // wrong Volume?
    if( state->core->volume != volume_id ) {
-      errorf("Request for invalid Volume %" PRIu64 "\n", volume_id );
+      SG_error("Request for invalid Volume %" PRIu64 "\n", volume_id );
       return -ENODATA;
    }
    
@@ -174,7 +174,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
 
    if( rc < 0 ) {
       // could not be found
-      errorf("fs_entry_stat_extended(%s) rc = %d\n", fs_path, rc );
+      SG_error("fs_entry_stat_extended(%s) rc = %d\n", fs_path, rc );
       return rc;
    }
    
@@ -192,7 +192,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
          
          if( rc != 0 ) {
             // failed to make the URL 
-            errorf("md_url_make_block_url( %" PRIu64 ": %s (.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", gateway_id, fs_path, file_version, block_id, block_version, rc );
+            SG_error("md_url_make_block_url( %" PRIu64 ": %s (.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", gateway_id, fs_path, file_version, block_id, block_version, rc );
             return rc;
          }
          
@@ -205,7 +205,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
          
          if( local_file_id != file_id ) {
             // this isn't the file the requester thinks it is--the file got unlinked and recreated under the same path 
-            dbprintf("%s refers to %" PRIX64 ", but requester thinks it's %" PRIX64 "\n", fs_path, local_file_id, file_id );
+            SG_debug("%s refers to %" PRIX64 ", but requester thinks it's %" PRIX64 "\n", fs_path, local_file_id, file_id );
             return -ESTALE;
          }
          
@@ -244,7 +244,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
             rc = fs_entry_get_manifest_mod_time( state->core, fs_path, &lastmod );
             if( rc != 0 ) {
                // deleted!
-               dbprintf("fs_entry_get_manifest_mod_time rc = %d\n", rc );
+               SG_debug("fs_entry_get_manifest_mod_time rc = %d\n", rc );
                return rc;
             }
 
@@ -320,7 +320,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
       snprintf(buf, 200, "http_GET_parse_request: http_validate_url_path returned NULL\n");
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
-      dbprintf("%s", buf);
+      SG_debug("%s", buf);
       return -400;
    }
 
@@ -333,7 +333,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
       snprintf(buf, 200, "http_GET_parse_request: md_HTTP_parse_url_path rc = %d\n", rc );
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
-      dbprintf("%s", buf);
+      SG_debug("%s", buf);
       return -400;
    }
    else if( rc == -EISDIR ) {
@@ -341,11 +341,11 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
    }
 
    if( reqdat->block_id != INVALID_BLOCK_ID )
-      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_id = %" PRIX64 ", file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld\n",
+      SG_debug("volume_id = %" PRIu64 ", fs_path = '%s', file_id = %" PRIX64 ", file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld\n",
                reqdat->volume_id, reqdat->fs_path, reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
    
    else
-      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_id = %" PRIX64 ", file_version = %" PRId64 ", block_id = (none), block_version = %" PRId64 ", manifest_timestamp = %ld.%ld\n",
+      SG_debug("volume_id = %" PRIu64 ", fs_path = '%s', file_id = %" PRIX64 ", file_version = %" PRId64 ", block_id = (none), block_version = %" PRId64 ", manifest_timestamp = %ld.%ld\n",
                reqdat->volume_id, reqdat->fs_path, reqdat->file_id, reqdat->file_version, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
 
    if( reqdat->fs_path == NULL) {
@@ -354,7 +354,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
       snprintf(buf, 200, "http_GET_parse_request: fs_path == NULL\n");
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
-      dbprintf("%s", buf);
+      SG_debug("%s", buf);
       return -400;
    }
 

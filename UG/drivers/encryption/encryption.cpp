@@ -47,7 +47,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
       }
       
       if( rc != -ENOENT ) {
-         errorf("fs_entry_do_getxattr(%" PRIX64 " %s) rc = %d\n", fent->file_id, XATTR_ENCRYPT, rc );
+         SG_error("fs_entry_do_getxattr(%" PRIX64 " %s) rc = %d\n", fent->file_id, XATTR_ENCRYPT, rc );
          return -ENODATA;
       }
       
@@ -56,7 +56,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          char new_key_and_iv[64];
          rc = md_read_urandom( new_key_and_iv, 64 );
          if( rc != 0 ) {
-            errorf("md_read_urandom rc = %d\n", rc );
+            SG_error("md_read_urandom rc = %d\n", rc );
             return -ENODATA;
          }
          
@@ -65,7 +65,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          
          rc = md_base64_encode( new_key_and_iv, 64, &new_key_and_iv_b64 );
          if( rc != 0 ) {
-            errorf("md_base64_encode rc = %d\n", rc );
+            SG_error("md_base64_encode rc = %d\n", rc );
             return -ENODATA;
          }
          
@@ -79,7 +79,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          free( new_key_and_iv_b64 );
          
          if( rc != 0 ) {
-            errorf("fs_entry_get_or_set_xattr(%" PRIX64 "%s) rc = %d\n", fent->file_id, XATTR_ENCRYPT, rc );
+            SG_error("fs_entry_get_or_set_xattr(%" PRIX64 "%s) rc = %d\n", fent->file_id, XATTR_ENCRYPT, rc );
             
             return -ENODATA;
          }
@@ -100,7 +100,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
       
       rc = md_base64_decode( key_and_iv, key_and_iv_len, &final_key_and_iv, &final_key_and_iv_len );
       if( rc != 0 ) {
-         errorf("Failed to unserialize key, rc = %d\n", rc );
+         SG_error("Failed to unserialize key, rc = %d\n", rc );
          
          free( key_and_iv );
          return -ENODATA;
@@ -109,8 +109,8 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          // success!
          // split into key and iv 
          size_t sz = final_key_and_iv_len / 2;
-         char* final_key = CALLOC_LIST( char, sz );
-         char* final_iv = CALLOC_LIST( char, sz );
+         char* final_key = SG_CALLOC( char, sz );
+         char* final_iv = SG_CALLOC( char, sz );
          
          memcpy( final_key, final_key_and_iv, sz );
          memcpy( final_iv, final_key_and_iv + sz, sz );
@@ -132,11 +132,11 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
 
 // encrypt a chunk of data, adding padding to it to increase its entropy
 static int encrypt_chunk( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* chunk, size_t chunk_len, char** ciphertext, size_t* ciphertext_len ) {
-   char* entropied_chunk = CALLOC_LIST( char, chunk_len + ENTROPY_BYTES );
+   char* entropied_chunk = SG_CALLOC( char, chunk_len + ENTROPY_BYTES );
    
    int rc = md_read_urandom( entropied_chunk, ENTROPY_BYTES );
    if( rc != 0 ) {
-      errorf("md_read_urandom rc = %d\n", rc );
+      SG_error("md_read_urandom rc = %d\n", rc );
       free( entropied_chunk );
       return rc;
    }
@@ -146,7 +146,7 @@ static int encrypt_chunk( unsigned char const* key, size_t key_len, unsigned cha
    // seal it 
    rc = md_encrypt_symmetric_ex( key, key_len, iv, iv_len, chunk, chunk_len, ciphertext, ciphertext_len );
    if( rc != 0 ) {
-      errorf("md_encrypt_symmetric rc = %d\n", rc );
+      SG_error("md_encrypt_symmetric rc = %d\n", rc );
       return -ENODATA;
    }
    
@@ -163,13 +163,13 @@ static int decrypt_chunk( unsigned char const* key, size_t key_len, unsigned cha
    // unseal 
    rc = md_decrypt_symmetric_ex( key, key_len, iv, iv_len, ciphertext, ciphertext_len, &_chunk, &_chunk_len );
    if( rc != 0 ) {
-      errorf("md_decrypt_symmetric rc = %d\n", rc );
+      SG_error("md_decrypt_symmetric rc = %d\n", rc );
       return rc;
    }
    
    // sanity check 
    if( _chunk_len <= ENTROPY_BYTES ) {
-      errorf("Plaintext too short (%zu)\n", _chunk_len );
+      SG_error("Plaintext too short (%zu)\n", _chunk_len );
       
       free( _chunk );
       return -EINVAL;
@@ -177,7 +177,7 @@ static int decrypt_chunk( unsigned char const* key, size_t key_len, unsigned cha
    
    // remove entropy 
    size_t ret_len = _chunk_len - ENTROPY_BYTES;
-   char* ret = CALLOC_LIST( char, ret_len );
+   char* ret = SG_CALLOC( char, ret_len );
    memcpy( ret, _chunk + ENTROPY_BYTES, ret_len );
    
    free( _chunk );
@@ -201,14 +201,14 @@ static int seal_data( struct fs_core* core, struct fs_entry* fent, char* in_data
    // get or create encryption primitives
    rc = get_or_create_encryption_key_and_iv( core, fent, &key, &key_len, &iv, &iv_len, false );
    if( rc != 0 ) {
-      errorf("get_or_create_encryption_key_and_iv rc = %d\n", rc );
+      SG_error("get_or_create_encryption_key_and_iv rc = %d\n", rc );
       return -ENODATA;
    }
    
    // seal the data 
    rc = encrypt_chunk( key, key_len, iv, iv_len, in_data, in_data_len, &ciphertext, &ciphertext_len );
    if( rc != 0 ) {
-      errorf("encrypt_chunk rc = %d\n", rc );
+      SG_error("encrypt_chunk rc = %d\n", rc );
       
       free( key );
       free( iv );
@@ -234,14 +234,14 @@ static int unseal_data( struct fs_core* core, struct fs_entry* fent, char* in_da
    // get the encryption primitives, but fail if they don't exist
    rc = get_or_create_encryption_key_and_iv( core, fent, &key, &key_len, &iv, &iv_len, true );
    if( rc != 0 ) {
-      errorf("get_or_create_encryption_key_and_iv rc = %d\n", rc );
+      SG_error("get_or_create_encryption_key_and_iv rc = %d\n", rc );
       return -ENODATA;
    }
    
    // unseal the data 
    rc = decrypt_chunk( key, key_len, iv, iv_len, in_data, in_data_len, &ciphertext, &ciphertext_len );
    if( rc != 0 ) {
-      errorf("encrypt_chunk rc = %d\n", rc );
+      SG_error("encrypt_chunk rc = %d\n", rc );
       
       free( key );
       free( iv );
@@ -265,7 +265,7 @@ int write_block_preup( struct fs_core* core, struct md_closure* closure, char co
    
    int rc = seal_data( core, fent, in_data, in_data_len, out_data, out_data_len );
    if( rc != 0 ) {
-      errorf("seal_data(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+      SG_error("seal_data(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
       rc = -EIO;
    }
    
@@ -279,7 +279,7 @@ int write_manifest_preup( struct fs_core* core, struct md_closure* closure, char
    
    int rc = seal_data( core, fent, in_data, in_data_len, out_data, out_data_len );
    if( rc != 0 ) {
-      errorf("seal_data(%s %" PRIX64 ".%" PRId64 ".manifest.%" PRId64 ".%d rc = %d\n", fs_path, fent->file_id, fent->version, mtime_sec, mtime_nsec, rc );
+      SG_error("seal_data(%s %" PRIX64 ".%" PRId64 ".manifest.%" PRId64 ".%d rc = %d\n", fs_path, fent->file_id, fent->version, mtime_sec, mtime_nsec, rc );
       rc = -EIO;
    }
    
@@ -297,7 +297,7 @@ ssize_t read_block_postdown( struct fs_core* core, struct md_closure* closure, c
    
    int rc = unseal_data( core, fent, in_data, in_data_len, &_out_data, &_out_data_len );
    if( rc != 0 ) {
-      errorf("unseal_data(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+      SG_error("unseal_data(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
       rc = -ENODATA;
       
       ret = rc;
@@ -305,7 +305,7 @@ ssize_t read_block_postdown( struct fs_core* core, struct md_closure* closure, c
    
    else if( _out_data_len > out_data_len ) {
       // too big 
-      errorf("unsealed data is too big (%zu > %zu)\n", _out_data_len, out_data_len );
+      SG_error("unsealed data is too big (%zu > %zu)\n", _out_data_len, out_data_len );
       rc = -ENODATA;
       
       ret = rc;
@@ -328,7 +328,7 @@ int read_manifest_postdown( struct fs_core* core, struct md_closure* closure, ch
    
    int rc = unseal_data( core, fent, in_data, in_data_len, out_data, out_data_len );
    if( rc != 0 ) {
-      errorf("unseal_data(%s %" PRIX64 ".%" PRId64 ".manifest.%" PRId64 ".%d ) rc = %d\n", fs_path, fent->file_id, fent->version, mtime_sec, mtime_nsec, rc );
+      SG_error("unseal_data(%s %" PRIX64 ".%" PRId64 ".manifest.%" PRId64 ".%d ) rc = %d\n", fs_path, fent->file_id, fent->version, mtime_sec, mtime_nsec, rc );
       rc = -ENODATA;
    }
    

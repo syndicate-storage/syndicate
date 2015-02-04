@@ -176,17 +176,17 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    core->gateway = conf->gateway;               // TODO: DRY this up
    core->blocking_factor = blocking_factor;
    
-   dbprintf("Core running in gateway %" PRIu64 "\n", core->gateway );
+   SG_debug("Core running in gateway %" PRIu64 "\n", core->gateway );
    
    pthread_rwlock_init( &core->lock, NULL );
    pthread_rwlock_init( &core->fs_lock, NULL );
 
    // initialize the root, but make it searchable and mark it as stale 
-   core->root = CALLOC_LIST( struct fs_entry, 1 );
+   core->root = SG_CALLOC( struct fs_entry, 1 );
 
    int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, mode, 0, 0, 0, 0 );
    if( rc != 0 ) {
-      errorf("fs_entry_init_dir rc = %d\n", rc );
+      SG_error("fs_entry_init_dir rc = %d\n", rc );
       
       pthread_rwlock_destroy( &core->lock );
       pthread_rwlock_destroy( &core->fs_lock );
@@ -204,7 +204,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    rc = driver_init( core, &core->closure );
    
    if( rc != 0 && rc != -ENOENT ) {
-      errorf("driver_init rc = %d\n", rc );
+      SG_error("driver_init rc = %d\n", rc );
       
       if( core->closure )
          free( core->closure );
@@ -218,7 +218,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    }
 
    // start watching for reloads 
-   struct fs_entry_view_change_cls* cls = CALLOC_LIST( struct fs_entry_view_change_cls, 1 );
+   struct fs_entry_view_change_cls* cls = SG_CALLOC( struct fs_entry_view_change_cls, 1 );
    
    cls->core = core;
    cls->cert_version = 0;
@@ -234,11 +234,11 @@ int fs_core_destroy( struct fs_core* core ) {
 
    if( core->closure ) {
       
-      dbprintf("%s", "shutting down driver\n");
+      SG_debug("%s", "shutting down driver\n");
       
       int rc = driver_shutdown( core->closure );
       if( rc != 0 ) {
-         errorf("WARN: driver_shutdown rc = %d\n", rc );
+         SG_error("WARN: driver_shutdown rc = %d\n", rc );
       }
       
       free( core->closure );
@@ -367,7 +367,7 @@ int fs_destroy( struct fs_core* core ) {
    fs_entry_wlock( core->root );
    int rc = fs_unlink_children( core, core->root->children, false );
    if( rc != 0 ) {
-      errorf("WARN: fs_unlink_children(/) rc = %d\n", rc );
+      SG_error("WARN: fs_unlink_children(/) rc = %d\n", rc );
    }
 
    fs_entry_destroy( core->root, false );
@@ -450,7 +450,7 @@ int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent,
    
    fent->sync_queue = new sync_context_list_t();
    
-   fent->old_snapshot = CALLOC_LIST( struct replica_snapshot, 1 );
+   fent->old_snapshot = SG_CALLOC( struct replica_snapshot, 1 );
    fs_entry_replica_snapshot( core, fent, 0, 0, fent->old_snapshot );
    
    return 0;
@@ -575,7 +575,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 // destroy an FS entry
 int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
 
-   dbprintf("destroy %" PRIX64 " (%s) (%p)\n", fent->file_id, fent->name, fent );
+   SG_debug("destroy %" PRIX64 " (%s) (%p)\n", fent->file_id, fent->name, fent );
 
    // free common fields
    if( needlock )
@@ -641,7 +641,7 @@ int fs_entry_try_destroy( struct fs_core* core, struct fs_entry* fent ) {
             rc = 0;
          }
          else {
-            errorf("WARN: md_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+            SG_error("WARN: md_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
             rc = 0;
          }
       }
@@ -687,7 +687,7 @@ int fs_entry_put_cached_xattr( struct fs_entry* fent, char const* xattr_name, ch
       // stale 
       pthread_rwlock_unlock( &fent->xattr_lock );
       
-      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      SG_debug("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
       return -ESTALE;
    }
    
@@ -716,7 +716,7 @@ int fs_entry_get_cached_xattr( struct fs_entry* fent, char const* xattr_name, ch
       
       size_t retlen = itr->second.size();
       if( retlen > 0 ) {
-         char* ret = CALLOC_LIST( char, retlen );
+         char* ret = SG_CALLOC( char, retlen );
       
          memcpy( ret, itr->second.data(), retlen );
       
@@ -773,7 +773,7 @@ int fs_entry_clear_cached_xattrs( struct fs_entry* fent, int64_t new_xattr_nonce
 
    fent->xattr_nonce = new_xattr_nonce;
    
-   dbprintf("xattr nonce for %" PRIX64 " (%s) is now %" PRId64 "\n", fent->file_id, fent->name, new_xattr_nonce );
+   SG_debug("xattr nonce for %" PRIX64 " (%s) is now %" PRId64 "\n", fent->file_id, fent->name, new_xattr_nonce );
    
    pthread_rwlock_unlock( &fent->xattr_lock );
    
@@ -790,7 +790,7 @@ int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_
       // stale
       pthread_rwlock_unlock( &fent->xattr_lock );
       
-      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      SG_debug("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
       return -ESTALE;
    }
       
@@ -800,7 +800,7 @@ int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_
       total_len += itr->first.size() + 1;
    }
    
-   char* ret = CALLOC_LIST( char, total_len );
+   char* ret = SG_CALLOC( char, total_len );
    size_t offset = 0;
    
    for( xattr_cache_t::iterator itr = fent->xattr_cache->begin(); itr != fent->xattr_cache->end(); itr++ ) {
@@ -825,7 +825,7 @@ int fs_entry_cache_xattr_list( struct fs_entry* fent, xattr_cache_t* new_listing
       // can't swap--caller has stale information 
       pthread_rwlock_unlock( &fent->xattr_lock );
       
-      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      SG_debug("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
       return -ESTALE;
    }
    
@@ -845,11 +845,11 @@ int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
    int rc = pthread_rwlock_rdlock( &fent->lock );
    if( rc == 0 ) {
       if( _debug_locks ) {
-         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+         SG_debug( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
       }
    }
    else {
-      errorf("pthread_rwlock_rdlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
+      SG_error("pthread_rwlock_rdlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -863,11 +863,11 @@ int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
    
    if( rc == 0 ) {
       if( _debug_locks ) {
-         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+         SG_debug( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
       }
    }
    else {
-      errorf("pthread_rwlock_wrlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
+      SG_error("pthread_rwlock_wrlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -878,11 +878,11 @@ int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int line_no )
    int rc = pthread_rwlock_unlock( &fent->lock );
    if( rc == 0 ) {
       if( _debug_locks ) {
-         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+         SG_debug( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
       }
    }
    else {
-      errorf("pthread_rwlock_unlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
+      SG_error("pthread_rwlock_unlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -944,7 +944,7 @@ static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_en
    int eval_rc = (*ent_eval)( cur_ent, cls );
    if( eval_rc != 0 ) {
       
-      dbprintf("ent_eval(%" PRIX64 " (%s)) rc = %d\n", cur_ent->file_id, name_dup, eval_rc );
+      SG_debug("ent_eval(%" PRIX64 " (%s)) rc = %d\n", cur_ent->file_id, name_dup, eval_rc );
       
       // cur_ent might not even exist anymore....
       if( cur_ent->ftype != FTYPE_DEAD ) {
@@ -957,7 +957,7 @@ static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_en
          free( cur_ent );
          
          if( prev_ent ) {
-            dbprintf("Remove %s from %s\n", name_dup, prev_ent->name );
+            SG_debug("Remove %s from %s\n", name_dup, prev_ent->name );
             fs_entry_set_remove_hash( prev_ent->children, name_hash );
             fs_entry_unlock( prev_ent );
          }
@@ -1046,7 +1046,7 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
       // do we have permission to search this directory?
       if( cur_ent->ftype == FTYPE_DIR && !IS_DIR_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
          
-         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read directory %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+         SG_error("User %" PRIu64 " of volume %" PRIu64 " cannot read directory %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
                 user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
          
          // the appropriate read flag is not set
@@ -1127,7 +1127,7 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
       // check readability
       if( !IS_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
          
-         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read file %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+         SG_error("User %" PRIu64 " of volume %" PRIu64 " cannot read file %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
                 user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
          
          *err = -EACCES;
@@ -1345,7 +1345,7 @@ void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_
 // initialize an fs_entry_block_info structure for bufferring blocks 
 void fs_entry_block_info_buffer_init( struct fs_entry_block_info* binfo, size_t block_len ) {
    memset( binfo, 0, sizeof(struct fs_entry_block_info) );
-   binfo->block_buf = CALLOC_LIST( char, block_len );
+   binfo->block_buf = SG_CALLOC( char, block_len );
    binfo->block_len = block_len;
    binfo->block_fd = -1;
 }
@@ -1380,7 +1380,7 @@ int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
 int fs_entry_list_block_ids( modification_map* m, uint64_t** block_ids, size_t* num_block_ids ) {
    
    size_t num_ids = m->size();
-   uint64_t* ret = CALLOC_LIST( uint64_t, num_ids );
+   uint64_t* ret = SG_CALLOC( uint64_t, num_ids );
    
    int i = 0;
    for( modification_map::iterator itr = m->begin(); itr != m->end(); itr++ ) {
@@ -1422,7 +1422,7 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
    uint64_t cert_version = ms_client_cert_version( ms );
    
    if( cert_version != old_version ) {
-      dbprintf("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading closure...\n", old_version, cert_version );
+      SG_debug("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading closure...\n", old_version, cert_version );
       
       int rc = driver_reload( core, core->closure );
       if( rc == 0 ) {
@@ -1430,7 +1430,7 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
       }
    }
    else {
-      dbprintf("%s", "cert version has not changed, so not reloading closure\n" );
+      SG_debug("%s", "cert version has not changed, so not reloading closure\n" );
    }
    
    return 0;
@@ -1537,7 +1537,7 @@ int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent ) {
       fs_entry_setup_garbage_blocks( fent );
    }
    
-   dbprintf("set up working data for %" PRIX64 "\n", fent->file_id );
+   SG_debug("set up working data for %" PRIX64 "\n", fent->file_id );
    return 0;
 }
 
@@ -1563,7 +1563,7 @@ int fs_entry_free_working_data( struct fs_entry* fent ) {
    fent->garbage_blocks = NULL;
    fent->bufferred_blocks = NULL;
    
-   dbprintf("cleared working data for %" PRIX64 "\n", fent->file_id );
+   SG_debug("cleared working data for %" PRIX64 "\n", fent->file_id );
    
    return 0;
 }
@@ -1574,7 +1574,7 @@ int fs_entry_free_working_data( struct fs_entry* fent ) {
 int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* new_dirty_blocks ) {
    
    if( fent->dirty_blocks == NULL ) {
-      errorf("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
+      SG_error("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
       return -EINVAL;
    }
    
@@ -1607,7 +1607,7 @@ int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* ne
 int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* old_dirty_blocks, modification_map* unmerged ) {
    
    if( fent->dirty_blocks == NULL ) {
-      errorf("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
+      SG_error("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
       return -EINVAL;
    }
    
@@ -1681,7 +1681,7 @@ int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
       }
    }
    else {
-      errorf("WARN: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("WARN: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
 }
@@ -1722,7 +1722,7 @@ int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, cha
    }
    else {
       // shouldn't get here--it's a bug 
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
       return -EIO;
    }
 }
@@ -1761,7 +1761,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
       if( binfo->block_buf != NULL ) {
          // range check 
          if( block_offset + write_len < 0 || block_offset + write_len > binfo->block_len ) {
-            dbprintf( "range error: buffer length = %zu, but offset = %jd and write_len = %zu\n", binfo->block_len, block_offset, write_len );
+            SG_debug( "range error: buffer length = %zu, but offset = %jd and write_len = %zu\n", binfo->block_len, block_offset, write_len );
             return -ERANGE;
          }
          else {
@@ -1774,7 +1774,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
       else {
          if( binfo->block_buf == NULL ) {
             // shouldn't get here
-            errorf( "BUG: %" PRIX64 " has no buffer for %" PRIu64 "\n", fent->file_id, block_id );
+            SG_error( "BUG: %" PRIX64 " has no buffer for %" PRIu64 "\n", fent->file_id, block_id );
             return -EIO;
          }
          else {
@@ -1784,7 +1784,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
       }
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
       return -ENODATA;
    }
 }
@@ -1816,7 +1816,7 @@ int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fen
       
       if( binfo->block_buf == NULL ) {
          // allocate this 
-         binfo->block_buf = CALLOC_LIST( char, core->blocking_factor );
+         binfo->block_buf = SG_CALLOC( char, core->blocking_factor );
          binfo->block_len = core->blocking_factor;
          
          if( binfo->block_buf == NULL )
@@ -1831,7 +1831,7 @@ int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fen
       return 0;
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
 }
@@ -1855,7 +1855,7 @@ int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
       }
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
    
@@ -1880,7 +1880,7 @@ int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* 
       fent->bufferred_blocks->clear();
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
    
@@ -1903,7 +1903,7 @@ int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* 
       }
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
    
@@ -1932,7 +1932,7 @@ int fs_entry_hash_bufferred_block( struct fs_entry* fent, uint64_t block_id, uns
       }
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      SG_error("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
    

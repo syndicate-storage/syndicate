@@ -110,7 +110,7 @@ void AG_map_info_merge( struct AG_map_info* dest, struct AG_map_info* src ) {
          free( dest->query_string );
       }
       
-      dest->query_string = strdup_or_null( src->query_string );
+      dest->query_string = SG_strdup_or_null( src->query_string );
    }
    
    if( src->driver != NULL ) {
@@ -138,7 +138,7 @@ void AG_dump_map_info( char const* path, struct AG_map_info* mi ) {
       query_type = AG_driver_get_query_type( mi->driver );
    }
    
-   dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 ", num_children=%" PRId64 ", capacity=%" PRId64 " }\n",
+   SG_debug("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 ", num_children=%" PRId64 ", capacity=%" PRId64 " }\n",
             path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce, mi->num_children, mi->capacity );
    
    if( query_type != NULL ) {
@@ -150,7 +150,7 @@ void AG_dump_map_info( char const* path, struct AG_map_info* mi ) {
 int AG_fs_rlock( struct AG_fs* ag_fs ) {
    int rc = pthread_rwlock_rdlock( &ag_fs->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_rdlock(AG_fs %p) rc = %d\n", ag_fs, rc );
+      SG_error("pthread_rwlock_rdlock(AG_fs %p) rc = %d\n", ag_fs, rc );
    }
    return rc;
 }
@@ -159,7 +159,7 @@ int AG_fs_rlock( struct AG_fs* ag_fs ) {
 int AG_fs_wlock( struct AG_fs* ag_fs ) {
    int rc = pthread_rwlock_wrlock( &ag_fs->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_wrlock(AG_fs %p) rc = %d\n", ag_fs, rc );
+      SG_error("pthread_rwlock_wrlock(AG_fs %p) rc = %d\n", ag_fs, rc );
    }
    return rc;
 }
@@ -168,7 +168,7 @@ int AG_fs_wlock( struct AG_fs* ag_fs ) {
 int AG_fs_unlock( struct AG_fs* ag_fs ) {
    int rc = pthread_rwlock_unlock( &ag_fs->fs_lock );
    if( rc != 0 ) {
-      errorf("pthread_rwlock_unlock(AG_fs %p) rc = %d\n", ag_fs, rc );
+      SG_error("pthread_rwlock_unlock(AG_fs %p) rc = %d\n", ag_fs, rc );
    }
    return rc;
 }
@@ -179,7 +179,7 @@ int AG_fs_map_dup( AG_fs_map_t* dest, AG_fs_map_t* src ) {
    
    for( AG_fs_map_t::iterator itr = src->begin(); itr != src->end(); itr++ ) {
       
-      struct AG_map_info* mi = CALLOC_LIST( struct AG_map_info, 1 );
+      struct AG_map_info* mi = SG_CALLOC( struct AG_map_info, 1 );
       
       if( mi == NULL ) {
          AG_fs_map_free( dest );
@@ -270,7 +270,7 @@ int AG_copy_metadata_to_map_info( struct AG_map_info* mi, struct md_entry* ent )
    mi->pubinfo.mtime_nsec = ent->mtime_nsec;
    mi->driver_cache_valid = true;
    
-   dbprintf("%s (%" PRIX64 ") size=%zu modtime=%" PRId64 ".%" PRId32 "\n", ent->name, ent->file_id, ent->size, ent->mtime_sec, ent->mtime_nsec );
+   SG_debug("%s (%" PRIX64 ") size=%zu modtime=%" PRId64 ".%" PRId32 "\n", ent->name, ent->file_id, ent->size, ent->mtime_sec, ent->mtime_nsec );
    return 0;
 }
 
@@ -310,17 +310,17 @@ static int AG_invalidate_path_metadata( AG_fs_map_t* fs_map, char const* path ) 
       AG_fs_map_t::iterator itr = fs_map->find( string(prefixes[i]) );
       if( itr == fs_map->end() ) {
          // not found 
-         errorf("Not found: %s\n", prefixes[i] );
+         SG_error("Not found: %s\n", prefixes[i] );
          
-         FREE_LIST( prefixes );
+         SG_FREE_LIST( prefixes, free );
          return -ENOENT;
       }
       
-      dbprintf("Invalidate %s\n", prefixes[i] );
+      SG_debug("Invalidate %s\n", prefixes[i] );
       AG_invalidate_cached_metadata( itr->second );
    }
    
-   FREE_LIST( prefixes );
+   SG_FREE_LIST( prefixes, free );
    return 0;
 }
 
@@ -335,7 +335,7 @@ int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root ) {
    
    rc = ms_client_get_volume_root( client, &volume_root );
    if( rc != 0 ) {
-      errorf("ms_client_get_volume_root() rc = %d\n", rc );
+      SG_error("ms_client_get_volume_root() rc = %d\n", rc );
       return rc; 
    }
    
@@ -441,7 +441,7 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
          AG_fs_map_t::iterator itr = fs->find( string(ancestors[j]) );
          if( itr == fs->end() ) {
             // missing!
-            errorf("ERR: Missing %s (ancestor of %s)\n", ancestors[j], paths[i].c_str() );
+            SG_error("ERR: Missing %s (ancestor of %s)\n", ancestors[j], paths[i].c_str() );
             err = -ENOENT;
             break;
          }
@@ -450,7 +450,7 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
          struct AG_map_info* mi = itr->second;
          if( mi->type != MD_ENTRY_DIR ) {
             // not a directory 
-            errorf("ERR: not a directory: %s (ancestor of %s)\n", ancestors[j], paths[i].c_str() );
+            SG_error("ERR: not a directory: %s (ancestor of %s)\n", ancestors[j], paths[i].c_str() );
             err = -ENOTDIR;
             break;
          }
@@ -466,7 +466,7 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
       }
       
       // clean up memory 
-      FREE_LIST( ancestors );
+      SG_FREE_LIST( ancestors, free );
    }
    
    return rc;
@@ -484,7 +484,7 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
    
    if( mi->driver_cache_valid ) {
       
-      dbprintf("Cache HIT on driver metadata for %s\n", path );
+      SG_debug("Cache HIT on driver metadata for %s\n", path );
       
       // get cached pubinfo 
       if( pub_info != &mi->pubinfo ) {
@@ -498,12 +498,12 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
    // (we might not, if we're deleting something that we discovered on the MS)
    if( mi->driver != NULL ) {
       
-      dbprintf("Cache MISS on driver metadata for %s\n", path );
+      SG_debug("Cache MISS on driver metadata for %s\n", path );
       
       // cache miss. ask the driver
       rc = AG_driver_stat( mi->driver, path, mi, pub_info );
       if( rc != 0 ) {
-         errorf("AG_driver_stat(%s) rc = %d\n", path, rc );
+         SG_error("AG_driver_stat(%s) rc = %d\n", path, rc );
          return rc;
       }
       else {
@@ -518,7 +518,7 @@ int AG_get_publish_info_lowlevel( struct AG_state* state, char const* path, stru
    }
    else {
       // cache miss and no driver
-      errorf("No driver for %s\n", path );
+      SG_error("No driver for %s\n", path );
       return -ENODATA;
    }
    
@@ -579,7 +579,7 @@ int AG_get_publish_info( char const* path, struct AG_map_info* mi, struct AG_dri
    AG_release_state( state );
    
    if( rc != 0 && (rc != -ENODATA || rc == -ENODATA) ) {
-      errorf("AG_get_publish_info_lowlevel( %s ) rc = %d\n", path, rc );
+      SG_error("AG_get_publish_info_lowlevel( %s ) rc = %d\n", path, rc );
       return rc;
    }
    else {
@@ -599,7 +599,7 @@ int AG_get_publish_info_all( struct AG_state* state, AG_fs_map_t* fs_map ) {
       
       rc = AG_get_publish_info_lowlevel( state, itr->first.c_str(), itr->second, &itr->second->pubinfo );
       if( rc != 0 ) {
-         errorf("AG_get_publish_info_lowlevel(%s) rc = %d\n", itr->first.c_str(), rc );
+         SG_error("AG_get_publish_info_lowlevel(%s) rc = %d\n", itr->first.c_str(), rc );
          return rc;
       }
    }
@@ -617,7 +617,7 @@ int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char con
    
    // sanity check 
    if( (flags & AG_POPULATE_NO_DRIVER) && opt_pubinfo == NULL ) {
-      errorf("No data available for %s\n", path );
+      SG_error("No data available for %s\n", path );
       return -EINVAL;
    }
    
@@ -638,7 +638,7 @@ int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char con
       // use internal (possibly cached) data
       rc = AG_get_publish_info( path, mi, &mi->pubinfo );
       if( rc != 0 ) {
-         errorf("AG_get_publish_info(%s) rc = %d\n", path, rc );
+         SG_error("AG_get_publish_info(%s) rc = %d\n", path, rc );
          return rc;
       }
       
@@ -692,7 +692,7 @@ int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    prefixes.push_back( strdup("/") );
    
    size_t buf_len = strlen(path);
-   char* buf = CALLOC_LIST( char, buf_len + 5 );
+   char* buf = SG_CALLOC( char, buf_len + 5 );
    
    while( true ) {
       
@@ -722,7 +722,7 @@ int AG_path_prefixes( char const* path, char*** ret_prefixes ) {
    free( fs_path );
    
    // convert to char** 
-   char** ret = CALLOC_LIST( char*, prefixes.size() + 1 );
+   char** ret = SG_CALLOC( char*, prefixes.size() + 1 );
    for( unsigned int i = 0; i < prefixes.size(); i++ ) {
       ret[i] = prefixes[i];
    }
@@ -749,7 +749,7 @@ static int AG_clone_and_store_map_info( AG_fs_map_t* fs_map, char const* path, A
    struct AG_map_info* mi = itr->second;
    
    // dup it 
-   struct AG_map_info* dup_info = CALLOC_LIST( struct AG_map_info, 1 );
+   struct AG_map_info* dup_info = SG_CALLOC( struct AG_map_info, 1 );
    AG_map_info_dup( dup_info, mi );
    
    // store it 
@@ -774,17 +774,17 @@ int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* pa
       rc = AG_clone_and_store_map_info( fs_map, path_prefixes[i], path_data );
       if( rc != 0 ) {
          
-         errorf("Not found: %s\n", path_prefixes[i] );
+         SG_error("Not found: %s\n", path_prefixes[i] );
          
          // out of path 
-         FREE_LIST( path_prefixes );
+         SG_FREE_LIST( path_prefixes, free );
          AG_fs_map_free( path_data );
          
          return -ENOENT;
       }
    }
    
-   FREE_LIST( path_prefixes );
+   SG_FREE_LIST( path_prefixes, free );
    
    return 0;
 }
@@ -911,7 +911,7 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src, int (*copy)( 
       
       rc = (*copy)( dest_itr->second, info );
       if( rc != 0 ) {
-         errorf("WARN: Failed to copy data from %p to %p (%s), rc = %d\n", info, dest_itr->second, path_string.c_str(), rc );
+         SG_error("WARN: Failed to copy data from %p to %p (%s), rc = %d\n", info, dest_itr->second, path_string.c_str(), rc );
       }
    }
    
@@ -923,7 +923,7 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src, int (*copy)( 
 // this will silently overwrite (and free) existing entries in new_data
 static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* path, struct AG_map_info* mi, struct md_entry* ent ) {
    // save this to new_data
-   struct AG_map_info* new_info = CALLOC_LIST( struct AG_map_info, 1 );
+   struct AG_map_info* new_info = SG_CALLOC( struct AG_map_info, 1 );
    
    if( mi != NULL ) {
       AG_map_info_dup( new_info, mi );
@@ -974,7 +974,7 @@ static int AG_path_info_to_ms_path_ex( uint64_t volume_id, char const* path, AG_
       
       if( path_info->find( string(prefixes[i]) ) == path_info->end() ) {
          
-         FREE_LIST( prefixes );
+         SG_FREE_LIST( prefixes, free );
          return -EINVAL;
       }
    }
@@ -1010,7 +1010,7 @@ static int AG_path_info_to_ms_path_ex( uint64_t volume_id, char const* path, AG_
       parent_id = mi->file_id;
    }
    
-   FREE_LIST( prefixes );
+   SG_FREE_LIST( prefixes, free );
    
    return 0;
 }
@@ -1031,14 +1031,14 @@ static int AG_consistency_work_path_init( struct ms_client* client, char const* 
    // convert fresh entries to ms_path_fresh 
    rc = AG_path_info_to_ms_path_ex( volume_id, path, path_info, &ms_path_fresh, AG_path_filters::is_fresh, NULL );
    if( rc != 0 ) {
-      errorf("AG_path_info_to_ms_path_ex(%s, fresh) rc = %d\n", path, rc );
+      SG_error("AG_path_info_to_ms_path_ex(%s, fresh) rc = %d\n", path, rc );
       return -EINVAL;
    }
    
    // convert stale entries to ms_path
    rc = AG_path_info_to_ms_path_ex( volume_id, path, path_info, ms_path, AG_path_filters::is_stale, NULL );
    if( rc != 0 ) {
-      errorf("AG_path_info_to_ms_path_ex(%s, stale) rc = %d\n", path, rc );
+      SG_error("AG_path_info_to_ms_path_ex(%s, stale) rc = %d\n", path, rc );
       
       ms_client_free_path( &ms_path_fresh, NULL );
       return -EINVAL;
@@ -1066,7 +1066,7 @@ static int AG_listdir( struct ms_client* client, char const* fs_path, struct AG_
    char* fp = NULL;
    
    if( !dir_info->cache_valid ) {
-      errorf("Directory %s is not valid\n", fs_path );
+      SG_error("Directory %s is not valid\n", fs_path );
       return -EINVAL;
    }
    
@@ -1076,12 +1076,12 @@ static int AG_listdir( struct ms_client* client, char const* fs_path, struct AG_
    rc = ms_client_listdir( client, dir_info->file_id, dir_info->num_children, dir_info->capacity, &results );
    
    if( rc != 0 ) {
-      errorf("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
+      SG_error("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
       return rc;
    }
    
    if( results.reply_error != 0 ) {
-      errorf("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
+      SG_error("ms_client_listdir(%" PRIX64 " %s) rc = %d\n", dir_info->file_id, fs_path, rc );
       
       ms_client_multi_result_free( &results );
       return rc;
@@ -1117,26 +1117,26 @@ static int AG_path_download( struct ms_client* client, char const* path, AG_fs_m
    int download_rc = 0;
    int download_error_idx = 0;
    
-   dbprintf("Get metadata for %s\n", path );
+   SG_debug("Get metadata for %s\n", path );
    
    // make the work path 
    rc = AG_consistency_work_path_init( client, path, path_info, &ms_path );
    if( rc != 0 ) {
-      errorf("AG_consistency_work_path_init(%s, fresh) rc = %d\n", path, rc );
+      SG_error("AG_consistency_work_path_init(%s, fresh) rc = %d\n", path, rc );
       return -EINVAL;
    }
    
    // download the path 
    rc = ms_client_path_download( client, &ms_path, NULL, NULL, &download_rc, &download_error_idx );
    if( rc != 0 ) {
-      errorf("ms_client_path_download(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_path_download(%s) rc = %d\n", path, rc );
       
       ms_client_free_path( &ms_path, NULL );
       return rc;
    }
    
    if( download_rc != 0 ) {
-      errorf("ms_client_path_download(%s) download rc = %d\n", path, download_rc );
+      SG_error("ms_client_path_download(%s) download rc = %d\n", path, download_rc );
       
       ms_client_free_path( &ms_path, NULL );
       return download_rc;
@@ -1150,7 +1150,7 @@ static int AG_path_download( struct ms_client* client, char const* path, AG_fs_m
       
       if( dup == NULL ) {
          // not found!  shouldn't happen, so this is a bug 
-         errorf("BUG: %s not found\n", prefix);
+         SG_error("BUG: %s not found\n", prefix);
          free( prefix );
          rc = -EIO;
          break;
@@ -1178,7 +1178,7 @@ static int AG_path_download( struct ms_client* client, char const* path, AG_fs_m
 // AG_fs must not be locked
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload ) {
    
-   dbprintf("Refresh %s in %p\n", path, ag_fs->fs );
+   SG_debug("Refresh %s in %p\n", path, ag_fs->fs );
    
    AG_fs_map_t path_info;
    AG_fs_map_t new_path_info;
@@ -1190,7 +1190,7 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    AG_fs_unlock( ag_fs );
    
    if( rc != 0 ) {
-      errorf("AG_fs_map_clone_path(%s) rc = %d\n", path, rc );
+      SG_error("AG_fs_map_clone_path(%s) rc = %d\n", path, rc );
       return rc;
    }
    
@@ -1202,7 +1202,7 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    // get the metadata
    rc = AG_path_download( ag_fs->ms, path, &path_info, &new_path_info );
    if( rc != 0 ) {
-      errorf("AG_path_download(%s) rc = %d\n", path, rc );
+      SG_error("AG_path_download(%s) rc = %d\n", path, rc );
       
       AG_fs_map_free( &path_info );
       AG_fs_map_free( &new_path_info );
@@ -1222,7 +1222,7 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    AG_fs_map_free( &not_merged );
    
    if( rc != 0 ) {
-      errorf("AG_fs_map_merge_tree(%s) rc = %d\n", path, rc );
+      SG_error("AG_fs_map_merge_tree(%s) rc = %d\n", path, rc );
       
       return rc;
    }
@@ -1244,7 +1244,7 @@ struct AG_map_info* AG_fs_lookup_path_in_map( AG_fs_map_t* map_info, char const*
    }
    
    // send back a copy 
-   struct AG_map_info* ret = CALLOC_LIST( struct AG_map_info, 1 );
+   struct AG_map_info* ret = SG_CALLOC( struct AG_map_info, 1 );
    
    AG_map_info_dup( ret, child_itr->second );
    
@@ -1495,7 +1495,7 @@ static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vecto
                
                if( frontier_set.count( prefix_s ) == 0 ) {
                   
-                  dbprintf("Add %s to frontier: it is in the specfile, but not cached\n", itr->first.c_str() );
+                  SG_debug("Add %s to frontier: it is in the specfile, but not cached\n", itr->first.c_str() );
                
                   frontier->push_back( prefix_s );
                   frontier_set.insert( prefix_s );
@@ -1505,13 +1505,13 @@ static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vecto
             }
          }
          
-         FREE_LIST( prefixes );
+         SG_FREE_LIST( prefixes, free );
       }
       else if( ms_itr->second != itr->second ) {
          
          if( frontier_set.count( itr->first ) == 0 ) {
             
-            dbprintf("Add %s to frontier: specfile lists %d children, but the cache has %d\n", itr->first.c_str(), itr->second, ms_itr->second );
+            SG_debug("Add %s to frontier: specfile lists %d children, but the cache has %d\n", itr->first.c_str(), itr->second, ms_itr->second );
             frontier->push_back( itr->first );
             frontier_set.insert( itr->first );
          }
@@ -1528,7 +1528,7 @@ static int AG_fs_find_frontier( AG_fs_map_t* specfile, AG_fs_map_t* on_MS, vecto
 // NOTE: regardless of sucess or failure, the caller must free the on_MS's contents
 int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs_map_t* on_MS ) {
    
-   dbprintf("%s", "Begin downloading\n");
+   SG_debug("%s", "Begin downloading\n");
    
    int rc = 0;
    vector<string> frontier;
@@ -1536,15 +1536,15 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
    if( on_MS->size() == 0 ) {
       
       // do the whole tree
-      struct AG_map_info* root = CALLOC_LIST( struct AG_map_info, 1 );
+      struct AG_map_info* root = SG_CALLOC( struct AG_map_info, 1 );
       
       rc = AG_map_info_get_root( ms, root );
       if( rc != 0 ) {
-         errorf("AG_map_info_get_root rc = %d\n", rc );
+         SG_error("AG_map_info_get_root rc = %d\n", rc );
          
          free( root );
          
-         dbprintf("End downloading (failure, rc = %d)\n", rc);
+         SG_debug("End downloading (failure, rc = %d)\n", rc);
          return rc;
       }
       
@@ -1558,7 +1558,7 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       // build up our frontier from the empty directories in on_MS
       rc = AG_fs_find_frontier( specfile_fs, on_MS, &frontier );
       if( rc != 0 ) {
-         errorf("AG_fs_find_frontier rc = %d\n", rc );
+         SG_error("AG_fs_find_frontier rc = %d\n", rc );
          return rc;
       }
    }
@@ -1572,7 +1572,7 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       char const* dir_path = dir_path_s.c_str();
       struct AG_map_info* dir_info = NULL;
       
-      dbprintf("Explore '%s'\n", dir_path );
+      SG_debug("Explore '%s'\n", dir_path );
          
       // newly-discovered data 
       AG_fs_map_t new_info;
@@ -1585,7 +1585,7 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       dir_info = AG_fs_lookup_path_in_map( on_MS, dir_path );
       if( dir_info == NULL ) {
          // not found 
-         errorf("Not found: %s\n", dir_path );
+         SG_error("Not found: %s\n", dir_path );
          
          rc = -ENOENT;
          break;
@@ -1598,7 +1598,7 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       free( dir_info );
       
       if( rc != 0 ) {
-         errorf("AG_listdir(%s) rc = %d\n", dir_path, rc );
+         SG_error("AG_listdir(%s) rc = %d\n", dir_path, rc );
          break;
       }
       
@@ -1610,14 +1610,14 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
          
          // ignore non-immediate children of the current directory, and ignore root
          if( !AG_path_is_immediate_child( dir_path, child_path ) || strcmp( child_path, "/" ) == 0 ) {
-            dbprintf("Ignore %s\n", child_path);
+            SG_debug("Ignore %s\n", child_path);
             continue;
          }
          
          // explore child directories
          if( mi->type == MD_ENTRY_DIR ) {
             
-            dbprintf("Will explore '%s'\n", child_path );
+            SG_debug("Will explore '%s'\n", child_path );
             
             string child_path_s( child_path );
             
@@ -1629,21 +1629,21 @@ int AG_download_MS_fs_map( struct ms_client* ms, AG_fs_map_t* specfile_fs, AG_fs
       rc = AG_fs_map_merge_tree( on_MS, &new_info, true, NULL );
       
       if( rc != 0 ) {
-         errorf("AG_fs_map_merge_tree(%s) rc = %d\n", dir_path, rc );
+         SG_error("AG_fs_map_merge_tree(%s) rc = %d\n", dir_path, rc );
          break;
       }
    }
    
    if( rc == 0 ) {
       
-      dbprintf("Downloaded file mapping %p:\n", on_MS);
+      SG_debug("Downloaded file mapping %p:\n", on_MS);
       AG_dump_fs_map( on_MS );
       
-      dbprintf("%s", "End downloading (success)\n");
+      SG_debug("%s", "End downloading (success)\n");
    }
    else {
       
-      dbprintf("End downloading (failure, rc = %d)\n", rc);
+      SG_debug("End downloading (failure, rc = %d)\n", rc);
    }
    
    return rc;
@@ -1672,7 +1672,7 @@ int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
    // sort them by decreasing length 
    sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
    
-   dbprintf("Begin FS map %p\n", fs_map );
+   SG_debug("Begin FS map %p\n", fs_map );
    
    for( unsigned int i = 0; i < paths.size(); i++ ) {
       
@@ -1682,7 +1682,7 @@ int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
       AG_dump_map_info( path, mi );
    }
    
-   dbprintf("End FS map %p\n", fs_map );
+   SG_debug("End FS map %p\n", fs_map );
    
    return 0;
 }

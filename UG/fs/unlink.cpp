@@ -160,7 +160,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    
    // can't modify state if anonymous
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Writing is forbidden for anonymous gateways\n");
+      SG_error("%s", "Writing is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
@@ -172,7 +172,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    // consistency check
    err = fs_entry_revalidate_path( core, path );
    if( err != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, err );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, err );
       
       if( err == -ENOENT )
          return -ENOENT;
@@ -218,14 +218,14 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    
    if( check_file_id_and_coordinator_id ) {
       if( fent->file_id != file_id ) {
-         errorf("Remote unlink to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", path, file_id, fent->file_id );
+         SG_error("Remote unlink to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", path, file_id, fent->file_id );
          fs_entry_unlock( fent );
          fs_entry_unlock( parent );
          return -ESTALE;
       }
       
       if( fent->coordinator != coordinator_id ) {
-         errorf("Remote unlink to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", path, coordinator_id, fent->coordinator );
+         SG_error("Remote unlink to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", path, coordinator_id, fent->coordinator );
          fs_entry_unlock( fent );
          fs_entry_unlock( parent );
          return -ESTALE;
@@ -233,7 +233,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    }
    
    if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
-      errorf("Remote unlink to file %s version %" PRId64 ", expected %" PRId64 "\n", path, known_version, fent->version );
+      SG_error("Remote unlink to file %s version %" PRId64 ", expected %" PRId64 "\n", path, known_version, fent->version );
       fs_entry_unlock( fent );
       fs_entry_unlock( parent );
       return -ESTALE;
@@ -247,12 +247,12 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       err = fs_entry_revalidate_manifest( core, path, fent );
             
       if( err != 0 ) {
-         errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
+         SG_error( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
          
          if( err == -ENOENT ) {
             // continue without a manifest 
             no_manifest = true;
-            errorf("WARN: no manifest found for %s %" PRIX64 ".  Assuming data is already vacuumed.\n", path, fent->file_id );
+            SG_error("WARN: no manifest found for %s %" PRIX64 ".  Assuming data is already vacuumed.\n", path, fent->file_id );
          }
          else {
             // some other problem
@@ -266,7 +266,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    // tell the driver we're deleting 
    int driver_rc = driver_delete_file( core, core->closure, path, fent );
    if( driver_rc != 0 ) {
-      errorf("driver_delete_file(%s %" PRIX64 ") rc = %d\n", path, fent->file_id, driver_rc );
+      SG_error("driver_delete_file(%s %" PRIX64 ") rc = %d\n", path, fent->file_id, driver_rc );
       
       fs_entry_unlock( fent );
       fs_entry_unlock( parent );
@@ -289,19 +289,19 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       rc = fs_entry_send_write_or_coordinate( core, path, fent, detach_request, detach_ack );
       
       if( rc < 0 ) {
-         errorf( "fs_entry_send_write_or_coordinate(%s) rc = %d\n", path, rc );
+         SG_error( "fs_entry_send_write_or_coordinate(%s) rc = %d\n", path, rc );
       }
       else if( rc == 0 ) {
          // successfully sent
          if( detach_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
             if( detach_ack->type() == Serialization::WriteMsg::ERROR ) {
                // could not detach on the remote end
-               errorf( "remote unlink error = %d (%s)\n", detach_ack->errorcode(), detach_ack->errortxt().c_str() );
+               SG_error( "remote unlink error = %d (%s)\n", detach_ack->errorcode(), detach_ack->errortxt().c_str() );
                rc = detach_ack->errorcode();
             }
             else {
                // unknown message
-               errorf( "remote unlink invalid message %d\n", detach_ack->type() );
+               SG_error( "remote unlink invalid message %d\n", detach_ack->type() );
                rc = -EIO;
             }
          }
@@ -332,7 +332,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
             rc = fs_entry_vacuumer_file( core, path, fent );
             
             if( rc != 0 ) {
-               errorf("fs_entry_vacuumer_vacuum_file( %s %" PRIX64 " ) rc = %d\n", path, fent->file_id, rc );
+               SG_error("fs_entry_vacuumer_vacuum_file( %s %" PRIX64 " ) rc = %d\n", path, fent->file_id, rc );
                
                // failed to garbage-collect...need to un-delete fent
                fent->deletion_in_progress = false;
@@ -351,7 +351,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          md_entry_free( &ent );
             
          if( rc != 0 ) {
-            errorf( "ms_client_delete(%s) rc = %d\n", path, rc );
+            SG_error( "ms_client_delete(%s) rc = %d\n", path, rc );
             
             if( rc == -EAGAIN ) {
                if( !no_manifest ) {
@@ -361,7 +361,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
                }
                else {
                   // there are un-garbage-collected writes, but we have no manifest, so we can't vacuum in order to proceed with the delete.
-                  errorf("MEMORY LEAK DETECTED: No manifest for %" PRIX64 " available; unable to vacuum!\n", fent->file_id );
+                  SG_error("MEMORY LEAK DETECTED: No manifest for %" PRIX64 " available; unable to vacuum!\n", fent->file_id );
                   
                   // failed to garbage-collect...need to un-delete fent
                   fent->deletion_in_progress = false;
@@ -395,7 +395,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       // detatch fent from parent
       rc = fs_entry_detach_lowlevel( core, parent, fent );
       if( rc != 0 ) {
-         errorf("fs_entry_detach_lowlevel(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+         SG_error("fs_entry_detach_lowlevel(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
          fs_entry_unlock( parent );
          
          return rc;

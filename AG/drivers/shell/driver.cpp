@@ -25,26 +25,26 @@ int driver_init( void** ret_driver_state ) {
       return 0;
    }
    
-   struct shell_driver_state* state = CALLOC_LIST( struct shell_driver_state, 1 );
+   struct shell_driver_state* state = SG_CALLOC( struct shell_driver_state, 1 );
    
    // initialize
    int rc = shell_driver_state_init( state );
    if( rc != 0 ) {
-      errorf("shell_driver_state_init rc = %d\n", rc );
+      SG_error("shell_driver_state_init rc = %d\n", rc );
       return rc;
    }
    
    // register our signal handler 
    rc = AG_driver_set_signal_handler( SIGCHLD, proc_sigchld_handler );
    if( rc != 0 ) {
-      errorf("AG_driver_set_signal_handler(SIGCHLD) rc = %d\n", rc );
+      SG_error("AG_driver_set_signal_handler(SIGCHLD) rc = %d\n", rc );
       return rc;
    }
    
    // start up 
    rc = shell_driver_state_start( state );
    if( rc != 0 ) {
-      errorf("shell_driver_state_start rc = %d\n", rc );
+      SG_error("shell_driver_state_start rc = %d\n", rc );
       shell_driver_state_free( state );
       return rc;
    }
@@ -66,14 +66,14 @@ int driver_shutdown( void* driver_state ) {
       // shut down 
       int rc = shell_driver_state_stop( state );
       if( rc != 0 ) {
-         errorf("shell_driver_state_stop rc = %d\n", rc );
+         SG_error("shell_driver_state_stop rc = %d\n", rc );
          return rc;
       }
       
       // free 
       rc = shell_driver_state_free( state );
       if( rc != 0 ) {
-         errorf("shell_driver_state_free rc = %d\n", rc );
+         SG_error("shell_driver_state_free rc = %d\n", rc );
          return rc;
       }
    
@@ -97,14 +97,14 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    // make sure we're at least in the process of getting data 
    rc = proc_ensure_has_data( state, pctx );
    if( rc != 0 ) {
-      errorf("proc_ensure_has_data(%s) rc = %zd\n", request_path, rc );
+      SG_error("proc_ensure_has_data(%s) rc = %zd\n", request_path, rc );
       return rc;
    }
    
    // try to get the block
    rc = proc_read_block_data( state, request_path, block_id, block_buf, size );
    if( rc < 0 ) {
-      errorf("proc_read_block_data(%s) rc = %zd\n", request_path, rc );
+      SG_error("proc_read_block_data(%s) rc = %zd\n", request_path, rc );
    }
    else {
       rc = size;
@@ -118,7 +118,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state ) {
    
    struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
-   struct proc_connection_context* pctx = CALLOC_LIST( struct proc_connection_context, 1 );
+   struct proc_connection_context* pctx = SG_CALLOC( struct proc_connection_context, 1 );
    
    // fill in the connection context
    pctx->state = state;
@@ -181,7 +181,7 @@ int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_pub
       else {
          
          // some other error
-         errorf("proc_stat_data(%s) rc = %zd\n", path, rc );
+         SG_error("proc_stat_data(%s) rc = %zd\n", path, rc );
          return rc;
       }
    }

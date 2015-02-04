@@ -80,7 +80,7 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
       
       // verify that we have a valid update type...
       if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
-         errorf("Invalid update type %d\n", update->op );
+         SG_error("Invalid update type %d\n", update->op );
          return -EINVAL;
       }
       
@@ -169,16 +169,16 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
       valid = ms_updates->SerializeToString( &update_bits );
    }
    catch( exception e ) {
-      errorf("%s", "failed to serialize update set\n");
+      SG_error("%s", "failed to serialize update set\n");
       return -EINVAL;
    }
 
    if( !valid ) {
-      errorf("%s", "failed ot serialize update set\n");
+      SG_error("%s", "failed ot serialize update set\n");
       return -EINVAL;
    }
 
-   *update_text = CALLOC_LIST( char, update_bits.size() + 1 );
+   *update_text = SG_CALLOC( char, update_bits.size() + 1 );
    memcpy( *update_text, update_bits.data(), update_bits.size() );
    return (ssize_t)update_bits.size();
 }
@@ -187,7 +187,7 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 // sign an update set
 static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
    if( pkey == NULL ) {
-      errorf("%s\n", "Private key is NULL!");
+      SG_error("%s\n", "Private key is NULL!");
       return -EINVAL;
    }
    return md_sign<ms::ms_updates>( pkey, ms_updates );
@@ -250,10 +250,10 @@ int ms_client_download_interpret_errors( char const* url, int http_status, int c
    if( http_status == MD_HTTP_TRYAGAIN || curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT || curl_rc == CURLE_GOT_NOTHING ) {
       
       if( http_status == MD_HTTP_TRYAGAIN ) {
-         errorf("MS says try (%s) again\n", url );
+         SG_error("MS says try (%s) again\n", url );
       }
       else {
-         errorf("Download (%s) timed out (curl_rc = %d, errno = %d)\n", url, curl_rc, os_err );
+         SG_error("Download (%s) timed out (curl_rc = %d, errno = %d)\n", url, curl_rc, os_err );
       }
       
       return -EAGAIN;
@@ -261,7 +261,7 @@ int ms_client_download_interpret_errors( char const* url, int http_status, int c
    
    // serious MS error?
    if( http_status >= 500 ) {
-      errorf("Download (%s) HTTP status %d\n", url, http_status );
+      SG_error("Download (%s) HTTP status %d\n", url, http_status );
       
       return -EREMOTEIO;
    }
@@ -269,7 +269,7 @@ int ms_client_download_interpret_errors( char const* url, int http_status, int c
    // some other error?
    if( http_status != 200 || curl_rc != 0 ) {
       
-      errorf("Download (%s) failed, HTTP status = %d, cURL rc = %d, errno = %d\n", url, http_status, curl_rc, os_err );
+      SG_error("Download (%s) failed, HTTP status = %d, cURL rc = %d, errno = %d\n", url, http_status, curl_rc, os_err );
       
       if( os_err != 0 ) {
          rc = os_err;
@@ -413,7 +413,7 @@ static int ms_client_multi_verify_no_duplicate_listing( ms::ms_reply* reply ) {
       uint64_t id = reply->listing().entries(i).file_id();
       
       if( ids.count(id) ) {
-         errorf("ERR: Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
+         SG_error("ERR: Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
          rc = -EBADMSG;
       }
       
@@ -433,7 +433,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
    int rc = 0;
    
    if( reply->errors_size() != rctx->num_ops ) {
-      errorf("MS replied %d errors; expected %d\n", reply->errors_size(), rctx->num_ops );
+      SG_error("MS replied %d errors; expected %d\n", reply->errors_size(), rctx->num_ops );
       return -EINVAL;
    }
    
@@ -450,7 +450,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
          if( entry_count >= reply->listing().entries_size() ) {
             
             // not enough
-            errorf("ERR: MS did not return an entry for operation %d (op #%d)\n", op, entry_count );
+            SG_error("ERR: MS did not return an entry for operation %d (op #%d)\n", op, entry_count );
             rc = -EBADMSG;
             break;
          }
@@ -466,7 +466,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
    
    // too many/not enough entries?
    if( rc == 0 && entry_count != reply->listing().entries_size() ) {
-      errorf("ERR: MS returned too many entries (expected %d, got %d)\n", entry_count, reply->listing().entries_size() );
+      SG_error("ERR: MS returned too many entries (expected %d, got %d)\n", entry_count, reply->listing().entries_size() );
       return -EBADMSG;
    }
    
@@ -495,13 +495,13 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
    
    // sanity check--did anything get through at all?
    if( num_items_processed == 0 ) {
-      errorf("MS processed %d items\n", num_items_processed );
+      SG_error("MS processed %d items\n", num_items_processed );
       
       return -ENODATA;
    }
    
    if( num_items_processed != rctx->num_ops ) {
-      errorf("Partial data: Requested %d items, but %d were processed\n", rctx->num_ops, num_items_processed );
+      SG_error("Partial data: Requested %d items, but %d were processed\n", rctx->num_ops, num_items_processed );
       
       return -ENODATA;
    }
@@ -538,17 +538,17 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
                break;
             }
             
-            ent = CALLOC_LIST( struct md_entry, 1 );
+            ent = SG_CALLOC( struct md_entry, 1 );
             ms_entry_to_md_entry( reply->listing().entries(k), ent );
             
-            dbprintf("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, rctx->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
+            SG_debug("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, rctx->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
             
             // next entry
             k++;
          
             // verify the returned entry matches this request 
             if( ent->file_id != rctx->file_ids[i] ) {
-               errorf("Mismatched file ID at %d: %" PRIX64 " != %" PRIX64 "\n", i, ent->file_id, rctx->file_ids[i] );
+               SG_error("Mismatched file ID at %d: %" PRIX64 " != %" PRIX64 "\n", i, ent->file_id, rctx->file_ids[i] );
                
                rc = -EBADMSG;
                break;
@@ -597,7 +597,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    if( itr == ctx->downloading->end() ) {
       
       // not downloading???
-      errorf("BUG: no request for %p\n", dlctx );
+      SG_error("BUG: no request for %p\n", dlctx );
       pthread_mutex_unlock( &ctx->lock );
       return -EINVAL;
    }
@@ -619,7 +619,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    }
    else if( rc != 0 ) {
       // fatal error 
-      errorf("ms_client_download_parse_errors(%p) rc = %d\n", dlctx, rc );
+      SG_error("ms_client_download_parse_errors(%p) rc = %d\n", dlctx, rc );
       
       pthread_mutex_unlock( &ctx->lock );
       return rc;
@@ -630,7 +630,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    rc = md_download_context_get_buffer( dlctx, &buf, &buf_len );
    if( rc != 0 ) {
       
-      errorf("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
+      SG_error("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
       rc = -EBADMSG;
       
       pthread_mutex_unlock( &ctx->lock );
@@ -644,7 +644,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    buf = NULL;
    
    if( rc != 0 ) {
-      errorf("ms_client_parse_reply rc = %d\n", rc );
+      SG_error("ms_client_parse_reply rc = %d\n", rc );
       rc = -EBADMSG;
       
       pthread_mutex_unlock( &ctx->lock );
@@ -656,7 +656,7 @@ static int ms_client_multi_postprocesser( struct md_download_context* dlctx, voi
    if( rc != 0 ) {
       
       // failed to process
-      errorf("WARN: ms_client_multi_parse_results rc = %d\n", rc );
+      SG_error("WARN: ms_client_multi_parse_results rc = %d\n", rc );
       
       if( rc == -EPERM ) {
          // mask this--the actual reply error is contained in the results 
@@ -695,14 +695,14 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
    ms::ms_updates ms_updates;
    rc = ms_client_update_set_serialize( all_updates, &ms_updates );
    if( rc != 0 ) {
-      errorf("ms_client_update_set_serialize rc = %d\n", rc );
+      SG_error("ms_client_update_set_serialize rc = %d\n", rc );
       return rc;
    }
 
    // sign it
    rc = ms_client_sign_updates( client->my_key, &ms_updates );
    if( rc != 0 ) {
-      errorf("ms_client_sign_updates rc = %d\n", rc );
+      SG_error("ms_client_sign_updates rc = %d\n", rc );
       return rc;
    }
 
@@ -711,7 +711,7 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
    ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
 
    if( update_text_len < 0 ) {
-      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
+      SG_error("ms_client_update_set_to_string rc = %zd\n", update_text_len );
       return (int)update_text_len;
    }
    
@@ -742,7 +742,7 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
    
    rc = ms_client_request_serialize( client, all_updates, &serialized_text, &serialized_text_len, &post, &last );
    if( rc != 0 ) {
-      errorf("ms_client_request_serialize rc = %d\n", rc );
+      SG_error("ms_client_request_serialize rc = %d\n", rc );
       return rc;
    }
    
@@ -753,8 +753,8 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
    rctx->result_offset = result_offset; 
    
    // record order of operations on files 
-   rctx->ops = CALLOC_LIST( int, rctx->num_ops );
-   rctx->file_ids = CALLOC_LIST( uint64_t, rctx->num_ops );
+   rctx->ops = SG_CALLOC( int, rctx->num_ops );
+   rctx->file_ids = SG_CALLOC( uint64_t, rctx->num_ops );
    
    int i = 0;
    for( ms_client_update_set::iterator itr = all_updates->begin(); itr != all_updates->end(); itr++ ) {
@@ -764,7 +764,7 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
    }
    
    // benchmark data 
-   rctx->timing = CALLOC_LIST( struct ms_client_timing, 1 );
+   rctx->timing = SG_CALLOC( struct ms_client_timing, 1 );
    
    return 0;
 }
@@ -886,7 +886,7 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       num_request_contexts++;
    }
    
-   ctx->request_contexts = CALLOC_LIST( struct ms_client_request_context, num_request_contexts );
+   ctx->request_contexts = SG_CALLOC( struct ms_client_request_context, num_request_contexts );
    ctx->num_request_contexts = num_request_contexts;
    
    pthread_mutex_init( &ctx->lock, NULL );
@@ -917,7 +917,7 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       // stuff it into the next request 
       rc = ms_client_request_context_init( client, &ctx->request_contexts[k], &updates, offset );
       if( rc != 0 ) {
-         errorf("ms_client_request_context_init( batch=%d ) rc = %d\n", k, rc );
+         SG_error("ms_client_request_context_init( batch=%d ) rc = %d\n", k, rc );
          break;
       }
       
@@ -932,7 +932,7 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       ms_client_multi_context_free( ctx );
    }
    else {
-      dbprintf("%zu requests / %d requests per batch = %zu uploads\n", num_requests, client->max_request_batch, ctx->request_queue->size() );
+      SG_debug("%zu requests / %d requests per batch = %zu uploads\n", num_requests, client->max_request_batch, ctx->request_queue->size() );
    }
    
    return rc;
@@ -971,7 +971,7 @@ int ms_client_run_requests( struct ms_client* client, struct ms_client_request* 
    rc = md_download_all( &client->dl, client->conf, &dlconf );
    
    if( rc != 0 ) {
-      errorf("md_download_all rc = %d\n", rc );
+      SG_error("md_download_all rc = %d\n", rc );
    }
    
    ms_client_multi_context_free( &ctx );
@@ -1162,7 +1162,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    
    rc = ms_client_request_serialize( client, &updates, &serialized_text, &serialized_text_len, &post, &last );
    if( rc != 0 ) {
-      errorf("ms_client_request_serialize rc = %d\n", rc );
+      SG_error("ms_client_request_serialize rc = %d\n", rc );
       return rc;
    }
    
@@ -1192,7 +1192,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    free( url );
    
    if( rc != 0 ) {
-      errorf("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
       
       ms_client_timing_free( &timing );
       return rc;
@@ -1205,7 +1205,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    buf = NULL;
    
    if( rc != 0 ) {
-      errorf("ms_client_parse_reply rc = %d\n", rc );
+      SG_error("ms_client_parse_reply rc = %d\n", rc );
       
       ms_client_timing_free( &timing );
       return rc;
@@ -1215,41 +1215,41 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    
    // ensure we got meaningful data
    if( result->reply_error != 0 ) {
-      errorf("MS RPC error code %d\n", result->reply_error );
+      SG_error("MS RPC error code %d\n", result->reply_error );
       
       ms_client_timing_free( &timing );
       return 0;
    }
    
    if( reply.errors_size() != 1 ) {
-      errorf("MS replied %d error codes (expected 1)\n", reply.errors_size() );
+      SG_error("MS replied %d error codes (expected 1)\n", reply.errors_size() );
       
       ms_client_timing_free( &timing );
       return -EBADMSG;
    }
    
    if( reply.errors(0) != 0 ) {
-      errorf("MS operation %d error %d\n", up->op, reply.errors(0) );
+      SG_error("MS operation %d error %d\n", up->op, reply.errors(0) );
    }
    
    else if( MS_CLIENT_OP_RETURNS_ENTRY( up->op ) ) {
       
       if( !reply.has_listing() ) {
-         errorf("%s", "MS replied 0 entries (expected 1)\n" );
+         SG_error("%s", "MS replied 0 entries (expected 1)\n" );
          
          ms_client_timing_free( &timing );
          return -EBADMSG;
       }
       
       if( reply.listing().entries_size() != 1 ) {
-         errorf("MS replied %d entries (expected 1)\n", reply.listing().entries_size() );
+         SG_error("MS replied %d entries (expected 1)\n", reply.listing().entries_size() );
          
          ms_client_timing_free( &timing );
          return -EBADMSG;
       }
       
       // get the entry 
-      ent = CALLOC_LIST( struct md_entry, 1 );
+      ent = SG_CALLOC( struct md_entry, 1 );
       if( ent == NULL ) {
          
          ms_client_timing_free( &timing );
@@ -1317,7 +1317,7 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    
    // sanity check 
    if( ent->type != type ) {
-      errorf("Entry '%s' has type %d; expected type %d\n", ent->name, ent->type, type );
+      SG_error("Entry '%s' has type %d; expected type %d\n", ent->name, ent->type, type );
       return EINVAL;
    }
    
@@ -1335,7 +1335,7 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    // request a particular file ID
    ent->file_id = new_file_id;
    
-   dbprintf("desired file_id: %" PRIX64 "\n", ent->file_id );
+   SG_debug("desired file_id: %" PRIX64 "\n", ent->file_id );
    
    // populate the request 
    req.ent = ent;
@@ -1349,24 +1349,24 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    
    if( rc != 0 ) {
       
-      errorf("ms_client_single_rpc(CREATE) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(CREATE) rc = %d\n", rc );
    }
    else {
       
       // get data
       if( result.reply_error != 0 ) {
-         errorf("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("ERR: MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         errorf("ERR: MS file_create rc = %d\n", result.rc );
+         SG_error("ERR: MS file_create rc = %d\n", result.rc );
          rc = result.rc;
       }
       
       else {
          // got data!  make sure it matches (the MS should have went with our file ID)
          if( new_file_id != result.ent->file_id ) {
-            errorf("MS returned invalid data: expected file ID %" PRIX64 ", but got %" PRIX64 "\n", new_file_id, result.ent->file_id );
+            SG_error("MS returned invalid data: expected file ID %" PRIX64 ", but got %" PRIX64 "\n", new_file_id, result.ent->file_id );
             rc = -EBADMSG;
          }
          
@@ -1414,15 +1414,15 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
    rc = ms_client_single_rpc( client, &req, &result );
    if( rc != 0 ) {
       
-      errorf("ms_client_single_rpc(DELETE) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(DELETE) rc = %d\n", rc );
    }
    else {
       if( result.reply_error != 0 ) {
-         errorf("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("ERR: MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         errorf("ERR: MS file_delete rc = %d\n", result.rc );
+         SG_error("ERR: MS file_delete rc = %d\n", result.rc );
          rc = result.rc;
       }
    }
@@ -1454,15 +1454,15 @@ int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, stru
    rc = ms_client_single_rpc( client, &req, &result );
    if( rc != 0 ) {
       
-      errorf("ms_client_single_rpc(UPDATE) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(UPDATE) rc = %d\n", rc );
    }
    else {
       if( result.reply_error != 0 ) {
-         errorf("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("ERR: MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         errorf("ERR: MS file_update rc = %d\n", result.rc );
+         SG_error("ERR: MS file_update rc = %d\n", result.rc );
          rc = result.rc;
       }
       else {
@@ -1501,15 +1501,15 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
    rc = ms_client_single_rpc( client, &req, &result );
    if( rc != 0 ) {
       
-      errorf("ms_client_single_rpc(CHCOORD) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(CHCOORD) rc = %d\n", rc );
    }
    else {
       if( result.reply_error != 0 ) {
-         errorf("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("ERR: MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         errorf("ERR: MS file_chcoord rc = %d\n", result.rc );
+         SG_error("ERR: MS file_chcoord rc = %d\n", result.rc );
          rc = result.rc;
       }
       else {
@@ -1553,22 +1553,22 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
    rc = ms_client_single_rpc( client, &req, &result );
    if( rc != 0 ) {
       
-      errorf("ms_client_single_rpc(RENAME) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(RENAME) rc = %d\n", rc );
    }
    else {
       if( result.reply_error != 0 ) {
-         errorf("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("ERR: MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         errorf("ERR: MS file_rename rc = %d\n", result.rc );
+         SG_error("ERR: MS file_rename rc = %d\n", result.rc );
          rc = result.rc;
       }
       else {
          // got data too!
          *write_nonce = result.ent->write_nonce;
          
-         dbprintf("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, *write_nonce );
+         SG_debug("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, *write_nonce );
       }
    }
    
@@ -1586,7 +1586,7 @@ int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char con
    if( rc != 0 ) {
       ms_client_view_unlock( client );
       
-      errorf("md_parse ms_reply failed, rc = %d\n", rc );
+      SG_error("md_parse ms_reply failed, rc = %d\n", rc );
       
       return rc;
    }
@@ -1598,7 +1598,7 @@ int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char con
          
          ms_client_view_unlock( client );
          
-         errorf("md_verify ms_reply failed, rc = %d\n", rc );
+         SG_error("md_verify ms_reply failed, rc = %d\n", rc );
          
          return rc;
       }

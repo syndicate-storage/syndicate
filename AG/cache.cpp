@@ -92,10 +92,10 @@ int AG_cache_get_block( struct AG_state* state, char const* path, int64_t file_v
    if( fd < 0 ) {
       
       if( fd != -ENOENT ) {
-         errorf("md_cache_open_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, fd );
+         SG_error("md_cache_open_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, fd );
       }
       else {
-         dbprintf("CACHE MISS %s.%" PRId64 ".%" PRIu64 ".%" PRId64 "\n", path, file_version, block_id, block_version );
+         SG_debug("CACHE MISS %s.%" PRId64 ".%" PRIu64 ".%" PRId64 "\n", path, file_version, block_id, block_version );
       }
       
       return fd;
@@ -105,7 +105,7 @@ int AG_cache_get_block( struct AG_state* state, char const* path, int64_t file_v
    
    if( nr < 0 ) {
       
-      errorf("md_cache_read_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, fd );
+      SG_error("md_cache_read_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, fd );
       
       close( fd );
       return (int)nr;
@@ -115,7 +115,7 @@ int AG_cache_get_block( struct AG_state* state, char const* path, int64_t file_v
    
    close( fd );
    
-   dbprintf("CACHE HIT %s.%" PRId64 ".%" PRIu64 ".%" PRId64 "\n", path, file_version, block_id, block_version );
+   SG_debug("CACHE HIT %s.%" PRId64 ".%" PRIu64 ".%" PRId64 "\n", path, file_version, block_id, block_version );
    
    return 0;
 }
@@ -128,7 +128,7 @@ int AG_cache_promote_block( struct AG_state* state, char const* path, int64_t fi
 
    int rc = md_cache_promote_block( state->cache, file_id, file_version, block_id, block_version );
    if( rc != 0 ) {
-      errorf("md_cache_promote_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
+      SG_error("md_cache_promote_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
    }
    
    return rc;
@@ -147,7 +147,7 @@ int AG_cache_put_block_async( struct AG_state* state, char const* path, int64_t 
    
    if( block_fut == NULL || rc != 0 ) {
       
-      errorf("md_cache_write_block_async(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
+      SG_error("md_cache_write_block_async(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
       return rc;
    }
    
@@ -166,10 +166,10 @@ int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file
    rc = md_cache_evict_block( state->cache, file_id, file_version, block_id, block_version );
    
    if( rc != 0 ) {
-      errorf("md_cache_evict_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
+      SG_error("md_cache_evict_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
    }
    
-   dbprintf("CACHE EVICT %s.%" PRId64 ".%" PRIu64 ".%" PRId64 " rc = %d\n", path, file_version, block_id, block_version, rc );
+   SG_debug("CACHE EVICT %s.%" PRId64 ".%" PRIu64 ".%" PRId64 " rc = %d\n", path, file_version, block_id, block_version, rc );
    
    return rc;
 }
@@ -186,7 +186,7 @@ int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_
    rc = md_cache_evict_file( state->cache, file_id, file_version );
    if( rc != 0 ) {
       if( rc != -ENOENT ) {
-         errorf("md_cache_evict_file(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
+         SG_error("md_cache_evict_file(%s.%" PRId64 ") rc = %d\n", path, file_version, rc );
       }
    }
    
@@ -197,7 +197,7 @@ int AG_cache_evict_file( struct AG_state* state, char const* path, int64_t file_
    
    rc = md_cache_evict_file( state->cache, manifest_id, file_version );
    if( rc != 0 ) {
-      errorf("md_cache_evict_file(%s/manifest.%" PRId64 ") rc = %d\n", path, file_version, rc );
+      SG_error("md_cache_evict_file(%s/manifest.%" PRId64 ") rc = %d\n", path, file_version, rc );
    }
    
    return rc;
@@ -232,7 +232,7 @@ static int AG_MS_cache_unserialize_line( char const* buf, char** path, int* type
    
    rc = md_HTTP_parse_url_path( buf + 2, &volume_id, path, file_id, file_version, &block_id, &block_version, &ts );
    if( rc != 0 ) {
-      errorf("md_HTTP_parse_url_path(%s) rc = %d\n", buf, rc );
+      SG_error("md_HTTP_parse_url_path(%s) rc = %d\n", buf, rc );
       return rc;
    }
    
@@ -267,7 +267,7 @@ static int AG_MS_cache_serialize_line( char** buf, char const* path, int type, u
 // ms_cache should be empty when this method is called.
 int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
    
-   dbprintf("Load MS cache from %s\n", file_path);
+   SG_debug("Load MS cache from %s\n", file_path);
    
    int rc = 0;
    FILE* f = NULL;
@@ -278,7 +278,7 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
    if( f == NULL ) {
       
       rc = -errno;
-      errorf("fopen(%s) rc = %d\n", file_path, rc );
+      SG_error("fopen(%s) rc = %d\n", file_path, rc );
       return rc;
    }
    
@@ -296,7 +296,7 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
          
          rc = -errno;
          if( rc < 0 ) {
-            errorf("getline(%s) rc = %d\n", file_path, rc );
+            SG_error("getline(%s) rc = %d\n", file_path, rc );
          }
          
          free( line_buf );
@@ -317,7 +317,7 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
       rc = AG_MS_cache_unserialize_line( line_buf, &path, &type, &file_id, &file_version );
       
       if( rc != 0 ) {
-         errorf("AG_MS_cache_unserialize_line(%s) rc = %d\n", line_buf, rc );
+         SG_error("AG_MS_cache_unserialize_line(%s) rc = %d\n", line_buf, rc );
          
          free( line_buf );
          break;
@@ -329,7 +329,7 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
       if( itr != ms_cache->end() ) {
          
          // duplicate 
-         errorf("Duplicate path entry '%s'\n", path );
+         SG_error("Duplicate path entry '%s'\n", path );
          rc = -EEXIST;
          
          free( path );
@@ -338,7 +338,7 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
       }
       
       // fill in requisite data 
-      struct AG_map_info* mi = CALLOC_LIST( struct AG_map_info, 1 );
+      struct AG_map_info* mi = SG_CALLOC( struct AG_map_info, 1 );
       if( mi == NULL ) {
          rc = -ENOMEM;
          
@@ -366,13 +366,13 @@ int AG_MS_cache_load( char const* file_path, AG_fs_map_t* ms_cache ) {
    // validate, even if we couldn't parse everything
    rc = AG_validate_map_info( ms_cache );
    if( rc != 0 ) {
-      errorf("AG_validate_map_info rc = %d\n", rc);
+      SG_error("AG_validate_map_info rc = %d\n", rc);
       
       // deallocate--this isn't valid 
       AG_fs_map_free( ms_cache );
    }
    else {
-      dbprintf("Loaded %d lines from %s\n", num_read, file_path );
+      SG_debug("Loaded %d lines from %s\n", num_read, file_path );
    }
    
    return rc;
@@ -393,7 +393,7 @@ int AG_MS_cache_store( char const* file_path, AG_fs_map_t* ms_cache ) {
    if( f == NULL ) {
       
       rc = -errno;
-      errorf( "fopen(%s) errno = %d\n", file_path, rc );
+      SG_error( "fopen(%s) errno = %d\n", file_path, rc );
       return rc;
    }
    
@@ -405,7 +405,7 @@ int AG_MS_cache_store( char const* file_path, AG_fs_map_t* ms_cache ) {
       
       rc = AG_MS_cache_serialize_line( &line_buf, itr->first.c_str(), itr->second->type, itr->second->file_id, itr->second->file_version );
       if( rc != 0 ) {
-         errorf("AG_MS_cache_serialize_line(%s) rc = %d\n", itr->first.c_str(), rc );
+         SG_error("AG_MS_cache_serialize_line(%s) rc = %d\n", itr->first.c_str(), rc );
          break;
       }
       
@@ -415,7 +415,7 @@ int AG_MS_cache_store( char const* file_path, AG_fs_map_t* ms_cache ) {
       if( nw != len ) {
          
          rc = -errno;
-         errorf("fwrite(%s) errno = %d, ferror = %d\n", itr->first.c_str(), rc, ferror(f) );
+         SG_error("fwrite(%s) errno = %d, ferror = %d\n", itr->first.c_str(), rc, ferror(f) );
          
          free( line_buf );
          break;
@@ -425,7 +425,7 @@ int AG_MS_cache_store( char const* file_path, AG_fs_map_t* ms_cache ) {
       if( nw != 1 ) {
          
          rc = -errno;
-         errorf("fwrite(\n) errno = %d, ferror = %d\n", rc, ferror(f) );
+         SG_error("fwrite(\n) errno = %d, ferror = %d\n", rc, ferror(f) );
          
          free( line_buf );
          break;
@@ -438,7 +438,7 @@ int AG_MS_cache_store( char const* file_path, AG_fs_map_t* ms_cache ) {
    fflush( f );
    fclose( f );
    
-   dbprintf("Wrote %d entries to %s\n", num_lines, file_path );
+   SG_debug("Wrote %d entries to %s\n", num_lines, file_path );
    
    return rc;
 }

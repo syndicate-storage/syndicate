@@ -65,7 +65,7 @@ int ms_client_vacuum_entry_free( struct ms_vacuum_entry* vreq ) {
 // extract the affected blocks from an ms_reply 
 static int ms_client_vacuum_entry_get_affected_blocks( ms::ms_reply* reply, uint64_t** affected_blocks, size_t* num_affected_blocks ) {
    
-   uint64_t* ret = CALLOC_LIST( uint64_t, reply->affected_blocks_size() );
+   uint64_t* ret = SG_CALLOC( uint64_t, reply->affected_blocks_size() );
    
    for( int64_t i = 0; i < reply->affected_blocks_size(); i++ ) {
       ret[i] = reply->affected_blocks(i);
@@ -89,14 +89,14 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
    free( vacuum_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_read(peek vacuum %" PRIX64 ") rc = %d\n", file_id, rc );
+      SG_error("ms_client_read(peek vacuum %" PRIX64 ") rc = %d\n", file_id, rc );
       return rc;
    }
    else {
       
       // check value 
       if( !reply.has_manifest_mtime_sec() || !reply.has_manifest_mtime_nsec() ) {
-         errorf("MS did not reply manifest timestamp for %" PRIX64 "\n", file_id );
+         SG_error("MS did not reply manifest timestamp for %" PRIX64 "\n", file_id );
          return -ENODATA;
       }
       

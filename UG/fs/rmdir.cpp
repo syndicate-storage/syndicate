@@ -21,7 +21,7 @@
 int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint64_t volume ) {
 
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Removing directories is forbidden for anonymous gateways\n");
+      SG_error("%s", "Removing directories is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
@@ -35,7 +35,7 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
    rc = fs_entry_revalidate_path( core, fpath );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
       free( fpath );
       return rc;
    }
@@ -104,7 +104,7 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
    md_entry_free( &ent );
 
    if( rc != 0 ) {
-      errorf( "ms_client_delete(%s) rc = %d\n", path, rc );
+      SG_error( "ms_client_delete(%s) rc = %d\n", path, rc );
       rc = -EREMOTEIO;
 
       fs_entry_unlock( dent );
@@ -117,7 +117,7 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
       // detach from the filesystem 
       rc = fs_entry_detach_lowlevel( core, parent, dent );
       if( rc != 0 ) {
-         errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
       }
       
       fs_entry_unlock( parent );

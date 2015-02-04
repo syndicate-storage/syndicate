@@ -45,16 +45,16 @@ int main( int argc, char** argv ) {
    
    // unlink the file
    int rc = 0;
-   dbprintf("\n\n\nfs_entry_unlink( %s )\n\n\n", path );
+   SG_debug("\n\n\nfs_entry_unlink( %s )\n\n\n", path );
    
    rc = fs_entry_unlink( state->core, path, SYS_USER, state->core->volume );
    
    if( rc != 0 ) {
-      errorf("\n\n\nfs_entry_unlink( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\nfs_entry_unlink( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    
-   dbprintf("\n\n\nfs_entry_unlink( %s ) rc = %d\n\n\n", path, rc );
+   SG_debug("\n\n\nfs_entry_unlink( %s ) rc = %d\n\n\n", path, rc );
    
    // shut down the test 
    syndicate_functional_test_shutdown( &syndicate_http );

@@ -96,7 +96,7 @@ int fs_entry_vacuumer_start( struct fs_vacuumer* vac ) {
    vac->thread = md_start_thread( vacuumer_main, vac, false );
    if( vac->thread < 0 ) {
       vac->running = false;
-      errorf("failed to start vacuumer, rc = %d\n", (int)vac->thread );
+      SG_error("failed to start vacuumer, rc = %d\n", (int)vac->thread );
       return vac->thread;
    }
    
@@ -233,7 +233,7 @@ static int fs_entry_vacuumer_get_garbage_block_info( Serialization::ManifestMsg*
          
          // make sure version and hash lengths match up
          if( busmsg.block_versions_size() != busmsg.block_hashes_size() ) {
-            errorf("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
+            SG_error("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
             
             fs_entry_free_modification_map( garbage );
             
@@ -249,7 +249,7 @@ static int fs_entry_vacuumer_get_garbage_block_info( Serialization::ManifestMsg*
             
             // validate length
             if( busmsg.block_hashes(j).size() != BLOCK_HASH_LEN() ) {
-               errorf("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
+               SG_error("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
                
                fs_entry_free_modification_map( garbage );
                
@@ -260,7 +260,7 @@ static int fs_entry_vacuumer_get_garbage_block_info( Serialization::ManifestMsg*
             struct fs_entry_block_info binfo;
             memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
             
-            unsigned char* hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+            unsigned char* hash = SG_CALLOC( unsigned char, BLOCK_HASH_LEN() );
             memcpy( hash, busmsg.block_hashes(j).data(), BLOCK_HASH_LEN() );
             
             fs_entry_block_info_garbage_init( &binfo, busmsg.block_versions(j), hash, BLOCK_HASH_LEN(), busmsg.gateway_id() );
@@ -298,7 +298,7 @@ static int fs_entry_vacuumer_get_manifest( struct fs_core* core, char const* fs_
    // get the manifest from an RG
    rc = fs_entry_download_manifest_replica( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, manifest_msg, NULL );
    if( rc != 0 ) {
-      errorf("fs_entry_download_manifest_replica( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
+      SG_error("fs_entry_download_manifest_replica( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
       
       if( resolved )
          fs_entry_unlock( fent );
@@ -335,7 +335,7 @@ static int fs_entry_vacuumer_vacuum_data_bg( struct fs_core* core, char const* f
    // build up a modification_map for the affected blocks 
    rc = fs_entry_vacuumer_get_garbage_block_info( manifest_msg, affected_blocks, num_affected_blocks, &garbage );
    if( rc != 0 ) {
-      errorf("fs_entry_vacuumer_get_garbage_block_info(%" PRIX64 "%" PRId64 "/manifest.%" PRId64 ".%d) rc = %d\n", fent_gc_snapshot.file_id, file_version, manifest_mtime_sec, manifest_mtime_nsec, rc );
+      SG_error("fs_entry_vacuumer_get_garbage_block_info(%" PRIX64 "%" PRId64 "/manifest.%" PRId64 ".%d) rc = %d\n", fent_gc_snapshot.file_id, file_version, manifest_mtime_sec, manifest_mtime_nsec, rc );
       return -EINVAL;
    }
    
@@ -345,7 +345,7 @@ static int fs_entry_vacuumer_vacuum_data_bg( struct fs_core* core, char const* f
    fs_entry_free_modification_map( &garbage );
    
    if( rc != 0 ) {
-      errorf("fs_entry_garbage_collect_kickoff( %" PRIX64 ".%" PRId64 " ) rc = %d\n", fent_gc_snapshot.file_id, fent_gc_snapshot.file_version, rc );
+      SG_error("fs_entry_garbage_collect_kickoff( %" PRIX64 ".%" PRId64 " ) rc = %d\n", fent_gc_snapshot.file_id, fent_gc_snapshot.file_version, rc );
       
       return rc;
    }
@@ -364,18 +364,18 @@ static int fs_entry_vacuumer_get_next_write( struct fs_core* core, uint64_t volu
    int rc = ms_client_peek_vacuum_log( core->ms, volume_id, file_id, ve );
    if( rc != 0 ) {
       if( rc == -ENOENT ) {
-         dbprintf("Nothing to vacuum for %" PRIX64 "\n", file_id );
+         SG_debug("Nothing to vacuum for %" PRIX64 "\n", file_id );
          return VACUUM_DONE;
       }
       else {
-         errorf("ms_client_peek_vacuum_log(%" PRIX64 ") rc = %d\n", file_id, rc );
+         SG_error("ms_client_peek_vacuum_log(%" PRIX64 ") rc = %d\n", file_id, rc );
          return rc;
       }
    }
    
    // if this refers to the current data, then don't vacuum.  Just delete this log entry
    if( ve->manifest_mtime_sec == manifest_mtime_sec && ve->manifest_mtime_nsec == manifest_mtime_nsec ) {
-      dbprintf("Nothing left to vacuum for %" PRIX64 "\n", file_id );
+      SG_debug("Nothing left to vacuum for %" PRIX64 "\n", file_id );
       
       return VACUUM_HEAD;
    }
@@ -399,11 +399,11 @@ static int fs_entry_vacuumer_vacuum_write( struct fs_core* core, char const* fs_
       
       if( rc == -ENOENT ) {
          // no manifest to be had
-         dbprintf("WARN: manifest %" PRIX64 "/manifest.%" PRId64 ".%d not found\n", fent_snapshot->file_id, ve->manifest_mtime_sec, ve->manifest_mtime_nsec );
+         SG_debug("WARN: manifest %" PRIX64 "/manifest.%" PRId64 ".%d not found\n", fent_snapshot->file_id, ve->manifest_mtime_sec, ve->manifest_mtime_nsec );
          rc = VACUUM_AGAIN;
       }
       else {
-         errorf("fs_entry_vacuumer_get_manifest(%s %" PRIX64 ") rc = %d\n", fs_path, fent_snapshot->file_id, rc );
+         SG_error("fs_entry_vacuumer_get_manifest(%s %" PRIX64 ") rc = %d\n", fs_path, fent_snapshot->file_id, rc );
       }
       return rc;
    }
@@ -411,7 +411,7 @@ static int fs_entry_vacuumer_vacuum_write( struct fs_core* core, char const* fs_
    // vacuum the data 
    rc = fs_entry_vacuumer_vacuum_data_bg( core, fs_path, fent_snapshot, &manifest_msg, ve->affected_blocks, ve->num_affected_blocks );
    if( rc != 0 ) {
-      errorf("fs_entry_vacuumer_vacuum_data(%s %" PRIX64 ") rc = %d\n", fs_path, fent_snapshot->file_id, rc );
+      SG_error("fs_entry_vacuumer_vacuum_data(%s %" PRIX64 ") rc = %d\n", fs_path, fent_snapshot->file_id, rc );
       
       return rc;  
    }
@@ -433,7 +433,7 @@ static int fs_entry_vacuumer_vacuum_write_log( struct ms_client* ms, struct ms_v
          return VACUUM_DONE;
       }
       else {
-         errorf("ms_client_remove_vacuum_log_entry(%" PRIX64 ".%" PRId64 ") rc = %d\n", ve->file_id, ve->file_version, rc );
+         SG_error("ms_client_remove_vacuum_log_entry(%" PRIX64 ".%" PRId64 ") rc = %d\n", ve->file_id, ve->file_version, rc );
          return rc;
       }
    }
@@ -453,7 +453,7 @@ int fs_entry_vacuumer_file( struct fs_core* core, char const* fs_path, struct fs
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
    
-   dbprintf("Vacuuming %s %" PRIX64 "\n", fs_path, fent->file_id);
+   SG_debug("Vacuuming %s %" PRIX64 "\n", fs_path, fent->file_id);
    
    while( true ) {
       
@@ -464,7 +464,7 @@ int fs_entry_vacuumer_file( struct fs_core* core, char const* fs_path, struct fs
       rc = fs_entry_vacuumer_get_next_write( core, fent_snapshot.volume_id, fent_snapshot.file_id, fent_snapshot.manifest_mtime_sec, fent_snapshot.manifest_mtime_nsec, &ve );
       
       if( rc < 0 ) {
-         errorf("fs_entry_vacuumer_get_next_write( %s %" PRIX64 " ) rc = %d\n", fs_path, fent_snapshot.file_id, rc );
+         SG_error("fs_entry_vacuumer_get_next_write( %s %" PRIX64 " ) rc = %d\n", fs_path, fent_snapshot.file_id, rc );
          return rc;
       }
       else if( rc == VACUUM_HEAD ) {
@@ -482,7 +482,7 @@ int fs_entry_vacuumer_file( struct fs_core* core, char const* fs_path, struct fs
          rc = fs_entry_vacuumer_vacuum_write( core, fs_path, fent, &fent_snapshot, &ve );
          
          if( rc < 0 ) {
-            errorf("fs_entry_vacuumer_vacuum_write(%s %" PRIX64 ") rc = %d\n", fs_path, fent->file_id, rc );
+            SG_error("fs_entry_vacuumer_vacuum_write(%s %" PRIX64 ") rc = %d\n", fs_path, fent->file_id, rc );
             return rc;
          }
       }
@@ -491,7 +491,7 @@ int fs_entry_vacuumer_file( struct fs_core* core, char const* fs_path, struct fs
       rc = fs_entry_vacuumer_vacuum_write_log( core->ms, &ve );
       
       if( rc < 0 ) {
-         errorf("fs_entry_vacuumer_vacuum_write_log(%s %" PRIX64 ") rc = %d\n", fs_path, fent->file_id, rc );
+         SG_error("fs_entry_vacuumer_vacuum_write_log(%s %" PRIX64 ") rc = %d\n", fs_path, fent->file_id, rc );
          return rc;
       }
       else if( rc == VACUUM_DONE ) {
@@ -503,7 +503,7 @@ int fs_entry_vacuumer_file( struct fs_core* core, char const* fs_path, struct fs
    // garbage-collect current file state 
    fs_entry_garbage_collect_file( core, fs_path, fent );
    
-   dbprintf("Vacuumed %s %" PRIX64 " successfully\n", fs_path, fent->file_id);
+   SG_debug("Vacuumed %s %" PRIX64 " successfully\n", fs_path, fent->file_id);
    
    return 0;
 }
@@ -559,7 +559,7 @@ static void* vacuumer_main( void* arg ) {
    
    struct fs_vacuumer* vac = (struct fs_vacuumer*)arg;
    
-   dbprintf("%s", "Started vacuumer thread\n");
+   SG_debug("%s", "Started vacuumer thread\n");
    
    while( vac->running ) {
       
@@ -584,7 +584,7 @@ static void* vacuumer_main( void* arg ) {
             rc = fs_entry_vacuumer_get_next_write( vac->core, vreq.fent_snapshot.volume_id, vreq.fent_snapshot.file_id, vreq.fent_snapshot.manifest_mtime_sec, vreq.fent_snapshot.manifest_mtime_nsec, &ve );
             
             if( rc < 0 ) {
-               errorf("fs_entry_vacuumer_get_next_write( %s %" PRIX64 " ) rc = %d\n", vreq.fs_path, vreq.fent_snapshot.file_id, rc );
+               SG_error("fs_entry_vacuumer_get_next_write( %s %" PRIX64 " ) rc = %d\n", vreq.fs_path, vreq.fent_snapshot.file_id, rc );
             }
             else if( rc == VACUUM_HEAD ) {
                
@@ -619,7 +619,7 @@ static void* vacuumer_main( void* arg ) {
                   
                   default: {
                      
-                     errorf("unrecognized request type %d\n", vreq.type );
+                     SG_error("unrecognized request type %d\n", vreq.type );
                      rc = -EINVAL;
                      break;
                   }
@@ -629,7 +629,7 @@ static void* vacuumer_main( void* arg ) {
             // result?
             if( rc == VACUUM_AGAIN ) {
                // re-enqueue 
-               dbprintf("Re-enqueue result of %s( %" PRIX64 " type %d )\n", method, vreq.fent_snapshot.file_id, vreq.type );
+               SG_debug("Re-enqueue result of %s( %" PRIX64 " type %d )\n", method, vreq.fent_snapshot.file_id, vreq.type );
                
                fs_entry_vacuumer_pending_wlock( vac );
                vac->vacuum_pending->insert( vreq );
@@ -637,7 +637,7 @@ static void* vacuumer_main( void* arg ) {
             }
             else if( rc == VACUUM_DONE ) {
                // done!
-               dbprintf("Finished request type %d on %" PRIX64 "\n", vreq.type, vreq.fent_snapshot.file_id );
+               SG_debug("Finished request type %d on %" PRIX64 "\n", vreq.type, vreq.fent_snapshot.file_id );
                
                fs_entry_vacuumer_set_vacuum_status( vac->core, vreq.fs_path, true, false, true, true );
                
@@ -645,7 +645,7 @@ static void* vacuumer_main( void* arg ) {
             }
             else {
                // error 
-               errorf("%s( %" PRIX64 " type %d ) rc = %d\n", method, vreq.fent_snapshot.file_id, vreq.type, rc );
+               SG_error("%s( %" PRIX64 " type %d ) rc = %d\n", method, vreq.fent_snapshot.file_id, vreq.type, rc );
                
                fs_entry_vacuumer_set_vacuum_status( vac->core, vreq.fs_path, true, false, true, false );
                
@@ -668,6 +668,6 @@ static void* vacuumer_main( void* arg ) {
       }
    }
    
-   dbprintf("%s", "Vacuumer thread exit\n");
+   SG_debug("%s", "Vacuumer thread exit\n");
    return NULL;
 }

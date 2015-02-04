@@ -49,7 +49,7 @@ int main( int argc, char** argv ) {
    // get options
    rc = md_parse_opts( &opts, argc, argv, &local_optind, NULL, NULL );
    if( rc != 0 ) {
-      errorf("md_parse_opts rc = %d\n", rc );
+      SG_error("md_parse_opts rc = %d\n", rc );
       md_common_usage( argv[0] );
       usage( argv[0] );
       exit(1);
@@ -58,14 +58,14 @@ int main( int argc, char** argv ) {
    // connect to syndicate
    rc = syndicate_client_init( &state, &opts, &ug_opts );
    if( rc != 0 ) {
-      errorf("syndicate_client_init rc = %d\n", rc );
+      SG_error("syndicate_client_init rc = %d\n", rc );
       exit(1);
    }
    
    // get parent id and parse it
    rc = sscanf( argv[local_optind], "%" PRIX64, &parent_id );
    if( rc != 1 ) {
-      errorf("failed to parse parent ID '%s'\n", argv[local_optind] );
+      SG_error("failed to parse parent ID '%s'\n", argv[local_optind] );
       exit(1);
    }
    
@@ -74,7 +74,7 @@ int main( int argc, char** argv ) {
    rc = ms_client_listdir( state.ms, parent_id, 0, 0, 100, &result );
       
    if( rc != 0 ) {
-      errorf("ms_client_listdir rc = %d\n", rc );
+      SG_error("ms_client_listdir rc = %d\n", rc );
       exit(1);
    }
    

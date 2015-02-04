@@ -28,7 +28,7 @@
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    if( fent->read_stale ) {
-      dbprintf("%s is read stale\n", fent->name);
+      SG_debug("%s is read stale\n", fent->name);
       return true;
    }
 
@@ -36,11 +36,11 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    uint64_t refresh_ms = (uint64_t)(fent->refresh_time.tv_sec) * 1000 + (uint64_t)(fent->refresh_time.tv_nsec) / 1000000;
 
    if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness ) {
-      dbprintf("STALE: %s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
+      SG_debug("STALE: %s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
       return true;
    }
    else {
-      dbprintf("FRESH: %s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
+      SG_debug("FRESH: %s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
       return false;
    }
 }
@@ -63,15 +63,15 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
    // a directory is stale if the write nonce has changed
    if( fent->ftype == FTYPE_DIR ) {
       if( fent->read_stale ) {
-         dbprintf("directory %s is stale\n", fent->name );
+         SG_debug("directory %s is stale\n", fent->name );
          return true;
       }
       if( fent->write_nonce != write_nonce ) {
-         dbprintf("write nonce of directory %s has changed: %" PRId64 " --> %" PRId64 "\n", fent->name, fent->write_nonce, write_nonce );
+         SG_debug("write nonce of directory %s has changed: %" PRId64 " --> %" PRId64 "\n", fent->name, fent->write_nonce, write_nonce );
          return true;
       }
       else {
-         dbprintf("write nonce of directory %s has NOT changed\n", fent->name);
+         SG_debug("write nonce of directory %s has NOT changed\n", fent->name);
          return false;
       }
    }
@@ -174,13 +174,13 @@ int fs_entry_reload( struct fs_entry* fent, struct md_entry* ent ) {
       
       if( fent->manifest == NULL ) {
          // should never happen--this is a bug
-         errorf("BUG: manifest of %" PRIX64 " is NULL\n", fent->file_id );
+         SG_error("BUG: manifest of %" PRIX64 " is NULL\n", fent->file_id );
          exit(1);
       }
       
       // initialized?
       if( !fent->manifest->is_initialized() ) {
-         dbprintf("%" PRIX64 "(%s)'s manifest is not initialized\n", fent->file_id, fent->name );
+         SG_debug("%" PRIX64 "(%s)'s manifest is not initialized\n", fent->file_id, fent->name );
          fent->manifest->mark_stale();
       }
       else {
@@ -194,7 +194,7 @@ int fs_entry_reload( struct fs_entry* fent, struct md_entry* ent ) {
             // do we need to refresh the manifest later?
             if( manifest_modtime_sec != ent->manifest_mtime_sec || manifest_modtime_nsec != ent->manifest_mtime_nsec || fent->write_nonce != ent->write_nonce ) {
                
-               dbprintf("%" PRIX64 " (%s)'s manifest is stale\n", fent->file_id, fent->name );
+               SG_debug("%" PRIX64 " (%s)'s manifest is stale\n", fent->file_id, fent->name );
                // manifest has changed remotely
                fent->manifest->mark_stale();
             }
@@ -202,17 +202,17 @@ int fs_entry_reload( struct fs_entry* fent, struct md_entry* ent ) {
             if( fent->version != fent->manifest->get_file_version() ) {
                
                // file was reversioned (i.e. truncated)
-               dbprintf("%" PRIX64 " (%s)'s manifest was reversioned\n", fent->file_id, fent->name );
+               SG_debug("%" PRIX64 " (%s)'s manifest was reversioned\n", fent->file_id, fent->name );
                fent->manifest->mark_stale();
             }
          }
          else {
-            dbprintf("%" PRIX64 " (%s) is dirty; will not mark manifest as stale\n", fent->file_id, fent->name );
+            SG_debug("%" PRIX64 " (%s) is dirty; will not mark manifest as stale\n", fent->file_id, fent->name );
          }
       }
    }
    
-   dbprintf("reload %s (dirty = %d), version %" PRId64 " --> %" PRId64 ", manifest mtime %" PRId64 ".%d --> %" PRId64 ".%d, write nonce %" PRId64 " --> %" PRId64 ", xattr nonce %" PRId64 " --> %" PRId64 "\n",
+   SG_debug("reload %s (dirty = %d), version %" PRId64 " --> %" PRId64 ", manifest mtime %" PRId64 ".%d --> %" PRId64 ".%d, write nonce %" PRId64 " --> %" PRId64 ", xattr nonce %" PRId64 " --> %" PRId64 "\n",
             ent->name, fent->dirty, fent->version, ent->version, manifest_modtime_sec, manifest_modtime_nsec, ent->manifest_mtime_sec, ent->manifest_mtime_nsec,
             fent->write_nonce, ent->write_nonce, fent->xattr_nonce, ent->xattr_nonce );
    
@@ -230,7 +230,7 @@ static size_t fs_entry_split_path( char const* _path, vector<char*>* ret_vec ) {
 
    // if path ends in /, make it end in .
    if( _path[strlen(_path)-1] == '/' ) {
-      path = CALLOC_LIST( char, strlen(_path) + 2 );
+      path = SG_CALLOC( char, strlen(_path) + 2 );
       strcpy( path, _path );
       strcat( path, "." );
    }
@@ -286,7 +286,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    // build up the ms_path as we traverse our cached path
    ms_path_t* ms_path = (ms_path_t*)ms_path_cls;
 
-   struct fs_entry_getattr_cls* cls = CALLOC_LIST( struct fs_entry_getattr_cls, 1 );
+   struct fs_entry_getattr_cls* cls = SG_CALLOC( struct fs_entry_getattr_cls, 1 );
 
    if( ms_path->size() == 0 ) {
       // root
@@ -324,7 +324,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
       mtime_type = "fent ";
    }
    
-   dbprintf("in path: %s.%" PRId64 " (%s mtime=%" PRId64 ".%d, inited=%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, mtime_type, modtime_sec, modtime_nsec,
+   SG_debug("in path: %s.%" PRId64 " (%s mtime=%" PRId64 ".%d, inited=%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, mtime_type, modtime_sec, modtime_nsec,
             manifest_inited, fent->write_nonce, cls->fs_path);
    
    return 0;
@@ -353,10 +353,10 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_pa
          size_t ms_path_len = ms_path->size();
          for( unsigned int i = ms_path_len; i < path_len; i++ ) {
 
-            struct fs_entry_getattr_cls* cls = CALLOC_LIST( struct fs_entry_getattr_cls, 1 );
+            struct fs_entry_getattr_cls* cls = SG_CALLOC( struct fs_entry_getattr_cls, 1 );
             struct fs_entry_getattr_cls* parent_cls = (struct fs_entry_getattr_cls*)ms_path->at( ms_path->size() - 1 ).cls;
 
-            dbprintf("add %s to %s (%s)\n", path_parts[i], parent_cls->fs_path, ms_path->at( ms_path->size() - 1 ).name );
+            SG_debug("add %s to %s (%s)\n", path_parts[i], parent_cls->fs_path, ms_path->at( ms_path->size() - 1 ).name );
             
             fs_entry_getattr_cls_init( cls, parent_cls->fs_path, path_parts[i], false, false );
 
@@ -379,10 +379,10 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, ms_pa
    }
    
    // debugging...
-   dbprintf("ms_path size = %zu\n", ms_path->size() );
+   SG_debug("ms_path size = %zu\n", ms_path->size() );
    for( unsigned int i = 0; i < ms_path->size(); i++ ) {
       struct fs_entry_getattr_cls* cls = (struct fs_entry_getattr_cls*)ms_path->at(i).cls;
-      dbprintf("ms_path[%d] = %s, stale = %d, exists = %d\n", i, ms_path->at(i).name, cls->stale, cls->exists );
+      SG_debug("ms_path[%d] = %s, stale = %d, exists = %d\n", i, ms_path->at(i).name, cls->stale, cls->exists );
    }
 
    return rc;
@@ -456,7 +456,7 @@ static int fs_entry_reload_inode( struct fs_core* core, struct timespec* query_t
    if( ent->name == NULL ) {
       
       // nothing to load
-      errorf("No data for '%s'\n", fent->name );
+      SG_error("No data for '%s'\n", fent->name );
       return -ENODATA;
    }
    
@@ -471,7 +471,7 @@ static int fs_entry_reload_inode( struct fs_core* core, struct timespec* query_t
       return 0;
    }
    
-   dbprintf("reload %" PRIX64 " (%s)\n", ent->file_id, ent->name );
+   SG_debug("reload %" PRIX64 " (%s)\n", ent->file_id, ent->name );
    return fs_entry_reload( fent, ent );
 }
 
@@ -506,7 +506,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
       
       // nope.  unlink all descendents
       uint64_t file_id = fent->file_id;
-      dbprintf("remove %" PRIX64 " (%s) locally, since it is no longer on the MS\n", fent->file_id, fent->name );
+      SG_debug("remove %" PRIX64 " (%s) locally, since it is no longer on the MS\n", fent->file_id, fent->name );
       
       if( fent->ftype == FTYPE_DIR ) {
          
@@ -514,7 +514,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
          rc = fs_unlink_children( consistency_cls->core, fent->children, true );
          if( rc != 0 ) {
             // NOTE: this should never happen in practice, but here for defensive purposes
-            errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+            SG_error("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
             rc = 0;
          }
       }
@@ -525,7 +525,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
       if( rc > 0 ) {
          // entry was destroyed
          // do NOT free it; fs_entry_resolve_path_cls() will do it for us.
-         dbprintf("Destroyed %" PRIX64 "\n", file_id);
+         SG_debug("Destroyed %" PRIX64 "\n", file_id);
       }
       
       // stop searching
@@ -539,7 +539,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
          rc = fs_entry_reload_inode( consistency_cls->core, &consistency_cls->query_time, fent, &getattr_cls->ent );
          if( rc != 0 ) {
             
-            errorf("fs_entry_reload_inode( %" PRIX64 " %s ) rc = %d\n", fent->file_id, fent->name, rc );
+            SG_error("fs_entry_reload_inode( %" PRIX64 " %s ) rc = %d\n", fent->file_id, fent->name, rc );
          }
       }
       else {
@@ -550,7 +550,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
       // if the ent is local, is a file, and needs to be vacuumed, do so.
       if( rc == 0 && FS_ENTRY_LOCAL( consistency_cls->core, fent ) && fent->ftype == FTYPE_FILE ) {
          
-         dbprintf("ensure vacuumed: %" PRIX64 ", vacuuming = %d, vacuumed = %d\n", fent->file_id, fent->vacuuming, fent->vacuumed );
+         SG_debug("ensure vacuumed: %" PRIX64 ", vacuuming = %d, vacuumed = %d\n", fent->file_id, fent->vacuuming, fent->vacuumed );
          
          fs_entry_ensure_vacuumed( consistency_cls, fent );
       }
@@ -576,7 +576,7 @@ static int fs_entry_merge_entry( struct fs_core* core, struct timespec* query_ti
    if( fent_child == NULL ) {
       
       // not here!  attach it 
-      fent_child = CALLOC_LIST( struct fs_entry, 1 );
+      fent_child = SG_CALLOC( struct fs_entry, 1 );
       fs_entry_init_md( core, fent_child, ent );
       
       fs_entry_mark_read_fresh( fent_child );
@@ -590,7 +590,7 @@ static int fs_entry_merge_entry( struct fs_core* core, struct timespec* query_ti
       
       rc = fs_entry_reload_inode( core, query_time, fent_child, ent );
       if( rc != 0 ) {
-         errorf("fs_entry_reload_inode( %" PRIX64 " %s ) rc = %d\n", fent->file_id, fent_child->name, rc );
+         SG_error("fs_entry_reload_inode( %" PRIX64 " %s ) rc = %d\n", fent->file_id, fent_child->name, rc );
       }
       
       fs_entry_unlock( fent_child );
@@ -625,7 +625,7 @@ static int fs_entry_attach_entry( struct fs_entry* fent, void* cls ) {
       
       if( rc != 0 ) {
       
-         errorf("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", fent->file_id, ms_child->name, rc );
+         SG_error("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", fent->file_id, ms_child->name, rc );
          consistency_cls->err = rc;
          
          rc = -EUCLEAN;
@@ -652,7 +652,7 @@ static int fs_entry_zip_path_listing( ms_path_t* ms_path, struct ms_client_multi
    
    // sanity check 
    if( ms_path->size() != results->num_ents ) {
-      errorf("requested %zu entries, got %zu\n", ms_path->size(), results->num_ents );
+      SG_error("requested %zu entries, got %zu\n", ms_path->size(), results->num_ents );
       return -EINVAL;
    }
    
@@ -680,7 +680,7 @@ static int fs_entry_zip_path_listing( ms_path_t* ms_path, struct ms_client_multi
          // new data!
          // sanity check 
          if( results->ents[i].file_id != file_id ) {
-            errorf("requested entry %" PRIX64 " at %d; got %" PRIX64 "\n", file_id, i, results->ents[i].file_id );
+            SG_error("requested entry %" PRIX64 " at %d; got %" PRIX64 "\n", file_id, i, results->ents[i].file_id );
             rc = -EINVAL;
             break;
          }
@@ -712,7 +712,7 @@ static int fs_entry_path_getattr_all( struct fs_core* core, ms_path_t* to_downlo
    // fetch all 
    rc = ms_client_getattr_multi( core->ms, to_download, &results );
    if( rc != 0 ) {
-      errorf("ms_client_getattr_multi() rc = %d\n", rc );
+      SG_error("ms_client_getattr_multi() rc = %d\n", rc );
       return rc;
    }
    
@@ -721,7 +721,7 @@ static int fs_entry_path_getattr_all( struct fs_core* core, ms_path_t* to_downlo
    ms_client_multi_result_free( &results );
    
    if( rc != 0 ) {
-      errorf("fs_entry_zip_path_listing() rc = %d\n", rc );
+      SG_error("fs_entry_zip_path_listing() rc = %d\n", rc );
       
       return -EUCLEAN;
    }
@@ -749,12 +749,12 @@ static int fs_entry_path_download_all( struct fs_core* core, ms_path_t* to_downl
    
    if( rc != 0 ) {
       // protocol-level error 
-      errorf("ms_client_path_download() rc = %d\n", rc );
+      SG_error("ms_client_path_download() rc = %d\n", rc );
       return rc;
    }
    
    if( download_rc != 0 || failed_idx >= 0 ) {
-      dbprintf("WARN: ms_client_download_path() RPC failed with rc = %d, failed path node %d\n", download_rc, failed_idx );
+      SG_debug("WARN: ms_client_download_path() RPC failed with rc = %d, failed path node %d\n", download_rc, failed_idx );
    }
    
    // merge what we can
@@ -762,7 +762,7 @@ static int fs_entry_path_download_all( struct fs_core* core, ms_path_t* to_downl
    ms_client_multi_result_free( &results );
    
    if( rc != 0 ) {
-      errorf("fs_entry_zip_path_listing() rc = %d\n", rc );
+      SG_error("fs_entry_zip_path_listing() rc = %d\n", rc );
       
       return -EUCLEAN;
    }
@@ -779,11 +779,11 @@ static int fs_entry_reload_cached_path_entries( struct fs_entry_consistency_cls*
 
    struct fs_core* core = cls->core;
 
-   dbprintf("%s", "reload local entries\n");
+   SG_debug("%s", "reload local entries\n");
    
    int rc = fs_entry_path_getattr_all( core, ms_stale_path );
    if( rc != 0 ) {
-      errorf("fs_entry_path_getattr_all() rc = %d\n", rc );
+      SG_error("fs_entry_path_getattr_all() rc = %d\n", rc );
       return rc;
    }
 
@@ -797,12 +797,12 @@ static int fs_entry_reload_cached_path_entries( struct fs_entry_consistency_cls*
    struct fs_entry* fent = fs_entry_resolve_path_cls( core, deepest_path, core->ms->owner_id, core->volume, true, &rc, fs_entry_reload_entry, cls );
    if( fent == NULL ) {
       if( cls->err != 0 ) {
-         errorf("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc );
+         SG_error("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc );
          return cls->err;
       }
       else {
          // some other problem
-         errorf("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
+         SG_error("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
          return rc;
       }
    }
@@ -811,7 +811,7 @@ static int fs_entry_reload_cached_path_entries( struct fs_entry_consistency_cls*
 
    if( cls->err != 0 ) {
       rc = cls->err;
-      errorf("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc);
+      SG_error("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc);
    }
    
 
@@ -831,11 +831,11 @@ static int fs_entry_download_remote_path_entries( struct fs_entry_consistency_cl
    struct fs_entry_getattr_cls* deepest_getattr_cls = (struct fs_entry_getattr_cls*)ms_path->at( ms_path->size() - 1 ).cls;
    char* deepest_path = deepest_getattr_cls->fs_path;
 
-   dbprintf("download remote entries of %s, starting at %d\n", deepest_path, cls->remote_path_idx);
+   SG_debug("download remote entries of %s, starting at %d\n", deepest_path, cls->remote_path_idx);
    
    int rc = fs_entry_path_download_all( core, ms_path );
    if( rc != 0 ) {
-      errorf("fs_entry_path_download_all(%s) rc = %d\n", deepest_path, rc );
+      SG_error("fs_entry_path_download_all(%s) rc = %d\n", deepest_path, rc );
       return rc;
    }
    
@@ -846,12 +846,12 @@ static int fs_entry_download_remote_path_entries( struct fs_entry_consistency_cl
    struct fs_entry* fent = fs_entry_resolve_path_cls( core, deepest_path, core->ms->owner_id, core->volume, true, &rc, fs_entry_attach_entry, cls );
    if( fent == NULL ) {
       if( cls->err != 0 ) {
-         errorf("fs_entry_attach_entry(%s) rc = %d\n", deepest_path, rc );
+         SG_error("fs_entry_attach_entry(%s) rc = %d\n", deepest_path, rc );
          return cls->err;
       }
       else {
          // some other problem
-         errorf("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
+         SG_error("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
          return rc;
       }
    }
@@ -860,7 +860,7 @@ static int fs_entry_download_remote_path_entries( struct fs_entry_consistency_cl
 
    if( cls->err != 0 ) {
       rc = cls->err;
-      errorf("fs_entry_attach_entry(%s) rc = %d\n", deepest_path, rc);
+      SG_error("fs_entry_attach_entry(%s) rc = %d\n", deepest_path, rc);
    }
 
    return rc;
@@ -901,14 +901,14 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* fs_path ) {
    ms_path_t ms_path;
    ms_path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
    
-   dbprintf("Revalidate %s\n", path );
+   SG_debug("Revalidate %s\n", path );
    
    fs_entry_consistency_cls_init( &consistency_cls, core, &ms_path );
    
    // build the whole path 
    rc = fs_entry_build_ms_path( core, path, &ms_path );
    if( rc != 0 ) {
-      errorf("fs_entry_build_ms_path(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_build_ms_path(%s) rc = %d\n", path, rc );
       free( path );
       return -EINVAL;
    }
@@ -917,19 +917,19 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* fs_path ) {
    for( unsigned int i = 0; i < ms_path.size(); i++ ) {
       
       struct fs_entry_getattr_cls* getattr_cls = (struct fs_entry_getattr_cls*)ms_path[i].cls;
-      dbprintf("getattr %s\n", getattr_cls->fs_path );
+      SG_debug("getattr %s\n", getattr_cls->fs_path );
       
       if( getattr_cls->stale && getattr_cls->exists ) {
          
          // stale but cached
-         dbprintf("%s is local and stale\n", getattr_cls->fs_path );
+         SG_debug("%s is local and stale\n", getattr_cls->fs_path );
          ms_path_stale.push_back( ms_path[i] );
       }
 
       else if( !getattr_cls->exists ) {
          
          // need to download this and all subsequent inodes
-         dbprintf("%s is not local\n", getattr_cls->fs_path );
+         SG_debug("%s is not local\n", getattr_cls->fs_path );
          
          missing_local = true;
          
@@ -950,7 +950,7 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* fs_path ) {
    if( ms_path_stale.size() == 0 && !missing_local ) {
       
       // no need to contact the MS--we have everything, and it's fresh
-      dbprintf("%s is complete and fresh\n", path );
+      SG_debug("%s is complete and fresh\n", path );
       
       free( path );
       ms_client_free_path( &ms_path, fs_entry_getattr_cls_free );
@@ -961,14 +961,14 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* fs_path ) {
    if( ms_path_stale.size() > 0 ) {
       
       // reload the stale entries
-      dbprintf("%zu stale entries\n", ms_path_stale.size() );
+      SG_debug("%zu stale entries\n", ms_path_stale.size() );
       
       // reload them all 
       rc = fs_entry_reload_cached_path_entries( &consistency_cls, &ms_path_stale );
       
       if( rc != 0 ) {
          
-         errorf("fs_entry_reload_cached_path_entries(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_reload_cached_path_entries(%s) rc = %d\n", path, rc );
          
          free( path );
          ms_client_free_path( &ms_path, fs_entry_getattr_cls_free );
@@ -983,7 +983,7 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* fs_path ) {
       
       if( rc != 0 ) {
          
-         errorf("fs_entry_download_remote_path_entries(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_download_remote_path_entries(%s) rc = %d\n", path, rc );
          
          free( path );
          ms_client_free_path( &ms_path, fs_entry_getattr_cls_free );
@@ -1058,7 +1058,7 @@ static int fs_entry_getattr_stale_children_to_path( char const* parent_path, str
          memset( &ms_child, 0, sizeof(struct ms_path_ent) );
          
          // keep state for getattr 
-         getattr_cls = CALLOC_LIST( struct fs_entry_getattr_cls, 1 );
+         getattr_cls = SG_CALLOC( struct fs_entry_getattr_cls, 1 );
          fs_entry_getattr_cls_init( getattr_cls, parent_path, child->name, true, true );
          
          ms_client_make_path_ent( &ms_child, child->volume, parent->file_id, child->file_id, child->version, child->write_nonce, child->ms_num_children, child->generation, child->ms_capacity, child->name, getattr_cls );
@@ -1085,12 +1085,12 @@ static int fs_entry_revalidate_children_diffdir( struct fs_core* core, char cons
    // revalidate children, if there are any
    if( stale_children_list->size() > 0 ) {
       
-      dbprintf("Revalidate %zu children of %s\n", stale_children_list->size(), fs_path );
+      SG_debug("Revalidate %zu children of %s\n", stale_children_list->size(), fs_path );
       
       rc = fs_entry_path_getattr_all( core, stale_children_list );
       
       if( rc != 0 ) {
-         errorf("fs_entry_path_getattr_all(%s) rc = %d\n", fs_path, rc );
+         SG_error("fs_entry_path_getattr_all(%s) rc = %d\n", fs_path, rc );
          
          return rc;
       }
@@ -1112,13 +1112,13 @@ static int fs_entry_revalidate_children_diffdir( struct fs_core* core, char cons
       }
    }
    
-   dbprintf("Diff dir %s (ms_num_children = %" PRId64 ", l.u.g = %" PRId64 ")\n", fs_path, parent_ms_num_children, parent_max_generation + 1 );
+   SG_debug("Diff dir %s (ms_num_children = %" PRId64 ", l.u.g = %" PRId64 ")\n", fs_path, parent_ms_num_children, parent_max_generation + 1 );
    
    // get the difference
    rc = ms_client_diffdir( core->ms, parent_id, parent_ms_num_children, parent_max_generation + 1, results );
    
    if( rc != 0 ) {
-      errorf("ms_client_diffdir(%s) rc = %d\n", fs_path, rc );
+      SG_error("ms_client_diffdir(%s) rc = %d\n", fs_path, rc );
       
       return rc;
    }
@@ -1177,7 +1177,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    
    fs_entry_unlock( parent );
    
-   dbprintf("%s %" PRId64 " children of %s (max cached generation %" PRId64 ")\n", (do_diff_dir ? "DIFF" : "LIST"), parent_ms_num_children, fs_path, parent_max_generation );
+   SG_debug("%s %" PRId64 " children of %s (max cached generation %" PRId64 ")\n", (do_diff_dir ? "DIFF" : "LIST"), parent_ms_num_children, fs_path, parent_max_generation );
    
    // fetch all children (listdir), or only the new ones (diffdir)?
    if( do_diff_dir ) {
@@ -1187,7 +1187,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
       
       if( rc != 0 ) {
          
-         errorf("fs_entry_revalidate_children_diffdir(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_revalidate_children_diffdir(%s) rc = %d\n", path, rc );
          
          ms_client_free_path( &stale_children_list, fs_entry_getattr_cls_free );
          free( path );
@@ -1201,14 +1201,14 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
 
       if( rc != 0 ) {
          
-         errorf("ms_client_listdir(%s) rc = %d\n", fs_path, rc );
+         SG_error("ms_client_listdir(%s) rc = %d\n", fs_path, rc );
          return rc;
       }
    }
    
    if( results.reply_error != 0 ) {
    
-      errorf("MS replied error %d\n", results.reply_error );
+      SG_error("MS replied error %d\n", results.reply_error );
       
       ms_client_multi_result_free( &results );
       ms_client_free_path( &stale_children_list, fs_entry_getattr_cls_free );
@@ -1247,7 +1247,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
       // attach/merge the child.  keep trying even on error
       rc = fs_entry_merge_entry( core, &query_time, parent, getattr_cls->ent.name, &getattr_cls->ent );
       if( rc != 0 ) {
-         errorf("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", parent->file_id, getattr_cls->ent.name, rc );
+         SG_error("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", parent->file_id, getattr_cls->ent.name, rc );
          worst_rc = rc;
       }
    }
@@ -1263,7 +1263,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
       // attach/merge the child.  keep trying even on error.
       rc = fs_entry_merge_entry( core, &query_time, parent, results.ents[i].name, &results.ents[i] );
       if( rc != 0 ) {
-         errorf("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", parent->file_id, results.ents[i].name, rc );
+         SG_error("fs_entry_merge_entry( %" PRIX64 ".%s ) rc = %d\n", parent->file_id, results.ents[i].name, rc );
          worst_rc = rc;
       }
    }
@@ -1300,13 +1300,13 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    
    if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
       if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
-         dbprintf("%s is local, and not in client mode\n", fent->name);
+         SG_debug("%s is local, and not in client mode\n", fent->name);
          return 0;      // nothing to do--we automatically have the latest
       }
       
       // if we're in client mode, and we created this file in this session and we are the coordinator, then nothing to do
       if( core->conf->is_client && FS_ENTRY_LOCAL( core, fent ) && fent->created_in_session ) {
-         dbprintf("%s is local, and was created in this client session\n", fent->name);
+         SG_debug("%s is local, and was created in this client session\n", fent->name);
          return 0;         // we automatically have the latest
       }
    }
@@ -1315,12 +1315,12 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    
    struct timespec ts, ts2;
 
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
    bool need_refresh = false;
    
    if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+      SG_error("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
       exit(1);
    }
    else {
@@ -1330,12 +1330,12 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    
    if( !need_refresh ) {
       // we're good to go
-      END_TIMING_DATA( ts, ts2, "manifest refresh (fresh)" );
+      SG_END_TIMING_DATA( ts, ts2, "manifest refresh (fresh)" );
    
       if( successful_gateway_id )
          *successful_gateway_id = 0;
       
-      dbprintf("Manifest for %s is fresh\n", fent->name);
+      SG_debug("Manifest for %s is fresh\n", fent->name);
       return 0;
    }
 
@@ -1346,9 +1346,9 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    
    rc = fs_entry_get_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, &manifest_msg, successful_gateway_id );
    if( rc != 0 ) {
-      errorf("fs_entry_get_manifest(%s.%" PRId64 ".%d) rc = %d\n", fs_path, mtime_sec, mtime_nsec, rc );
+      SG_error("fs_entry_get_manifest(%s.%" PRId64 ".%d) rc = %d\n", fs_path, mtime_sec, mtime_nsec, rc );
       
-      END_TIMING_DATA( ts, ts2, "manifest refresh (error)" );
+      SG_END_TIMING_DATA( ts, ts2, "manifest refresh (error)" );
       
       if( rc == -ENOENT || rc == -EAGAIN ) {
          // not found or try again
@@ -1364,11 +1364,11 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    
    ///////////////////////////////
    char* dat = fent->manifest->serialize_str();
-   dbprintf("Manifest:\n%s\n", dat);
+   SG_debug("Manifest:\n%s\n", dat);
    free( dat );
    ///////////////////////////////
 
-   END_TIMING_DATA( ts, ts2, "manifest refresh (stale)" );
+   SG_END_TIMING_DATA( ts, ts2, "manifest refresh (stale)" );
    
    return 0;
 }
@@ -1378,7 +1378,7 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
 int fs_entry_revalidate_manifest_once( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
 
    if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+      SG_error("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
       exit(1);
    }
    
@@ -1405,7 +1405,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       // try again 
       num_manifest_requests++;
       
-      dbprintf("fs_entry_revalidate_manifest_once(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
+      SG_debug("fs_entry_revalidate_manifest_once(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
       
       struct timespec ts;
       ts.tv_sec = core->conf->retry_delay_ms / 1000;
@@ -1432,14 +1432,14 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    if( core->conf->is_client ) {
       // clients can't become coordinators 
-      errorf("This gateway is in client mode; will not become coordinator for %" PRIu64 "\n", fent->file_id );
+      SG_error("This gateway is in client mode; will not become coordinator for %" PRIu64 "\n", fent->file_id );
       return -EINVAL;
    }
    
    // run the pre-chcoord driver code...
    int rc = driver_chcoord_begin( core, core->closure, fs_path, fent, fent->version );
    if( rc != 0 ) {
-      errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
+      SG_error("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
       return rc;
    }
    
@@ -1452,14 +1452,14 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    if( rc != 0 ) {
       // failed to contact the MS
-      errorf("ms_client_coordinate( /%" PRIu64 "/%" PRIX64 " (%s) ) rc = %d\n", core->volume, fent->file_id, fent->name, rc );
+      SG_error("ms_client_coordinate( /%" PRIu64 "/%" PRIX64 " (%s) ) rc = %d\n", core->volume, fent->file_id, fent->name, rc );
       rc = -EREMOTEIO;
    }
    
    else {
       // if the coordintaor is different than us, then retry the operation
       if( current_coordinator != core->gateway ) {
-         dbprintf("/%" PRIu64 "/%" PRIX64 " now coordinated by UG %" PRIu64 "\n", core->volume, fent->file_id, current_coordinator );
+         SG_debug("/%" PRIu64 "/%" PRIX64 " now coordinated by UG %" PRIu64 "\n", core->volume, fent->file_id, current_coordinator );
          rc = -EAGAIN;
       }
       fent->coordinator = current_coordinator;
@@ -1468,7 +1468,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    // run the post-chcoord driver code...
    int driver_rc = driver_chcoord_end( core, core->closure, fs_path, fent, fent->version, rc );
    if( driver_rc != 0 ) {
-      errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, driver_rc );
+      SG_error("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, driver_rc );
    }
    
    md_entry_free( &ent );
@@ -1486,7 +1486,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
    uint64_t rg_id = 0;
    int rc = 0;
    
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
    int num_read_retries = 0;
    
@@ -1495,7 +1495,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       // reload this path
       rc = fs_entry_revalidate_path( core, fs_path );
       if( rc != 0 ) {
-         errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
+         SG_error("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
          return rc;
       }
       
@@ -1509,7 +1509,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       
       // reload this manifest.  If we get this manifest from an RG, remember which one.
       if( fent->manifest == NULL ) {
-         errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+         SG_error("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
          exit(1);
       }
       
@@ -1527,11 +1527,11 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
          // should we try again?
          num_read_retries++;
          if( num_read_retries >= core->conf->max_read_retry ) {
-            errorf("Maximum download retries exceeded for manifest of %s\n", fs_path );
+            SG_error("Maximum download retries exceeded for manifest of %s\n", fs_path );
             return -ENODATA;
          }
          else {
-            errorf("WARN: failed to download manifest of %s; trying again in at most %d milliseconds.\n", fs_path, core->conf->retry_delay_ms);
+            SG_error("WARN: failed to download manifest of %s; trying again in at most %d milliseconds.\n", fs_path, core->conf->retry_delay_ms);
             
             struct timespec ts;
             ts.tv_sec = core->conf->retry_delay_ms / 1000;
@@ -1543,7 +1543,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
          continue;
       }
       else {
-         errorf("fs_entry_revalidate_manifest_ex(%s) rc = %d\n", fs_path, rc );
+         SG_error("fs_entry_revalidate_manifest_ex(%s) rc = %d\n", fs_path, rc );
          fs_entry_unlock( fent );
          return rc;
       }
@@ -1553,7 +1553,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       *rg_id_ret = rg_id;
    }
    
-   END_TIMING_DATA( ts, ts2, "metadata latency" );
+   SG_END_TIMING_DATA( ts, ts2, "metadata latency" );
  
    fs_entry_unlock( fent );
    

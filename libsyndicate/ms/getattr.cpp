@@ -87,7 +87,7 @@ static char* ms_client_getattr_url_generator( struct md_download_context* dlctx,
    
    ctx->to_download->erase( ctx->to_download->begin() );
    
-   dbprintf("GETATTR %p = %d, url %s\n", dlctx, i, url );
+   SG_debug("GETATTR %p = %d, url %s\n", dlctx, i, url );
    
    pthread_mutex_unlock( &ctx->lock );
    return url;
@@ -124,7 +124,7 @@ static char* ms_client_getchild_url_generator( struct md_download_context* dlctx
    
    ctx->to_download->erase( ctx->to_download->begin() );
    
-   dbprintf("GETCHILD %p = %d, url %s\n", dlctx, i, url );
+   SG_debug("GETCHILD %p = %d, url %s\n", dlctx, i, url );
    
    pthread_mutex_unlock( &ctx->lock );
    return url;
@@ -162,13 +162,13 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
    ms_client_getattr_downloading_set::iterator itr = ctx->downloading->find( dlctx );
    if( itr == ctx->downloading->end() ) {
       // bug 
-      errorf("BUG: no path entry for %p\n", dlctx );
+      SG_error("BUG: no path entry for %p\n", dlctx );
       
       pthread_mutex_unlock( &ctx->lock );
       return -EINVAL;
    }
    else {
-      dbprintf("Match %p = %d\n", dlctx, itr->second );
+      SG_debug("Match %p = %d\n", dlctx, itr->second );
    }
    
    ent_idx = itr->second;
@@ -206,7 +206,7 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
    
    if( rc != 0 ) {
       
-      errorf("ms_client_listing_read_entry(%p) rc = %d, listing_error = %d\n", dlctx, rc, listing_error);
+      SG_error("ms_client_listing_read_entry(%p) rc = %d, listing_error = %d\n", dlctx, rc, listing_error);
       
       ctx->listing_error = listing_error;
       pthread_mutex_unlock( &ctx->lock );
@@ -215,13 +215,13 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
    
    if( listing_error == MS_LISTING_NONE ) {
       
-      errorf("WARN: no data for %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
+      SG_error("WARN: no data for %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
       
       ctx->results_buf[ent_idx].error = MS_LISTING_NONE;
    }
    else if( listing_error == MS_LISTING_NOCHANGE ) {
       
-      dbprintf("WARN: no change in %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
+      SG_debug("WARN: no change in %" PRIX64 "\n", ctx->path->at(ent_idx).file_id );
       
       ctx->results_buf[ent_idx].error = MS_LISTING_NOCHANGE;
    }
@@ -233,7 +233,7 @@ static int ms_client_getattr_download_postprocess( struct md_download_context* d
    }
    else {
       
-      errorf("ms_client_listing_read_entry(%p): Unknown listing error %d\n", dlctx, listing_error );
+      SG_error("ms_client_listing_read_entry(%p): Unknown listing error %d\n", dlctx, listing_error );
       ctx->listing_error = listing_error;
       
       pthread_mutex_unlock( &ctx->lock );
@@ -258,7 +258,7 @@ static int ms_client_getattr_context_init( struct ms_client_getattr_context* ctx
    ctx->path = path;
    
    ctx->to_download = new vector<int>();
-   ctx->attempts = CALLOC_LIST( int, path->size() );
+   ctx->attempts = SG_CALLOC( int, path->size() );
    ctx->downloading = new ms_client_getattr_downloading_set();
    ctx->results_buf = result_buf;
    
@@ -316,7 +316,7 @@ static int ms_client_getattr_lowlevel( struct ms_client* client, ms_path_t* path
    memset( &ctx, 0, sizeof(struct ms_client_getattr_context) );
    
    // make result buffer (to be stuffed into result)
-   struct md_entry* result_ents = CALLOC_LIST( struct md_entry, path->size() );
+   struct md_entry* result_ents = SG_CALLOC( struct md_entry, path->size() );
    
    ms_client_getattr_context_init( &ctx, client, path, result_ents );
    
@@ -345,7 +345,7 @@ static int ms_client_getattr_lowlevel( struct ms_client* client, ms_path_t* path
    else {
       result->reply_error = ctx.listing_error;
       
-      errorf("md_download_all rc = %d\n", rc );
+      SG_error("md_download_all rc = %d\n", rc );
    }
    
    ms_client_getattr_context_free( &ctx );
@@ -393,7 +393,7 @@ static int ms_client_getchild_lowlevel( struct ms_client* client, ms_path_t* pat
    memset( &ctx, 0, sizeof(struct ms_client_getattr_context) );
    
    // make result buffer (to be stuffed into result)
-   struct md_entry* result_ents = CALLOC_LIST( struct md_entry, path->size() );
+   struct md_entry* result_ents = SG_CALLOC( struct md_entry, path->size() );
    
    ms_client_getattr_context_init( &ctx, client, path, result_ents );
    
@@ -424,7 +424,7 @@ static int ms_client_getchild_lowlevel( struct ms_client* client, ms_path_t* pat
    else {
       result->reply_error = ctx.listing_error;
       
-      errorf("%s rc = %d\n", method, rc );
+      SG_error("%s rc = %d\n", method, rc );
    }
    
    ms_client_getattr_context_free( &ctx );

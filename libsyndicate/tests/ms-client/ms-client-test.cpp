@@ -65,7 +65,7 @@ int main( int argc, char** argv ) {
          }
             
          default: {
-            errorf("Ignoring unrecognized option %c\n", c);
+            SG_error("Ignoring unrecognized option %c\n", c);
             break;
          }
       }
@@ -73,24 +73,24 @@ int main( int argc, char** argv ) {
 
    
    if( volume_name == NULL || command == NULL ) {
-      errorf("%s", "No volume name or command given\n");
+      SG_error("%s", "No volume name or command given\n");
       exit(1);
    }
 
    struct md_syndicate_conf conf;
    rc = md_read_conf( config, &conf );
    if( rc != 0 ) {
-      errorf("md_read_conf rc = %d\n", rc );
+      SG_error("md_read_conf rc = %d\n", rc );
       exit(1);
    }
 
    rc = md_init( &conf, NULL );
    if( rc != 0 ) {
-      errorf("md_init rc = %d\n", rc );
+      SG_error("md_init rc = %d\n", rc );
       exit(1);
    }
 
-   struct ms_client* client = CALLOC_LIST( struct ms_client, 1 );
+   struct ms_client* client = SG_CALLOC( struct ms_client, 1 );
 
    if( ug_username != NULL ) {
       if( conf.metadata_username )
@@ -108,7 +108,7 @@ int main( int argc, char** argv ) {
    
    rc = ms_client_init( client, &conf, volume_name, conf.metadata_username, conf.metadata_password );
    if( rc != 0 ) {
-      errorf("ms_client_init rc = %d\n", rc );
+      SG_error("ms_client_init rc = %d\n", rc );
       exit(1);
    }
 
@@ -116,7 +116,7 @@ int main( int argc, char** argv ) {
    uint64_t version = 0;
    rc = ms_client_get_volume_metadata( client, volume_name, volume_secret, &version, &conf.owner, &conf.volume_owner, &conf.volume, &conf.replica_urls, &conf.blocking_factor, &users );
    if( rc != 0 ) {
-      errorf("ms_client_get_volume_metadata rc = %d\n", rc );
+      SG_error("ms_client_get_volume_metadata rc = %d\n", rc );
       exit(1);
    }
 
@@ -150,7 +150,7 @@ int main( int argc, char** argv ) {
       int ms_error = 0;
       rc = ms_client_resolve_path( client, path, &path_metadata, &child_metadata, &ms_error );
       if( rc != 0 ) {
-         errorf("ms_client_resolve_path(%s) rc = %d\n", path, rc );
+         SG_error("ms_client_resolve_path(%s) rc = %d\n", path, rc );
          exit(1);
       }
 
@@ -261,8 +261,8 @@ int main( int argc, char** argv ) {
          struct md_entry new_ent;
          memset( &new_ent, 0, sizeof(new_ent) );
 
-         new_ent.path = CALLOC_LIST( char, PATH_MAX + 1 );
-         new_ent.url = CALLOC_LIST( char, PATH_MAX + 1 );
+         new_ent.path = SG_CALLOC( char, PATH_MAX + 1 );
+         new_ent.url = SG_CALLOC( char, PATH_MAX + 1 );
          
          int num_ents = 0;
          while( true ) {

@@ -34,14 +34,14 @@ int ms_client_verify_key( EVP_PKEY* key ) {
    RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
    if( ref_rsa == NULL ) {
       // not an RSA key
-      errorf("%s", "Not an RSA key\n");
+      SG_error("%s", "Not an RSA key\n");
       return -EINVAL;
    }
 
    int size = RSA_size( ref_rsa );
    if( size * 8 != RSA_KEY_SIZE ) {
       // not the right size
-      errorf("Invalid RSA size %d\n", size * 8 );
+      SG_error("Invalid RSA size %d\n", size * 8 );
       return -EINVAL;
    }
    return 0;
@@ -103,7 +103,7 @@ int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char c
    else {
       
       // download manually...
-      errorf("%s", "WARN: connect_cache stub\n" );
+      SG_error("%s", "WARN: connect_cache stub\n" );
       md_init_curl_handle( conf, curl, url, conf->connect_timeout );
       ret = 0;
    }
@@ -127,7 +127,7 @@ int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char c
 // client must be write-locked!
 int ms_client_start_threads( struct ms_client* client ) {
    
-   dbprintf("%s\n", "Starting MS client threads" );
+   SG_debug("%s\n", "Starting MS client threads" );
    
    if( client->running ) {
       return -EALREADY;
@@ -149,7 +149,7 @@ int ms_client_start_threads( struct ms_client* client ) {
 // stop internal threads
 int ms_client_stop_threads( struct ms_client* client ) {
    
-   dbprintf("%s\n", "Stopping MS client threads" );
+   SG_debug("%s\n", "Stopping MS client threads" );
    
    // shut down the uploader and view threads
    bool was_running = client->running;
@@ -162,7 +162,7 @@ int ms_client_stop_threads( struct ms_client* client ) {
       
       pthread_cancel( client->view_thread );
       
-      dbprintf("%s", "wait for view change thread to finish...\n");
+      SG_debug("%s", "wait for view change thread to finish...\n");
       
       if( client->view_thread != 0 ) {
          pthread_join( client->view_thread, NULL );
@@ -189,13 +189,13 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
       }
       
       if( rc != 0 ) {
-         errorf("%s rc = %d\n", method, rc );
+         SG_error("%s rc = %d\n", method, rc );
          return rc;
       }
       
       rc = ms_client_verify_key( *key );
       if( rc != 0 ) {
-         errorf("ms_client_verify_key rc = %d\n", rc );
+         SG_error("ms_client_verify_key rc = %d\n", rc );
          return rc;
       }
 
@@ -207,7 +207,7 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
          
          rc = mlock_dup( &pkey_buf, key_pem, strlen(key_pem) + 1 );
          if( rc != 0 ) {
-            errorf("mlock_dup rc = %d\n", rc );
+            SG_error("mlock_dup rc = %d\n", rc );
             return rc;
          }
          
@@ -215,7 +215,7 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
       }
    }
    else {
-      dbprintf("%s\n", "WARN: No key given" );
+      SG_debug("%s\n", "WARN: No key given" );
    }
    
    return 0;
@@ -237,7 +237,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    int rc = md_downloader_start( &client->dl );
    if( rc != 0 ) {
       client->running = false;
-      errorf("Failed to start downloader, rc = %d\n", rc );
+      SG_error("Failed to start downloader, rc = %d\n", rc );
       return rc;
    }
 
@@ -262,14 +262,14 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
    if( rc != 0 ) {
-      errorf("ms_client_try_load_key rc = %d\n", rc );
+      SG_error("ms_client_try_load_key rc = %d\n", rc );
       return rc;
    }
    if( client->my_key != NULL ) {
       // if we loaded the private key, derive the public key from it
       rc = md_public_key_from_private_key( &client->my_pubkey, client->my_key );
       if( rc != 0 || client->my_pubkey == NULL ) {
-         errorf("md_public_key_from_private_key( %p ) rc = %d\n", client->my_key, rc );
+         SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->my_key, rc );
          return rc;
       }
    }
@@ -279,7 +279,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
    if( rc != 0 ) {
-      errorf("ms_client_try_load_key rc = %d\n", rc );
+      SG_error("ms_client_try_load_key rc = %d\n", rc );
       return rc;
    }
    
@@ -295,12 +295,12 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 // destroy an MS client context 
 int ms_client_destroy( struct ms_client* client ) {
    if( client == NULL ) {
-      errorf("WARN: client is %p\n", client);
+      SG_error("WARN: client is %p\n", client);
       return 0;
    }
    
    if( !client->inited ) {
-      errorf("WARN: client->inited = %d\n", client->inited );
+      SG_error("WARN: client->inited = %d\n", client->inited );
       return 0;
    }
    
@@ -359,7 +359,7 @@ int ms_client_destroy( struct ms_client* client ) {
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
  
-   dbprintf("%s", "MS client shutdown\n");
+   SG_debug("%s", "MS client shutdown\n");
    
    return 0;
 }
@@ -397,7 +397,7 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
    curl_easy_cleanup( curl );
    
    if( rc != 0 ) {
-      errorf("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
    }
    else {
       ms_client_timing_log( &timing );
@@ -409,37 +409,37 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
 
 // read-lock a client context 
 int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_rlock(%p) from %s:%d\n", client, from_str, lineno);
+   //SG_debug("ms_client_rlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
 int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_wlock(%p) from %s:%d\n", client, from_str, lineno);
+   //SG_debug("ms_client_wlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
 int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_unlock(%p) from %s:%d\n", client, from_str, lineno);
+   //SG_debug("ms_client_unlock(%p) from %s:%d\n", client, from_str, lineno);
    return pthread_rwlock_unlock( &client->lock );
 }
 
 // read-lock a client context's view
 int ms_client_view_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_view_rlock %p (from %s:%d)\n", client, from_str, lineno);
+   //SG_debug("ms_client_view_rlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_rdlock( &client->view_lock );
 }
 
 // write-lock a client context's view
 int ms_client_view_wlock2( struct ms_client* client, char const* from_str, int lineno  ) {
-   //dbprintf("ms_client_view_wlock %p (from %s:%d)\n", client, from_str, lineno);
+   //SG_debug("ms_client_view_wlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_wrlock( &client->view_lock );
 }
 
 // unlock a client context's view
 int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //dbprintf("ms_client_view_unlock %p (from %s:%d)\n", client, from_str, lineno);
+   //SG_debug("ms_client_view_unlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_unlock( &client->view_lock );
 }
 
@@ -585,7 +585,7 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    int rc = ms_client_download( client, url, &buf, &buflen );
    
    if( rc != 0 ) {
-      errorf("ms_client_download(%s) rc = %d\n", url, rc );
+      SG_error("ms_client_download(%s) rc = %d\n", url, rc );
       
       return rc;
    }
@@ -597,7 +597,7 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    buf = NULL;
    
    if( rc != 0 ) {
-      errorf("ms_client_parse_reply rc = %d\n", rc );
+      SG_error("ms_client_parse_reply rc = %d\n", rc );
    }
    
    return rc;
@@ -643,7 +643,7 @@ int ms_client_sched_volume_reload( struct ms_client* client ) {
 
 // defaut view change callback
 int ms_client_view_change_callback_default( struct ms_client* client, void* cls ) {
-   dbprintf("%s", "WARN: stub Volume view change callback\n");
+   SG_debug("%s", "WARN: stub Volume view change callback\n");
    return 0;
 }
 
@@ -657,7 +657,7 @@ static void* ms_client_view_thread( void* arg ) {
    // since we don't hold any resources between downloads, simply cancel immediately
    pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
    
-   dbprintf("%s", "View thread starting up\n");
+   SG_debug("%s", "View thread starting up\n");
 
    while( client->running ) {
 
@@ -670,11 +670,11 @@ static void* ms_client_view_thread( void* arg ) {
       
       // if somehow we wait 0 seconds, then set to 1 second 
       if( reload_deadline.tv_sec == now.tv_sec ) {
-         errorf("%s", "WARN: waiting for manditory 1 second between volume reload checks\n");
+         SG_error("%s", "WARN: waiting for manditory 1 second between volume reload checks\n");
          reload_deadline.tv_sec ++;
       }
       
-      dbprintf("Reload Volume in at most %ld seconds (at %ld)\n", reload_deadline.tv_sec - now.tv_sec, reload_deadline.tv_sec );
+      SG_debug("Reload Volume in at most %ld seconds (at %ld)\n", reload_deadline.tv_sec - now.tv_sec, reload_deadline.tv_sec );
       
       // wait to be signaled to reload 
       while( reload_deadline.tv_sec > now.tv_sec ) {
@@ -693,7 +693,7 @@ static void* ms_client_view_thread( void* arg ) {
                break;
             }
             else {
-               errorf("sem_timedwait errno = %d\n", rc);
+               SG_error("sem_timedwait errno = %d\n", rc);
                return NULL;
             }
          }
@@ -706,11 +706,11 @@ static void* ms_client_view_thread( void* arg ) {
       pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
       
       // reload Volume metadata
-      dbprintf("%s", "Begin reload Volume metadata\n" );
+      SG_debug("%s", "Begin reload Volume metadata\n" );
 
       rc = ms_client_reload_volume( client );
 
-      dbprintf("End reload Volume metadata, rc = %d\n", rc);
+      SG_debug("End reload Volume metadata, rc = %d\n", rc);
       
       if( rc == 0 ) {
          ms_client_rlock( client );
@@ -718,7 +718,7 @@ static void* ms_client_view_thread( void* arg ) {
          if( client->view_change_callback != NULL ) {
             rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
             if( rc != 0 ) {
-               errorf("WARN: view change callback rc = %d\n", rc );
+               SG_error("WARN: view change callback rc = %d\n", rc );
             }
          }
          
@@ -728,7 +728,7 @@ static void* ms_client_view_thread( void* arg ) {
       pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
    }
 
-   dbprintf("%s", "View thread shutting down\n");
+   SG_debug("%s", "View thread shutting down\n");
    
    return NULL;
 }

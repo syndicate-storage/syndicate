@@ -38,7 +38,7 @@ int driver_init( struct fs_core* core, struct md_closure** _ret ) {
    char* closure_text = NULL;
    uint64_t closure_text_len = 0;
    
-   struct md_closure* closure = CALLOC_LIST( struct md_closure, 1 );
+   struct md_closure* closure = SG_CALLOC( struct md_closure, 1 );
    
    int rc = ms_client_get_closure_text( core->ms, &closure_text, &closure_text_len );
    if( rc != 0 ) {
@@ -46,13 +46,13 @@ int driver_init( struct fs_core* core, struct md_closure** _ret ) {
       if( rc == -ENODATA && core->gateway == GATEWAY_ANON ) {
          // no driver, since we're either anonymous or a client.
          // use the dummy closure 
-         dbprintf("WARNING: ms_client_get_closure_text rc = %d, but this gateway is anonymous and/or in client mode.  Not treating this as an error.\n", rc );
+         SG_debug("WARNING: ms_client_get_closure_text rc = %d, but this gateway is anonymous and/or in client mode.  Not treating this as an error.\n", rc );
          *_ret = closure;
          return 0;
       }
       
       // some other error
-      errorf("ms_client_get_closure_text rc = %d\n", rc );
+      SG_error("ms_client_get_closure_text rc = %d\n", rc );
       
       if( rc == -ENOENT ) {
          // dummy closure 
@@ -96,7 +96,7 @@ int driver_reload( struct fs_core* core, struct md_closure* closure ) {
    
    int rc = ms_client_get_closure_text( core->ms, &closure_text, &closure_text_len );
    if( rc != 0 ) {
-      errorf("ms_client_get_closure_text rc = %d\n", rc );
+      SG_error("ms_client_get_closure_text rc = %d\n", rc );
       return rc;
    }
    
@@ -126,7 +126,7 @@ int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* ur
    
    }
    else {
-      errorf("%s", "WARN: connect_cache stub\n");
+      SG_error("%s", "WARN: connect_cache stub\n");
       
       ms_client_volume_connect_cache( closure_cls->core->ms, curl, url );
       ret = 0;
@@ -147,11 +147,11 @@ int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, 
                        closure->cls );
    }
    else {
-      errorf("%s", "WARN: write_block_preup stub\n");
+      SG_error("%s", "WARN: write_block_preup stub\n");
       
       *out_block_data_len = in_block_data_len;
       
-      *out_block_data = CALLOC_LIST( char, in_block_data_len );
+      *out_block_data = SG_CALLOC( char, in_block_data_len );
       memcpy( *out_block_data, in_block_data, in_block_data_len );
    }
    
@@ -169,11 +169,11 @@ int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closur
                                                                                                in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
-      errorf("%s", "WARN: write_manifest_preup stub\n");
+      SG_error("%s", "WARN: write_manifest_preup stub\n");
       
       *out_manifest_data_len = in_manifest_data_len;
       
-      *out_manifest_data = CALLOC_LIST( char, in_manifest_data_len );
+      *out_manifest_data = SG_CALLOC( char, in_manifest_data_len );
       memcpy( *out_manifest_data, in_manifest_data, in_manifest_data_len );
    }
    
@@ -195,7 +195,7 @@ ssize_t driver_read_block_postdown( struct fs_core* core, struct md_closure* clo
                        closure->cls );
    }
    else {
-      errorf("WARN: read_block_postdown stub (in buffer len = %zu, out buffer len = %zu)\n", in_block_data_len, out_block_data_len);
+      SG_error("WARN: read_block_postdown stub (in buffer len = %zu, out buffer len = %zu)\n", in_block_data_len, out_block_data_len);
       
       memcpy( out_block_data, in_block_data, MIN( in_block_data_len, out_block_data_len ) );
       ret = MIN( in_block_data_len, out_block_data_len );
@@ -217,11 +217,11 @@ int driver_read_manifest_postdown( struct md_closure* closure, char const* in_ma
                        in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
-      errorf("%s", "WARN: read_manifest_postdown stub\n");
+      SG_error("%s", "WARN: read_manifest_postdown stub\n");
       
       *out_manifest_data_len = in_manifest_data_len;
       
-      *out_manifest_data = CALLOC_LIST( char, in_manifest_data_len );
+      *out_manifest_data = SG_CALLOC( char, in_manifest_data_len );
       memcpy( *out_manifest_data, in_manifest_data, in_manifest_data_len );
    }
    
@@ -237,7 +237,7 @@ int driver_chcoord_begin( struct fs_core* core, struct md_closure* closure, char
       MD_CLOSURE_CALL( ret, closure, "chcoord_begin", driver_chcoord_begin_func, core, closure, fs_path, fent, replica_version, closure->cls );
    }
    else {
-      errorf("%s", "WARN: chcoord_begin stub\n");
+      SG_error("%s", "WARN: chcoord_begin stub\n");
    }
    
    return ret;
@@ -253,7 +253,7 @@ int driver_chcoord_end( struct fs_core* core, struct md_closure* closure, char c
       MD_CLOSURE_CALL( ret, closure, "chcoord_end", driver_chcoord_end_func, core, closure, fs_path, fent, replica_version, chcoord_status, closure->cls );
    }
    else {
-      errorf("%s", "WARN: chcoord_end stub\n");
+      SG_error("%s", "WARN: chcoord_end stub\n");
    }
    return ret;
 }
@@ -270,7 +270,7 @@ int driver_garbage_collect( struct fs_core* core, struct md_closure* closure, ch
       MD_CLOSURE_CALL( ret, closure, "garbage_collect", driver_garbage_collect_func, core, closure, fs_path, fent_snapshot, block_ids, block_versions, num_blocks );
    }
    else {
-      errorf("%s", "WARN: garbage_collect stub\n");
+      SG_error("%s", "WARN: garbage_collect stub\n");
    }
    
    return ret;
@@ -286,7 +286,7 @@ char* driver_get_name( struct fs_core* core, struct md_closure* closure ) {
       MD_CLOSURE_CALL( ret, closure, "get_driver_name", driver_get_name_func );
    }
    else {
-      errorf("%s", "WARN: get_driver_name stub\n");
+      SG_error("%s", "WARN: get_driver_name stub\n");
    }
    
    return ret;
@@ -302,7 +302,7 @@ int driver_create_file( struct fs_core* core, struct md_closure* closure, char c
       MD_CLOSURE_CALL( ret, closure, "create_file", driver_create_file_func, core, closure, fs_path, fent );
    }
    else {
-      errorf("%s", "WARN: create_file stub\n");
+      SG_error("%s", "WARN: create_file stub\n");
    }
    
    return ret;
@@ -318,7 +318,7 @@ int driver_delete_file( struct fs_core* core, struct md_closure* closure, char c
       MD_CLOSURE_CALL( ret, closure, "delete_file", driver_delete_file_func, core, closure, fs_path, fent );
    }
    else {
-      errorf("%s", "WARN: delete_file stub\n");
+      SG_error("%s", "WARN: delete_file stub\n");
    }
    
    return ret;

@@ -35,7 +35,7 @@ int main( int argc, char** argv ) {
    // get options
    rc = md_parse_opts( &opts, argc, argv, &local_optind, NULL, NULL );
    if( rc != 0 ) {
-      errorf("md_parse_opts rc = %d\n", rc );
+      SG_error("md_parse_opts rc = %d\n", rc );
       md_common_usage( argv[0] );
       exit(1);
    }
@@ -45,19 +45,19 @@ int main( int argc, char** argv ) {
    // connect to syndicate
    rc = syndicate_client_init( &state, &opts, &ug_opts );
    if( rc != 0 ) {
-      errorf("syndicate_client_init rc = %d\n", rc );
+      SG_error("syndicate_client_init rc = %d\n", rc );
       exit(1);
    }
    
    if( (argc - local_optind) % 2 != 0 || (argc - local_optind) <= 0 ) {
-      errorf("Usage: %s [SYNDICATE OPTS] parent_id name [parent_id name...]\n", argv[0] );
+      SG_error("Usage: %s [SYNDICATE OPTS] parent_id name [parent_id name...]\n", argv[0] );
       exit(1);
    }
    
    // set up requests 
    num_requests = (argc - local_optind) / 2;
-   requests = CALLOC_LIST( struct ms_client_request, num_requests );
-   results = CALLOC_LIST( struct ms_client_request_result, num_requests );
+   requests = SG_CALLOC( struct ms_client_request, num_requests );
+   results = SG_CALLOC( struct ms_client_request_result, num_requests );
    
    if( num_requests > 1 ) {
       printf("\n\n\nBegin create multi\n\n\n");
@@ -76,7 +76,7 @@ int main( int argc, char** argv ) {
       // parent ID 
       rc = sscanf( argv[i], "%" PRIX64, &parent_id );
       if( rc != 1 ) {
-         errorf("failed to parse file_id ID '%s'\n", argv[i] );
+         SG_error("failed to parse file_id ID '%s'\n", argv[i] );
          exit(1);
       }
       
@@ -85,7 +85,7 @@ int main( int argc, char** argv ) {
       
       printf("   create(%s) in %" PRIX64 "\n", name, parent_id );
       
-      struct md_entry* ent = CALLOC_LIST( struct md_entry, 1 );
+      struct md_entry* ent = SG_CALLOC( struct md_entry, 1 );
       
       ent->type = (name[strlen(name)-1] == '/' ? MD_ENTRY_DIR : MD_ENTRY_FILE );
       ent->file_id = ms_client_make_file_id();

@@ -18,19 +18,19 @@
 
 // dummy init 
 int closure_init( struct md_closure* closure, void** cls ) {
-   dbprintf("%s: closure_init\n", DRIVER_NAME );
+   SG_debug("%s: closure_init\n", DRIVER_NAME );
    return 0;
 }
 
 // dummy shutdown 
 int closure_shutdown( void* cls ) {
-   dbprintf("%s: closure_shutdown\n", DRIVER_NAME );
+   SG_debug("%s: closure_shutdown\n", DRIVER_NAME );
    return 0;
 }
 
 // dummy connect cache 
 int connect_cache( struct fs_core* core, struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
-   dbprintf("%s: connect_cache\n", DRIVER_NAME );
+   SG_debug("%s: connect_cache\n", DRIVER_NAME );
    return ms_client_volume_connect_cache( core->ms, curl, url );
 }
 
@@ -38,10 +38,10 @@ int connect_cache( struct fs_core* core, struct md_closure* closure, CURL* curl,
 int write_block_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                        char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len, void* cls ) {
  
-   dbprintf("%s: write_block_preup\n", DRIVER_NAME );
+   SG_debug("%s: write_block_preup\n", DRIVER_NAME );
    
    *out_data_len = in_data_len;
-   *out_data = CALLOC_LIST( char, in_data_len );
+   *out_data = SG_CALLOC( char, in_data_len );
    
    memcpy( *out_data, in_data, in_data_len );
    
@@ -52,10 +52,10 @@ int write_block_preup( struct fs_core* core, struct md_closure* closure, char co
 int write_manifest_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
                           char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len, void* cls ) {
  
-   dbprintf("%s: write_manifest_preup\n", DRIVER_NAME );
+   SG_debug("%s: write_manifest_preup\n", DRIVER_NAME );
    
    *out_data_len = in_data_len;
-   *out_data = CALLOC_LIST( char, in_data_len );
+   *out_data = SG_CALLOC( char, in_data_len );
    
    memcpy( *out_data, in_data, in_data_len );
    
@@ -66,7 +66,7 @@ int write_manifest_preup( struct fs_core* core, struct md_closure* closure, char
 ssize_t read_block_postdown( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                              char* in_data, size_t in_data_len, char* out_data, size_t out_data_len, void* cls ) {
 
-   dbprintf("%s: read_block_postdown\n", DRIVER_NAME );
+   SG_debug("%s: read_block_postdown\n", DRIVER_NAME );
    
    ssize_t ret = MIN( out_data_len, in_data_len );
    
@@ -79,10 +79,10 @@ ssize_t read_block_postdown( struct fs_core* core, struct md_closure* closure, c
 int read_manifest_postdown( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
                             char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len, void* cls ) {
    
-   dbprintf("%s: read_manifest_postdown\n", DRIVER_NAME );
+   SG_debug("%s: read_manifest_postdown\n", DRIVER_NAME );
    
    *out_data_len = in_data_len;
-   *out_data = CALLOC_LIST( char, in_data_len );
+   *out_data = SG_CALLOC( char, in_data_len );
    
    memcpy( *out_data, in_data, in_data_len );
    
@@ -92,7 +92,7 @@ int read_manifest_postdown( struct fs_core* core, struct md_closure* closure, ch
 // dummy chcoord_begin 
 int chcoord_begin( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t new_coordinator_id, void* cls ) {
    
-   dbprintf("%s: chcoord_begin\n", DRIVER_NAME );
+   SG_debug("%s: chcoord_begin\n", DRIVER_NAME );
    
    return 0;
 }
@@ -100,7 +100,7 @@ int chcoord_begin( struct fs_core* core, struct md_closure* closure, char const*
 // dummy chcoord_end 
 int chcoord_end( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t new_coodinator_id, int chcoord_status, void* cls ) {
    
-   dbprintf("%s: chcoord_end\n", DRIVER_NAME );
+   SG_debug("%s: chcoord_end\n", DRIVER_NAME );
    
    return 0;
 }
@@ -108,7 +108,7 @@ int chcoord_end( struct fs_core* core, struct md_closure* closure, char const* f
 // dummy garbage collect 
 int garbage_collect( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct replica_snapshot* fent_snapshot, uint64_t* block_ids, int64_t* block_versions, size_t num_blocks ) {
    
-   dbprintf("%s: garbage_collect\n", DRIVER_NAME );
+   SG_debug("%s: garbage_collect\n", DRIVER_NAME );
    
    return 0;
 }
@@ -116,7 +116,7 @@ int garbage_collect( struct fs_core* core, struct md_closure* closure, char cons
 // get name
 char* get_driver_name(void) {
    
-   dbprintf("%s: get_driver_name\n", DRIVER_NAME );
+   SG_debug("%s: get_driver_name\n", DRIVER_NAME );
    
    return strdup(DRIVER_NAME);
 }
@@ -124,7 +124,7 @@ char* get_driver_name(void) {
 // dummy create file 
 int create_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent ) {
    
-   dbprintf("%s: create file %s\n", DRIVER_NAME, fs_path );
+   SG_debug("%s: create file %s\n", DRIVER_NAME, fs_path );
    
    return 0;
 }
@@ -132,7 +132,7 @@ int create_file( struct fs_core* core, struct md_closure* closure, char const* f
 // dummy delete file 
 int delete_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent ) {
    
-   dbprintf("%s: delete file %s\n", DRIVER_NAME, fs_path );
+   SG_debug("%s: delete file %s\n", DRIVER_NAME, fs_path );
    
    return 0;
 }

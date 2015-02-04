@@ -156,7 +156,7 @@ static int md_cache_cb_add_lru( char const* block_path, void* cls ) {
    
    int rc = sscanf( block_path_basename, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
    if( rc != 2 ) {
-      errorf("Unparsable block name '%s'\n", block_path_basename );
+      SG_error("Unparsable block name '%s'\n", block_path_basename );
       rc = -EINVAL;
    }
    else {
@@ -276,7 +276,7 @@ int md_cache_flush_write( struct md_cache_block_future* f ) {
    int rc = md_cache_block_future_wait( f );
    
    if( rc != 0 ) {
-      errorf("md_cache_block_future_wait rc = %d\n", rc );
+      SG_error("md_cache_block_future_wait rc = %d\n", rc );
       return rc;
    }
    
@@ -285,7 +285,7 @@ int md_cache_flush_write( struct md_cache_block_future* f ) {
       int aio_rc = md_cache_block_future_get_aio_error( f );
       int write_rc = md_cache_block_future_get_write_error( f );
       
-      errorf("Failed to flush %d, aio_rc = %d, write_rc = %d\n", f->block_fd, aio_rc, write_rc );
+      SG_error("Failed to flush %d, aio_rc = %d, write_rc = %d\n", f->block_fd, aio_rc, write_rc );
       
       return -EIO;
    }
@@ -306,7 +306,7 @@ int md_cache_flush_writes( vector<struct md_cache_block_future*>* futs ) {
          int rc = md_cache_flush_write( fut );
          
          if( rc != 0 ) {
-            errorf("md_cache_flush_write rc = %d\n", rc);
+            SG_error("md_cache_flush_write rc = %d\n", rc);
             
             *worst_rc = rc;
          }
@@ -380,7 +380,7 @@ int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int
    if( flags & O_CREAT ) {
       rc = md_cache_file_setup( cache, file_id, file_version, 0700 );
       if( rc != 0 ) {
-         errorf("md_cache_file_setup( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
+         SG_error("md_cache_file_setup( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
          free( block_url );
          return rc;
       }
@@ -389,7 +389,7 @@ int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int
    fd = open( block_path, flags, 0600 );
    if( fd < 0 ) {
       fd = -errno;
-      errorf("open(%s) rc = %d\n", block_path, fd );
+      SG_error("open(%s) rc = %d\n", block_path, fd );
    }
    
    free( block_url );
@@ -499,7 +499,7 @@ int md_cache_file_blocks_apply( char const* local_path, int (*block_func)( char 
          if( rc != 0 ) {
             // could not unlink
             rc = -errno;
-            errorf( "block_func(%s) errno = %d\n", block_path, rc );
+            SG_error( "block_func(%s) errno = %d\n", block_path, rc );
             worst_rc = rc;
          }
       }
@@ -533,7 +533,7 @@ int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int
          }
          else {
             // not evicted!
-            errorf("WARN: unlink( %s ) rc = %d\n", block_path, rc );
+            SG_error("WARN: unlink( %s ) rc = %d\n", block_path, rc );
             
             // nevertheless, try to evict as much as possible
             rc = 0;
@@ -580,7 +580,7 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
       rc = -errno;
       if( rc != -ENOENT ) {
          // problem 
-         errorf("Failed to stat %s, rc = %d\n", cur_local_path, rc );
+         SG_error("Failed to stat %s, rc = %d\n", cur_local_path, rc );
          
          free( cur_local_url );
          free( new_local_url );
@@ -597,7 +597,7 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
       rc = -errno;
    }
    if( rc != -ENOENT ) {
-      errorf("Failed to stat %s, rc = %d\n", new_local_path, rc );
+      SG_error("Failed to stat %s, rc = %d\n", new_local_path, rc );
       
       free( cur_local_url );
       free( new_local_url );
@@ -609,7 +609,7 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
    rc = rename( cur_local_path, new_local_path );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("rename(%s,%s) rc = %d\n", cur_local_path, new_local_path, rc );
+      SG_error("rename(%s,%s) rc = %d\n", cur_local_path, new_local_path, rc );
    
       free( cur_local_url );
       free( new_local_url );
@@ -668,7 +668,7 @@ int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* c
       pthread_rwlock_init( locks[i], NULL );
    }
    
-   dbprintf("Soft limit: %zu blocks.  Hard limit: %zu blocks\n", soft_limit, hard_limit );
+   SG_debug("Soft limit: %zu blocks.  Hard limit: %zu blocks\n", soft_limit, hard_limit );
    
    cache->hard_max_size = hard_limit;
    cache->soft_max_size = soft_limit;
@@ -703,14 +703,14 @@ int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* c
 int md_cache_start( struct md_syndicate_cache* cache ) {
    
    // start the thread up 
-   struct md_syndicate_cache_thread_args* args = CALLOC_LIST( struct md_syndicate_cache_thread_args, 1 );
+   struct md_syndicate_cache_thread_args* args = SG_CALLOC( struct md_syndicate_cache_thread_args, 1 );
    args->cache = cache;
    
    cache->running = true;
    
    cache->thread = md_start_thread( md_cache_main_loop, (void*)args, false );
    if( cache->thread == (pthread_t)(-1) ) {
-      errorf("md_start_thread rc = %d\n", (int)cache->thread );
+      SG_error("md_start_thread rc = %d\n", (int)cache->thread );
       return -1;
    }
    
@@ -855,7 +855,7 @@ int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cach
    f->aio.aio_sigevent.sigev_notify_attributes = NULL;
    
    // set up completion args
-   struct md_syndicate_cache_aio_write_args* wargs = CALLOC_LIST( struct md_syndicate_cache_aio_write_args, 1 );
+   struct md_syndicate_cache_aio_write_args* wargs = SG_CALLOC( struct md_syndicate_cache_aio_write_args, 1 );
    
    wargs->cache = cache;
    wargs->future = f;
@@ -965,7 +965,7 @@ void md_cache_begin_writes( struct md_syndicate_cache* cache ) {
       
       int rc = md_cache_aio_write( cache, f );
       if( rc < 0 ) {
-         errorf("md_cache_aio_write( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ), rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, rc );
+         SG_error("md_cache_aio_write( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ), rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, rc );
       }
    }
    
@@ -1007,13 +1007,13 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
       md_cache_ongoing_writes_unlock( cache );
       
       if( f->aio_rc != 0 ) {
-         errorf("WARN: write aio %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->aio_rc );
+         SG_error("WARN: write aio %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->aio_rc );
          
          // clean up 
          md_cache_evict_block_internal( cache, c->file_id, c->file_version, c->block_id, c->block_version );
       }
       else if( f->write_rc < 0 ) {
-         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->write_rc );
+         SG_error("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->write_rc );
          
          // clean up 
          md_cache_evict_block_internal( cache, c->file_id, c->file_version, c->block_id, c->block_version );
@@ -1046,7 +1046,7 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
    __sync_fetch_and_add( &cache->num_blocks_written, write_count );
    
    if( write_count != 0 )
-      dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
+      SG_debug("Cache now has %d blocks\n", cache->num_blocks_written );
    
    completed->clear();
 }
@@ -1154,11 +1154,11 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
          int rc = md_cache_evict_block_internal( cache, c.file_id, c.file_version, c.block_id, c.block_version );
          
          if( rc != 0 && rc != -ENOENT ) {
-            errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
+            SG_error("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
          }
          else {
             // successfully evicted a block
-            dbprintf("Cache EVICT %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", c.file_id, c.file_version, c.block_id, c.block_version );
+            SG_debug("Cache EVICT %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", c.file_id, c.file_version, c.block_id, c.block_version );
             blocks_removed ++;
             eager_evictions --;
          }
@@ -1168,7 +1168,7 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
       // blocks evicted!
       __sync_fetch_and_sub( &cache->num_blocks_written, blocks_removed );
       
-      dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
+      SG_debug("Cache now has %d blocks\n", cache->num_blocks_written );
    }
    
    md_cache_lru_unlock( cache );
@@ -1190,7 +1190,7 @@ void* md_cache_main_loop( void* arg ) {
    
    pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
    
-   dbprintf("%s", "Cache writer thread strated\n" );
+   SG_debug("%s", "Cache writer thread strated\n" );
    
    while( cache->running ) {
       
@@ -1223,7 +1223,7 @@ void* md_cache_main_loop( void* arg ) {
    // wait for remaining writes to finish 
    // TODO: aio cancellations
    while( cache->ongoing_writes->size() > 0 ) {
-      dbprintf("Waiting for %zu blocks to sync...\n", cache->ongoing_writes->size() );
+      SG_debug("Waiting for %zu blocks to sync...\n", cache->ongoing_writes->size() );
       
       md_cache_lru_t new_writes;
       
@@ -1244,7 +1244,7 @@ void* md_cache_main_loop( void* arg ) {
    
    free( args );
    
-   dbprintf("%s", "Cache writer thread exited\n" );
+   SG_debug("%s", "Cache writer thread exited\n" );
    
    return NULL;
 }
@@ -1271,11 +1271,11 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
    int block_fd = md_cache_open_block( cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
    if( block_fd < 0 ) {
       *_rc = block_fd;
-      errorf("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
+      SG_error("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
       return NULL;
    }
    
-   struct md_cache_block_future* f = CALLOC_LIST( struct md_cache_block_future, 1 );
+   struct md_cache_block_future* f = SG_CALLOC( struct md_cache_block_future, 1 );
    md_cache_block_future_init( cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len, detached );
    
    md_cache_pending_wlock( cache );
@@ -1294,7 +1294,7 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
 int md_cache_block_future_wait( struct md_cache_block_future* f ) {
    int rc = md_download_sem_wait( &f->sem_ongoing, -1 );
    if( rc != 0 ) {
-      errorf("md_download_sem_wait rc = %d\n", rc );
+      SG_error("md_download_sem_wait rc = %d\n", rc );
       return rc;
    }
    return rc;
@@ -1372,12 +1372,12 @@ ssize_t md_cache_read_block( int block_fd, char** buf ) {
    int rc = fstat( block_fd, &sb );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("fstat(%d) rc = %d\n", block_fd, rc );
+      SG_error("fstat(%d) rc = %d\n", block_fd, rc );
       return rc;
    }
    
    ssize_t len = sb.st_size;
-   char* block_buf = CALLOC_LIST( char, len );
+   char* block_buf = SG_CALLOC( char, len );
    if( block_buf == NULL ) {
       return -ENOMEM;
    }

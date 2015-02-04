@@ -24,7 +24,7 @@ static int _signals = 1;
 // stacktrace for uncaught C++ exceptions 
 void md_uncaught_exception_handler(void) {
    
-   errorf("%s", "UNCAUGHT EXCEPTION!  Stack trace follows");
+   SG_error("%s", "UNCAUGHT EXCEPTION!  Stack trace follows");
    
    void *trace_elems[32];
    int trace_elem_count(backtrace( trace_elems, 32 ));
@@ -33,7 +33,7 @@ void md_uncaught_exception_handler(void) {
    
    for( int i = 0 ; i < trace_elem_count ; i++ ) {
       
-      errorf("        %s\n", stack_syms[i] );
+      SG_error("        %s\n", stack_syms[i] );
    }
    
    free( stack_syms );
@@ -76,7 +76,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       rc = getaddrinfo( hostname, NULL, &hints, &result );
       if( rc != 0 ) {
          // could not get addr info
-         errorf("getaddrinfo(%s): %s\n", hostname, gai_strerror( rc ) );
+         SG_error("getaddrinfo(%s): %s\n", hostname, gai_strerror( rc ) );
          freeaddrinfo( result );
          return -abs(rc);
       }
@@ -85,12 +85,12 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       char hn[HOST_NAME_MAX+1];
       rc = getnameinfo( result->ai_addr, result->ai_addrlen, hn, HOST_NAME_MAX, NULL, 0, NI_NAMEREQD );
       if( rc != 0 ) {
-         errorf("getnameinfo: %s\n", gai_strerror( rc ) );
+         SG_error("getnameinfo: %s\n", gai_strerror( rc ) );
          freeaddrinfo( result );
          return -abs(rc);
       }
       
-      dbprintf("canonical hostname is %s\n", hn);
+      SG_debug("canonical hostname is %s\n", hn);
 
       c->hostname = strdup(hn);
       
@@ -113,7 +113,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
 
    int rc = md_crypt_init();
    if( rc != 0 ) {
-      errorf("md_crypt_init rc = %d\n", rc );
+      SG_error("md_crypt_init rc = %d\n", rc );
       return rc;
    }
    
@@ -124,21 +124,21 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    if( c->need_storage ) {
       rc = md_init_local_storage( c );
       if( rc != 0 ) {
-         errorf("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
+         SG_error("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
          return rc;
       }
       
-      dbprintf("Store local data at %s\n", c->storage_root );
+      SG_debug("Store local data at %s\n", c->storage_root );
    }
    
    if( c->need_networking && c->hostname == NULL ) {
       rc = md_init_server_info( c );
       if( rc != 0 ) {
-         errorf("md_init_server_info() rc = %d\n", rc );
+         SG_error("md_init_server_info() rc = %d\n", rc );
          return rc;
       }
       
-      dbprintf("Serve data as %s\n", c->hostname );
+      SG_debug("Serve data as %s\n", c->hostname );
    }
    
    // load gateway public/private key
@@ -150,7 +150,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
       
       int rc = md_load_secret_as_string( &gateway_key_mlock_buf, c->gateway_key_path );
       if( rc != 0 ) {
-         errorf("Could not read Gateway key %s, rc = %d\n", c->gateway_key_path, rc );
+         SG_error("Could not read Gateway key %s, rc = %d\n", c->gateway_key_path, rc );
          return rc;
       }
       
@@ -169,7 +169,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
          mlock_free( &gateway_key_mlock_buf );
          
          if( rc != 0 ) {
-            errorf("md_password_unseal rc = %d\n", rc );
+            SG_error("md_password_unseal rc = %d\n", rc );
             
             c->gateway_key = NULL;
             c->gateway_key_len = 0;
@@ -192,7 +192,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    if( c->volume_pubkey_path != NULL ) {
       c->volume_pubkey = md_load_file_as_string( c->volume_pubkey_path, &c->volume_pubkey_len );
       if( c->volume_pubkey == NULL ) {
-         errorf("Failed to load public key from %s\n", c->volume_pubkey_path );
+         SG_error("Failed to load public key from %s\n", c->volume_pubkey_path );
          return -ENOENT;
       }
       
@@ -205,7 +205,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
       c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
       
       if( c->server_cert == NULL ) {
-         errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
+         SG_error( "Could not read TLS certificate %s\n", c->server_cert_path );
          rc = -ENOENT;
       }
       else {
@@ -213,7 +213,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
          struct mlock_buf server_key_mlock_buf;
          int rc = md_load_secret_as_string( &server_key_mlock_buf, c->server_key_path );
          if( rc != 0 ) {
-            errorf("Could not read TLS private key %s\n", c->server_key_path );
+            SG_error("Could not read TLS private key %s\n", c->server_key_path );
             free( c->server_cert );
             c->server_cert = NULL;
             return rc;
@@ -229,7 +229,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    if( c->syndicate_pubkey_path != NULL ) {
       c->syndicate_pubkey = md_load_file_as_string( c->syndicate_pubkey_path, &c->syndicate_pubkey_len );
       if( c->syndicate_pubkey == NULL ) {
-         errorf("Failed to load public key from %s\n", c->syndicate_pubkey_path );
+         SG_error("Failed to load public key from %s\n", c->syndicate_pubkey_path );
          return -ENOENT;
       }
    }
@@ -393,7 +393,7 @@ int md_conf_parse_long( char* value, long* ret, char* buf, int line_cnt ) {
    char *end = NULL;
    long val = strtol( value, &end, 10 );
    if( end[0] != '\0' ) {
-      errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
+      SG_error( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
       return -1;
    }
    else {
@@ -408,7 +408,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
 
    FILE* fd = fopen( conf_path, "r" );
    if( fd == NULL ) {
-      errorf( "could not read %s\n", conf_path);
+      SG_error( "could not read %s\n", conf_path);
       return -1;
    }
    
@@ -431,7 +431,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       char** values = NULL;
       int num_values = md_read_conf_line( buf, &key, &values );
       if( num_values <= 0 ) {
-         //dbprintf("read_conf: ignoring malformed line %d\n", line_cnt );
+         //SG_debug("read_conf: ignoring malformed line %d\n", line_cnt );
          continue;
       }
       if( key == NULL || values == NULL ) {
@@ -556,7 +556,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             if( val > 0 && val <= 65534 )
                conf->portnum = val;
             else
-               errorf("WARN: invalid port number %ld in line %d\n", val, line_cnt );
+               SG_error("WARN: invalid port number %ld in line %d\n", val, line_cnt );
          }
       }
 
@@ -592,7 +592,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       }
 
       else {
-         errorf( "WARN: unrecognized key '%s'\n", key );
+         SG_error( "WARN: unrecognized key '%s'\n", key );
       }
       
       // clean up
@@ -937,21 +937,21 @@ pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach )
    
    rc = pthread_attr_init( &attrs );
    if( rc != 0 ) {
-      errorf( "pthread_attr_init rc = %d\n", rc);
+      SG_error( "pthread_attr_init rc = %d\n", rc);
       return (pthread_t)(-1);   // problem
    }
 
    if( detach ) {
       rc = pthread_attr_setdetachstate( &attrs, PTHREAD_CREATE_DETACHED );    // make a detached thread--we won't join with it
       if( rc != 0 ) {
-         errorf( "pthread_attr_setdetachstate rc = %d\n", rc );
+         SG_error( "pthread_attr_setdetachstate rc = %d\n", rc );
          return (pthread_t)(-1);
       }
    }
    
    rc = pthread_create( &listen_thread, &attrs, thread_func, arg );
    if( rc != 0 ) {
-      errorf( "pthread_create rc = %d\n", rc );
+      SG_error( "pthread_create rc = %d\n", rc );
       return (pthread_t)(-1);
    }
    
@@ -1012,7 +1012,7 @@ char* md_url_scheme( char const* _url ) {
          len++;
       }
 
-      char* scheme = CALLOC_LIST( char, len + 1 );
+      char* scheme = SG_CALLOC( char, len + 1 );
       strncpy( scheme, _url, len );
 
       free( url );
@@ -1166,7 +1166,7 @@ char* md_strip_protocol( char const* url ) {
 // flatten a path.  That is, remove /./, /[/]*, etc, but don't resolve ..
 char* md_flatten_path( char const* path ) {
    size_t len = strlen(path);
-   char* ret = CALLOC_LIST( char, len + 1 );
+   char* ret = SG_CALLOC( char, len + 1 );
  
    unsigned int i = 0;
    int off = 0;
@@ -1218,11 +1218,15 @@ char* md_flatten_path( char const* path ) {
 // split a url into the url+path and query string
 int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
    if( strstr( url, "?" ) != NULL ) {
+      
       char* url2 = strdup( url );
       char* qs_start = strstr( url2, "?" );
-      *qs_start = '\0';
-
-      *qs = strdup( qs_start + 1 );
+      
+      if( qs_start != NULL ) {
+         *qs_start = '\0';
+         *qs = strdup( qs_start + 1 );
+      }
+      
       *url_and_path = url2;
       return 0;
    }
@@ -1235,12 +1239,12 @@ int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
 // get the offset at which the value starts in a header
 off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name ) {
 
-   if( strlen(header_name) >= header_len )
+   if( strlen(header_name) >= header_len ) {
       return -1;      // header is too short
-
-   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
+   }
+   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 ) {
       return -1;      // not found
-
+   }
    size_t off = strlen(header_name);
 
    // find :
@@ -1276,7 +1280,7 @@ uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size ) {
    char* value = hdr + offset;
    size_t value_len = size - offset;
 
-   char* value_str = CALLOC_LIST( char, value_len + 1 );
+   char* value_str = SG_CALLOC( char, value_len + 1 );
    
    strncpy( value_str, value, value_len );
 
@@ -1311,7 +1315,7 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    char* tmp = value_str;
    char* tmp2 = NULL;
    
-   uint64_t* ret = CALLOC_LIST( uint64_t, num_values );
+   uint64_t* ret = SG_CALLOC( uint64_t, num_values );
    int i = 0;
    
    while( 1 ) {
@@ -1543,7 +1547,7 @@ ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char** buf, st
       return -1;
    }
 
-   *buf = CALLOC_LIST( char, text.size() + 1 );
+   *buf = SG_CALLOC( char, text.size() + 1 );
    memcpy( *buf, text.data(), text.size() );
 
    return (ssize_t)text.size();
@@ -1601,7 +1605,7 @@ void md_update_dup2( struct md_update* src, struct md_update* dest ) {
    }
    
    if( src->xattr_value ) {
-      dest->xattr_value = CALLOC_LIST( char, src->xattr_value_len );
+      dest->xattr_value = SG_CALLOC( char, src->xattr_value_len );
       memcpy( dest->xattr_value, src->xattr_value, src->xattr_value_len );
       dest->xattr_value_len = src->xattr_value_len;
    }
@@ -1648,19 +1652,19 @@ int md_init_begin( struct md_syndicate_conf* conf,
       rc = setrlimit( RLIMIT_CORE, &rlim );
       if( rc != 0 ) {
          rc = -errno;
-         errorf("Failed to disable core dumps, rc = %d\n", rc );
+         SG_error("Failed to disable core dumps, rc = %d\n", rc );
          return rc;
       }
       
       // need a Volume name
       if( volume_name == NULL ) {
-         errorf("%s", "ERR: missing Volume name\n");
+         SG_error("%s", "ERR: missing Volume name\n");
          return -EINVAL;
       }
 
       rc = md_util_init();
       if( rc != 0 ) {
-         errorf("md_util_init rc = %d\n", rc );
+         SG_error("md_util_init rc = %d\n", rc );
          return rc;
       }
    }
@@ -1684,7 +1688,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
       struct mlock_buf tmp;
       int rc = mlock_dup( &tmp, user_pkey_pem, conf->user_pkey_len + 1 );
       if( rc != 0 ) {
-         errorf("mlock_dup rc = %d\n", rc );
+         SG_error("mlock_dup rc = %d\n", rc );
          exit(1);
       }
       
@@ -1704,14 +1708,14 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    // validate the config
    rc = md_check_conf( conf );
    if( rc != 0 ) {
-      errorf("ERR: md_check_conf rc = %d\n", rc );
+      SG_error("ERR: md_check_conf rc = %d\n", rc );
       return rc;
    }
    
    // setup the client
    rc = ms_client_init( client, conf->gateway_type, conf );
    if( rc != 0 ) {
-      errorf("ms_client_init rc = %d\n", rc );
+      SG_error("ms_client_init rc = %d\n", rc );
       return rc;
    }
    
@@ -1719,7 +1723,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    if( conf->user_pkey != NULL ) {
       rc = ms_client_public_key_gateway_register( client, conf->gateway_name, conf->ms_username, conf->user_pkey, conf->volume_pubkey, key_password );
       if( rc != 0 ) {
-         errorf("ms_client_public_key_register rc = %d\n", rc );
+         SG_error("ms_client_public_key_register rc = %d\n", rc );
          
          ms_client_destroy( client );
          
@@ -1732,7 +1736,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       // register the gateway via OpenID
       rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey, key_password );
       if( rc != 0 ) {
-         errorf("ms_client_gateway_register rc = %d\n", rc );
+         SG_error("ms_client_gateway_register rc = %d\n", rc );
          
          ms_client_destroy( client );
          
@@ -1743,7 +1747,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       // anonymous register.
       // (force client mode)
       if( !conf->is_client ) {
-         errorf("%s", "ERROR: no authentication tokens provided, but not in client mode.\n");
+         SG_error("%s", "ERROR: no authentication tokens provided, but not in client mode.\n");
          return -EINVAL;
       }
       
@@ -1755,7 +1759,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       rc = ms_client_anonymous_gateway_register( client, conf->volume_name, conf->volume_pubkey );
       
       if( rc != 0 ) {
-         errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", conf->volume_name, rc );
+         SG_error("ms_client_anonymous_gateway_register(%s) rc = %d\n", conf->volume_name, rc );
          
          ms_client_destroy( client );
          
@@ -1768,12 +1772,12 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    char* ms_volume_name = ms_client_get_volume_name( client );
 
    if( ms_volume_name == NULL ) {
-      errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
+      SG_error("%s", "This gateway does not appear to be bound to any volumes!\n");
       return -EINVAL;
    }
    
    if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
-      errorf("ERR: This gateway is not registered to Volume '%s'\n", conf->volume_name );
+      SG_error("ERR: This gateway is not registered to Volume '%s'\n", conf->volume_name );
       free( ms_volume_name );
       return -EINVAL;
    }
@@ -1789,11 +1793,11 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    ms_client_unlock( client );
    
    // create a public url, now that we know the port number
-   conf->content_url = CALLOC_LIST( char, strlen(conf->hostname) + 20 );
+   conf->content_url = SG_CALLOC( char, strlen(conf->hostname) + 20 );
    sprintf(conf->content_url, "http://%s:%d/", conf->hostname, conf->portnum );
    
-   dbprintf("Running as Gateway %" PRIu64 "\n", conf->gateway );
-   dbprintf("content URL is %s\n", conf->content_url );
+   SG_debug("Running as Gateway %" PRIu64 "\n", conf->gateway );
+   SG_debug("content URL is %s\n", conf->content_url );
    
    free( ms_volume_name );
    
@@ -1827,7 +1831,7 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
    
    if( rc != 0 ) {
-      errorf("md_init_begin() rc = %d\n", rc );
+      SG_error("md_init_begin() rc = %d\n", rc );
       return rc;
    }
    
@@ -1851,7 +1855,7 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
       struct mlock_buf tmp;
       int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len + 1 );
       if( rc != 0 ) {
-         errorf("mlock_dup rc = %d\n", rc );
+         SG_error("mlock_dup rc = %d\n", rc );
          exit(1);
       }
       
@@ -1861,7 +1865,7 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    // set up libsyndicate runtime information
    rc = md_runtime_init( conf, gateway_key_password );
    if( rc != 0 ) {
-      errorf("md_runtime_init() rc = %d\n", rc );
+      SG_error("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    

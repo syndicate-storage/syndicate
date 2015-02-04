@@ -48,16 +48,16 @@ pthread_t timeout_pulse_gen_tid;
 // read dataset or manifest 
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
 
-   errorf("%s", "INFO: get_dataset\n"); 
+   SG_error("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
    struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)user_cls;
    
     if (ctx == NULL || dat->size == 0) {
-        dbprintf("ctx = %p, dat->size = %zu\n", ctx, dat->size );
+        SG_debug("ctx = %p, dat->size = %zu\n", ctx, dat->size );
         return -1;
     }
    
-    dbprintf("request type %d\n", ctx->request_type );
+    SG_debug("request type %d\n", ctx->request_type );
 
     cout << "get_dataset : dat size - " << dat->size << endl;
 
@@ -74,7 +74,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
             if( nr < 0 ) {
                 // error
                 int errsv = -errno;
-                errorf( "read(%d) errno = %d\n", ctx->fd, errsv );
+                SG_error( "read(%d) errno = %d\n", ctx->fd, errsv );
                 ret = errsv;
             }
             num_read += nr;
@@ -87,7 +87,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
         // read from RAM
         size_t copy_len = MIN( len, ctx->data_len - ctx->data_offset );
 
-        dbprintf("memcpy from +%ld %zu bytes\n", ctx->data_offset, copy_len );
+        SG_debug("memcpy from +%ld %zu bytes\n", ctx->data_offset, copy_len );
         memcpy( buf, ctx->data + ctx->data_offset, copy_len );
         ctx->data_offset += copy_len;
         ret = (ssize_t)copy_len;
@@ -106,9 +106,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 // interpret an inbound GET request
 extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 
-   errorf("%s", "INFO: connect_dataset\n");  
+   SG_error("%s", "INFO: connect_dataset\n");  
    struct stat stat_buff;
-   struct AG_disk_polling_context* ctx = CALLOC_LIST( struct AG_disk_polling_context, 1 );
+   struct AG_disk_polling_context* ctx = SG_CALLOC( struct AG_disk_polling_context, 1 );
 
     // is there metadata for this file?
     cout << "connect_dataset : " << ag_ctx->reqdat.fs_path << endl;
@@ -118,7 +118,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
         // no entry; nothing to do
         ag_ctx->err = -404;
         ag_ctx->http_status = 404;
-        errorf("Cannot find entry : %s\n", ag_ctx->reqdat.fs_path);
+        SG_error("Cannot find entry : %s\n", ag_ctx->reqdat.fs_path);
         return NULL;
     }
    
@@ -130,7 +130,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
         int rc = generate_manifest( ag_ctx, ctx, ent );
         if( rc != 0 ) {
             // failed
-            errorf( "generate_manifest rc = %d\n", rc );
+            SG_error( "generate_manifest rc = %d\n", rc );
 
             // meaningful error code
             if( rc == -ENOENT )
@@ -151,10 +151,10 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
         ctx->num_read = 0;
         ag_ctx->size = ctx->data_len;
 
-        dbprintf("manifest size: %zu, blocksize: %zu\n", ag_ctx->size, global_conf->ag_block_size );
+        SG_debug("manifest size: %zu, blocksize: %zu\n", ag_ctx->size, global_conf->ag_block_size );
     } else {
         if ( !datapath) {
-            errorf( "Driver datapath = %s\n", datapath );
+            SG_error( "Driver datapath = %s\n", datapath );
             return NULL;
         }
 
@@ -165,7 +165,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
         ctx->fd = open( fp, O_RDONLY );
         if( ctx->fd < 0 ) {
             rc = -errno;
-            errorf( "open(%s) errno = %d\n", fp, rc );
+            SG_error( "open(%s) errno = %d\n", fp, rc );
             free( fp );
             free( ctx );
             ag_ctx->err = -404;
@@ -175,7 +175,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
             // Set blocking factor for this volume from ag_ctx
             ctx->blocking_factor = global_conf->ag_block_size;
             if ((rc = stat(fp, &stat_buff)) < 0) {
-                errorf( "stat errno = %d\n", rc );
+                SG_error( "stat errno = %d\n", rc );
                 perror("stat");
                 free( fp );
                 free( ctx );
@@ -200,7 +200,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
             off_t seekrc = lseek( ctx->fd, offset, SEEK_SET );
             if( seekrc < 0 ) {
                 rc = -errno;
-                errorf( "lseek errno = %d\n", rc );
+                SG_error( "lseek errno = %d\n", rc );
                 free( ctx );
                 ag_ctx->err = -404;
                 ag_ctx->http_status = 404;
@@ -220,7 +220,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {
    
-   dbprintf("%s", "INFO: cleanup_dataset\n"); 
+   SG_debug("%s", "INFO: cleanup_dataset\n"); 
    struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)cls;
    if (ctx) {
       if( ctx->fd >= 0 ) {
@@ -240,7 +240,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     if (!initialized)
         init();
     
-    dbprintf("publish %s\n", dataset );
+    SG_debug("publish %s\n", dataset );
     mc = client;
     datapath = dataset;
     datapath_len = strlen(datapath); 
@@ -248,13 +248,13 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
         datapath_len--;
 
     if (check_modified(datapath, entry_modified_handler) < 0) {
-        errorf("%s", "check_modified failed\n");
+        SG_error("%s", "check_modified failed\n");
         return pfunc_exit_code;        
     }
 
-    dbprintf("set timeout schedule - %dseconds\n", REFRESH_ENTRIES_TIMEOUT);
+    SG_debug("set timeout schedule - %dseconds\n", REFRESH_ENTRIES_TIMEOUT);
     if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, timeout_handler) < 0) {
-        errorf("%s", "set_timeout_event error\n");
+        SG_error("%s", "set_timeout_event error\n");
         return pfunc_exit_code;
     }
 
@@ -315,7 +315,7 @@ static int publish(const char *fpath, const struct stat *sb,
         free(parent_full_path);
         
         if( itr == DATA.end() ) {
-            errorf("cannot find parent entry : %s\n", ment->parent_name);
+            SG_error("cannot find parent entry : %s\n", ment->parent_name);
             pfunc_exit_code = -EINVAL;
             return -EINVAL;
         }
@@ -412,7 +412,7 @@ static int publish(const char *fpath, const struct stat *sb,
     default:
         break;
     }
-    dbprintf("DATA[ '%s' ] = %p\n", path, ment);
+    SG_debug("DATA[ '%s' ] = %p\n", path, ment);
     DATA[ string(path) ] = ment;
     //delete ment;
     pfunc_exit_code = 0;
@@ -442,7 +442,7 @@ void timeout_handler(int sig_no, struct timeout_event* event) {
     
     int rc = set_timeout_event(event->timeout, event->handler);
     if(rc < 0) {
-        errorf("set timeout event error : %d", rc);
+        SG_error("set timeout event error : %d", rc);
     }
 }
 

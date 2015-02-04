@@ -19,7 +19,7 @@
 
 // connection initialization handler for embedded HTTP server
 void* SG_server_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
-   struct syndicate_connection* syncon = CALLOC_LIST( struct syndicate_connection, 1 );
+   struct syndicate_connection* syncon = SG_CALLOC( struct syndicate_connection, 1 );
    syncon->state = syndicate_get_state();
    return syncon;
 }
@@ -37,11 +37,11 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
 
-   dbprintf( "read on %s\n", url);
+   SG_debug( "read on %s\n", url);
    
    int rc = http_parse_request( http, resp, reqdat, url );
    if( rc < 0 ) {
-      dbprintf("http_parse_request(%s) rc = %d\n", url, rc );
+      SG_debug("http_parse_request(%s) rc = %d\n", url, rc );
       // error, but handled
       return 0;
    }
@@ -50,7 +50,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    rc = http_handle_redirect( state, resp, sb, reqdat );
    if( rc <= 0 ) {
       // handled!
-      dbprintf("http_handle_redirect(%s) rc = %d\n", url, rc );
+      SG_debug("http_handle_redirect(%s) rc = %d\n", url, rc );
       md_gateway_request_data_free( reqdat );
       return 0;
    }
@@ -58,7 +58,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    if( rc == HTTP_REDIRECT_REMOTE ) {
       // requested object is not here.
       // will not redirect; that can lead to loops.
-      errorf("ERR: Requested object %s is not local.  Will not redirect to avoid loops.\n", reqdat->fs_path );
+      SG_error("ERR: Requested object %s is not local.  Will not redirect to avoid loops.\n", reqdat->fs_path );
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
       md_gateway_request_data_free( reqdat );
       return 0;
@@ -67,7 +67,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    // check authorization
    if( !(sb->st_mode & 0044) ) {
       // not volume-readable or world readable
-      errorf("ERR: Object %s is not volume-readable or world-readable (mode %o)\n", reqdat->fs_path, sb->st_mode );
+      SG_error("ERR: Object %s is not volume-readable or world-readable (mode %o)\n", reqdat->fs_path, sb->st_mode );
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
       md_gateway_request_data_free( reqdat );
       return 0;
@@ -75,7 +75,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
 
    // if this is a request for a directory, then bail
    if( S_ISDIR( sb->st_mode ) ) {
-      errorf("ERR: Object %s is a directory\n", reqdat->fs_path );
+      SG_error("ERR: Object %s is a directory\n", reqdat->fs_path );
       md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
       md_gateway_request_data_free( reqdat );
       return 0;
@@ -89,7 +89,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
 // HTTP HEAD handler
 struct md_HTTP_response* SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
 
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    struct md_gateway_request_data reqdat;
    struct stat sb;
@@ -116,7 +116,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
 
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
    struct md_gateway_request_data reqdat;
@@ -133,11 +133,11 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
    // a block?
    if( reqdat.block_id != INVALID_BLOCK_ID ) {
       // serve back the block
-      char* block = CALLOC_LIST( char, state->core->blocking_factor );
+      char* block = SG_CALLOC( char, state->core->blocking_factor );
       
       ssize_t size = fs_entry_read_block_local( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
       if( size < 0 ) {
-         errorf( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
+         SG_error( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
          
          if( size == -EREMOTE ) {
             // data is not local
@@ -152,7 +152,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
          return resp;
       }
       else {
-         dbprintf( "served %zd bytes from %s.%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
+         SG_debug( "served %zd bytes from %s.%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
       }
       
       md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
@@ -174,7 +174,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
             md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_txt, manifest_txt_len );
             http_make_default_headers( resp, sb.st_mtime, manifest_txt_len, true );
 
-            dbprintf( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_txt_len );
+            SG_debug( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_txt_len );
          }
          else {
             // send error response
@@ -189,7 +189,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
             int rc = md_serialize< Serialization::ManifestMsg >( &error_mmsg, &manifest_bits, &manifest_len );
             
             if( rc != 0 ) {
-               errorf("md_serialize rc = %d\n", rc );
+               SG_error("md_serialize rc = %d\n", rc );
                char buf[100];
                snprintf(buf, 100, "md_serialize rc = %d\n", rc );
                http_io_error_resp( resp, 500, buf );
@@ -198,7 +198,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
                md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_bits, manifest_len );
                http_make_default_headers( resp, sb.st_mtime, manifest_len, true );
 
-               dbprintf( "served error manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_len );
+               SG_debug( "served error manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_len );
             }
          }
 
@@ -226,7 +226,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
 bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, uint64_t* file_id, uint64_t* coordinator_id, int64_t* file_version ) {
    switch( msg->type() ) {
       case Serialization::WriteMsg::ACCEPTED: {
-         dbprintf("%s", "Got ACCEPTED\n");
+         SG_debug("%s", "Got ACCEPTED\n");
          if( !msg->has_accepted() ) {
             return false;
          }
@@ -238,7 +238,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
          break;
       }
       case Serialization::WriteMsg::WRITE: {
-         dbprintf("%s", "Got WRITE\n");
+         SG_debug("%s", "Got WRITE\n");
          if( !msg->has_metadata() || !msg->blocks().size() == 0 ) {
             return false;
          }
@@ -252,13 +252,13 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
       }
 
       case Serialization::WriteMsg::TRUNCATE: {
-         dbprintf("%s", "Got TRUNCATE\n");
+         SG_debug("%s", "Got TRUNCATE\n");
          if( !msg->has_truncate() ) {
-            errorf("%s", "msg has no truncate block\n");
+            SG_error("%s", "msg has no truncate block\n");
             return false;
          }
          if( msg->blocks().size() == 0 ) {
-            errorf("%s", "msg has no blocks\n");
+            SG_error("%s", "msg has no blocks\n");
             return false;
          }
 
@@ -271,7 +271,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
       }
 
       case Serialization::WriteMsg::DETACH: {
-         dbprintf("%s", "Got DETACH\n");
+         SG_debug("%s", "Got DETACH\n");
          if( !msg->has_detach() ) {
             return false;
          }
@@ -285,7 +285,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
       }
 
       case Serialization::WriteMsg::RENAME: {
-         dbprintf("%s", "Got RENAME\n");
+         SG_debug("%s", "Got RENAME\n");
          if( !msg->has_rename() ) {
             return false;
          }
@@ -300,7 +300,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
       
       default: {
          // unknown
-         errorf( "unknown message type %d\n", msg->type() );
+         SG_error( "unknown message type %d\n", msg->type() );
          return false;
       }
    }
@@ -323,7 +323,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
 
    ack->SerializeToString( &ack_str );
 
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    // sign this message
    ack_txt = ack_str.data();
@@ -334,7 +334,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
 
    int rc = md_sign_message( client->my_key, ack_txt, ack_txt_len, &sigb64, &sigb64_len );
    if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
+      SG_error("md_sign_message rc = %d\n", rc );
       md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
       return;
    }
@@ -346,7 +346,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
    ack_txt = ack_str.data();
    ack_txt_len = ack_str.size();
 
-   dbprintf( "ack message of length %zu\n", ack_txt_len );
+   SG_debug( "ack message of length %zu\n", ack_txt_len );
    md_create_HTTP_response_ram( md_con_data->resp, "application/octet-stream", 200, ack_txt, ack_txt_len );
 
    free( sigb64 );
@@ -364,13 +364,13 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
    // extract the actual message
    int rc = md_parse< Serialization::WriteMsg >( msg, msg_buf, msg_sz );
    if( rc != 0 ) {
-      errorf("md_parse rc = %d\n", rc );
+      SG_error("md_parse rc = %d\n", rc );
       return -EBADMSG;
    }
    
    rc = ms_client_verify_gateway_message< Serialization::WriteMsg >( state->ms, state->core->volume, SYNDICATE_UG, msg->gateway_id(), msg );
    if( rc != 0 ) {
-      errorf("Message from Gateway %" PRIu64 " could not be verified! rc = %d\n", msg->gateway_id(), rc );
+      SG_error("Message from Gateway %" PRIu64 " could not be verified! rc = %d\n", msg->gateway_id(), rc );
       return -EBADMSG;
    }
 
@@ -383,14 +383,14 @@ int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t 
    
    // can only receive messages from within our Volume
    if( claimed_volume_id != state->core->volume ) {
-      errorf("Invalid Volume %" PRIu64 "\n", claimed_volume_id );
+      SG_error("Invalid Volume %" PRIu64 "\n", claimed_volume_id );
       return -EINVAL;
    }
    
    // capability check---can this gateway even perform these operations?
    int err = ms_client_check_gateway_caps( state->core->ms, SYNDICATE_UG, gateway_id, caps );
    if( err != 0 ) {
-      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for capabilities 0x%" PRIX64 " rc = %d\n", gateway_id, caps, err );
+      SG_error("ms_client_check_gateway_caps( %" PRIu64 " ) for capabilities 0x%" PRIX64 " rc = %d\n", gateway_id, caps, err );
       return err;
    }
    
@@ -399,13 +399,13 @@ int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t 
    err = ms_client_get_gateway_user( state->core->ms, SYNDICATE_UG, gateway_id, &user_id );
    
    if( err != 0 ) {
-      errorf("ms_client_get_gateway_user( %" PRIu64 " ) rc = %d\n", gateway_id, err );
+      SG_error("ms_client_get_gateway_user( %" PRIu64 " ) rc = %d\n", gateway_id, err );
       return err;
    }
    
    if( user_id != claimed_user_id ) {
       // user mismatch
-      errorf("Caller claims to be running for user %" PRIu64 ", but the caller's certificate indicates user %" PRIu64 "\n", claimed_user_id, user_id );
+      SG_error("Caller claims to be running for user %" PRIu64 ", but the caller's certificate indicates user %" PRIu64 "\n", claimed_user_id, user_id );
       return -EPERM;
    }
    
@@ -415,7 +415,7 @@ int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t 
    
    if( volume_id != claimed_volume_id ) {
       // volume mismatch
-      errorf("Caller claims to be running in Volume %" PRIu64 ", but the caller's certificate indicates Volume %" PRIu64 "\n", claimed_volume_id, volume_id );
+      SG_error("Caller claims to be running in Volume %" PRIu64 ", but the caller's certificate indicates Volume %" PRIu64 "\n", claimed_volume_id, volume_id );
       return -EINVAL;
    }
    
@@ -443,7 +443,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    size_t msg_sz = response_buffer_size( rb );
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
 
-   dbprintf("received message of length %zu\n", msg_sz);
+   SG_debug("received message of length %zu\n", msg_sz);
 
    // parse and verify the authenticity of the message
    rc = syndicate_parse_write_message( state, msg, msg_buf, msg_sz );
@@ -452,9 +452,9 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    if( rc != 0 ) {
       // can't handle this
-      errorf( "syndicate_parse_write_message rc = %d\n", rc );
+      SG_error( "syndicate_parse_write_message rc = %d\n", rc );
 
-      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+      md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
       
       if( rc == -EAGAIN ) {
          // tell the remote gateway to try again, while we refresh our UG listing with the MS
@@ -480,7 +480,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errorcode( -EBADMSG );
       ack.set_errortxt( string("Missing message data") );
 
-      errorf( "%s", "extract_file_info failed\n" );
+      SG_error( "%s", "extract_file_info failed\n" );
       syndicate_make_msg_ack( md_con_data, &ack );
 
       delete msg;
@@ -493,14 +493,14 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errorcode( current_version );
       ack.set_errortxt( string("Could not determine version") );
 
-      errorf( "fs_entry_get_version(%s) rc = %" PRId64 "\n", fs_path, current_version);
+      SG_error( "fs_entry_get_version(%s) rc = %" PRId64 "\n", fs_path, current_version);
       syndicate_make_msg_ack( md_con_data, &ack );
 
       delete msg;
       return;
    }
 
-   dbprintf( "got WriteMsg(type=%d, path=%s)\n", msg->type(), fs_path );
+   SG_debug( "got WriteMsg(type=%d, path=%s)\n", msg->type(), fs_path );
    
    // handle the message
    switch( msg->type() ) {
@@ -513,7 +513,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // verify that this gateway can, in fact, write to us
          rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
          if( rc != 0 ) {
-            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
             ack.set_errorcode( -EPERM );
             ack.set_errortxt( string("Insufficient capabilities or privileges") );
@@ -529,7 +529,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
             else {
 
                // error
-               errorf( "fs_entry_handle_remote_write(%s) rc = %d\n", fs_path, rc );
+               SG_error( "fs_entry_handle_remote_write(%s) rc = %d\n", fs_path, rc );
                
                ack.set_errorcode( rc );
                ack.set_errortxt( string("failed to update manifest") );
@@ -548,7 +548,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // verify that this gateway can, in fact, write to us
          rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
          if( rc != 0 ) {
-            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
             ack.set_errorcode( -EPERM );
             ack.set_errortxt( string("Insufficient capabilities or privileges") );
@@ -559,7 +559,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
                ack.set_type( Serialization::WriteMsg::ACCEPTED );
             }
             else {
-               errorf("fs_entry_versioned_truncate(%s) rc = %d\n", fs_path, rc );
+               SG_error("fs_entry_versioned_truncate(%s) rc = %d\n", fs_path, rc );
                
                ack.set_errorcode( rc );
                ack.set_errortxt( string("failed to truncate") );
@@ -577,7 +577,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // verify that this gateway can, in fact, write to us
          rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
          if( rc != 0 ) {
-            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
             ack.set_errorcode( -EPERM );
             ack.set_errortxt( string("Insufficient capabilities or privileges") );
@@ -588,7 +588,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
                ack.set_type( Serialization::WriteMsg::ACCEPTED );
             }
             else {
-               errorf("fs_entry_versioned_unlink(%s) rc = %d\n", fs_path, rc );
+               SG_error("fs_entry_versioned_unlink(%s) rc = %d\n", fs_path, rc );
                ack.set_errorcode( rc );
                ack.set_errortxt( string("failed to unlink") );
             }
@@ -605,7 +605,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // verify that this gateway can, in fact, write to us
          rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
          if( rc != 0 ) {
-            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
             ack.set_errorcode( -EPERM );
             ack.set_errortxt( string("Insufficient capabilities or privileges") );
@@ -616,7 +616,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
                ack.set_type( Serialization::WriteMsg::ACCEPTED );
             }
             else {
-               errorf("fs_entry_remote_rename(%s --> %s) rc = %d\n", msg->rename().old_fs_path().c_str(), msg->rename().new_fs_path().c_str(), rc );
+               SG_error("fs_entry_remote_rename(%s --> %s) rc = %d\n", msg->rename().old_fs_path().c_str(), msg->rename().new_fs_path().c_str(), rc );
                ack.set_errorcode( rc );
                ack.set_errortxt( string("failed to rename") );
             }
@@ -634,7 +634,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       syndicate_make_msg_ack( md_con_data, &ack );
    }
    else {
-      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+      md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
       md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 200, "OK\n", strlen("OK\n") + 1 );
    }
 
@@ -665,10 +665,10 @@ int SG_server_init( struct syndicate_state* state, struct md_HTTP* http_server )
    http_server->HTTP_POST_finish = SG_server_HTTP_POST_finish;
    http_server->HTTP_authenticate = SG_server_HTTP_authenticate;
 
-   dbprintf( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
+   SG_debug( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
    int rc = md_start_HTTP( http_server, state->conf.portnum, &state->conf );
    if( rc < 0 ) {
-      errorf( "failed to start HTTP; rc = %d\n", rc );
+      SG_error( "failed to start HTTP; rc = %d\n", rc );
       return -1;
    }
 
@@ -678,7 +678,7 @@ int SG_server_init( struct syndicate_state* state, struct md_HTTP* http_server )
 
 // shutdown
 int SG_server_shutdown( struct md_HTTP* server ) {
-   dbprintf("%s", "HTTP server shutdown\n");
+   SG_debug("%s", "HTTP server shutdown\n");
    md_stop_HTTP( server );
    md_free_HTTP( server );
    return 0;

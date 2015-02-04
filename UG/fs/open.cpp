@@ -25,7 +25,7 @@
 
 // create a file handle from an fs_entry
 struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {
-   struct fs_file_handle* fh = CALLOC_LIST( struct fs_file_handle, 1 );
+   struct fs_file_handle* fh = SG_CALLOC( struct fs_file_handle, 1 );
    fh->flags = 0;
    fh->open_count = 0;
    fh->fent = ent;
@@ -59,7 +59,7 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
 
 // create an entry, re-trying on -EAGAIN from fs_entry_create_once
 struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
-   dbprintf( "create %s\n", path );
+   SG_debug( "create %s\n", path );
    return fs_entry_open( core, path, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
 
@@ -74,7 +74,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    int rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       return rc;
    }
    
@@ -139,7 +139,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
          
       if( err != 0 ) {
          // undo 
-         errorf("driver_create_file(%s) rc = %d\n", path, err );
+         SG_error("driver_create_file(%s) rc = %d\n", path, err );
          
          child->open_count = 0;
          
@@ -162,7 +162,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
          md_entry_free( &data );
          
          if( err != 0 ) {
-            errorf( "ms_client_create(%s) rc = %d\n", path, err );
+            SG_error( "ms_client_create(%s) rc = %d\n", path, err );
             err = -EREMOTEIO;
 
             child->open_count = 0;
@@ -316,7 +316,7 @@ int fs_entry_do_create( struct fs_core* core, char const* path, struct fs_entry*
       clock_gettime( CLOCK_REALTIME, &ts );
 
       // can create--initialize the child
-      child = CALLOC_LIST( struct fs_entry, 1 );
+      child = SG_CALLOC( struct fs_entry, 1 );
 
       char* path_basename = md_basename( path, NULL );
       
@@ -325,7 +325,7 @@ int fs_entry_do_create( struct fs_core* core, char const* path, struct fs_entry*
       free( path_basename );
 
       if( rc != 0 ) {
-         errorf("fs_entry_init_file(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_init_file(%s) rc = %d\n", path, rc );
 
          fs_entry_destroy( child, false );
          free( child );
@@ -342,7 +342,7 @@ int fs_entry_do_create( struct fs_core* core, char const* path, struct fs_entry*
          // run the driver 
          int driver_rc = driver_create_file( core, core->closure, path, child );
          if( driver_rc != 0 ) {
-            errorf("driver_create_file(%s) rc = %d\n", path, driver_rc );
+            SG_error("driver_create_file(%s) rc = %d\n", path, driver_rc );
             
             fs_entry_destroy( child, false );
             free( child );
@@ -428,7 +428,7 @@ int fs_entry_open_truncate( struct fs_core* core, char const* path, struct fs_en
    }
    
    if( rc < 0 ) {
-      errorf("%s(%s) rc = %d\n", method, path, rc );
+      SG_error("%s(%s) rc = %d\n", method, path, rc );
    }
    
    return rc;
@@ -444,7 +444,7 @@ int fs_entry_create_revalidate( struct fs_core* core, char const* path, uint64_t
    // see that the parent still exists
    rc = fs_entry_revalidate_path( core, parent_path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", parent_path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", parent_path, rc );
       
       free( parent_path );
       return rc;
@@ -464,7 +464,7 @@ int fs_entry_open_revalidate( struct fs_core* core, char const* path, uint64_t u
    // see that the entry still exists
    rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       
       return rc;
    }
@@ -473,7 +473,7 @@ int fs_entry_open_revalidate( struct fs_core* core, char const* path, uint64_t u
    fent = fs_entry_resolve_path( core, path, user, vol, true, &rc );
    if( fent == NULL || rc != 0 ) {
       
-      errorf("fs_entry_resolve_path(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_resolve_path(%s) rc = %d\n", path, rc );
       return rc;
    }
    
@@ -492,7 +492,7 @@ int fs_entry_open_revalidate( struct fs_core* core, char const* path, uint64_t u
    fs_entry_unlock( fent );
    
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_revalidate_metadata(%s) rc = %d\n", path, rc );
    }
    
    return rc;
@@ -522,7 +522,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    if( core->gateway == GATEWAY_ANON ) {
       // no authentication; we're read-only
       if( flags & (O_CREAT | O_RDWR | O_WRONLY | O_TRUNC | O_EXCL) ) {
-         errorf("%s", "Opening to create, write, or truncate is forbidden for anonymous gateways\n");
+         SG_error("%s", "Opening to create, write, or truncate is forbidden for anonymous gateways\n");
          *err = -EPERM;
          return NULL;
       }
@@ -554,7 +554,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    
    if( rc != 0 ) {
       
-      errorf("%s(%s) rc = %d\n", reval_method, path, rc );
+      SG_error("%s(%s) rc = %d\n", reval_method, path, rc );
       
       *err = rc;
       free( path );
@@ -566,7 +566,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    rc = fs_entry_open_parent_and_child( core, path, user, vol, &parent, &child );
    if( rc != 0 ) {
       
-      errorf("fs_entry_open_parent_and_child( %s ) rc = %d\n", path, rc );
+      SG_error("fs_entry_open_parent_and_child( %s ) rc = %d\n", path, rc );
       
       *err = rc;
       free( path );
@@ -589,7 +589,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       rc = fs_entry_do_create( core, path, parent, &child, user, vol, mode );
       if( rc != 0 ) {
          
-         errorf("fs_entry_do_create( %s ) rc = %d\n", path, rc );
+         SG_error("fs_entry_do_create( %s ) rc = %d\n", path, rc );
          *err = rc;
          
          free( path );
@@ -607,7 +607,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       rc = fs_entry_do_MS_create( core, path, child, parent_id, parent_name );
       
       if( rc != 0 ) {
-         errorf("fs_entry_do_MS_create(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_do_MS_create(%s) rc = %d\n", path, rc );
          
          if( rc == -EAGAIN ) {
             *err = rc;
@@ -654,7 +654,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          
          fs_entry_unlock( child );
          
-         errorf("fs_entry_do_open(%s) rc = %d\n", path, rc );
+         SG_error("fs_entry_do_open(%s) rc = %d\n", path, rc );
          
          *err = rc;
          
@@ -671,7 +671,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             
             fs_entry_unlock( child );
             
-            errorf("fs_entry_open_truncate(%s) rc = %d\n", path, rc );
+            SG_error("fs_entry_open_truncate(%s) rc = %d\n", path, rc );
             
             *err = rc;
             free( path );

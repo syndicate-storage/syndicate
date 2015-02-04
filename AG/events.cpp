@@ -45,7 +45,7 @@ int AG_add_event_handler(struct AG_event_listener* events, int event, AG_event_h
    int rc = AG_set_event_handler( event, handler, args, events->handlers, events->args );
    
    if( rc != 0 ) {
-      errorf("AG_set_event_handler(%d, %p, %p) rc = %d\n", event, handler, args, rc );
+      SG_error("AG_set_event_handler(%d, %p, %p) rc = %d\n", event, handler, args, rc );
    }
    
    return rc;
@@ -63,7 +63,7 @@ int AG_remove_event_handler(struct AG_event_listener* events, int event) {
    int rc = AG_set_event_handler( event, NULL, NULL, events->handlers, events->args );
    
    if( rc != 0 ) {
-      errorf("AG_set_event_handler(%d, NULL, NULL) rc = %d\n", event, rc );
+      SG_error("AG_set_event_handler(%d, NULL, NULL) rc = %d\n", event, rc );
    }
    
    return rc;
@@ -109,7 +109,7 @@ void AG_sighandler( int signum ) {
    ssize_t rc = md_write_uninterrupted( g_sigs.signal_pipe[1], (char*)(&signum), sizeof(int) );
    if( rc < 0 ) {
       rc = -errno;
-      errorf("md_write_uninterrupted(signalpipe) errno = %zd\n", rc);
+      SG_error("md_write_uninterrupted(signalpipe) errno = %zd\n", rc);
    }
 }
 
@@ -126,7 +126,7 @@ void* AG_signal_listener_main_loop( void* arg ) {
       ssize_t rc = md_read_uninterrupted( g_sigs.signal_pipe[0], (char*)(&next_signal), sizeof(int) );
       if( rc < 0 ) {
          
-         errorf("md_read_uninterrupted(signalpipe) errno = %zd\n", rc);
+         SG_error("md_read_uninterrupted(signalpipe) errno = %zd\n", rc);
          break;
       }
       
@@ -153,7 +153,7 @@ void* AG_signal_listener_main_loop( void* arg ) {
       }
    }
    
-   dbprintf("%s", "AG Signal handler thread exit\n");
+   SG_debug("%s", "AG Signal handler thread exit\n");
    
    return NULL;
 }
@@ -165,7 +165,7 @@ static int AG_read_buf_from_fd( int fd, char* buf, size_t buf_len ) {
    ssize_t num_read = md_recv_uninterrupted( fd, buf, buf_len, MSG_NOSIGNAL );
    if( num_read < 0 ) {
       
-      errorf("md_recv_uninterrupted rc = %zd\n", num_read );
+      SG_error("md_recv_uninterrupted rc = %zd\n", num_read );
       return num_read;
    }
    
@@ -178,7 +178,7 @@ static int AG_write_buf_to_fd( int fd, char* buf, size_t buf_len ) {
    ssize_t num_sent = md_send_uninterrupted( fd, buf, buf_len, MSG_NOSIGNAL );
    if( num_sent < 0 ) {
       
-      errorf("md_send_uninterrupted rc = %zd\n", num_sent );
+      SG_error("md_send_uninterrupted rc = %zd\n", num_sent );
       return num_sent;
    }
     
@@ -202,14 +202,14 @@ static int AG_get_next_event( struct AG_event_listener* event_listener, int32_t*
    client_sock = accept( event_listener->sock_fd, (struct sockaddr*)&client_connection, &client_connection_len );
    if( client_sock != 0 ) {
       rc = -errno;
-      errorf("accept(%d) errno = %d\n", event_listener->sock_fd, rc );
+      SG_error("accept(%d) errno = %d\n", event_listener->sock_fd, rc );
       return rc;
    }
    
    // get the event type 
    rc = AG_read_buf_from_fd( client_sock, event_buf, sizeof(int32_t) );
    if( rc != 0 ) {
-      errorf("Failed to read event type, rc = %d\n", rc );
+      SG_error("Failed to read event type, rc = %d\n", rc );
       close( client_sock );
       return rc;
    }
@@ -217,7 +217,7 @@ static int AG_get_next_event( struct AG_event_listener* event_listener, int32_t*
    // get the event buffer 
    rc = AG_read_buf_from_fd( client_sock, event_payload, AG_EVENT_PAYLOAD_LEN );
    if( rc != 0 ) {
-      errorf("Failed to read event payload for event %d, rc = %d\n", *event, rc );
+      SG_error("Failed to read event payload for event %d, rc = %d\n", *event, rc );
       close( client_sock );
       return rc;
    }
@@ -239,14 +239,14 @@ void* AG_event_listener_event_loop(void * arg) {
    int32_t event_type = 0;
    char event_payload[AG_EVENT_PAYLOAD_LEN];
    
-   dbprintf("%s", "AG event listener thread started\n");
+   SG_debug("%s", "AG event listener thread started\n");
    
    while(true) {
       
       // wait for the next event 
       rc = AG_get_next_event( event_listener, &event_type, event_payload );
       if( rc != 0 ) {
-         errorf("AG_get_next_event rc = %d\n", rc );
+         SG_error("AG_get_next_event rc = %d\n", rc );
          
          // EBADF? try re-opening 
          if( rc == -EBADF ) {
@@ -263,12 +263,12 @@ void* AG_event_listener_event_loop(void * arg) {
       if( rc != 0 ) {
          
          // log the error
-         errorf("AG_handle_event(%d) rc = %d\n", event_type, rc );
+         SG_error("AG_handle_event(%d) rc = %d\n", event_type, rc );
          continue;
       }
    }
    
-   dbprintf("%s", "AG event listener thread exit\n");
+   SG_debug("%s", "AG event listener thread exit\n");
    return NULL;
 }
 
@@ -286,25 +286,25 @@ int AG_event_listener_init( struct AG_event_listener* event_listener, struct AG_
    fd = md_unix_socket( ag_opts->sock_path, true );
    if( fd < 0 ) {
       
-      errorf("md_unix_socket(%s) rc = %d\n", ag_opts->sock_path, fd );
+      SG_error("md_unix_socket(%s) rc = %d\n", ag_opts->sock_path, fd );
       
       if( fd == -EADDRINUSE ) {
          // try unlinking, and then try again 
          rc = unlink( ag_opts->sock_path );
          if( rc != 0 ) {
             rc = -errno;
-            errorf("unlink(%s) rc = %d\n", ag_opts->sock_path, rc );
+            SG_error("unlink(%s) rc = %d\n", ag_opts->sock_path, rc );
             
             return rc;
          }
          else {
             
-            errorf("WARN: unlinked %s\n", ag_opts->sock_path );
+            SG_error("WARN: unlinked %s\n", ag_opts->sock_path );
             
             // succeeded in unlinking.  Try connecting again.
             fd = md_unix_socket( ag_opts->sock_path, true );
             if( fd < 0 ) {
-               errorf("After unlinking, md_unix_socket(%s) rc = %d\n", ag_opts->sock_path, fd );
+               SG_error("After unlinking, md_unix_socket(%s) rc = %d\n", ag_opts->sock_path, fd );
                return fd;
             }
             
@@ -340,7 +340,7 @@ int AG_event_listener_stop( struct AG_event_listener* event_listener ) {
    
    event_listener->event_running = false;
    
-   dbprintf("%s", "Stopping AG event listener\n");
+   SG_debug("%s", "Stopping AG event listener\n");
    
    // cancel and join the thread 
    pthread_cancel( event_listener->event_thread );
@@ -369,7 +369,7 @@ int AG_event_listener_free( struct AG_event_listener* event_listener ) {
       if( rc != 0 ) {
          
          rc = -errno;
-         errorf("ERR: failed to unlink %s, errno = %d\n", event_listener->sock_path, rc );
+         SG_error("ERR: failed to unlink %s, errno = %d\n", event_listener->sock_path, rc );
       }
          
       free( event_listener->sock_path );
@@ -387,7 +387,7 @@ int AG_signal_listener_init() {
    int rc = pipe( g_sigs.signal_pipe );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("pipe(signalpipe) errno = %d\n", rc );
+      SG_error("pipe(signalpipe) errno = %d\n", rc );
       return rc;
    }
    
@@ -401,7 +401,7 @@ int AG_signal_listener_init() {
 // start signal handling 
 int AG_signal_listener_start() { 
 
-   dbprintf("%s", "Starting AG signal handling thread\n");
+   SG_debug("%s", "Starting AG signal handling thread\n");
    
    // register all signals 
    for( AG_signal_map_t::iterator itr = g_sigs.signal_map->begin(); itr != g_sigs.signal_map->end(); itr++ ) {
@@ -416,11 +416,11 @@ int AG_signal_listener_start() {
          
          rc = -errno;
          if( (itr->first == SIGKILL || itr->first == SIGSTOP) && rc == -EINVAL ) {
-            errorf("WARN: you cannot catch SIGKILL (%d) or SIGSTOP (%d).  Ignoring this signal handler.\n", SIGKILL, SIGSTOP);
+            SG_error("WARN: you cannot catch SIGKILL (%d) or SIGSTOP (%d).  Ignoring this signal handler.\n", SIGKILL, SIGSTOP);
             continue;
          }
          else {
-            errorf("sigaction(%d) errno = %d\n", itr->first, rc );
+            SG_error("sigaction(%d) errno = %d\n", itr->first, rc );
             return rc;
          }
       }
@@ -441,7 +441,7 @@ int AG_signal_listener_start() {
 // stop signal handling 
 int AG_signal_listener_stop() { 
    
-   dbprintf("%s", "Stopping AG signal handling thread\n");
+   SG_debug("%s", "Stopping AG signal handling thread\n");
    
    g_sigs.signal_running = false;
    
@@ -457,7 +457,7 @@ int AG_signal_listener_stop() {
       if( rc != 0 ) {
          
          rc = -errno;
-         errorf("ERR: sigaction(%d) errno = %d\n", itr->first, rc );
+         SG_error("ERR: sigaction(%d) errno = %d\n", itr->first, rc );
       }
    }
    
@@ -501,7 +501,7 @@ static int AG_dispatch_event( int event_type, char* event_payload, AG_event_hand
    if( handler != NULL ) {
       rc = (*handler)( event_payload, arg );
       if( rc != 0 ) {
-         errorf("Event handler %p for event type %d rc = %d\n", handler, event_type, rc );
+         SG_error("Event handler %p for event type %d rc = %d\n", handler, event_type, rc );
       }
    }
    
@@ -518,7 +518,7 @@ int AG_handle_event( struct AG_event_listener* event_listener, int event_type, c
    // sanity check 
    if( event_type < 0 || event_type >= AG_NUM_EVENTS ) {
       // invalid 
-      errorf("Invalid event type %d\n", event_type);
+      SG_error("Invalid event type %d\n", event_type);
       return -EINVAL;
    }
    
@@ -526,7 +526,7 @@ int AG_handle_event( struct AG_event_listener* event_listener, int event_type, c
    rc = AG_dispatch_event( event_type, payload, event_listener->handlers, event_listener->args );
    
    if( rc != 0 ) {
-      errorf("AG event handler for event type %d rc = %d\n", event_type, rc );
+      SG_error("AG event handler for event type %d rc = %d\n", event_type, rc );
       return rc;
    }
    
@@ -547,7 +547,7 @@ int AG_send_event( char const* sock_path, int event_type, char* event_buf, size_
    int sock_fd = md_unix_socket( sock_path, false );
    if( sock_fd < 0 ) {
       
-      errorf("md_unix_socket(%s) rc = %d\n", sock_path, sock_fd );
+      SG_error("md_unix_socket(%s) rc = %d\n", sock_path, sock_fd );
       return sock_fd;
    }
    
@@ -561,7 +561,7 @@ int AG_send_event( char const* sock_path, int event_type, char* event_buf, size_
    // send the event type 
    rc = AG_write_buf_to_fd( sock_fd, (char*)&event_type_32, sizeof(event_type_32) );
    if( rc != 0 ) {
-      errorf("Failed to send event type, rc = %d\n", rc );
+      SG_error("Failed to send event type, rc = %d\n", rc );
       
       close( sock_fd );
       return rc;
@@ -570,7 +570,7 @@ int AG_send_event( char const* sock_path, int event_type, char* event_buf, size_
    // send the event payload 
    rc = AG_write_buf_to_fd( sock_fd, event_payload, AG_EVENT_PAYLOAD_LEN );
    if( rc != 0 ) {
-      errorf("Failed to send event payload, rc = %d\n", rc );
+      SG_error("Failed to send event payload, rc = %d\n", rc );
       
       close( sock_fd );
       return rc;
@@ -626,8 +626,8 @@ int AG_parse_driver_ioctl( char const* msg, char** driver_query_type, char** eve
       return -EINVAL;
    }
    
-   char* query_type = CALLOC_LIST( char, sep_off + 1 );
-   char* payload = CALLOC_LIST( char, AG_EVENT_PAYLOAD_LEN - sep_off );
+   char* query_type = SG_CALLOC( char, sep_off + 1 );
+   char* payload = SG_CALLOC( char, AG_EVENT_PAYLOAD_LEN - sep_off );
    
    memcpy( query_type, msg, sep_off - 1 );
    memcpy( payload, msg + sep_off + 1, AG_EVENT_PAYLOAD_LEN - sep_off - 1 );

@@ -39,7 +39,7 @@ static int AG_path_map_info_init( struct AG_path_map_info* pinfo, struct AG_stat
    pinfo->mi = mi;
    
    if( pubinfo != NULL ) {
-      pinfo->pubinfo = CALLOC_LIST( struct AG_driver_publish_info, 1 );
+      pinfo->pubinfo = SG_CALLOC( struct AG_driver_publish_info, 1 );
       memcpy( pinfo->pubinfo, pubinfo, sizeof(struct AG_driver_publish_info) );
    }
    
@@ -69,7 +69,7 @@ static int AG_workqueue_work_publish( struct md_wreq* wreq, void* cls ) {
    rc = AG_fs_publish( pinfo->global_state->ag_fs, pinfo->path, pinfo->mi, pinfo->pubinfo );
    
    if( rc != 0 ) {
-      errorf("ERR: AG_fs_publish(%s) rc = %d\n", pinfo->path, rc );
+      SG_error("ERR: AG_fs_publish(%s) rc = %d\n", pinfo->path, rc );
    }
    
    AG_path_map_info_free( pinfo );
@@ -88,7 +88,7 @@ static int AG_workqueue_work_reversion( struct md_wreq* wreq, void* cls ) {
    rc = AG_fs_reversion( pinfo->global_state->ag_fs, pinfo->path, pinfo->pubinfo );
    
    if( rc != 0 ) {
-      errorf("ERR: AG_fs_reversion(%s) rc = %d\n", pinfo->path, rc );
+      SG_error("ERR: AG_fs_reversion(%s) rc = %d\n", pinfo->path, rc );
    }
    
    AG_path_map_info_free( pinfo );
@@ -106,7 +106,7 @@ static int AG_workqueue_work_delete( struct md_wreq* wreq, void* cls ) {
    rc = AG_fs_delete( pinfo->global_state->ag_fs, pinfo->path );
    
    if( rc != 0 ) {
-      errorf("ERR: AG_fs_delete(%s) rc = %d\n", pinfo->path, rc );
+      SG_error("ERR: AG_fs_delete(%s) rc = %d\n", pinfo->path, rc );
    }
    
    AG_path_map_info_free( pinfo );
@@ -118,7 +118,7 @@ static int AG_workqueue_work_delete( struct md_wreq* wreq, void* cls ) {
 // add a request to perform an AG operation
 static int AG_workqueue_add_operation( struct md_wq* wq, char const* fs_path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, md_wq_func_t op ) {
    
-   struct AG_path_map_info* pinfo = CALLOC_LIST( struct AG_path_map_info, 1 );
+   struct AG_path_map_info* pinfo = SG_CALLOC( struct AG_path_map_info, 1 );
    struct md_wreq wreq;
    
    struct AG_state* state = (struct AG_state*)md_wq_cls( wq );

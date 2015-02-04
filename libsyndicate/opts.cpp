@@ -79,11 +79,11 @@ ssize_t md_read_stdin( char* stdin_buf ) {
 int md_read_opts_from_stdin( int* argc, char*** argv ) {
    
    // realistically speaking, stdin can't really be longer than SYNDICATE_OPTS_STDIN_MAX 
-   char* stdin_buf = CALLOC_LIST( char, SYNDICATE_OPTS_STDIN_MAX + 1 );
+   char* stdin_buf = SG_CALLOC( char, SYNDICATE_OPTS_STDIN_MAX + 1 );
    ssize_t stdin_len = md_read_stdin( stdin_buf );
    
    if( stdin_len < 0 ) {
-      errorf("Failed to read stdin, rc = %zd\n", stdin_len );
+      SG_error("Failed to read stdin, rc = %zd\n", stdin_len );
       return -ENODATA;
    }
    
@@ -93,7 +93,7 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
    
    int rc = wordexp( stdin_buf, &expanded_stdin, WRDE_SHOWERR );
    if( rc != 0 ) {
-      errorf("wordexp rc = %d\n", rc );
+      SG_error("wordexp rc = %d\n", rc );
       
       wordfree( &expanded_stdin );
       free( stdin_buf );
@@ -134,7 +134,7 @@ int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
    size_t len = strlen(str);
    int rc = mlock_calloc( buf, len + 1 );
    if( rc != 0 ) {
-      errorf("mlock_calloc rc = %d\n", rc );
+      SG_error("mlock_calloc rc = %d\n", rc );
       exit(1);
    }
    else {
@@ -200,7 +200,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          }
          
          if( index( default_optstr, special_opts[i] ) != NULL ) {
-            errorf("BUG: Duplicate option '%c'\n", special_opts[i] );
+            SG_error("BUG: Duplicate option '%c'\n", special_opts[i] );
             has_dups = true;
          }
       }
@@ -210,7 +210,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          return -EINVAL;
       }
       
-      optstr = CALLOC_LIST( char, strlen(default_optstr) + strlen(special_opts) + 1 );
+      optstr = SG_CALLOC( char, strlen(default_optstr) + strlen(special_opts) + 1 );
       sprintf( optstr, "%s%s", default_optstr, special_opts );
       
       // how many options?
@@ -230,7 +230,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       }
       
       // make a new options table
-      all_options = CALLOC_LIST( struct option, num_options + 1 );
+      all_options = SG_CALLOC( struct option, num_options + 1 );
       
       memcpy( all_options, syndicate_options, num_default_options * sizeof(struct option) );
       
@@ -245,11 +245,11 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          
          if( special_opts[k] == '\0' ) {
             // shouldn't happen, but check anyway 
-            errorf("%s", "Ran out of special options early\n");
+            SG_error("%s", "Ran out of special options early\n");
             break;
          }
          
-         char* buf = CALLOC_LIST( char, 12 );
+         char* buf = SG_CALLOC( char, 12 );
          sprintf(buf, "special-%c", special_opts[k] );
          
          all_options[ind].name = buf;
@@ -334,7 +334,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             // read the file...
             int rc = md_load_secret_as_string( &opts->user_pkey_pem, optarg );
             if( rc != 0 ) {
-               errorf("md_load_secret_as_string(%s) rc = %d\n", optarg, rc );
+               SG_error("md_load_secret_as_string(%s) rc = %d\n", optarg, rc );
                rc = -1;
                break;
             }
@@ -352,7 +352,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
                return -EINVAL;
             }
             else {
-               dbprintf("%s", "Reading arguments from stdin\n");
+               SG_debug("%s", "Reading arguments from stdin\n");
                opts->read_stdin = true;
             }
             break;
@@ -364,7 +364,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
                opts->debug_level = (int)debug_level;
             }
             else {
-               errorf("Failed to parse -d, rc = %d\n", rc );
+               SG_error("Failed to parse -d, rc = %d\n", rc );
                rc = -1;
             }
             break;
@@ -384,7 +384,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
                opts->cache_soft_limit = l;
             }
             else {
-               errorf("Failed to parse -l, rc = %d\n", rc );
+               SG_error("Failed to parse -l, rc = %d\n", rc );
                rc = -1;
             }
             break;
@@ -396,7 +396,7 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
                opts->cache_hard_limit = l;
             }
             else {
-               errorf("Failed to parse -L, rc = %d\n", rc );
+               SG_error("Failed to parse -L, rc = %d\n", rc );
                rc = -1;
             }
             break;
@@ -453,7 +453,7 @@ int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* out_optind,
       
       int rc = md_read_opts_from_stdin( &new_argc, &new_argv );
       if( rc != 0 ) {
-         errorf("Failed to read args from stdin, rc = %d\n", rc );
+         SG_error("Failed to read args from stdin, rc = %d\n", rc );
          return -ENODATA;
       }
       else {

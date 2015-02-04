@@ -53,7 +53,7 @@ UG-specific options:\
 // get a UG-specific option
 int UG_handle_opt( int opt_c, char* opt_s ) {
    int rc = 0;
-   dbprintf("UG opt: -%c\n", opt_c);
+   SG_debug("UG opt: -%c\n", opt_c);
    
    switch( opt_c ) {
       
@@ -88,14 +88,14 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    uint64_t block_size = ms_client_get_volume_blocksize( state->ms );
 
    if( volume_id == 0 ) {
-      errorf("%s", "Volume not found\n");
+      SG_error("%s", "Volume not found\n");
       return -ENOENT;
    }
    
    // make the logfile
    state->logfile = log_init( state->conf.logfile_path );
    if( state->logfile == NULL ) {
-      errorf("Failed to open the log at %s\n", state->conf.logfile_path);
+      SG_error("Failed to open the log at %s\n", state->conf.logfile_path);
       return -ENOMEM;
    }
    
@@ -112,27 +112,27 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
 
    rc = ms_client_get_volume_root( state->ms, &root );
    if( rc != 0 ) {
-      errorf("ms_client_get_volume_root rc = %d\n", rc );
+      SG_error("ms_client_get_volume_root rc = %d\n", rc );
       return -ENODATA;
    }
 
    // sanity check
    if( root.volume != volume_id ) {
-      errorf("Invalid root Volume %" PRIu64 "\n", root.volume );
+      SG_error("Invalid root Volume %" PRIu64 "\n", root.volume );
       md_entry_free( &root );
       return -EINVAL;
    }
 
    // initialize the filesystem core (i.e. so it can reference all of the sub-components of the UG)
    // NOTE: cache isn't initialized yet, but it doesn't have to be.
-   struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
+   struct fs_core* core = SG_CALLOC( struct fs_core, 1 );
    rc = fs_core_init( core, state, &state->conf, state->ms, &state->cache, root.owner, root.coordinator, root.volume, root.mode, block_size );
    
    md_entry_free( &root );
    
    if( rc != 0 ) {
       // something went wrong...
-      errorf("fs_core_init rc = %d\n", rc );
+      SG_error("fs_core_init rc = %d\n", rc );
       return rc;
    }
    
@@ -146,27 +146,27 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    // initialize the downloader 
    rc = md_downloader_init( &state->dl, "UG-downloader" );
    if( rc != 0 ) {
-      errorf("md_downloader_init rc = %d\n", rc );
+      SG_error("md_downloader_init rc = %d\n", rc );
       return rc;
    }
    
    // start it up 
    rc = md_downloader_start( &state->dl );
    if( rc != 0 ) {
-      errorf("md_downloader_start rc = %d\n", rc );
+      SG_error("md_downloader_start rc = %d\n", rc );
       return rc;
    }
 
    // initialize and start caching
    rc = md_cache_init( &state->cache, &state->conf, state->cache_soft_limit / block_size, state->cache_hard_limit / block_size );
    if( rc != 0 ) {
-      errorf("md_cache_init rc = %d\n", rc );
+      SG_error("md_cache_init rc = %d\n", rc );
       return rc;  
    }
    
    rc = md_cache_start( &state->cache );
    if( rc != 0 ) {
-      errorf("md_cache_start rc = %d\n", rc );
+      SG_error("md_cache_start rc = %d\n", rc );
       return rc;
    }
    
@@ -176,14 +176,14 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    // initialize vacuumer 
    rc = fs_entry_vacuumer_init( &state->vac, core );
    if( rc != 0 ) {
-      errorf("fs_entry_vacuumer_init rc = %d\n", rc );
+      SG_error("fs_entry_vacuumer_init rc = %d\n", rc );
       return rc;
    }
    
    // start vacuumer 
    rc = fs_entry_vacuumer_start( &state->vac );
    if( rc != 0 ) {
-      errorf("fs_entry_vacuumer_start rc = %d\n", rc );
+      SG_error("fs_entry_vacuumer_start rc = %d\n", rc );
       return rc;
    }
 
@@ -199,32 +199,32 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
    
    state->running = 0;
    
-   dbprintf("%s", "stopping vacuumer\n");
+   SG_debug("%s", "stopping vacuumer\n");
    fs_entry_vacuumer_stop( &state->vac );
 
-   dbprintf("%s", "shutting down replication\n");
+   SG_debug("%s", "shutting down replication\n");
    fs_entry_replication_shutdown( state, wait_replicas );
    
-   dbprintf("%s", "shutting down vacuumer\n");
+   SG_debug("%s", "shutting down vacuumer\n");
    fs_entry_vacuumer_shutdown( &state->vac );
    
-   dbprintf("%s", "core filesystem shutdown\n");
+   SG_debug("%s", "core filesystem shutdown\n");
    fs_destroy( state->core );
    free( state->core );
    
-   dbprintf("%s", "stopping downloader\n");
+   SG_debug("%s", "stopping downloader\n");
    md_downloader_stop( &state->dl );
    
-   dbprintf("%s", "shutting down downloader\n");
+   SG_debug("%s", "shutting down downloader\n");
    md_downloader_shutdown( &state->dl );
 
-   dbprintf("%s", "stopping cache\n");
+   SG_debug("%s", "stopping cache\n");
    md_cache_stop( &state->cache );
    
-   dbprintf("%s", "shutting down cache\n");
+   SG_debug("%s", "shutting down cache\n");
    md_cache_destroy( &state->cache );
 
-   dbprintf("%s", "shutting down MS client\n");
+   SG_debug("%s", "shutting down MS client\n");
    ms_client_destroy( state->ms );
    free( state->ms );
 
@@ -235,11 +235,11 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
       state->stats = NULL;
    }
 
-   dbprintf("%s", "log shutdown\n");
+   SG_debug("%s", "log shutdown\n");
 
    log_shutdown( state->logfile );
 
-   dbprintf("%s", "free configuration\n");
+   SG_debug("%s", "free configuration\n");
    md_free_conf( &state->conf );
    
    return 0;
@@ -249,8 +249,8 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
 // initialize from already-parsed options
 int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
 
-   struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
-   struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
+   struct syndicate_state* state = SG_CALLOC( struct syndicate_state, 1 );
+   struct ms_client* ms = SG_CALLOC( struct ms_client, 1 );
    
    // load config
    md_default_conf( &state->conf, SYNDICATE_UG );
@@ -259,7 +259,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    if( opts->config_file != NULL ) {
       int rc = md_read_conf( opts->config_file, &state->conf );
       if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
+         SG_debug("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
       }
    }
    
@@ -273,16 +273,16 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    
    // initialize library
    if( !ug_opts->anonymous ) {
-      dbprintf("%s", "Not anonymous; initializing as peer\n");
+      SG_debug("%s", "Not anonymous; initializing as peer\n");
       
       int rc = md_init( &state->conf, ms, opts );
       if( rc != 0 ) {
-         errorf("md_init rc = %d\n", rc );
+         SG_error("md_init rc = %d\n", rc );
          return rc;
       }
    }
    else {
-      dbprintf("%s", "Anonymous; initializing as client\n");
+      SG_debug("%s", "Anonymous; initializing as client\n");
       
       // load anything we need into RAM 
       char* volume_pubkey_pem = NULL;
@@ -295,7 +295,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
       if( opts->volume_pubkey_path ) {
          volume_pubkey_pem = md_load_file_as_string( opts->volume_pubkey_path, &volume_pubkey_pem_len );
          if( volume_pubkey_pem == NULL ) {
-            errorf("Failed to load %s\n", opts->volume_pubkey_path );
+            SG_error("Failed to load %s\n", opts->volume_pubkey_path );
             return -ENOENT;
          }
       }
@@ -303,7 +303,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
       if( opts->syndicate_pubkey_path ) {
          syndicate_pubkey_pem = md_load_file_as_string( opts->syndicate_pubkey_path, &syndicate_pubkey_pem_len );
          if( syndicate_pubkey_pem == NULL ) {
-            errorf("Failed to load %s\n", opts->syndicate_pubkey_path );
+            SG_error("Failed to load %s\n", opts->syndicate_pubkey_path );
             return -ENOENT;
          }
       }
@@ -311,7 +311,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
       int rc = md_init_client( &state->conf, ms, opts );
       
       if( rc != 0 ) {
-         errorf("md_init_client rc = %d\n", rc );
+         SG_error("md_init_client rc = %d\n", rc );
          return rc;
       }
    }
@@ -330,7 +330,7 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
    // initialize state
    int rc = syndicate_setup_state( state, ms );
    if( rc != 0 ) {
-      errorf("syndicate_init_state rc = %d\n", rc );
+      SG_error("syndicate_init_state rc = %d\n", rc );
       return rc;
    }
    
@@ -347,7 +347,7 @@ int syndicate_destroy( int wait_replicas ) {
    free( global_state );
    global_state = NULL;
 
-   dbprintf("%s", "library shutdown\n");
+   SG_debug("%s", "library shutdown\n");
    md_shutdown();
    
    return 0;

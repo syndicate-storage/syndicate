@@ -39,13 +39,13 @@ void* create_main( void* arg ) {
       memset( path, 0, 4097 );
       sprintf( path, "%s/file-%" PRIu64, global_directory, file_ids[i] );
       
-      dbprintf("Create '%s'\n", path );
+      SG_debug("Create '%s'\n", path );
       
       struct fs_file_handle* fh = fs_entry_create( global_state->core, path, SYS_USER, global_state->core->volume, 0755, &rc );
       
       if( fh == NULL || rc != 0 ) {
          
-         errorf("\n\n\nfs_entry_create('%s') rc = %d\n\n\n", path, rc );
+         SG_error("\n\n\nfs_entry_create('%s') rc = %d\n\n\n", path, rc );
          
          __sync_fetch_and_add( &global_num_failures, 1 );
          continue;
@@ -56,7 +56,7 @@ void* create_main( void* arg ) {
       
       if( rc != 0 ) {
       
-         errorf("\n\n\nfs_entry_close('%s') rc = %d\n\n\n", path, rc );
+         SG_error("\n\n\nfs_entry_close('%s') rc = %d\n\n\n", path, rc );
       }
    }
    
@@ -93,10 +93,10 @@ int main( int argc, char** argv ) {
    }
    
    // make work 
-   uint64_t* work = CALLOC_LIST( uint64_t, global_num_files * num_threads );
+   uint64_t* work = SG_CALLOC( uint64_t, global_num_files * num_threads );
    
    // start up threads 
-   pthread_t* threads = CALLOC_LIST( pthread_t, num_threads );
+   pthread_t* threads = SG_CALLOC( pthread_t, num_threads );
    
    if( work == NULL || threads == NULL ) {
       exit( ENOMEM );

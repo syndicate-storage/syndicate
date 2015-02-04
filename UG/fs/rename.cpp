@@ -66,7 +66,7 @@ int fs_entry_rename_cleanup( struct fs_entry* fent_common_parent, struct fs_entr
 int fs_entry_remote_rename( struct fs_core* core, Serialization::WriteMsg* renameMsg ) {
    // verify that this fent is local
    if( core->gateway != renameMsg->rename().coordinator_id() ) {
-      errorf("File %" PRIX64 " (at %s) is not local\n", renameMsg->rename().file_id(), renameMsg->rename().old_fs_path().c_str() );
+      SG_error("File %" PRIX64 " (at %s) is not local\n", renameMsg->rename().file_id(), renameMsg->rename().old_fs_path().c_str() );
       return -EINVAL;
    }
    
@@ -80,7 +80,7 @@ int fs_entry_verify_no_loop( struct fs_entry* fent, void* cls ) {
    
    if( file_ids->count( fent->file_id ) > 0 ) {
       // encountered this file ID before...
-      errorf("File /%" PRIu64 "/%" PRIX64 " would occur twice\n", fent->volume, fent->file_id );
+      SG_error("File /%" PRIu64 "/%" PRIX64 " would occur twice\n", fent->volume, fent->file_id );
       return -EINVAL;
    }
    
@@ -95,7 +95,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    
    // renaming is forbidden if anonymous
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Renaming is forbidden for anonymous gateways\n");
+      SG_error("%s", "Renaming is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
@@ -106,14 +106,14 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    // consistency check
    err = fs_entry_revalidate_path( core, old_path );
    if( err != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", old_path, err );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", old_path, err );
       return err;
    }
 
    // consistency check
    err = fs_entry_revalidate_path( core, new_path );
    if( err != 0 && err != -ENOENT ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", new_path, err );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", new_path, err );
       return err;
    }
 
@@ -290,7 +290,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          
          rc = fs_entry_send_write_or_coordinate( core, old_path, fent_old, rename_request, ack );
          if( rc < 0 ) {
-            errorf( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
+            SG_error( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
 
             err = rc;
          }
@@ -299,12 +299,12 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
             if( ack->type() != Serialization::WriteMsg::ACCEPTED ) {
                if( ack->type() == Serialization::WriteMsg::ERROR ) {
                   // could not rename on the remote end
-                  errorf( "remote rename error = %d (%s)\n", ack->errorcode(), ack->errortxt().c_str() );
+                  SG_error( "remote rename error = %d (%s)\n", ack->errorcode(), ack->errortxt().c_str() );
                   rc = ack->errorcode();
                }
                else {
                   // unknown message
-                  errorf( "remote rename invalid message %d\n", ack->type() );
+                  SG_error( "remote rename invalid message %d\n", ack->type() );
                   rc = -EIO;
                }
                
@@ -330,7 +330,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
                // vacuum!
                err = fs_entry_vacuumer_file( core, new_path, fent_new );
                if( err != 0 ) {
-                  errorf("fs_entry_vacuumer_file( %s %" PRIX64 " ) rc = %d\n", new_path, fent_new->file_id, err );
+                  SG_error("fs_entry_vacuumer_file( %s %" PRIX64 " ) rc = %d\n", new_path, fent_new->file_id, err );
                }
             }
          }
@@ -338,7 +338,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
             // rename on the MS 
             err = ms_client_rename( core->ms, &fent_old->write_nonce, &old_ent, &new_ent );
             if( err != 0 ) {
-               errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+               SG_error("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
             }
          }
       }
@@ -348,13 +348,13 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
       if( fent_new != NULL && fs_entry_num_children( fent_new ) > 0 ) {
          // can't rename
          err = -ENOTEMPTY;
-         errorf("%s is not empty\n", fent_new->name );
+         SG_error("%s is not empty\n", fent_new->name );
       }
       else {
          // do the rename on the MS
          err = ms_client_rename( core->ms, &fent_old->write_nonce, &old_ent, &new_ent );
          if( err != 0 ) {
-            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+            SG_error("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
          }
       }
    }
@@ -400,7 +400,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          
          if( err != 0 ) {
             // technically, it's still safe to access fent_new since dest_parent is write-locked
-            errorf("fs_entry_detach_lowlevel(%s from %s) rc = %d\n", fent_new->name, dest_parent->name, err );
+            SG_error("fs_entry_detach_lowlevel(%s from %s) rc = %d\n", fent_new->name, dest_parent->name, err );
          }
       }
    }

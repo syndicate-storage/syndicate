@@ -24,13 +24,13 @@ int closure_init( struct md_closure* closure, void** cls ) {
    
    int rc = md_closure_get_config( closure, "CDN_PREFIX", &cdn_prefix, &cdn_prefix_len );
    if( rc != 0 ) {
-      errorf("CDN_PREFIX not found (rc = %d)\n", rc );
+      SG_error("CDN_PREFIX not found (rc = %d)\n", rc );
       return -EINVAL;
    }
    
-   dbprintf("CDN prefix is '%s'\n", cdn_prefix );
+   SG_debug("CDN prefix is '%s'\n", cdn_prefix );
    
-   struct coblitz_cls* ccls = CALLOC_LIST( struct coblitz_cls, 1 );
+   struct coblitz_cls* ccls = SG_CALLOC( struct coblitz_cls, 1 );
    ccls->cdn_prefix = cdn_prefix;
    
    return 0;
@@ -52,7 +52,7 @@ int closure_shutdown( void* cls ) {
 
 // connect to the coblitz CDN 
 int connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
-   dbprintf("Coblitz connect_cache on %s\n", url );
+   SG_debug("Coblitz connect_cache on %s\n", url );
    
    // NO-OP for now...also, no SSL
    md_init_curl_handle2( curl, url, 5, false );

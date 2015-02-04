@@ -58,7 +58,7 @@ ssize_t ag_block_size = AG_BLOCK_SIZE();
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
    // No need of locking...
-   errorf("%s", "INFO: gateway_generate_manifest\n"); 
+   SG_error("%s", "INFO: gateway_generate_manifest\n"); 
    // populate a manifest
    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
    mmsg->set_size( ent->size );
@@ -84,13 +84,13 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    bool src = mmsg->SerializeToString( &mmsg_str );
    if( !src ) {
       // failed
-      errorf( "%s", "failed to serialize" );
+      SG_error( "%s", "failed to serialize" );
       delete mmsg;
       return -EINVAL;
    }
 
    ctx->data_len = mmsg_str.size();
-   ctx->data = CALLOC_LIST( char, mmsg_str.size() );
+   ctx->data = SG_CALLOC( char, mmsg_str.size() );
    replica_ctx->last_mod = ent->mtime_sec;
    memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
 
@@ -103,7 +103,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
 // read dataset or manifest 
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
    DRIVER_RDONLY(&driver_lock);
-   errorf("%s", "INFO: get_dataset\n"); 
+   SG_error("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
    ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
@@ -230,7 +230,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 // get metadata for a dataset
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
    DRIVER_RDONLY(&driver_lock);
-   errorf("%s", "INFO: metadata_dataset\n"); 
+   SG_error("%s", "INFO: metadata_dataset\n"); 
    char* file_path = NULL;
    int64_t file_version = 0;
    int64_t block_version = 0;
@@ -257,7 +257,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
 // interpret an inbound GET request
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    DRIVER_RDONLY(&driver_lock);
-   errorf("%s", "INFO: connect_dataset\n"); 
+   SG_error("%s", "INFO: connect_dataset\n"); 
    char* file_path = replica_ctx->reqdat.fs_path;
    uint64_t block_id = 0;
    struct timespec manifest_timestamp;
@@ -275,7 +275,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
          DRIVER_RETURN(NULL, &driver_lock);
    }
 
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
+   struct gateway_ctx* ctx = SG_CALLOC( struct gateway_ctx, 1 );
 
    // default fo is_db_info is false
    ctx->is_db_info = false;
@@ -294,7 +294,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
          int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
          if( rc != 0 ) {
             // failed
-            errorf( "gateway_generate_manifest rc = %d\n", rc );
+            SG_error( "gateway_generate_manifest rc = %d\n", rc );
 
             // meaningful error code
             if( rc == -ENOENT )
@@ -357,7 +357,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {   
     // Locking not required
-    errorf("%s", "INFO: cleanup_dataset\n"); 
+    SG_error("%s", "INFO: cleanup_dataset\n"); 
     struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
     if (ctx) {
       if (ctx->data != NULL) {
@@ -471,7 +471,7 @@ static int publish(const char *fpath, int type, struct map_info* mi, uint64_t vo
     //Set time from the real time clock
     struct timespec rtime; 
     if ((i = clock_gettime(CLOCK_REALTIME, &rtime)) < 0) {
-         errorf("Error: clock_gettime: %i\n", i); 
+         SG_error("Error: clock_gettime: %i\n", i); 
          return -1;
     }
 

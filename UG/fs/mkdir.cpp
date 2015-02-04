@@ -26,7 +26,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
    if( child == NULL ) {
 
       // create an fs_entry and attach it
-      child = CALLOC_LIST( struct fs_entry, 1 );
+      child = SG_CALLOC( struct fs_entry, 1 );
 
       fs_entry_init_dir( core, child, path_basename, 0, fs_entry_next_file_version(), user, 0, vol, mode, mtime_sec, mtime_nsec, 0, 0 );
       
@@ -50,7 +50,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
 int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
    
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Making directories is forbidden for anonymous gateways\n");
+      SG_error("%s", "Making directories is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
@@ -64,7 +64,7 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
    int rc = fs_entry_revalidate_path( core, fpath );
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
       free( fpath );
       return rc;
    }
@@ -94,7 +94,7 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
    }
    if( !IS_WRITEABLE(parent->mode, parent->owner, parent->volume, user, vol) ) {
       // parent is not writeable
-      errorf( "%s is not writable by %" PRIu64 " (%o, %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ")\n", path_dirname, user, parent->mode, parent->owner, parent->volume, user, vol );
+      SG_error( "%s is not writable by %" PRIu64 " (%o, %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ")\n", path_dirname, user, parent->mode, parent->owner, parent->volume, user, vol );
       fs_entry_unlock( parent );
       free( path_basename );
       free( path_dirname );
@@ -110,7 +110,7 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
    err = fs_entry_mkdir_lowlevel( core, path, parent, path_basename, mode, user, vol, ts.tv_sec, ts.tv_nsec );
 
    if( err != 0 ) {
-      errorf( "fs_entry_mkdir_lowlevel(%s) rc = %d\n", path, err );
+      SG_error( "fs_entry_mkdir_lowlevel(%s) rc = %d\n", path, err );
       fs_entry_unlock( parent );
       free( path_basename );
       free( path_dirname );
@@ -134,12 +134,12 @@ int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, ui
       err = ms_client_mkdir( core->ms, &child->file_id, &child->write_nonce, &data );
       
       if( err != 0 ) {
-         errorf("ms_client_mkdir(%s) rc = %d\n", path, err );
+         SG_error("ms_client_mkdir(%s) rc = %d\n", path, err );
          
          fs_entry_unlock( child );
          rc = fs_entry_detach_lowlevel( core, parent, child );
          if( rc != 0 ) {
-            errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
+            SG_error("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
          }
       }
       else {

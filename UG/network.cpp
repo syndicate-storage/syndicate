@@ -41,7 +41,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    int rc = md_download_manifest( core->conf, &core->state->dl, manifest_url, core->closure, driver_connect_cache, &driver_cls, mmsg, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
-      errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      SG_error("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
       return rc;
    }
    
@@ -49,7 +49,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    
    int gateway_type = ms_client_get_gateway_type( core->ms, origin );
    if( gateway_type < 0 ) {
-      errorf("ms_client_get_gateway_type( %" PRIu64 " ) rc = %d\n", origin, gateway_type );
+      SG_error("ms_client_get_gateway_type( %" PRIu64 " ) rc = %d\n", origin, gateway_type );
       
       if( gateway_type == -ENOENT ) {
          // schedule a reload of this volume...there seems to be a missing gateway 
@@ -64,14 +64,14 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    // verify it
    rc = ms_client_verify_gateway_message< Serialization::ManifestMsg >( core->ms, core->volume, gateway_type, origin, mmsg );
    if( rc != 0 ) {
-      errorf("ms_client_verify_manifest(%s) from Gateway %" PRIu64 " rc = %d\n", manifest_url, origin, rc );
+      SG_error("ms_client_verify_manifest(%s) from Gateway %" PRIu64 " rc = %d\n", manifest_url, origin, rc );
       return -EBADMSG;
    }
    
    // error code? 
    if( mmsg->has_errorcode() ) {
       rc = mmsg->errorcode();
-      errorf("manifest gives error %d\n", rc );
+      SG_error("manifest gives error %d\n", rc );
       return rc;
    }
    
@@ -109,7 +109,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
             break;
          }
          else {
-            errorf("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
+            SG_error("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
             
             if( rc != -ENOENT )
                rc = -ENODATA;
@@ -133,7 +133,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
       // error code? 
       if( mmsg->has_errorcode() ) {
          rc = mmsg->errorcode();
-         errorf("manifest gives error %d\n", rc );
+         SG_error("manifest gives error %d\n", rc );
          return rc;
       }
    }
@@ -166,7 +166,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       
       if( gateway_type < 0 ) {
          // unknown gateway...try refreshing the Volume
-         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
+         SG_error("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
          ms_client_sched_volume_reload( core->ms );
          return -EAGAIN;
       }
@@ -175,7 +175,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       
       if( rc != 0 ) {
          // failed to produce the url
-         errorf("md_url_make_manifest_url rc = %d\n", rc );
+         SG_error("md_url_make_manifest_url rc = %d\n", rc );
          
          if( rc == -ENOENT ) {
             // gateway not found.  try refreshing our certs
@@ -187,7 +187,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          }
       }
       
-      dbprintf("Download manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
+      SG_debug("Download manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
   
       rc = fs_entry_download_manifest( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, manifest_url, manifest_msg );
       
@@ -196,7 +196,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          *successful_gateway_id = fent->coordinator;
       }
       else if( rc != 0 ) {
-         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+         SG_error("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
       }
    }
    
@@ -210,11 +210,11 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       
       if( rc != 0 ) {
          // error
-         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec );
+         SG_error("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec );
       }
       else {
          // success!
-         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec, rg_id );
+         SG_debug("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec, rg_id );
          rc = 0;
          
          if( successful_gateway_id ) {
@@ -233,7 +233,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
    // is this an error code?
    if( manifest_msg->has_errorcode() ) {
       // remote gateway indicates error
-      errorf("manifest error %d\n", manifest_msg->errorcode() );
+      SG_error("manifest error %d\n", manifest_msg->errorcode() );
       return manifest_msg->errorcode();
    }
    
@@ -242,7 +242,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
    // verify that the manifest matches the timestamp
    if( manifest_msg->mtime_sec() != manifest_mtime_sec || manifest_msg->mtime_nsec() != manifest_mtime_nsec ) {
       // invalid manifest--probably due to a timestamp mismatch.  Try again 
-      errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg->mtime_sec(), manifest_msg->mtime_nsec(), manifest_mtime_sec, manifest_mtime_nsec );
+      SG_error("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg->mtime_sec(), manifest_msg->mtime_nsec(), manifest_mtime_sec, manifest_mtime_nsec );
       fent->manifest->mark_stale();
       fent->read_stale = false;
       rc = -ESTALE;
@@ -251,7 +251,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
    // verify that the manifest matches the volume and file id and version 
    if( manifest_msg->volume_id() != fent->volume || manifest_msg->file_id() != fent->file_id || manifest_msg->file_version() != fent->version ) {
       // wrong manifest 
-      errorf("Invalid manifest: got /%" PRIu64 "/%" PRIX64 ".%" PRId64 ", expected /%" PRIu64 "/%" PRIX64 ".%" PRId64 "\n", 
+      SG_error("Invalid manifest: got /%" PRIu64 "/%" PRIX64 ".%" PRId64 ", expected /%" PRIu64 "/%" PRIX64 ".%" PRId64 "\n", 
              manifest_msg->volume_id(), manifest_msg->file_id(), manifest_msg->file_version(),
              fent->volume, fent->file_id, fent->version );
       
@@ -382,7 +382,7 @@ static size_t fs_entry_response_buffer( char* ptr, size_t size, size_t nmemb, vo
 
    size_t tot = size * nmemb;
 
-   char* ptr_dup = CALLOC_LIST( char, tot );
+   char* ptr_dup = SG_CALLOC( char, tot );
    memcpy( ptr_dup, ptr, tot );
 
    respBuf->push_back( buffer_segment_t( ptr_dup, tot ) );
@@ -398,7 +398,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
    char* content_url = ms_client_get_UG_content_url( core->ms, gateway_id );
    if( content_url == NULL ) {
-      errorf("No such Gateway %" PRIu64 "\n", gateway_id );
+      SG_error("No such Gateway %" PRIu64 "\n", gateway_id );
       curl_easy_cleanup( curl_h );
       return -EINVAL;
    }
@@ -413,7 +413,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    // sign this
    int rc = md_sign<Serialization::WriteMsg>( core->ms->my_key, sendMsg );
    if( rc != 0 ) {
-      errorf("md_sign rc = %d\n", rc );
+      SG_error("md_sign rc = %d\n", rc );
       curl_easy_cleanup( curl_h );
       return rc;
    }
@@ -423,7 +423,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    
    rc = md_serialize<Serialization::WriteMsg>( sendMsg, &writemsg_buf, &writemsg_len );
    if( rc != 0 ) {
-      errorf("md_serialize rc = %d\n", rc );
+      SG_error("md_serialize rc = %d\n", rc );
       curl_easy_cleanup( curl_h );
       return rc;
    }
@@ -435,12 +435,12 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
    struct timespec ts, ts2;
 
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
    
-   dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), writemsg_len );
+   SG_debug( "send WriteMsg type %d length %zu\n", sendMsg->type(), writemsg_len );
    rc = curl_easy_perform( curl_h );
 
-   END_TIMING_DATA( ts, ts2, "Remote write" );
+   SG_END_TIMING_DATA( ts, ts2, "Remote write" );
    
    // free memory
    curl_easy_setopt( curl_h, CURLOPT_HTTPPOST, NULL );
@@ -455,7 +455,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       long err = 0;
       curl_easy_getinfo( curl_h, CURLINFO_OS_ERRNO, &err );
       
-      dbprintf("curl_easy_perform(%s) rc = %d, err = %ld\n", content_url, rc, err );
+      SG_debug("curl_easy_perform(%s) rc = %d, err = %ld\n", content_url, rc, err );
       
       response_buffer_free( &buf );
       curl_easy_cleanup( curl_h );
@@ -468,7 +468,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &http_status );
 
       if( http_status != 200 ) {
-         errorf( "remote HTTP response %ld\n", http_status );
+         SG_error( "remote HTTP response %ld\n", http_status );
 
          response_buffer_free( &buf );
          curl_easy_cleanup( curl_h );
@@ -489,20 +489,20 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       curl_easy_cleanup( curl_h );
       
       if( rc != 0 ) {
-         errorf("Failed to parse response from %s\n", content_url );
+         SG_error("Failed to parse response from %s\n", content_url );
          rc = -EBADMSG;
       }
       else {
          // verify authenticity
          rc = ms_client_verify_gateway_message< Serialization::WriteMsg >( core->ms, core->volume, SYNDICATE_UG, gateway_id, recvMsg );
          if( rc != 0 ) {
-            errorf("Failed to verify the authenticity of Gateway %" PRIu64 "'s response, rc = %d\n", gateway_id, rc );
+            SG_error("Failed to verify the authenticity of Gateway %" PRIu64 "'s response, rc = %d\n", gateway_id, rc );
             rc = -EBADMSG;
          }
          else {
             // check for error codes
             if( recvMsg->has_errorcode() ) {
-               errorf("WriteMsg error %d\n", recvMsg->errorcode() );
+               SG_error("WriteMsg error %d\n", recvMsg->errorcode() );
                rc = recvMsg->errorcode();
             }
             
@@ -540,7 +540,7 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path
       // process the write message acknowledgement--hopefully it's an ACCEPTED
       if( rc != 0 ) {
          // failed to post
-         errorf( "fs_entry_post_write(%s /%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fs_path, fent->volume, fent->file_id, fent->name, fent->coordinator, rc );
+         SG_error( "fs_entry_post_write(%s /%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fs_path, fent->volume, fent->file_id, fent->name, fent->coordinator, rc );
          
          if( rc == -ENODATA ) {
             // curl couldn't connect--this is maybe a partition.
@@ -551,20 +551,20 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path
                // we're now the coordinator, and the MS has the latest metadata.
                local = true;
                
-               dbprintf("Now coordinator for %" PRIu64 " (%s)\n", fent->file_id, fent->name );
+               SG_debug("Now coordinator for %" PRIu64 " (%s)\n", fent->file_id, fent->name );
                
                break;
             }
             else if( rc == -EAGAIN ) {
                // the coordinator changed to someone else.  Try again.
                // fent->coordinator refers to the current coordinator.
-               dbprintf("coordinator of %s /%" PRIu64 "/%" PRIX64 " is now %" PRIu64 "\n", fs_path, fent->volume, fent->file_id, fent->coordinator );
+               SG_debug("coordinator of %s /%" PRIu64 "/%" PRIX64 " is now %" PRIu64 "\n", fs_path, fent->volume, fent->file_id, fent->coordinator );
                rc = 0;
                continue;
             }
             else {
                // some other (fatal) error
-               errorf("fs_entry_coordinate(%s /%" PRIu64 "/%" PRIX64 ") rc = %d\n", fs_path, fent->volume, fent->file_id, rc );
+               SG_error("fs_entry_coordinate(%s /%" PRIu64 "/%" PRIX64 ") rc = %d\n", fs_path, fent->volume, fent->file_id, rc );
                break;
             }
          }

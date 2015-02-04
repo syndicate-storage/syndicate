@@ -59,38 +59,26 @@
 #include <sys/syscall.h>        // for gettid()
 #include <zlib.h>
 
-#define WHERESTR "%05d:%05d: [%16s:%04u] %s: "
-#define WHEREARG (int)getpid(), (int)gettid(), __FILE__, __LINE__, __func__
+#define SG_WHERESTR "%05d:%05d: [%16s:%04u] %s: "
+#define SG_WHEREARG (int)getpid(), (int)gettid(), __FILE__, __LINE__, __func__
 
 extern int _DEBUG_MESSAGES;
 extern int _ERROR_MESSAGES;
 
-#ifdef dbprintf
-#undef dbprintf
-#endif
+#define SG_debug( format, ... ) do { if( _DEBUG_MESSAGES ) { printf( SG_WHERESTR "DEBUG: " format, SG_WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
+#define SG_info( format, ... ) do { if( _DEBUG_MESSAGES ) { printf( SG_WHERESTR "INFO:  " format, SG_WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
+#define SG_warn( format, ... ) do { if( _ERROR_MESSAGES ) { fprintf(stderr, SG_WHERESTR "WARN:  " format, SG_WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
+#define SG_error( format, ... ) do { if( _ERROR_MESSAGES ) { fprintf(stderr, SG_WHERESTR "ERROR: " format, SG_WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
 
-#ifdef errorf
-#undef errorf
-#endif
+#define SG_CALLOC(type, count) (type*)calloc( sizeof(type) * (count), 1 )
+#define SG_FREE_LIST(list, freefunc) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { freefunc( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
 
-#define dbprintf( format, ... ) do { if( _DEBUG_MESSAGES ) { printf( WHERESTR format, WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
-#define errorf( format, ... ) do { if( _ERROR_MESSAGES ) { fprintf(stderr, WHERESTR format, WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
-
-#define CALLOC_LIST(type, count) (type*)calloc( sizeof(type) * (count), 1 )
-#define FREE_LIST(list) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { free( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
-#define SIZE_LIST(sz, list) for( *(sz) = 0; (list)[*(sz)] != NULL; ++ *(sz) );
-#define VECTOR_TO_LIST(ret, vec, type) do { ret = CALLOC_LIST(type, ((vec).size() + 1)); for( vector<type>::size_type __i = 0; __i < (vec).size(); ++ __i ) ret[__i] = (vec).at(__i); } while(0)
-#define COPY_LIST(dst, src, duper) do { for( unsigned int __i = 0; (src)[__i] != NULL; ++ __i ) { (dst)[__i] = duper((src)[__i]); } } while(0)
-#define DUP_LIST(type, dst, src, duper) do { unsigned int sz = 0; SIZE_LIST( &sz, src ); dst = CALLOC_LIST( type, sz + 1 ); COPY_LIST( dst, src, duper ); } while(0)
-
-#define strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
+#define SG_strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
 
 // for testing
-#define BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
-#define END_TIMING_DATA(ts, ts2, key) clock_gettime( CLOCK_MONOTONIC, &ts2 ); printf("DATA %s %lf\n", key, ((double)(ts2.tv_nsec - ts.tv_nsec) + (double)(1e9 * (ts2.tv_sec - ts.tv_sec))) / 1e9 )
-#define DATA(key, value) printf("DATA %s %lf\n", key, value)
-#define DATA_S(str) printf("DATA %s\n", str)
-#define DATA_BLOCK(name) printf("-------------------------------- %s\n", name)
+#define SG_BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
+#define SG_END_TIMING_DATA(ts, ts2, key) clock_gettime( CLOCK_MONOTONIC, &ts2 ); printf("DATA %s %lf\n", key, ((double)(ts2.tv_nsec - ts.tv_nsec) + (double)(1e9 * (ts2.tv_sec - ts.tv_sec))) / 1e9 )
+#define SG_TIMING_DATA(key, value) printf("DATA %s %lf\n", key, value)
 
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 

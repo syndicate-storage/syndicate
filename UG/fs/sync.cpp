@@ -26,7 +26,7 @@
 int fs_entry_sync_context_wait( struct sync_context* sync_ctx ) {
    int rc = md_download_sem_wait( &sync_ctx->sem, -1 );
    if( rc != 0 ) {
-      errorf("md_download_sem_wait rc = %d\n", rc );
+      SG_error("md_download_sem_wait rc = %d\n", rc );
    }
    return rc;
 }
@@ -74,18 +74,18 @@ int fs_entry_remote_write_or_coordinate( struct fs_core* core, char const* fs_pa
             if( write_ack->errorcode() == -ESTALE ) {
                // crucial file metadata changed out from under us.
                // we're going to have to try this again.
-               dbprintf("file metadata mismatch; can't write to old version of %s\n", fs_path );
+               SG_debug("file metadata mismatch; can't write to old version of %s\n", fs_path );
                
                fs_entry_mark_read_stale( fent );
                ret = -EAGAIN;
             }
             else {
-               errorf( "remote write error = %d (%s)\n", write_ack->errorcode(), write_ack->errortxt().c_str() );
+               SG_error( "remote write error = %d (%s)\n", write_ack->errorcode(), write_ack->errortxt().c_str() );
                ret = -abs( write_ack->errorcode() );
             }
          }
          else {
-            errorf( "remote write invalid message %d\n", write_ack->type() );
+            SG_error( "remote write invalid message %d\n", write_ack->type() );
             ret = -EIO;
          }
       }
@@ -112,7 +112,7 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
    // get bufferred blocks
    fs_entry_extract_bufferred_blocks( fent, &bufferred_blocks );
    
-   dbprintf("%" PRIX64 " has %zu bufferred blocks\n", fent->file_id, bufferred_blocks.size() );
+   SG_debug("%" PRIX64 " has %zu bufferred blocks\n", fent->file_id, bufferred_blocks.size() );
    
    // flush'em, but asynchronously
    for( modification_map::iterator itr = bufferred_blocks.begin(); itr != bufferred_blocks.end(); itr++ ) {
@@ -124,7 +124,7 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       if( !binfo->dirty )
          continue;
       
-      dbprintf("Flush bufferred block %" PRIX64 ".%" PRId64 "[%" PRIu64 "]\n", fent->file_id, fent->version, block_id );
+      SG_debug("Flush bufferred block %" PRIX64 ".%" PRId64 "[%" PRIu64 "]\n", fent->file_id, fent->version, block_id );
       
       struct fs_entry_block_info old_binfo, new_binfo;
       
@@ -134,7 +134,7 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       // flush it, updating the manifest
       struct md_cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, block_id, binfo->block_buf, binfo->block_len, &old_binfo, &new_binfo, &rc );
       if( rc < 0 || fut == NULL ) {
-         errorf("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
+         SG_error("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
          break;
       }
       
@@ -178,11 +178,11 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
 // fent must be read-locked
 int sync_context_init( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t parent_id, char const* parent_name, struct sync_context* sync_ctx ) {
    
-   dbprintf("initialize sync context at %p\n", sync_ctx );
+   SG_debug("initialize sync context at %p\n", sync_ctx );
    
    memset( sync_ctx, 0, sizeof(struct sync_context) );
    
-   sync_ctx->fent_snapshot = CALLOC_LIST( struct replica_snapshot, 1 );
+   sync_ctx->fent_snapshot = SG_CALLOC( struct replica_snapshot, 1 );
    
    fs_entry_replica_snapshot( core, fent, 0, 0, sync_ctx->fent_snapshot );
    fs_entry_extract_dirty_blocks( fent, &sync_ctx->dirty_blocks );
@@ -199,17 +199,17 @@ int sync_context_init( struct fs_core* core, char const* fs_path, struct fs_entr
 // destroy a sync context 
 int sync_context_free_ex( struct sync_context* sync_ctx, bool close_dirty_fds ) {
    
-   dbprintf("free sync context at %p\n", sync_ctx );
+   SG_debug("free sync context at %p\n", sync_ctx );
    
    md_entry_free( &sync_ctx->md_snapshot );
    
    if( sync_ctx->replica_futures ) {
-      dbprintf("free sync context %p replica futures %p\n", sync_ctx, sync_ctx->replica_futures );
+      SG_debug("free sync context %p replica futures %p\n", sync_ctx, sync_ctx->replica_futures );
       fs_entry_replica_list_free( sync_ctx->replica_futures );
       delete sync_ctx->replica_futures;
    }
    else {
-      errorf("WARN: sync context %p replica futures = %p\n", sync_ctx, sync_ctx->replica_futures );
+      SG_error("WARN: sync context %p replica futures = %p\n", sync_ctx, sync_ctx->replica_futures );
    }
    
    if( sync_ctx->dirty_blocks ) {
@@ -259,7 +259,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // (this updates fent's dirty_blocks)
    rc = fs_entry_flush_bufferred_blocks_async( core, fs_path, fent, &cache_futs );
    if( rc < 0 ) {
-      errorf("fs_entry_flush_bufferred_blocks( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
+      SG_error("fs_entry_flush_bufferred_blocks( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
       
       memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
@@ -271,7 +271,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // wait for all cache writes to finish
    rc = md_cache_flush_writes( &cache_futs );
    if( rc != 0 ) {
-      errorf("md_cache_flush_writes( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
+      SG_error("md_cache_flush_writes( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
       
       // restore dirty blocks 
       fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
@@ -298,7 +298,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // anything to replicate?  If not, return early.
    if( sync_ctx.dirty_blocks->size() == 0 && sync_ctx.garbage_blocks->size() == 0 ) {
       // done!
-      dbprintf("Nothing to replicate for %" PRIX64 "\n", fent->file_id );
+      SG_debug("Nothing to replicate for %" PRIX64 "\n", fent->file_id );
       *_sync_ctx = sync_ctx;
       return SYNC_NOTHING;
    }
@@ -313,7 +313,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       
       // check for error
       if( manifest_fut == NULL || rc != 0 ) {
-         errorf("fs_entry_replicate_manifest_async( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
+         SG_error("fs_entry_replicate_manifest_async( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
          
          // restore dirty blocks 
          fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
@@ -337,17 +337,17 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    
    // check for error
    if( rc != 0 ) {
-      errorf("fs_entry_replicate_blocks_async( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
+      SG_error("fs_entry_replicate_blocks_async( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
       
       // cancel manifest, if we replicated it 
       if( manifest_fut ) {
          
-         dbprintf("garbage collect new manifest for %" PRIX64 "(%s), snapshot = %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->name, sync_ctx.fent_snapshot->file_id, sync_ctx.fent_snapshot->file_version );
+         SG_debug("garbage collect new manifest for %" PRIX64 "(%s), snapshot = %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->name, sync_ctx.fent_snapshot->file_id, sync_ctx.fent_snapshot->file_version );
          
          rc = fs_entry_garbage_collect_manifest( core, sync_ctx.fent_snapshot );
          
          if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_manifest( %s %" PRIX64 ") rc = %d\n", fs_path, file_id, rc );
+            SG_error("fs_entry_garbage_collect_manifest( %s %" PRIX64 ") rc = %d\n", fs_path, file_id, rc );
          }
       }
       
@@ -374,7 +374,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    
    // success!
    *_sync_ctx = sync_ctx;
-   dbprintf("initialized sync context %p\n", _sync_ctx );
+   SG_debug("initialized sync context %p\n", _sync_ctx );
    
    return SYNC_SUCCESS;
 }
@@ -385,7 +385,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
 // fent must be write-locked.
 int fs_entry_sync_data_revert( struct fs_core* core, struct fs_entry* fent, struct sync_context* sync_ctx ) {
 
-   dbprintf("Reverting synchronization for (%s) %" PRIX64 "\n", fent->name, fent->file_id );
+   SG_debug("Reverting synchronization for (%s) %" PRIX64 "\n", fent->name, fent->file_id );
    
    // which blocks were not replicated?
    modification_map unreplicated;
@@ -429,7 +429,7 @@ int fs_entry_sync_data_finish( struct fs_core* core, struct sync_context* sync_c
    
    // if we fail, revert the flush 
    if( rc != 0 ) {
-      errorf("fs_entry_replica_wait_all( %" PRIX64 " ) rc = %d\n", sync_ctx->fent_snapshot->file_id, rc );
+      SG_error("fs_entry_replica_wait_all( %" PRIX64 " ) rc = %d\n", sync_ctx->fent_snapshot->file_id, rc );
       
       return -EIO;
    }
@@ -449,7 +449,7 @@ int fs_entry_fsync_begin_data( struct fs_core* core, struct fs_file_handle* fh, 
    rc = fs_entry_sync_data_begin( core, fh->path, fh->fent, fh->parent_id, fh->parent_name, sync_ctx );
 
    if( rc < 0 ) {
-      errorf("fs_entry_sync_data_begin( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, rc );
+      SG_error("fs_entry_sync_data_begin( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, rc );
       
       return -EIO;
    }
@@ -484,7 +484,7 @@ int fs_entry_fsync_end_data( struct fs_core* core, struct fs_file_handle* fh, st
 
    if( begin_rc == SYNC_NOTHING ) {
       // nothing to replicate, nothing to wait for 
-      dbprintf("Nothing to wait for in replicating data for %s %" PRIX64 "\n", fh->path, sync_ctx->fent_snapshot->file_id );
+      SG_debug("Nothing to wait for in replicating data for %s %" PRIX64 "\n", fh->path, sync_ctx->fent_snapshot->file_id );
       return 0;
    }
    
@@ -494,7 +494,7 @@ int fs_entry_fsync_end_data( struct fs_core* core, struct fs_file_handle* fh, st
    rc = fs_entry_sync_data_finish( core, sync_ctx );
    
    if( rc != 0 ) {
-      errorf("fs_entry_sync_data_finish( %s %" PRIX64 " ) rc = %d\n", fh->path, sync_ctx->fent_snapshot->file_id, rc );
+      SG_error("fs_entry_sync_data_finish( %s %" PRIX64 " ) rc = %d\n", fh->path, sync_ctx->fent_snapshot->file_id, rc );
       
       return -EREMOTEIO;
    }
@@ -530,7 +530,7 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
       }
       else if( rc < 0 ) {
          // error 
-         errorf("fs_entry_remote_write_or_coordinate( %s ) rc = %d\n", fh->path, rc );
+         SG_error("fs_entry_remote_write_or_coordinate( %s ) rc = %d\n", fh->path, rc );
          
          return rc;
       }
@@ -543,7 +543,7 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
          rc = fs_entry_replicate_manifest( core, fh->path, fh->fent );
          
          if( rc != 0 ) {
-            errorf("fs_entry_replica_wait( %s manifest ) rc = %d\n", fh->path, rc );
+            SG_error("fs_entry_replica_wait( %s manifest ) rc = %d\n", fh->path, rc );
             
             return rc;
          }
@@ -566,7 +566,7 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
       
       // check status
       if( rc != 0 ) {
-         errorf("ms_client_update_write( %s ) rc = %d\n", fh->path, rc );
+         SG_error("ms_client_update_write( %s ) rc = %d\n", fh->path, rc );
          
          return rc;
       }
@@ -582,7 +582,7 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
 // initialize a completion map 
 static int fs_entry_fsync_completion_map_init( sync_completion_map_t* completion_map, uint64_t file_id, int64_t file_version, modification_map* old_blocks ) {
    
-   dbprintf("will complete %zu blocks\n", old_blocks->size() );
+   SG_debug("will complete %zu blocks\n", old_blocks->size() );
    
    for( modification_map::iterator itr = old_blocks->begin(); itr != old_blocks->end(); itr++ ) {
       
@@ -595,7 +595,7 @@ static int fs_entry_fsync_completion_map_init( sync_completion_map_t* completion
       
       (*completion_map)[ gc_block_info ] = SYNC_COMPLETION_MAP_STATUS_UNKNOWN;
       
-      dbprintf("expect completed: %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", file_id, file_version, itr->first, itr->second.version );
+      SG_debug("expect completed: %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", file_id, file_version, itr->first, itr->second.version );
    }
    
    return 0;
@@ -648,7 +648,7 @@ int fs_entry_fsync_gc_cls_free( struct sync_gc_cls* gc_cls ) {
 // continuation for garbage collection: once the manifest has been garbage collected, request the vacuumer to vacuum the old vacuum log entries 
 int fs_entry_fsync_gc_manifest_cont( struct rg_client* rg, struct replica_context* rctx, void* cls ) {
    
-   dbprintf("continue manifest for %p\n", rctx );
+   SG_debug("continue manifest for %p\n", rctx );
    
    struct sync_gc_cls* gc_cls = (struct sync_gc_cls*)cls;
    
@@ -660,7 +660,7 @@ int fs_entry_fsync_gc_manifest_cont( struct rg_client* rg, struct replica_contex
    
    if( rctx->error != 0 ) {
       // failed to garbage-collect the manifest
-      errorf("Failed to garbage collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d, replica context rc = %d\n",
+      SG_error("Failed to garbage collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d, replica context rc = %d\n",
              fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rctx->error );
       
       rc = -EAGAIN;
@@ -730,11 +730,11 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
    if( rc != 0 ) {
       
       // couldn't process
-      errorf("fs_entry_extract_gc_block_info(%p) rc = %d\n", rctx, rc );
+      SG_error("fs_entry_extract_gc_block_info(%p) rc = %d\n", rctx, rc );
       return rc;
    }
    
-   dbprintf("continue blocks for %p (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "])\n", rctx, gc_block_info.file_id, gc_block_info.file_version, gc_block_info.block_id, gc_block_info.block_version );
+   SG_debug("continue blocks for %p (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "])\n", rctx, gc_block_info.file_id, gc_block_info.file_version, gc_block_info.block_id, gc_block_info.block_version );
     
    bool unlocked = false;
    pthread_mutex_lock( &gc_cls->lock );
@@ -747,7 +747,7 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
       pthread_mutex_unlock( &gc_cls->lock );
       
       // wrong context
-      errorf("invalid replica context %p\n", rctx );
+      SG_error("invalid replica context %p\n", rctx );
       
       return -EINVAL;
    }
@@ -779,7 +779,7 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
             
             if( rc != 0 ) {
                // failed to enqueue; we're done
-               errorf("fs_entry_garbage_collect_manifest_ex( %" PRIX64 "/manifest.%" PRId64 ".%d ) rc = %d\n",
+               SG_error("fs_entry_garbage_collect_manifest_ex( %" PRIX64 "/manifest.%" PRId64 ".%d ) rc = %d\n",
                      fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
                
                gc_cls->rc = rc;
@@ -790,7 +790,7 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
             
             // we're done--either due to error, or because we're not supposed to go any further
             if( rc != 0 ) {
-               errorf("Not going to garbage-collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d due to error (code %d)\n",
+               SG_error("Not going to garbage-collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d due to error (code %d)\n",
                      fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
             }
             
@@ -803,7 +803,7 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
          }
       }
       else {
-         errorf("Garbage collection for %" PRIX64 " failed, rc = %d\n", fs_entry_replica_context_get_file_id( rctx ), gc_cls->rc );
+         SG_error("Garbage collection for %" PRIX64 " failed, rc = %d\n", fs_entry_replica_context_get_file_id( rctx ), gc_cls->rc );
          
          // unsuccessful.  we're done
          pthread_mutex_unlock( &gc_cls->lock );
@@ -829,11 +829,11 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
 // NOTE: the replica_snapshot doesn't have to be from fent.  fent is only needed for the driver.
 int fs_entry_garbage_collect_kickoff( struct fs_core* core, char const* fs_path, struct replica_snapshot* gc_snapshot, modification_map* garbage_blocks, bool gc_manifest ) {
    
-   dbprintf("Garbage collect %zu blocks; garbage collect manifest = %d\n", garbage_blocks->size(), gc_manifest );
+   SG_debug("Garbage collect %zu blocks; garbage collect manifest = %d\n", garbage_blocks->size(), gc_manifest );
    
    // tell the driver that we're going to garbage-collect the blocks 
-   uint64_t* garbage_block_ids = CALLOC_LIST( uint64_t, garbage_blocks->size() );
-   int64_t* garbage_block_versions = CALLOC_LIST( int64_t, garbage_blocks->size() );
+   uint64_t* garbage_block_ids = SG_CALLOC( uint64_t, garbage_blocks->size() );
+   int64_t* garbage_block_versions = SG_CALLOC( int64_t, garbage_blocks->size() );
    
    int i = 0;
    
@@ -856,25 +856,25 @@ int fs_entry_garbage_collect_kickoff( struct fs_core* core, char const* fs_path,
    
    if( rc == DRIVER_NOT_GARBAGE ) {
       // this data will be handled by the driver
-      dbprintf("Driver indicates that write for %s %" PRIX64 " at %" PRId64 ".%d is not garbage\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec );
+      SG_debug("Driver indicates that write for %s %" PRIX64 " at %" PRId64 ".%d is not garbage\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec );
       return 0;
    }
    else if( rc < 0 ) {
       // error 
-      errorf("driver_garbage_collect(%s %" PRIX64 " at %" PRId64 ".%d rc = %d\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec, rc );
+      SG_error("driver_garbage_collect(%s %" PRIX64 " at %" PRId64 ".%d rc = %d\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec, rc );
       return rc;
    }
    
    // good to go!
    // start blocks, and continue to the manifest.
    // set up continuation cls
-   struct sync_gc_cls* gc_cls = CALLOC_LIST( struct sync_gc_cls, 1 );
+   struct sync_gc_cls* gc_cls = SG_CALLOC( struct sync_gc_cls, 1 );
    
    fs_entry_fsync_gc_cls_init( gc_cls, core, &core->state->vac, fs_path, gc_snapshot, garbage_blocks, gc_manifest );
    
    rc = fs_entry_garbage_collect_blocks_ex( core, gc_snapshot, garbage_blocks, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_block_cont, gc_cls );
    if( rc != 0 ) {
-      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 ") rc = %d\n", gc_snapshot->file_id, rc );
+      SG_error("fs_entry_garbage_collect_blocks_ex(%" PRIX64 ") rc = %d\n", gc_snapshot->file_id, rc );
    }
    
    return rc;
@@ -893,7 +893,7 @@ int fs_entry_fsync_garbage_collect( struct fs_core* core, char const* fs_path, s
    int rc = fs_entry_garbage_collect_kickoff( core, fs_path, fent->old_snapshot, sync_ctx->garbage_blocks, was_coordinator );
    
    if( rc != 0 ) {
-      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+      SG_error("fs_entry_garbage_collect_blocks_ex(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
    }
    return rc;
 }
@@ -950,7 +950,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    
    // do we have data to flush?  if not, then done 
    if( !fh->dirty ) {
-      dbprintf("Not dirtied by handle %p: %s %" PRIX64 "\n", fh, fh->path, fh->fent->file_id );
+      SG_debug("Not dirtied by handle %p: %s %" PRIX64 "\n", fh, fh->path, fh->fent->file_id );
       return 0;
    }
    
@@ -958,7 +958,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    int begin_rc = fs_entry_fsync_begin_data( core, fh, sync_ctx );
    
    if( begin_rc < 0 ) {
-      errorf("fs_entry_fsync_begin_data( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, begin_rc );
+      SG_error("fs_entry_fsync_begin_data( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, begin_rc );
       
       return -EIO;
    }
@@ -973,7 +973,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    rc = fs_entry_fsync_end_data( core, fh, sync_ctx, begin_rc );
    
    if( rc != 0 ) {
-      errorf("fs_entry_fsync_end_data( %s %" PRIX64 " ) rc = %d\n", fh->path, sync_ctx->fent_snapshot->file_id, rc );
+      SG_error("fs_entry_fsync_end_data( %s %" PRIX64 " ) rc = %d\n", fh->path, sync_ctx->fent_snapshot->file_id, rc );
       
       // re-acquire
       fs_entry_wlock( fh->fent );
@@ -1020,7 +1020,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
       int metadata_rc = fs_entry_fsync_metadata( core, fh, sync_ctx );
       
       if( metadata_rc < 0 ) {
-         errorf("fs_entry_fsync_metadata( %s ) rc = %d\n", fh->path, metadata_rc );
+         SG_error("fs_entry_fsync_metadata( %s ) rc = %d\n", fh->path, metadata_rc );
          
          // revert the sync
          fs_entry_sync_data_revert( core, fh->fent, sync_ctx );
@@ -1048,7 +1048,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    fs_entry_store_snapshot( fh->fent, sync_ctx->fent_snapshot );
    
    if( gc_rc != 0 ) {
-      errorf("fs_entry_fsync_garbage_collect(%" PRIX64 ") rc = %d\n", fh->fent->file_id, gc_rc );
+      SG_error("fs_entry_fsync_garbage_collect(%" PRIX64 ") rc = %d\n", fh->fent->file_id, gc_rc );
       return gc_rc;
    }
    else {
@@ -1078,7 +1078,7 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    
    if( rc != 0 ) {
       
-      errorf("fs_entry_fsync_locked(%" PRIX64 ") rc = %d\n", fh->fent->file_id, rc );
+      SG_error("fs_entry_fsync_locked(%" PRIX64 ") rc = %d\n", fh->fent->file_id, rc );
       
       fs_entry_unlock( fh->fent );
       fs_file_handle_unlock( fh );

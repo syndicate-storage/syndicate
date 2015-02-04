@@ -44,17 +44,17 @@ int main( int argc, char** argv ) {
    struct syndicate_state* state = syndicate_get_state();
    
    // get the xattr size
-   dbprintf("\n\n\nfs_entry_removexattr( %s, %s )\n\n\n", path, xattr_name );
+   SG_debug("\n\n\nfs_entry_removexattr( %s, %s )\n\n\n", path, xattr_name );
    
    int rc = fs_entry_removexattr( state->core, path, xattr_name, SYS_USER, 0 );
    if( rc < 0 ) {
-      errorf("\n\n\nfs_entry_removexattr( %s, %s ) rc = %d\n\n\n", path, xattr_name, rc );
+      SG_error("\n\n\nfs_entry_removexattr( %s, %s ) rc = %d\n\n\n", path, xattr_name, rc );
       syndicate_functional_test_shutdown( &syndicate_http );
       exit(1);
    }
    
    // shut down the test 
-   errorf("\n\n\nfs_entry_removexattr( %s, %s ) rc = %d\n\n\n", path, xattr_name, rc );
+   SG_error("\n\n\nfs_entry_removexattr( %s, %s ) rc = %d\n\n\n", path, xattr_name, rc );
    syndicate_functional_test_shutdown( &syndicate_http );
    
    return 0;

@@ -154,7 +154,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
    else if( rc == -ENOENT ) {
       
       // no cached data--all 0's
-      dbprintf("No data cached for %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->version );
+      SG_debug("No data cached for %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->version );
       memset( buf, '0', buf_len );
       buf[buf_len - 1] = '\0';
       
@@ -324,7 +324,7 @@ int fs_entry_download_xattr( struct fs_core* core, uint64_t volume, uint64_t fil
    int ret = 0;
    ret = ms_client_getxattr( core->ms, volume, file_id, name, &val, &val_len );
    if( ret < 0 ) {
-      errorf("ms_client_getxattr( %" PRIX64 " %s ) rc = %d\n", file_id, name, ret );
+      SG_error("ms_client_getxattr( %" PRIX64 " %s ) rc = %d\n", file_id, name, ret );
       
       if( ret == -404 ) {
          // no such file 
@@ -416,7 +416,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    // revalidate this path--make sure the ent exists
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -457,7 +457,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
                   // not cached...
                   err = fs_entry_cache_xattr( core, path, user, volume, name, val, ret, cur_xattr_nonce );
                   if( err < 0 ) {
-                     errorf("fs_entry_cache_xattr(%s, %s) rc = %d\n", path, name, err );
+                     SG_error("fs_entry_cache_xattr(%s, %s) rc = %d\n", path, name, err );
                      free( val );
                      return err;
                   }
@@ -472,7 +472,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
       }
       
       else {
-         errorf("fs_entry_do_getxattr(%s, %s) rc = %zd\n", path, name, ret );
+         SG_error("fs_entry_do_getxattr(%s, %s) rc = %zd\n", path, name, ret );
       }
    }
    else {
@@ -488,14 +488,14 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
 int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
    
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Setting extended attributes is forbidden for anonymous gateways\n");
+      SG_error("%s", "Setting extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -519,7 +519,7 @@ int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *na
       
       ret = ms_client_setxattr( core->ms, &ent, name, value, size, mode, flags );
       if( ret < 0 ) {
-         errorf("ms_client_setxattr( %s %s ) rc = %zd\n", path, name, ret );
+         SG_error("ms_client_setxattr( %s %s ) rc = %zd\n", path, name, ret );
       }
       else {
          // cache this 
@@ -569,7 +569,7 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
       
       ret = ms_client_setxattr( core->ms, &ent, name, proposed_value, proposed_value_len, XATTR_CREATE, mode );
       if( ret < 0 ) {
-         errorf("ms_client_setxattr_ex( %" PRIX64 " %s ) rc = %zd\n", fent->file_id, name, ret );
+         SG_error("ms_client_setxattr_ex( %" PRIX64 " %s ) rc = %zd\n", fent->file_id, name, ret );
          
          if( ret == -EEXIST ) {
             // attr already existed.  Get it
@@ -605,7 +605,7 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
       while( true ) {
          ssize_t required_size = (*xattr_handler->get)( core, fent, name, NULL, 0 );
          
-         char* buf = CALLOC_LIST( char, required_size + 1 );
+         char* buf = SG_CALLOC( char, required_size + 1 );
          
          ret = (*xattr_handler->get)( core, fent, name, buf, required_size );
          if( ret == -ERANGE ) {
@@ -629,7 +629,7 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -656,7 +656,7 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
    int remote_rc = ms_client_listxattr( core->ms, volume_id, file_id, &remote_xattr_names, &remote_xattr_names_len );
    
    if( remote_rc != 0 ) {
-      errorf("ms_client_listxattr(%s %" PRIX64 ") rc = %d\n", path, file_id, remote_rc );
+      SG_error("ms_client_listxattr(%s %" PRIX64 ") rc = %d\n", path, file_id, remote_rc );
       
       return (ssize_t)remote_rc;
    }
@@ -671,13 +671,13 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
       ssize_t builtin_len = xattr_get_builtin_names( list, size );
       
       if( builtin_len < 0 ) {
-         errorf("WARN: not enough space for built-in attributes (size = %zd, need %zd)\n", size, xattr_len_all());
+         SG_error("WARN: not enough space for built-in attributes (size = %zd, need %zd)\n", size, xattr_len_all());
          free( remote_xattr_names );
          return -ERANGE;
       }
       
       if( remote_xattr_names_len + builtin_len > size ) {
-         errorf("WARN: not enough space for app-defined attributes (size = %zd, need %zd)\n", size, builtin_len + remote_xattr_names_len);
+         SG_error("WARN: not enough space for app-defined attributes (size = %zd, need %zd)\n", size, builtin_len + remote_xattr_names_len);
          free( remote_xattr_names );
          return -ERANGE;
       }
@@ -700,14 +700,14 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
 // removexattr
 int fs_entry_removexattr( struct fs_core* core, char const* path, char const *name, uint64_t user, uint64_t volume ) {
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Removing extended attributes is forbidden for anonymous gateways\n");
+      SG_error("%s", "Removing extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -732,7 +732,7 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
    
       ret = ms_client_removexattr( core->ms, &ent, name );
       if( ret < 0 ) {
-         errorf("ms_client_removexattr( %s ) rc = %zd\n", name, ret );
+         SG_error("ms_client_removexattr( %s ) rc = %zd\n", name, ret );
       }
       
       md_entry_free( &ent );
@@ -755,14 +755,14 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
 // change ownership of an xattr 
 int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* name, uint64_t new_user ) {
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Changing ownership of extended attributes is forbidden for anonymous gateways\n");
+      SG_error("%s", "Changing ownership of extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -781,7 +781,7 @@ int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* nam
    // ask the MS to change ownership of this xattr 
    int rc = ms_client_chownxattr( core->ms, &ent, name, new_user );
    if( rc < 0 ) {
-      errorf("ms_client_chownxattr( %s, %" PRIu64 " ) rc = %d\n", name, new_user, rc );
+      SG_error("ms_client_chownxattr( %s, %" PRIu64 " ) rc = %d\n", name, new_user, rc );
    }
    else {
       // uncache this xattr, since we might not be able to see it anymore 
@@ -796,14 +796,14 @@ int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* nam
 // change mode of an xattr 
 int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* name, mode_t new_mode ) {
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Changing mode of extended attributes is forbidden for anonymous gateways\n");
+      SG_error("%s", "Changing mode of extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, path );
    if( revalidate_rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
       return revalidate_rc;
    }
    
@@ -823,7 +823,7 @@ int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* nam
    // ask the MS to change mode of this xattr 
    int rc = ms_client_chmodxattr( core->ms, &ent, name, new_mode );
    if( rc < 0 ) {
-      errorf("ms_client_chmodxattr( %s, 0%o ) rc = %d\n", name, new_mode, rc );
+      SG_error("ms_client_chmodxattr( %s, 0%o ) rc = %d\n", name, new_mode, rc );
    }
    else {
       // uncache this xattr if it's no longer readable to us 

@@ -132,7 +132,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    rc = md_download_context_get_buffer( dlctx, &dlbuf, &dlbuf_len );
    if( rc != 0 ) {
       
-      errorf("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
+      SG_error("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
       return rc;  
    }
    
@@ -142,7 +142,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    
    if( rc != 0 ) {
       
-      errorf("ms_client_parse_reply(%p) rc = %d\n", dlctx, rc );
+      SG_error("ms_client_parse_reply(%p) rc = %d\n", dlctx, rc );
       return rc;
    }
    
@@ -150,14 +150,14 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    rc = ms_client_parse_listing( &listing, &reply );
    if( rc != 0 ) {
       
-      errorf("ms_client_parse_listing(%p) rc = %d\n", dlctx, rc );
+      SG_error("ms_client_parse_listing(%p) rc = %d\n", dlctx, rc );
       return rc;
    }
    
    // check error status 
    if( listing.error != 0 ) {
       
-      errorf("listing of %p: error == %d\n", dlctx, listing.error );
+      SG_error("listing of %p: error == %d\n", dlctx, listing.error );
       ms_client_free_listing( &listing );
       
       *listing_error = listing.error;
@@ -193,7 +193,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
       
       if( listing.entries->size() > 0 ) {
          // success!
-         struct md_entry* tmp = CALLOC_LIST( struct md_entry, listing.entries->size() );
+         struct md_entry* tmp = SG_CALLOC( struct md_entry, listing.entries->size() );
          
          // NOTE: vectors are contiguous in memory 
          memcpy( tmp, &listing.entries->at(0), sizeof(struct md_entry) * listing.entries->size() );
@@ -223,7 +223,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    else {
       
       // invalid status 
-      errorf("download %p: Invalid listing status %d\n", dlctx, listing.status );
+      SG_error("download %p: Invalid listing status %d\n", dlctx, listing.status );
       ms_client_free_listing( &listing );
       return -EBADMSG;
    }
@@ -310,12 +310,12 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       rc = ms_client_getchild( client, &path->at(i), &result );
       
       if( rc != 0 ) {
-         errorf("ms_client_getchild(%" PRIX64 ".%s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
+         SG_error("ms_client_getchild(%" PRIX64 ".%s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
          break;
       }
       
       if( result.reply_error != 0 ) {
-         errorf("MS replied %d for GETCHILD(%" PRIX64 ", %s)\n", result.reply_error, path->at(i).parent_id, path->at(i).name );
+         SG_error("MS replied %d for GETCHILD(%" PRIX64 ", %s)\n", result.reply_error, path->at(i).parent_id, path->at(i).name );
          
          *error = result.reply_error;
          *error_idx = i;
@@ -338,7 +338,7 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
          rc = (*download_cb)( &path->at(i), download_cls );
          
          if( rc != 0 ) {
-            errorf("download_cb(%" PRIX64 ", %s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
+            SG_error("download_cb(%" PRIX64 ", %s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
             break;
          }
       }
@@ -367,7 +367,7 @@ char* ms_path_to_string( ms_path_t* ms_path, int max_index ) {
    }
    
    // build up the path 
-   char* ret = CALLOC_LIST( char, num_chars + 1 );
+   char* ret = SG_CALLOC( char, num_chars + 1 );
    
    // this is root
    strcat( ret, ms_path->at(0).name );

@@ -24,7 +24,7 @@ static char* get_request_abspath( char const* request_path ) {
    // where's our dataset root directory?
    char* dataset_root = AG_driver_get_config_var( AG_CONFIG_DISK_DATASET_ROOT );
    if( dataset_root == NULL ) {
-      errorf("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
+      SG_error("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
       return NULL;
    }
    
@@ -66,13 +66,13 @@ static int errno_to_HTTP_status( struct AG_connection_context* ag_ctx, int err )
 
 // initialize the driver 
 int driver_init( void** driver_state ) {
-   dbprintf("%s driver init\n", DRIVER_QUERY_TYPE );
+   SG_debug("%s driver init\n", DRIVER_QUERY_TYPE );
    return 0;
 }
 
 // shut down the driver 
 int driver_shutdown( void* driver_state ) {
-   dbprintf("%s driver shutdown\n", DRIVER_QUERY_TYPE );
+   SG_debug("%s driver shutdown\n", DRIVER_QUERY_TYPE );
    return 0;
 }
 
@@ -80,7 +80,7 @@ int driver_shutdown( void* driver_state ) {
 // try to open the file.
 int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    
-   dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
+   SG_debug("%s connect dataset\n", DRIVER_QUERY_TYPE );
    
    char* request_path = AG_driver_get_request_path( ag_ctx );
    
@@ -88,7 +88,7 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    char* dataset_path = get_request_abspath( request_path );
    
    if( dataset_path == NULL ) {
-      errorf("Could not translate %s to absolute path\n", request_path );
+      SG_error("Could not translate %s to absolute path\n", request_path );
       
       free( request_path );
       return -EINVAL;
@@ -100,7 +100,7 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    int fd = open( dataset_path, O_RDONLY );
    if( fd < 0 ) {
       fd = -errno;
-      errorf("Failed to open %s, errno = %d\n", dataset_path, fd );
+      SG_error("Failed to open %s, errno = %d\n", dataset_path, fd );
       
       free( dataset_path );
       return fd;
@@ -110,7 +110,7 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
    
    // got it!
    // set up a connection context 
-   struct AG_disk_context* disk_ctx = CALLOC_LIST( struct AG_disk_context, 1 );
+   struct AG_disk_context* disk_ctx = SG_CALLOC( struct AG_disk_context, 1 );
    
    disk_ctx->fd = fd;
    
@@ -122,7 +122,7 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
 // clean up a handled connection for a block 
 int close_dataset_block( void* driver_connection_state ) {
    
-   dbprintf("%s close dataset block\n", DRIVER_QUERY_TYPE );
+   SG_debug("%s close dataset block\n", DRIVER_QUERY_TYPE );
    
    
    struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
@@ -139,7 +139,7 @@ int close_dataset_block( void* driver_connection_state ) {
 // return the number of bytes read
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state ) {
    
-   dbprintf("%s get dataset block %" PRIu64 "\n", DRIVER_QUERY_TYPE, block_id );
+   SG_debug("%s get dataset block %" PRIu64 "\n", DRIVER_QUERY_TYPE, block_id );
    
    struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
    
@@ -150,7 +150,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    int rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
    if( rc < 0 ) {
       rc = -errno;
-      errorf("lseek errno = %d\n", rc );
+      SG_error("lseek errno = %d\n", rc );
       
       errno_to_HTTP_status( ag_ctx, rc );
       
@@ -161,7 +161,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    ssize_t num_read = md_read_uninterrupted( disk_ctx->fd, block_buf, buf_len );
    if( num_read < 0 ) {
       
-      errorf("md_read_uninterrupted rc = %zd\n", num_read );
+      SG_error("md_read_uninterrupted rc = %zd\n", num_read );
       errno_to_HTTP_status( ag_ctx, num_read );
    }
    
@@ -171,13 +171,13 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 // get information for publishing a particular file to the MS 
 int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
    
-   dbprintf("%s stat dataset %s\n", DRIVER_QUERY_TYPE, path );
+   SG_debug("%s stat dataset %s\n", DRIVER_QUERY_TYPE, path );
    
    // get the absolute path 
    char* dataset_path = get_request_abspath( path );
    
    if( dataset_path == NULL ) {
-      errorf("%s", "Could not translate request to absolute path\n" );
+      SG_error("%s", "Could not translate request to absolute path\n" );
       return -EINVAL;
    }
    
@@ -188,7 +188,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    rc = stat( dataset_path, &sb );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("stat(%s) errno = %d\n", dataset_path, rc);
+      SG_error("stat(%s) errno = %d\n", dataset_path, rc);
       free( dataset_path );
       return rc;
    }

@@ -30,7 +30,7 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
       if( pid_fd < 0 ) {
          // specified a PID file, and we couldn't make it.  someone else is running
          int errsv = -errno;
-         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
+         SG_error( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
          return errsv;
       }
    }
@@ -40,7 +40,7 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
    pid = fork();
    if (pid < 0) {
       int rc = -errno;
-      errorf( "Failed to fork (errno = %d)\n", -errno);
+      SG_error( "Failed to fork (errno = %d)\n", -errno);
       return rc;
    }
 
@@ -54,13 +54,13 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
    sid = setsid();
    if( sid < 0 ) {
       int rc = -errno;
-      errorf("setsid errno = %d\n", rc );
+      SG_error("setsid errno = %d\n", rc );
       return rc;
    }
 
    if( chdir("/") < 0 ) {
       int rc = -errno;
-      errorf("chdir errno = %d\n", rc );
+      SG_error("chdir errno = %d\n", rc );
       return rc;
    }
 
@@ -73,12 +73,12 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
 
       if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
          int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
+         SG_error( "dup2 errno = %d\n", errsv);
          return errsv;
       }
       if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
          int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
+         SG_error( "dup2 errno = %d\n", errsv);
          return errsv;
       }
 
@@ -114,11 +114,11 @@ int md_release_privileges() {
    pwd = getpwnam( "daemon" );
    if( pwd != NULL ) {
       setuid( pwd->pw_uid );
-      dbprintf( "became user '%s'\n", "daemon" );
+      SG_debug( "became user '%s'\n", "daemon" );
       ret = 0;
    }
    else {
-      dbprintf( "could not become '%s'\n", "daemon" );
+      SG_debug( "could not become '%s'\n", "daemon" );
       ret = -1;
    }
    

@@ -35,7 +35,7 @@ int AG_fs_publish_generate_metadata( AG_fs_map_t* to_publish ) {
    
    rc = AG_fs_count_children( to_publish, &child_counts );
    if( rc != 0 ) {
-      errorf("AG_fs_count_children rc = %d\n", rc );
+      SG_error("AG_fs_count_children rc = %d\n", rc );
       return rc;
    }
       
@@ -208,7 +208,7 @@ static int AG_build_requests( struct ms_client* client, AG_fs_map_t* map_infos, 
       
       if( parent_itr == map_infos->end() ) {
          // incomplete 
-         errorf("ERR: not found: '%s'\n", parent_path );
+         SG_error("ERR: not found: '%s'\n", parent_path );
          
          free( parent_path );
          rc = -EINVAL;
@@ -219,7 +219,7 @@ static int AG_build_requests( struct ms_client* client, AG_fs_map_t* map_infos, 
       parent_mi = parent_itr->second;
       
       // make request 
-      ent = CALLOC_LIST( struct md_entry, 1 );
+      ent = SG_CALLOC( struct md_entry, 1 );
       
       // populate from the basics 
       AG_populate_md_entry( client, ent, path, mi, parent_mi, AG_POPULATE_NO_DRIVER, &mi->pubinfo );
@@ -237,7 +237,7 @@ static int AG_build_requests( struct ms_client* client, AG_fs_map_t* map_infos, 
       
       // success
       if( requests.size() > 0 ) {
-         *ret_requests = CALLOC_LIST( struct ms_client_request, requests.size() );
+         *ret_requests = SG_CALLOC( struct ms_client_request, requests.size() );
       
          std::copy( requests.begin(), requests.end(), *ret_requests );
       }
@@ -319,7 +319,7 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
    int rc = 0;
    struct ms_client_request_result* results = NULL; 
    
-   results = CALLOC_LIST( struct ms_client_request_result, num_requests );
+   results = SG_CALLOC( struct ms_client_request_result, num_requests );
    
    rc = ms_client_run_requests( client, requests, results, num_requests );
    
@@ -340,7 +340,7 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
          if( ms_rc != 0 ) {
             
             // failed to handle error
-            errorf("MS request %d on %s failed, rc = %d\n", requests[i].op, path, ms_rc );
+            SG_error("MS request %d on %s failed, rc = %d\n", requests[i].op, path, ms_rc );
             rc = ms_rc;
             break;
          }
@@ -356,7 +356,7 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
             // sanity check--we did get a response, right?
             if( MS_CLIENT_OP_RETURNS_ENTRY( requests[i].op ) && results[i].ent == NULL ) {
                // shouldn't happen 
-               errorf("Expected metadata in response to request %d (op %d on %s): operation rc = %d, request rc = %d\n", i, requests[i].op, path, results[i].rc, results[i].reply_error );
+               SG_error("Expected metadata in response to request %d (op %d on %s): operation rc = %d, request rc = %d\n", i, requests[i].op, path, results[i].rc, results[i].reply_error );
                rc = -ENODATA;
                break;
             }
@@ -372,7 +372,7 @@ static int AG_run_requests( struct ms_client* client, AG_fs_map_t* dest, struct 
                
                if( itr == dest->end() ) {
                   // this shouldn't happen--we earlier generated a request on this entry 
-                  errorf("BUG: not found: %s\n", path );
+                  SG_error("BUG: not found: %s\n", path );
                   rc = -EINVAL;
                   break;
                }
@@ -435,7 +435,7 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
       rc = AG_build_mkdir_requests_at_depth( client, &parents, to_publish, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
-         errorf("AG_build_mkdir_requests_at_depth(%d) rc = %d\n", depth, rc );
+         SG_error("AG_build_mkdir_requests_at_depth(%d) rc = %d\n", depth, rc );
          break;
       }
       
@@ -447,7 +447,7 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
          
          if( rc != 0 ) {
             
-            errorf("ms_client_run_requests(mkdir, %d) rc = %d\n", depth, rc );
+            SG_error("ms_client_run_requests(mkdir, %d) rc = %d\n", depth, rc );
             break;
          }
       }
@@ -456,7 +456,7 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
       rc = AG_build_create_async_requests_at_depth( client, &parents, to_publish, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
-         errorf("AG_build_create_async_requests_at_depth(%d) rc = %d\n", depth, rc );
+         SG_error("AG_build_create_async_requests_at_depth(%d) rc = %d\n", depth, rc );
          break;
       }
          
@@ -468,7 +468,7 @@ int AG_fs_publish_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_m
          
          if( rc != 0 ) { 
             
-            errorf("ms_client_run_requests(create_async, %d) rc = %d\n", depth, rc );
+            SG_error("ms_client_run_requests(create_async, %d) rc = %d\n", depth, rc );
             break;
          }
       }
@@ -498,7 +498,7 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
       rc = AG_build_update_async_requests_at_depth( client, map_infos, to_update, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
-         errorf("AG_build_update_async_requests_at_depth(%d) rc = %d\n", depth, rc );
+         SG_error("AG_build_update_async_requests_at_depth(%d) rc = %d\n", depth, rc );
          break;
       }
       
@@ -514,7 +514,7 @@ int AG_fs_update_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
       
       if( rc != 0 ) {
          
-         errorf("ms_client_run_requests(update_async, %d) rc = %d\n", depth, rc );
+         SG_error("ms_client_run_requests(update_async, %d) rc = %d\n", depth, rc );
          break;
       }
    }
@@ -541,7 +541,7 @@ static int AG_fs_delete_directories_at_depth( struct ms_client* client, AG_fs_ma
    rc = AG_build_rmdir_requests_at_depth( client, map_infos, to_delete, depth, &requests, &num_requests );
    if( rc != 0 ) {
       
-      errorf("AG_build_delete_requests_at_depth(%d) rc = %d\n", depth, rc );
+      SG_error("AG_build_delete_requests_at_depth(%d) rc = %d\n", depth, rc );
       return rc;
    }
    
@@ -551,14 +551,14 @@ static int AG_fs_delete_directories_at_depth( struct ms_client* client, AG_fs_ma
    for( attempt = 0; attempt < AG_REQUEST_MAX_RETRIES; attempt++ ) {
       
       // run requests and get results
-      results = CALLOC_LIST( struct ms_client_request_result, num_requests );
+      results = SG_CALLOC( struct ms_client_request_result, num_requests );
       
       rc = ms_client_run_requests( client, requests, results, num_requests );
       
       if( rc != 0 ) {
          
          // network or protocol error 
-         errorf("ms_client_run_requests(%d) rc = %d\n", depth, rc );
+         SG_error("ms_client_run_requests(%d) rc = %d\n", depth, rc );
          break;
       }
       
@@ -608,7 +608,7 @@ static int AG_fs_delete_directories_at_depth( struct ms_client* client, AG_fs_ma
          else if( results[i].rc != -ENOENT ) {
             
             // some other fatal error, which means we won't be able to proceed 
-            errorf("ms_client_rmdir(%s) rc = %d\n", path, rc);
+            SG_error("ms_client_rmdir(%s) rc = %d\n", path, rc);
             break;
          }
       }
@@ -647,7 +647,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
       rc = AG_build_delete_requests_at_depth( client, map_infos, to_delete, depth, &requests, &num_requests );
       if( rc != 0 ) {
          
-         errorf("AG_build_delete_requests_at_depth(%d) rc = %d\n", depth, rc );
+         SG_error("AG_build_delete_requests_at_depth(%d) rc = %d\n", depth, rc );
          break;
       }
       
@@ -663,7 +663,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
       
       if( rc != 0 ) { 
          
-         errorf("ms_client_run_requests(delete files, %d) rc = %d\n", depth, rc );
+         SG_error("ms_client_run_requests(delete files, %d) rc = %d\n", depth, rc );
          break;
       }
       
@@ -672,7 +672,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
       
       if( rc != 0 ) {
          
-         errorf("AG_fs_delete_directories_at_depth(%d) rc = %d\n", depth, rc );
+         SG_error("AG_fs_delete_directories_at_depth(%d) rc = %d\n", depth, rc );
          break;
       }
    }
@@ -684,7 +684,7 @@ int AG_fs_delete_all( struct ms_client* client, AG_fs_map_t* map_infos, AG_fs_ma
 // NOTE: pubinfo must be given
 int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
-   dbprintf("Publish %s in %p\n", path, ag_fs );
+   SG_debug("Publish %s in %p\n", path, ag_fs );
    
    struct md_entry entry;
    memset( &entry, 0, sizeof(struct md_entry) );
@@ -697,7 +697,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    free( parent_path );
    
    if( parent_mi == NULL ) {
-      errorf("No such parent entry at '%s'\n", parent_path );
+      SG_error("No such parent entry at '%s'\n", parent_path );
       
       return -ENOENT;
    }
@@ -709,7 +709,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    free( parent_mi );
    
    if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      SG_error("AG_populate_md_entry(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;
@@ -725,7 +725,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    rc = ms_client_create( ag_fs->ms, &file_id, &write_nonce, &entry );
    
    if( rc != 0 ) {
-      errorf("ms_client_create(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_create(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;
@@ -762,7 +762,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
 // AG_fs must not be locked
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* opt_pubinfo ) {
    
-   dbprintf("Reversion %s in %p\n", path, ag_fs );
+   SG_debug("Reversion %s in %p\n", path, ag_fs );
    
    struct md_entry entry;
    memset( &entry, 0, sizeof(struct md_entry) );
@@ -772,7 +772,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    // look up the map_info
    struct AG_map_info* mi = AG_fs_lookup_path( ag_fs, path );
    if( mi == NULL ) {
-      errorf("No such entry at '%s'\n", path );
+      SG_error("No such entry at '%s'\n", path );
       return -ENOENT;
    }
    
@@ -785,7 +785,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    free( parent_path );
    
    if( parent_mi == NULL ) {
-      errorf("No such parent entry at '%s'\n", parent_path );
+      SG_error("No such parent entry at '%s'\n", parent_path );
       
       AG_map_info_free( mi );
       free( mi );
@@ -815,7 +815,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    free( parent_mi );
    
    if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      SG_error("AG_populate_md_entry(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;
@@ -830,7 +830,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    rc = ms_client_update( ag_fs->ms, &write_nonce, &entry );
    
    if( rc != 0 ) {
-      errorf("ms_client_update(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_update(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;
@@ -861,7 +861,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    // inform the driver that we reversioned
    rc = AG_driver_reversion( mi_driver, path, &reversioned_mi );
    if( rc != 0 ) {
-      errorf("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
+      SG_error("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
    }
    
    AG_map_info_free( &reversioned_mi );
@@ -873,7 +873,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
 // delete a path in the MS 
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    
-   dbprintf("Delete %s in %p\n", path, ag_fs );
+   SG_debug("Delete %s in %p\n", path, ag_fs );
    
    struct md_entry entry;
    memset( &entry, 0, sizeof(struct md_entry) );
@@ -883,7 +883,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    // look up the map_info
    struct AG_map_info* mi = AG_fs_lookup_path( ag_fs, path );
    if( mi == NULL ) {
-      errorf("No such entry at '%s'\n", path );
+      SG_error("No such entry at '%s'\n", path );
       return -ENOENT;
    }
    
@@ -896,7 +896,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    free( parent_path );
    
    if( parent_mi == NULL ) {
-      errorf("No such parent entry at '%s'\n", parent_path );
+      SG_error("No such parent entry at '%s'\n", parent_path );
       
       AG_map_info_free( mi );
       free( mi );
@@ -909,7 +909,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    AG_map_info_free( parent_mi );
    
    if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      SG_error("AG_populate_md_entry(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;
@@ -919,7 +919,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    rc = ms_client_delete( ag_fs->ms, &entry );
    
    if( rc != 0 ) {
-      errorf("ms_client_delete(%s) rc = %d\n", path, rc );
+      SG_error("ms_client_delete(%s) rc = %d\n", path, rc );
       
       md_entry_free( &entry );
       return rc;

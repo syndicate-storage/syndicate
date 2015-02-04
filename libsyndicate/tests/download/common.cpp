@@ -27,7 +27,7 @@ int print_download( struct md_download_context* dlctx, char const* base_url ) {
    
    rc = md_download_context_get_buffer( dlctx, &download_buf, &download_buf_len );
    if( rc != 0 ) {
-      errorf("md_download_context_get_buffer( %s ) rc = %d\n", rc, base_url );
+      SG_error("md_download_context_get_buffer( %s ) rc = %d\n", rc, base_url );
       return rc;
    }
    
@@ -43,7 +43,7 @@ int print_download( struct md_download_context* dlctx, char const* base_url ) {
       char* null_terminated_buf = (char*)realloc( download_buf, download_buf_len + 1 );
       
       if( null_terminated_buf == NULL ) {
-         errorf("realloc rc = %p\n", null_terminated_buf );
+         SG_error("realloc rc = %p\n", null_terminated_buf );
          exit(1);
       }
       

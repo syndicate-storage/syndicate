@@ -51,7 +51,7 @@ int main( int argc, char** argv ) {
       
       data = md_load_file( data_path, &data_size );
       if( data == NULL ) {
-         errorf("md_read_file('%s') rc = %d\n", data_path, int(data_size));
+         SG_error("md_read_file('%s') rc = %d\n", data_path, int(data_size));
          exit(1);
       }
    }
@@ -61,51 +61,51 @@ int main( int argc, char** argv ) {
    
    // create the file
    int rc = 0;
-   dbprintf("fs_entry_create( %s )\n", path );
+   SG_debug("fs_entry_create( %s )\n", path );
    struct fs_file_handle* fh = fs_entry_create( state->core, path, SYS_USER, state->core->volume, 0755, &rc );
    
    if( fh == NULL || rc != 0 ) {
-      errorf("fs_entry_create( %s ) rc = %d\n", path, rc );
+      SG_error("fs_entry_create( %s ) rc = %d\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("fs_entry_create( %s ) rc = %d\n", path, rc );
+      SG_debug("fs_entry_create( %s ) rc = %d\n", path, rc );
    }
    
    // write data, if we're supposed to 
    if( data != NULL ) {
-      dbprintf("fs_entry_write( %s, '%s' )\n", path, data );
+      SG_debug("fs_entry_write( %s, '%s' )\n", path, data );
       rc = fs_entry_write( state->core, fh, data, data_size, 0 );
       
       if( rc != data_size ) {
-         errorf("fs_entry_write( %s ) rc = %d\n", path, rc );
+         SG_error("fs_entry_write( %s ) rc = %d\n", path, rc );
          exit(1);
       }
       else {
-         dbprintf("fs_entry_write( %s ) rc = %d\n", path, rc );
+         SG_debug("fs_entry_write( %s ) rc = %d\n", path, rc );
       }
       
       // fsync data 
-      dbprintf("fs_entry_fsync( %s )\n", path );
+      SG_debug("fs_entry_fsync( %s )\n", path );
       rc = fs_entry_fsync( state->core, fh );
       if( rc != 0 ) {
-         errorf("fs_entry_fsync( %s ) rc = %d\n", path, rc );
+         SG_error("fs_entry_fsync( %s ) rc = %d\n", path, rc );
          exit(1);
       }  
       else {
-         dbprintf("fs_entry_fsync( %s ) rc = %d\n", path, rc );
+         SG_debug("fs_entry_fsync( %s ) rc = %d\n", path, rc );
       }
    }
    
    // close
-   dbprintf("fs_entry_close( %s )", path );
+   SG_debug("fs_entry_close( %s )", path );
    rc = fs_entry_close( state->core, fh );
    if( rc != 0 ) {
-      errorf("fs_entry_close( %s ) rc = %d\n", path, rc );
+      SG_error("fs_entry_close( %s ) rc = %d\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("fs_entry_close( %s ) rc = %d\n", path, rc );
+      SG_debug("fs_entry_close( %s ) rc = %d\n", path, rc );
    }
    
    free( fh );

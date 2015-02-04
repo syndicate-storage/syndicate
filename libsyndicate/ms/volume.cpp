@@ -23,7 +23,7 @@ void ms_volume_free( struct ms_volume* vol ) {
       return;
    }
    
-   dbprintf("Destroy Volume '%s'\n", vol->name );
+   SG_debug("Destroy Volume '%s'\n", vol->name );
    
    if( vol->volume_public_key ) {
       EVP_PKEY_free( vol->volume_public_key );
@@ -84,7 +84,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
    free( volume_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_download(%s) rc = %d\n", volume_url, rc );
+      SG_error("ms_client_download(%s) rc = %d\n", volume_url, rc );
 
       return rc;
    }
@@ -94,13 +94,13 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
    free( buf );
    
    if( !valid ) {
-      errorf("Invalid data for Volume %s (missing %s)\n", volume_name, volume_md.InitializationErrorString().c_str() );
+      SG_error("Invalid data for Volume %s (missing %s)\n", volume_name, volume_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
    rc = ms_client_volume_init( vol, &volume_md, volume_pubkey_pem, client->conf, client->my_pubkey, client->my_key );
    if( rc != 0 ) {
-      errorf("ms_client_volume_init rc = %d\n", rc );
+      SG_error("ms_client_volume_init rc = %d\n", rc );
       return rc;
    }
    
@@ -124,7 +124,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    struct ms_volume* vol = client->volume;
    
    if( vol == NULL ) {
-      errorf("%s", "ERR: unbound from Volume!\n" );
+      SG_error("%s", "ERR: unbound from Volume!\n" );
       ms_client_view_unlock( client );
       return -ENOENT;
    }
@@ -139,7 +139,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    rc = ms_client_download( client, volume_url, &buf, &len );
 
    if( rc != 0 ) {
-      errorf("ms_client_download(%s) rc = %d\n", volume_url, rc );
+      SG_error("ms_client_download(%s) rc = %d\n", volume_url, rc );
 
       free( volume_url );
    
@@ -153,7 +153,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    free( buf );
    
    if( !valid ) {
-      errorf("Invalid data for Volume %" PRIu64 " (missing %s)\n", volume_id, volume_md.InitializationErrorString().c_str() );
+      SG_error("Invalid data for Volume %" PRIu64 " (missing %s)\n", volume_id, volume_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
@@ -162,7 +162,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    // re-find the Volume
    vol = client->volume;
    if( vol == NULL ) {
-      errorf("%s", "ERR: unbound from Volume!" );
+      SG_error("%s", "ERR: unbound from Volume!" );
       ms_client_view_unlock( client );
       return -ENOENT;
    }
@@ -175,13 +175,13 @@ int ms_client_reload_volume( struct ms_client* client ) {
    uint64_t new_cert_version = volume_md.cert_version();
    
    if( new_version < old_version ) {
-      errorf("Invalid volume version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_version, new_version );
+      SG_error("Invalid volume version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_version, new_version );
       ms_client_view_unlock( client );
       return -ENOTCONN;
    }
    
    if( new_cert_version < old_cert_version ) {
-      errorf("Invalid certificate version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_cert_version, new_cert_version );
+      SG_error("Invalid certificate version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_cert_version, new_cert_version );
       ms_client_view_unlock( client );
       return -ENOTCONN;
    }
@@ -197,19 +197,19 @@ int ms_client_reload_volume( struct ms_client* client ) {
    ms_client_view_unlock( client );
    
    if( rc != 0 ) {
-      errorf("ms_client_volume_init(%" PRIu64 ") rc = %d\n", volume_id, rc );
+      SG_error("ms_client_volume_init(%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
    
    // do we need to download the UGs and/or RGs as well?
-   dbprintf("Volume  version %" PRIu64 " --> %" PRIu64 "\n", old_version, new_version );
-   dbprintf("Cert    version %" PRIu64 " --> %" PRIu64 "\n", old_cert_version, new_cert_version );
+   SG_debug("Volume  version %" PRIu64 " --> %" PRIu64 "\n", old_version, new_version );
+   SG_debug("Cert    version %" PRIu64 " --> %" PRIu64 "\n", old_cert_version, new_cert_version );
 
    // load new certificate information, if we have any
    if( new_cert_version > old_cert_version ) {
       rc = ms_client_reload_certs( client, new_cert_version );
       if( rc != 0 ) {
-         errorf("ms_client_reload_certs rc = %d\n", rc );
+         SG_error("ms_client_reload_certs rc = %d\n", rc );
 
          return rc;
       }
@@ -236,20 +236,20 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       }
       
       if( rc != 0 ) {
-         errorf("md_load_pubkey rc = %d\n", rc );
+         SG_error("md_load_pubkey rc = %d\n", rc );
          return -ENOTCONN;
       }
    }
 
    if( vol->volume_public_key == NULL ) {
-      errorf("%s", "unable to verify integrity of metadata for Volume!  No public key given!\n");
+      SG_error("%s", "unable to verify integrity of metadata for Volume!  No public key given!\n");
       return -ENOTCONN;
    }
 
    // verify metadata
    rc = md_verify<ms::ms_volume_metadata>( vol->volume_public_key, volume_md );
    if( rc != 0 ) {
-      errorf("Signature verification failed on Volume %s (%" PRIu64 "), rc = %d\n", volume_md->name().c_str(), volume_md->volume_id(), rc );
+      SG_error("Signature verification failed on Volume %s (%" PRIu64 "), rc = %d\n", volume_md->name().c_str(), volume_md->volume_id(), rc );
       return rc;
    }
 
@@ -257,7 +257,7 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
    if( vol->name ) {
       char* new_name = strdup( volume_md->name().c_str() );
       if( strcmp( new_name, vol->name ) != 0 ) {
-         errorf("Invalid Volume metadata: tried to change name from '%s' to '%s'\n", vol->name, new_name );
+         SG_error("Invalid Volume metadata: tried to change name from '%s' to '%s'\n", vol->name, new_name );
          free( new_name );
          return -EINVAL;
       }
@@ -267,7 +267,7 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
    struct md_entry* root = NULL;
    
    if( volume_md->has_root() ) {
-      root = CALLOC_LIST( struct md_entry, 1 );
+      root = SG_CALLOC( struct md_entry, 1 );
       ms_entry_to_md_entry( volume_md->root(), root );
    }
    
@@ -308,7 +308,7 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       if( vol->cache_closure == NULL ) {
          method = "md_closure_init";
          
-         vol->cache_closure = CALLOC_LIST( struct md_closure, 1 );
+         vol->cache_closure = SG_CALLOC( struct md_closure, 1 );
          rc = md_closure_init( vol->cache_closure, conf, gateway_pubkey, gateway_privkey,
                                MS_CLIENT_CACHE_CLOSURE_PROTOTYPE,
                                volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(),
@@ -321,15 +321,15 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       }
       
       if( rc != 0 ) {
-         errorf("%s rc = %d\n", method, rc );
+         SG_error("%s rc = %d\n", method, rc );
          return rc;
       }
       else {
-         dbprintf("(Re)initialized CDN closure %p for Volume %s\n", vol->cache_closure, vol->name );
+         SG_debug("(Re)initialized CDN closure %p for Volume %s\n", vol->cache_closure, vol->name );
       }
    }
    else {
-      errorf("WARN: no CDN closure for Volume %s\n", vol->name );
+      SG_error("WARN: no CDN closure for Volume %s\n", vol->name );
    }
    return 0;
 }

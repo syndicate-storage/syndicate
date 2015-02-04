@@ -173,7 +173,7 @@ int AG_XMLMapParserHandler::tag_type_id_from_str( char const* tag_str ) {
 // parse permissions attribute 
 static int AG_attr_parse_perm( char const* perm_str, mode_t* perm ) {
    if( strlen(perm_str) < 3 ) {
-      errorf("Invalid permissions string '%s'\n", perm_str);
+      SG_error("Invalid permissions string '%s'\n", perm_str);
       return -EINVAL;
    }
    
@@ -182,13 +182,13 @@ static int AG_attr_parse_perm( char const* perm_str, mode_t* perm ) {
    mode_t mode = (mode_t)strtol( perm_str, &tmp, 8 );
    
    if( mode == 0 || tmp == NULL ) {
-      errorf("Invalid permissions string '%s'\n", perm_str );
+      SG_error("Invalid permissions string '%s'\n", perm_str );
       return -EINVAL;
    }
       
    // sanity check--there should be no writability 
    if( (mode & 0222) != 0 ) {
-      errorf("Invalid permissions string '%s'; entries must be read-only\n", perm_str);
+      SG_error("Invalid permissions string '%s'; entries must be read-only\n", perm_str);
       return -EINVAL;
    }
    
@@ -220,7 +220,7 @@ void attr_handle_perm( AG_XMLMapParserHandler* handler, char* perm_str ) {
    
    int rc = AG_attr_parse_perm( perm_str, &perm );
    if( rc != 0 ) {
-      errorf("AG_attr_parse_perm(%s) rc = %d\n", perm_str, rc );
+      SG_error("AG_attr_parse_perm(%s) rc = %d\n", perm_str, rc );
       
       throw SAXException("AG_attr_parse_perm");
    }
@@ -228,7 +228,7 @@ void attr_handle_perm( AG_XMLMapParserHandler* handler, char* perm_str ) {
    handler->has_file_perm = true;
    handler->file_perm = perm;
    
-   // dbprintf("Parsed attr '%s' = '%s' as %o\n", AG_ATTR_PERM_NAME, perm_str, handler->file_perm );
+   // SG_debug("Parsed attr '%s' = '%s' as %o\n", AG_ATTR_PERM_NAME, perm_str, handler->file_perm );
 }
 
 
@@ -239,14 +239,14 @@ void attr_handle_query_type( AG_XMLMapParserHandler* handler, char* query_type_s
    }
    
    if( handler->query_type != NULL ) {
-      errorf("WARN: overriding query type '%s' with '%s'\n", handler->query_type, query_type_str );
+      SG_error("WARN: overriding query type '%s' with '%s'\n", handler->query_type, query_type_str );
       free( handler->query_type );
    }  
    
    handler->has_query_type = true;
    handler->query_type = strdup( query_type_str );
    
-   // dbprintf("Parsed attr '%s' = '%s'\n", AG_ATTR_PERM_NAME, handler->query_type );
+   // SG_debug("Parsed attr '%s' = '%s'\n", AG_ATTR_PERM_NAME, handler->query_type );
 }
 
 
@@ -260,7 +260,7 @@ void attr_handle_reval( AG_XMLMapParserHandler* handler, char* rt_str ) {
    int64_t rt_secs = AG_XMLMapParserHandler::parse_time(rt_str);
    
    if( rt_secs < 0 ) {
-      errorf("AG_XMLMapParserHandler::parse_time( '%s' ) rc = %" PRId64 "\n", rt_str, rt_secs);
+      SG_error("AG_XMLMapParserHandler::parse_time( '%s' ) rc = %" PRId64 "\n", rt_str, rt_secs);
       
       throw SAXException( "Unable to parse revalidation time" );
    }
@@ -268,7 +268,7 @@ void attr_handle_reval( AG_XMLMapParserHandler* handler, char* rt_str ) {
    handler->has_reval_secs = true;
    handler->reval_secs = rt_secs;
    
-   // dbprintf("Parsed attr '%s' = '%s' as %" PRIu64 "\n", AG_ATTR_REVAL_NAME, rt_str, rt_secs );
+   // SG_debug("Parsed attr '%s' = '%s' as %" PRIu64 "\n", AG_ATTR_REVAL_NAME, rt_str, rt_secs );
 }
 
 
@@ -307,7 +307,7 @@ void AG_XMLMapParserHandler::consume_attr( int tag_id, char* attr_name, char* at
    }
    
    if( !handled ) {
-      errorf("ERR: could not consume attr '%s' = '%s' for tag ID %d\n", attr_name, attr_value, tag_id );
+      SG_error("ERR: could not consume attr '%s' = '%s' for tag ID %d\n", attr_name, attr_value, tag_id );
       throw SAXException("Invalid attribute in tag");
    }
 }
@@ -323,7 +323,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
    char* tag = XMLString::transcode(localname);
    char* qname_str = XMLString::transcode( qname );
    
-   // dbprintf("start element '%s' at '%s'\n", tag, qname_str );
+   // SG_debug("start element '%s' at '%s'\n", tag, qname_str );
    
    XMLString::release(&qname_str);
    
@@ -334,7 +334,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
       int tag_id = AG_XMLMapParserHandler::tag_type_id_from_str( tag );
       if( tag_id == AG_TAG_CONFIG_ID ) {
          
-         errorf("Nesting '%s' elements is not supported\n", AG_TAG_CONFIG_NAME );
+         SG_error("Nesting '%s' elements is not supported\n", AG_TAG_CONFIG_NAME );
          
          XMLString::release(&tag);
       
@@ -348,7 +348,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
       
       this->config_tag = strdup(tag);
       
-      // dbprintf("Config tag '%s'\n", this->config_tag );
+      // SG_debug("Config tag '%s'\n", this->config_tag );
    }
    else {
       // Otherwise, make sure this is a valid tag, and then get its attributes
@@ -356,7 +356,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
       
       if( tag_id < 0 ) {
          
-         errorf("Unrecognized tag '%s'\n", tag );
+         SG_error("Unrecognized tag '%s'\n", tag );
          XMLString::release(&tag);
          
          throw SAXException( "Unrecognized tag" );
@@ -369,7 +369,7 @@ void AG_XMLMapParserHandler::startElement(const   XMLCh* const    uri,
          char* attr = XMLString::transcode(attrs.getLocalName(i));
          char* value = XMLString::transcode(attrs.getValue(i));
 
-         // dbprintf("%s '%s' = '%s'\n", tag, attr, value );
+         // SG_debug("%s '%s' = '%s'\n", tag, attr, value );
          
          this->consume_attr( tag_id, attr, value );
       }
@@ -389,35 +389,35 @@ int AG_XMLMapParserHandler::pair_check_missing_fields(const XMLCh* const qname) 
    char* qname_str = XMLString::transcode( qname );
    
    if( !this->has_file_path ) {
-      errorf("ERR: element '%s' has no '%s' or '%s' tag\n", qname_str, AG_TAG_FILE_NAME, AG_TAG_DIR_NAME );
+      SG_error("ERR: element '%s' has no '%s' or '%s' tag\n", qname_str, AG_TAG_FILE_NAME, AG_TAG_DIR_NAME );
       
       XMLString::release( &qname_str );
       return -EINVAL;
    }
    
    if( !this->has_file_perm ) {
-      errorf("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_PERM_NAME );
+      SG_error("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_PERM_NAME );
       
       XMLString::release( &qname_str );
       return -EINVAL;
    }
    
    if( !this->has_query_type ) {
-      errorf("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_QUERYTYPE_NAME );
+      SG_error("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_QUERYTYPE_NAME );
       
       XMLString::release( &qname_str );
       return -EINVAL;
    }
    
    if( !this->has_reval_secs ) {
-      errorf("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_REVAL_NAME );
+      SG_error("ERR: element '%s' has no '%s' attribute\n", qname_str, AG_ATTR_REVAL_NAME );
       
       XMLString::release( &qname_str );
       return -EINVAL;
    }
    
    if( !this->has_query_string ) {
-      errorf("ERR: element '%s' has no '%s' tag\n", qname_str, AG_TAG_QUERY_NAME );
+      SG_error("ERR: element '%s' has no '%s' tag\n", qname_str, AG_TAG_QUERY_NAME );
       
       XMLString::release( &qname_str );
       return -EINVAL;
@@ -447,7 +447,7 @@ static char* sanitize_element_buffer( char const* ro_element_buf ) {
       return NULL;
    }
    
-   char* element_buf = CALLOC_LIST( char, len - start + 1 );
+   char* element_buf = SG_CALLOC( char, len - start + 1 );
    memcpy( element_buf, ro_element_buf + start, len - start );
    
    return element_buf; 
@@ -462,7 +462,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
    // make sure this is a valid tag
    char* tag = XMLString::transcode(localname);
    char* qname_str = XMLString::transcode( qname );
-   // dbprintf("end element '%s' at '%s'\n", tag, qname_str );
+   // SG_debug("end element '%s' at '%s'\n", tag, qname_str );
    
    int rc = 0;
    int tag_id = AG_XMLMapParserHandler::tag_type_id_from_str( tag );
@@ -471,7 +471,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
       
       if( !this->in_config ) {
          // not in Config (which can have arbitrary internal tags), so this isn't recognized
-         errorf("Unrecognized tag '%s'\n", tag );
+         SG_error("Unrecognized tag '%s'\n", tag );
          XMLString::release(&tag);
          
          throw SAXException( "Unrecognized tag" );
@@ -481,7 +481,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          // this is a config element 
          char* value = sanitize_element_buffer( this->element_buf );
          
-         // dbprintf("Config element '%s'\n", value );
+         // SG_debug("Config element '%s'\n", value );
          
          // update config 
          (*this->config)[ string(this->config_tag) ] = string(value);
@@ -500,7 +500,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          
          if( this->has_file_path && this->file_path != NULL ) {
             // dup 
-            errorf("WARN: ignoring duplicate %s in %s\n", AG_TAG_FILE_NAME, qname_str );
+            SG_error("WARN: ignoring duplicate %s in %s\n", AG_TAG_FILE_NAME, qname_str );
             
          }
          else {
@@ -511,7 +511,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
             
             this->has_file_path = true;
             
-            // dbprintf("File path element '%s'\n", this->file_path );
+            // SG_debug("File path element '%s'\n", this->file_path );
             
             if( tag_id == AG_TAG_FILE_ID ) {
                this->file_path_type = MD_ENTRY_FILE;
@@ -522,7 +522,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          }
       }
       else {
-         errorf("WARN: missing file path for %s\n", qname_str );
+         SG_error("WARN: missing file path for %s\n", qname_str );
       }
       
       // prepare for next tag 
@@ -536,7 +536,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          
          if( this->has_query_string && this->query_string != NULL ) {
             // dup 
-            errorf("WARN: ignoring duplicate %s in %s\n", AG_TAG_QUERY_NAME, qname_str );
+            SG_error("WARN: ignoring duplicate %s in %s\n", AG_TAG_QUERY_NAME, qname_str );
          }
          else {
             
@@ -544,11 +544,11 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
             this->query_string = sanitize_element_buffer( this->element_buf );
             this->has_query_string = true;
             
-            // dbprintf("Query string element '%s'\n", this->query_string );
+            // SG_debug("Query string element '%s'\n", this->query_string );
          }
       }
       else {
-         errorf("WARN: missing query string for %s\n", qname_str );
+         SG_error("WARN: missing query string for %s\n", qname_str );
       }
       
       // prepare for next tag 
@@ -561,7 +561,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
       // sanity check 
       rc = this->pair_check_missing_fields( qname );
       if( rc < 0 ) {
-         errorf("ERR: could not process '%s'\n", qname_str);
+         SG_error("ERR: could not process '%s'\n", qname_str);
          throw SAXException("Missing required tag attributes");
       }
       
@@ -572,20 +572,20 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
          
          // look for dups 
          if( this->xmlmap->count( path_s ) > 0 ) {
-            errorf("WARN: ignoring duplicate entry for %s in %s\n", this->file_path, qname_str );
+            SG_error("WARN: ignoring duplicate entry for %s in %s\n", this->file_path, qname_str );
          }
          else {
             
             struct AG_driver* driver = AG_lookup_driver( this->state->drivers, this->query_type );
             if( driver == NULL ) {
                // can't load this 
-               errorf("ERR: No driver loaded for %s (query type '%s')\n", this->file_path, this->query_type );
+               SG_error("ERR: No driver loaded for %s (query type '%s')\n", this->file_path, this->query_type );
                throw SAXException("Missing required driver");
             }
             
             else {
                // we have enough information to make a map_info.
-               struct AG_map_info* mi = CALLOC_LIST( struct AG_map_info, 1 );
+               struct AG_map_info* mi = SG_CALLOC( struct AG_map_info, 1 );
                
                // populate the map info 
                AG_map_info_init( mi, this->file_path_type, this->query_string, this->file_perm, this->reval_secs, driver );
@@ -602,7 +602,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
                this->num_pairs_parsed++;
                
                if( (this->num_pairs_parsed % 1000) == 0 && this->num_pairs_parsed > 0 ) {
-                  dbprintf("%" PRIu64 " files processed so far...\n", this->num_pairs_parsed);
+                  SG_debug("%" PRIu64 " files processed so far...\n", this->num_pairs_parsed);
                }
             }
          }
@@ -616,7 +616,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
       this->in_config = false;
    }
    else if( tag_id != AG_TAG_MAP_ID ) {
-      errorf("ERR: unhandled tag %s\n", tag );
+      SG_error("ERR: unhandled tag %s\n", tag );
    }
    
    // done with this tag
@@ -638,14 +638,14 @@ void AG_XMLMapParserHandler::characters( const   XMLCh *const    chars,
     
     // store null-terminated element text 
     if( this->element_buf == NULL ) {
-       this->element_buf = CALLOC_LIST( char, length + 1 );
+       this->element_buf = SG_CALLOC( char, length + 1 );
        this->element_buf_len = length;
     }
     else {
        char* tmp = (char*)realloc( this->element_buf, this->element_buf_len + length + 1 );
        
        if( tmp == NULL ) {
-          errorf("%s", "Out of memory");
+          SG_error("%s", "Out of memory");
           exit(1);
        }
        
@@ -722,7 +722,7 @@ int64_t AG_XMLMapParserHandler::parse_time(char *tm_str) {
             int64_t n = 0;
             int rc = sscanf( tok, "%" PRId64, &n );
             if( rc != 1 ) {
-               errorf("Invalid time value '%s'\n", tok );
+               SG_error("Invalid time value '%s'\n", tok );
                
                free( tm_str_buf );
                return -EINVAL;
@@ -737,7 +737,7 @@ int64_t AG_XMLMapParserHandler::parse_time(char *tm_str) {
       }
       
       if( !handled ) {
-         errorf("Unrecognized time unit '%c' in '%s'\n", time_unit, tm_str);
+         SG_error("Unrecognized time unit '%c' in '%s'\n", time_unit, tm_str);
          
          free( tm_str_buf );
          return -EINVAL;
@@ -758,7 +758,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
    catch (const XMLException& toCatch) {
       char* message = XMLString::transcode(toCatch.getMessage());
       
-      errorf("FATAL: %s\n", message);
+      SG_error("FATAL: %s\n", message);
       
       XMLString::release(&message);
       return -EINVAL;
@@ -782,7 +782,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
    catch (const XMLException& toCatch) {
       char* message = XMLString::transcode(toCatch.getMessage());
       
-      errorf("FATAL: %s\n", message);
+      SG_error("FATAL: %s\n", message);
       
       XMLString::release(&message);
          
@@ -793,7 +793,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
    catch (const SAXParseException& toCatch) {
       char* message = XMLString::transcode(toCatch.getMessage());
       
-      errorf("FATAL: %s\n", message);
+      SG_error("FATAL: %s\n", message);
       
       XMLString::release(&message);
          
@@ -811,7 +811,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
    AG_fs_map_t* m = mph->extract_map();
    if( m->size() == 0 ) {
       // invalid--we didn't parse anything
-      errorf("ERR: empty spec file text (size = %zu)\n", spec_file_text_len );
+      SG_error("ERR: empty spec file text (size = %zu)\n", spec_file_text_len );
       
       delete m;
       

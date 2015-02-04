@@ -31,7 +31,7 @@ ssize_t httpd_GET_stream(void* cls, uint64_t pos, char* buf, size_t max) {
 
    ssize_t nr = fs_entry_read( data->state->core, data->fh, buf, max, data->offset );
    if( nr < 0 ) {
-      errorf( "fs_entry_read rc = %zd\n", nr );
+      SG_error( "fs_entry_read rc = %zd\n", nr );
       return -1;
    }
    if( nr == 0 ) {
@@ -48,7 +48,7 @@ ssize_t httpd_GET_stream(void* cls, uint64_t pos, char* buf, size_t max) {
 void http_GET_cleanup(void* cls) {
    struct httpd_GET_data* data = (struct httpd_GET_data*)(cls);
 
-   dbprintf( "close %s\n", data->fh->path );
+   SG_debug( "close %s\n", data->fh->path );
    fs_entry_close( data->state->core, data->fh );
    free( data->fh );
    free( data );
@@ -95,7 +95,7 @@ bool parse_byterange( char* header, uint64_t* start, uint64_t* end ) {
 
 // HTTP connect callback
 void* httpd_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
-   struct httpd_connection_data* dat = CALLOC_LIST( struct httpd_connection_data, 1 );
+   struct httpd_connection_data* dat = SG_CALLOC( struct httpd_connection_data, 1 );
    dat->fd = -1;
    dat->err = 0;
    return dat;
@@ -110,9 +110,9 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
 
    uint64_t owner = state->conf.owner;
 
-   dbprintf( "client_HTTP_HEAD_handler on %s\n", url);
+   SG_debug( "client_HTTP_HEAD_handler on %s\n", url);
 
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
    struct md_gateway_request_data reqdat;
@@ -162,7 +162,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
 
    rc = fs_entry_to_md_entry( state->core, &ent, md_con_data->url_path, owner, state->core->volume );
    if( rc < 0 ) {
-      errorf( "fs_entry_to_md_entry rc = %d\n", rc );
+      SG_error( "fs_entry_to_md_entry rc = %d\n", rc );
       char buf[100];
       snprintf(buf, 100, "HEAD fs_entry_to_md_entry rc = %d\n", rc );
       http_io_error_resp( resp, rc, buf );
@@ -246,7 +246,7 @@ static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_
    int err = 0;
    struct fs_file_handle* fh = fs_entry_open( state->core, reqdat->fs_path, state->conf.owner, state->core->volume, O_RDONLY, ~state->conf.usermask, &err );
    if( fh == NULL ) {
-      errorf( "could not open %s, rc = %d\n", reqdat->fs_path, err );
+      SG_error( "could not open %s, rc = %d\n", reqdat->fs_path, err );
 
       char buf[100];
       snprintf(buf, 100, "GET fs_entry_open rc = %d\n", err );
@@ -257,7 +257,7 @@ static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_
    }
 
    // stream it back
-   struct httpd_GET_data* get_data = CALLOC_LIST( struct httpd_GET_data, 1 );
+   struct httpd_GET_data* get_data = SG_CALLOC( struct httpd_GET_data, 1 );
    get_data->state = state;
    get_data->fh = fh;
    get_data->offset = 0;
@@ -290,7 +290,7 @@ static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_
 
    if( status < 400 ) {
       // success! (otherwise, already handled)
-      dbprintf( "opened %s, will read\n", fh->path );
+      SG_debug( "opened %s, will read\n", fh->path );
       md_create_HTTP_response_stream( resp, "application/octet-stream", status, size, state->core->blocking_factor, httpd_GET_stream, get_data, http_GET_cleanup );
    }
 
@@ -305,9 +305,9 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    char* url = md_con_data->url_path;
    struct syndicate_state* state = syndicate_get_state();
 
-   dbprintf( "client_HTTP_GET_handler on %s\n", url);
+   SG_debug( "client_HTTP_GET_handler on %s\n", url);
 
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
    struct md_gateway_request_data reqdat;
@@ -328,7 +328,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
 
    // error?
    if( redirect_rc < 0 ) {
-      errorf( "http_process_redirect rc = %d\n", redirect_rc );
+      SG_error( "http_process_redirect rc = %d\n", redirect_rc );
 
       md_gateway_request_data_free( &reqdat );
 
@@ -381,7 +381,7 @@ int httpd_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
                            const char *transfer_encoding, const char *data,
                            uint64_t off, size_t size) {
 
-   dbprintf( "POST/PUT %zu bytes\n", size );
+   SG_debug( "POST/PUT %zu bytes\n", size );
 
    struct md_HTTP_connection_data *md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
    struct httpd_connection_data* dat = (struct httpd_connection_data*)md_con_data->cls;
@@ -393,7 +393,7 @@ int httpd_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
          dat->fd = mkstemp( tmppath );
          if( dat->fd < 0 ) {
             dat->err = -errno;
-            errorf( "could not create temporary file, errno = %d\n", dat->err );
+            SG_error( "could not create temporary file, errno = %d\n", dat->err );
             return MHD_NO;
          }
 
@@ -408,7 +408,7 @@ int httpd_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
          ssize_t rc = write( dat->fd, data + nw, size - nw );
          if( rc < 0 ) {
             rc = -errno;
-            errorf( "could not write, rc = %zd\n", rc );
+            SG_error( "could not write, rc = %zd\n", rc );
             return MHD_NO;
          }
 
@@ -446,7 +446,7 @@ int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uin
    if( (signed)mode > 0 ) {
       int rc = fs_entry_chmod( state->core, md_con_data->url_path, owner, volume, mode );
       if( rc < 0 ) {
-         errorf( "fs_entry_chmod(%s, %o) rc = %d\n", md_con_data->url_path, mode, rc );
+         SG_error( "fs_entry_chmod(%s, %o) rc = %d\n", md_con_data->url_path, mode, rc );
          return rc;
       }
    }
@@ -458,7 +458,7 @@ int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uin
 
       int rc = fs_entry_utime( state->core, md_con_data->url_path, &ub, owner, volume );
       if( rc < 0 ) {
-         errorf( "fs_entry_utime(%s) rc = %d\n", md_con_data->url_path, rc );
+         SG_error( "fs_entry_utime(%s) rc = %d\n", md_con_data->url_path, rc );
          return rc;
       }
    }
@@ -474,7 +474,7 @@ ssize_t httpd_read_all( int fd, char* buf, size_t size ) {
       ssize_t nr = read( fd, buf + num_read, size - num_read );
       if( nr < 0 ) {
          int errsv = -errno;
-         errorf("read(%d) rc = %zd\n", fd, num_read );
+         SG_error("read(%d) rc = %zd\n", fd, num_read );
          return errsv;
       }
       
@@ -498,7 +498,7 @@ static ssize_t httpd_write_one_block( struct fs_core* core, struct fs_file_handl
    // get the chunk
    nr = httpd_read_all( fd, buf, size );
    if( nr < 0 ) {
-      errorf("httpd_read_all(%d) rc = %zd\n", fd, nr );
+      SG_error("httpd_read_all(%d) rc = %zd\n", fd, nr );
       return nr;
    }
    if( nr == 0 ) {
@@ -509,12 +509,12 @@ static ssize_t httpd_write_one_block( struct fs_core* core, struct fs_file_handl
    // put the chunk
    nw = fs_entry_write( core, fh, buf, nr, offset );
    if( nw < 0 ) {
-      errorf("fs_entry_write(%" PRIX64 ") rc = %zd\n", fh->file_id, nw );
+      SG_error("fs_entry_write(%" PRIX64 ") rc = %zd\n", fh->file_id, nw );
       return nw;
    }
    
    if( nr != nw ) {
-      errorf("fs_entry_write(%" PRIX64 ") rc = %zd, expected %zd\n", fh->file_id, nw, nr );
+      SG_error("fs_entry_write(%" PRIX64 ") rc = %zd, expected %zd\n", fh->file_id, nw, nr );
       return nw;
    }
    
@@ -525,7 +525,7 @@ static ssize_t httpd_write_one_block( struct fs_core* core, struct fs_file_handl
 // align writes to block boundaries for efficiency
 static int httpd_write( struct fs_core* core, struct fs_file_handle* fh, int fd, size_t size, off_t offset ) {
    // buffer by block 
-   char* block_buf = CALLOC_LIST( char, core->blocking_factor );
+   char* block_buf = SG_CALLOC( char, core->blocking_factor );
    ssize_t num_read = 0;
    ssize_t num_written = 0;
    off_t cur_offset = offset;
@@ -540,7 +540,7 @@ static int httpd_write( struct fs_core* core, struct fs_file_handle* fh, int fd,
       
       ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, partial_head_size, cur_offset );
       if( processed < 0 ) {
-         errorf("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed);
+         SG_error("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed);
          return processed;
       }
       if( processed == 0 ) {
@@ -567,7 +567,7 @@ static int httpd_write( struct fs_core* core, struct fs_file_handle* fh, int fd,
       
       ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, write_size, cur_offset );
       if( processed < 0 ) {
-         errorf("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed );
+         SG_error("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed );
          return processed;
       }
       if( processed == 0 ) {
@@ -599,7 +599,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    int fd = dat->fd;
    
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    mode_t mode = httpd_get_mode_header( md_con_data->headers );
    if( mode <= 0 )
@@ -612,7 +612,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
          // make a directory?
          if( strlen(md_con_data->url_path) > 0 && md_con_data->url_path[ strlen(md_con_data->url_path)-1 ] == '/' ) {
             // make a URL for this directory
-            char* tmp = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + strlen(state->conf.data_root) + 1 );
+            char* tmp = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + strlen(state->conf.data_root) + 1 );
             sprintf(tmp, "%s%s", SYNDICATEFS_LOCAL_PROTO, state->conf.data_root );
             char* dir_url = md_fullpath( tmp, md_con_data->url_path, NULL );
             free( tmp );
@@ -620,7 +620,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
             int rc = fs_entry_mkdir( state->core, md_con_data->url_path, mode, state->conf.owner, state->core->volume );
             if( rc < 0 ) {
                // didn't work
-               errorf( "fs_entry_mkdir rc = %d\n", rc );
+               SG_error( "fs_entry_mkdir rc = %d\n", rc );
 
                char buf[100];
                snprintf(buf, 100, "UPLOAD fs_entry_mkdir rc = %d\n", rc );
@@ -669,7 +669,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    int rc = fstat( fd, &sb );
    if( rc != 0 ) {
       rc = -errno;
-      errorf( "fstat rc = %d\n", rc );
+      SG_error( "fstat rc = %d\n", rc );
 
       char buf[100];
       snprintf( buf, 100, "UPLOAD fstat rc = %d\n", rc );
@@ -706,7 +706,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    
    if( fh == NULL ) {
       // could not open
-      errorf( "fs_entry_open rc = %d\n", err );
+      SG_error( "fs_entry_open rc = %d\n", err );
 
       char buf[100];
       snprintf( buf, 100, "UPLOAD fs_entry_open rc = %d\n", err );
@@ -719,7 +719,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    // apply the mode (but not utime) headers
    rc = httpd_upload_apply_headers( md_con_data, state->conf.owner, state->core->volume, false );
    if( rc < 0 ) {
-      errorf( "http_upload_apply_headers rc = %d\n", rc );
+      SG_error( "http_upload_apply_headers rc = %d\n", rc );
 
       char buf[100];
       snprintf( buf, 100, "UPLOAD http_upload_apply_headers rc = %d\n", rc );
@@ -734,7 +734,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    ssize_t nw = httpd_write( state->core, fh, fd, size, start_range );
    if( nw < 0 ) {
       // some error
-      errorf( "fs_entry_write rc = %zd\n", nw );
+      SG_error( "fs_entry_write rc = %zd\n", nw );
 
       char buf[100];
       snprintf( buf, 100, "UPLOAD fs_entry_write rc = %zd\n", nw );
@@ -743,7 +743,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    else if( nw != size ) {
       // not everything wrote
-      errorf( "fs_entry_write: wrote %zd; expected %" PRId64 "\n", nw, size );
+      SG_error( "fs_entry_write: wrote %zd; expected %" PRId64 "\n", nw, size );
 
       char buf[200];
       snprintf( buf, 200, "UPLOAD fs_entry_write: wrote %zd; expected %" PRId64 "\n", nw, size );
@@ -769,7 +769,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
    struct syndicate_state *state = syndicate_get_state();
 
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    struct stat sb;
    int rc = fs_entry_stat( state->core, md_con_data->url_path, &sb, state->conf.owner, state->core->volume );
@@ -967,7 +967,7 @@ int main( int argc, char** argv ) {
 
    rc = md_start_HTTP( &g_http, portnum, &state->conf );
    if( rc < 0 ) {
-      errorf( "md_HTTP_start on %d rc = %d\n", portnum, rc );
+      SG_error( "md_HTTP_start on %d rc = %d\n", portnum, rc );
       exit(1);
    }
 
@@ -981,14 +981,14 @@ int main( int argc, char** argv ) {
       // daemonize
       rc = md_daemonize( logfile, pidfile, NULL );
       if( rc < 0 ) {
-         errorf( "md_daemonize rc = %d\n", rc );
+         SG_error( "md_daemonize rc = %d\n", rc );
          fprintf(stderr, "Failed to become a daemon\n");
          exit(1);
       }
       else {
          rc = md_release_privileges();
          if( rc != 0 ) {
-            errorf("md_release_privileges rc = %d\n", rc );
+            SG_error("md_release_privileges rc = %d\n", rc );
             fprintf(stderr, "Failed to drop privileges\n");
             exit(1);
          }

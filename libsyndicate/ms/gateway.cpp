@@ -24,7 +24,7 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 
    if( client->volume->volume_id != volume_id ) {
       // not from this volume
-      errorf("Message from outside the Volume (%" PRIu64 ")\n", volume_id );
+      SG_error("Message from outside the Volume (%" PRIu64 ")\n", volume_id );
       ms_client_view_unlock( client );
       return -ENOENT;
    }
@@ -34,7 +34,7 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
    if( itr == client->volume->UG_certs->end() ) {
       // not found here--probably means we need to reload our certs
       
-      dbprintf("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
+      SG_debug("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
       sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
@@ -53,13 +53,13 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 char** ms_client_RG_urls( struct ms_client* client, char const* scheme ) {
    ms_client_view_rlock( client );
 
-   char** urls = CALLOC_LIST( char*, client->volume->RG_certs->size() + 1 );
+   char** urls = SG_CALLOC( char*, client->volume->RG_certs->size() + 1 );
    int i = 0;
    
    for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
       struct ms_gateway_cert* rg_cert = itr->second;
       
-      urls[i] = CALLOC_LIST( char, strlen(scheme) + strlen(rg_cert->hostname) + 1 + 7 + 1 + strlen(SYNDICATE_DATA_PREFIX) + 2 );
+      urls[i] = SG_CALLOC( char, strlen(scheme) + strlen(rg_cert->hostname) + 1 + 7 + 1 + strlen(SYNDICATE_DATA_PREFIX) + 2 );
       sprintf( urls[i], "%s%s:%d/%s/", scheme, rg_cert->hostname, rg_cert->portnum, SYNDICATE_DATA_PREFIX );
       
       i++;
@@ -74,7 +74,7 @@ char** ms_client_RG_urls( struct ms_client* client, char const* scheme ) {
 uint64_t* ms_client_RG_ids( struct ms_client* client ) {
    ms_client_view_rlock( client );
    
-   uint64_t* ret = CALLOC_LIST( uint64_t, client->volume->RG_certs->size() + 1 );
+   uint64_t* ret = SG_CALLOC( uint64_t, client->volume->RG_certs->size() + 1 );
    int i = 0;
    
    for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
@@ -157,14 +157,14 @@ char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
 
    ms_cert_bundle::iterator itr = client->volume->AG_certs->find( ag_id );
    if( itr != client->volume->AG_certs->end() ) {
-      ret = CALLOC_LIST( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
+      ret = SG_CALLOC( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
       sprintf( ret, "http://%s:%d/", itr->second->hostname, itr->second->portnum );
    }
 
    ms_client_view_unlock( client );
 
    if( ret == NULL ) {
-      errorf("No such AG %" PRIu64 "\n", ag_id );
+      SG_error("No such AG %" PRIu64 "\n", ag_id );
    }
 
    return ret;
@@ -178,14 +178,14 @@ char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t rg_id ) {
 
    ms_cert_bundle::iterator itr = client->volume->RG_certs->find( rg_id );
    if( itr != client->volume->RG_certs->end() ) {
-      ret = CALLOC_LIST( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
+      ret = SG_CALLOC( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
       sprintf( ret, "http://%s:%d/", itr->second->hostname, itr->second->portnum );
    }
 
    ms_client_view_unlock( client );
 
    if( ret == NULL ) {
-      errorf("No such RG %" PRIu64 "\n", rg_id );
+      SG_error("No such RG %" PRIu64 "\n", rg_id );
    }
 
    return ret;
@@ -217,12 +217,12 @@ char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_i
 
    ms_cert_bundle::iterator itr = client->volume->UG_certs->find( gateway_id );
    if( itr == client->volume->UG_certs->end() ) {
-      errorf("No such Gateway %" PRIu64 "\n", gateway_id );
+      SG_error("No such Gateway %" PRIu64 "\n", gateway_id );
       ms_client_view_unlock( client );
       return NULL;
    }
    
-   ret = CALLOC_LIST( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
+   ret = SG_CALLOC( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
    sprintf( ret, "http://%s:%d/", itr->second->hostname, itr->second->portnum );
    
    ms_client_view_unlock( client );
@@ -354,7 +354,7 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
    int ret = 0;
    
    if( my_cert->closure_text != NULL ) {
-      *closure_text = CALLOC_LIST( char, my_cert->closure_text_len );
+      *closure_text = SG_CALLOC( char, my_cert->closure_text_len );
       memcpy( *closure_text, my_cert->closure_text, my_cert->closure_text_len );
       *closure_len = my_cert->closure_text_len;
    }

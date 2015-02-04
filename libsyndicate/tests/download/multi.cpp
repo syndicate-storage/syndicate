@@ -19,7 +19,7 @@
 int main( int argc, char** argv ) {
    // usage: $NAME URL [URL...]
    if( argc <= 1 ) {
-      errorf("Usage: %s URL [URL...]", argv[0] );
+      SG_error("Usage: %s URL [URL...]", argv[0] );
       exit(1);
    }
    
@@ -33,14 +33,14 @@ int main( int argc, char** argv ) {
    struct md_downloader dl;
    rc = md_downloader_init( &dl, "test downloader" );
    if( rc != 0 ) {
-      errorf("md_downloader_init rc = %d\n", rc );
+      SG_error("md_downloader_init rc = %d\n", rc );
       exit(1);
    }
    
    // start downloader 
    rc = md_downloader_start( &dl );
    if( rc != 0 ) {
-      errorf("md_downloader_start rc = %d\n", rc );
+      SG_error("md_downloader_start rc = %d\n", rc );
       exit(1);
    }
    
@@ -48,7 +48,7 @@ int main( int argc, char** argv ) {
    struct md_download_set dlset;
    rc = md_download_set_init( &dlset );
    if( rc != 0 ) {
-      errorf("md_download_set_init rc = %d\n", rc );
+      SG_error("md_download_set_init rc = %d\n", rc );
       exit(1);
    }
    
@@ -63,28 +63,28 @@ int main( int argc, char** argv ) {
       md_init_curl_handle2( curl_h, url, 30, true );
       
       // make a download context for this URL
-      dbprintf("initializing download for %s\n", url );
-      struct md_download_context* dlctx = CALLOC_LIST( struct md_download_context, 1 );
+      SG_debug("initializing download for %s\n", url );
+      struct md_download_context* dlctx = SG_CALLOC( struct md_download_context, 1 );
       
       rc = md_download_context_init( dlctx, curl_h, NULL, NULL, -1 );
       if( rc != 0 ) {
-         errorf("md_download_context_init( %s ) rc = %d\n", url, rc );
+         SG_error("md_download_context_init( %s ) rc = %d\n", url, rc );
          exit(1);
       }
       
       // add it to the download set 
-      dbprintf("adding %s to the download set\n", url );
+      SG_debug("adding %s to the download set\n", url );
       rc = md_download_set_add( &dlset, dlctx );
       if( rc != 0 ) {
-         errorf("md_download_set_add( %s ) rc = %d\n", url, rc );
+         SG_error("md_download_set_add( %s ) rc = %d\n", url, rc );
          exit(1);
       }
       
       // start it
-      dbprintf("Starting download for %s\n", url );
+      SG_debug("Starting download for %s\n", url );
       rc = md_download_context_start( &dl, dlctx, NULL, url );
       if( rc != 0 ) {
-         errorf("md_download_context_start( %s ) rc = %d\n", url, rc );
+         SG_error("md_download_context_start( %s ) rc = %d\n", url, rc );
          exit(1);
       }
    }
@@ -93,11 +93,11 @@ int main( int argc, char** argv ) {
    while( md_download_set_size( &dlset ) > 0 ) {
       
       // wait for any of them to finish 
-      dbprintf("Wait for %zu downloads to finish...\n", md_download_set_size( &dlset ) );
+      SG_debug("Wait for %zu downloads to finish...\n", md_download_set_size( &dlset ) );
       
       rc = md_download_context_wait_any( &dlset, -1 );
       if( rc != 0 ) {
-         errorf("md_download_wait_any rc = %d\n", rc );
+         SG_error("md_download_wait_any rc = %d\n", rc );
       }
       
       // find the ones that are done 
@@ -117,21 +117,21 @@ int main( int argc, char** argv ) {
             char* url = NULL;
             rc = md_download_context_get_effective_url( dlctx, &url );
             if( rc != 0 ) {
-               errorf("md_downlaod_context_get_effective_url rc = %d\n", rc );
+               SG_error("md_downlaod_context_get_effective_url rc = %d\n", rc );
                exit(1);
             }
             
             // print results
             rc = print_download( dlctx, url );
             if( rc != 0 ) {
-               errorf("print_download( %s ) rc = %d\n", url, rc );
+               SG_error("print_download( %s ) rc = %d\n", url, rc );
                exit(1);
             }
             
             // remove it
             rc = md_download_set_clear_itr( &dlset, curr_itr );
             if( rc != 0 ) {
-               errorf("md_downlaod_set_clear rc = %d\n", url, rc );
+               SG_error("md_downlaod_set_clear rc = %d\n", url, rc );
                exit(1);
             }
             
@@ -148,29 +148,29 @@ int main( int argc, char** argv ) {
          }
       }
       
-      dbprintf("Download set now has %zu downloads remaining\n", md_download_set_size( &dlset ) );
+      SG_debug("Download set now has %zu downloads remaining\n", md_download_set_size( &dlset ) );
    }
    
    // free the download set 
-   dbprintf("%s", "freeing download set\n");
+   SG_debug("%s", "freeing download set\n");
    rc = md_download_set_free( &dlset );
    if( rc != 0 ) {
-      errorf("md_download_set_free rc = %d\n", rc );
+      SG_error("md_download_set_free rc = %d\n", rc );
       exit(1);
    }
    
    // stop the downloader 
-   dbprintf("%s", "stopping downloader\n");
+   SG_debug("%s", "stopping downloader\n");
    rc = md_downloader_stop( &dl );
    if( rc != 0 ) {
-      errorf("md_downloader_stop rc = %d\n", rc );
+      SG_error("md_downloader_stop rc = %d\n", rc );
       exit(1);
    }
    
    // shut it down 
    rc = md_downloader_shutdown( &dl );
    if( rc != 0 ) {
-      errorf("md_downloader_shutdown rc = %d\n", rc );
+      SG_error("md_downloader_shutdown rc = %d\n", rc );
       exit(1);
    }
    

@@ -29,51 +29,51 @@ void shell_driver_set_state( struct shell_driver_state* state ) {
 
 // lock control for process table entries
 static int proc_table_entry_wlock(struct proc_table_entry *pte) {
-   dbprintf("wlock PTE %p\n", pte);
+   SG_debug("wlock PTE %p\n", pte);
    return pthread_rwlock_wrlock(&pte->pte_lock);
 }
 
 static int proc_table_entry_rlock(struct proc_table_entry *pte) {
-   dbprintf("rlock PTE %p\n", pte);
+   SG_debug("rlock PTE %p\n", pte);
    return pthread_rwlock_rdlock(&pte->pte_lock);
 }
 
 static int proc_table_entry_unlock(struct proc_table_entry *pte) {
-   dbprintf("unlock PTE %p\n", pte);
+   SG_debug("unlock PTE %p\n", pte);
    return pthread_rwlock_unlock(&pte->pte_lock);
 }
 
 
 // lock control for running processes 
 static int proc_table_rlock( struct shell_driver_state* state ) {
-   dbprintf("rlock process table %p\n", state->running );
+   SG_debug("rlock process table %p\n", state->running );
    return pthread_rwlock_rdlock( &state->running_lock );
 }
 
 static int proc_table_wlock( struct shell_driver_state* state ) {
-   dbprintf("wlock process table %p\n", state->running );
+   SG_debug("wlock process table %p\n", state->running );
    return pthread_rwlock_wrlock( &state->running_lock );
 }
 
 static int proc_table_unlock( struct shell_driver_state* state ) {
-   dbprintf("unlock process table %p\n", state->running );
+   SG_debug("unlock process table %p\n", state->running );
    return pthread_rwlock_unlock( &state->running_lock );
 }
 
 
 // lock control for cache entries 
 static int cache_table_rlock( struct shell_driver_state* state ) {
-   dbprintf("rlock cache table %p\n", state->cache_table );
+   SG_debug("rlock cache table %p\n", state->cache_table );
    return pthread_rwlock_rdlock( &state->cache_lock );
 }
 
 static int cache_table_wlock( struct shell_driver_state* state ) {
-   dbprintf("wlock cache table %p\n", state->cache_table );
+   SG_debug("wlock cache table %p\n", state->cache_table );
    return pthread_rwlock_wrlock( &state->cache_lock );
 }
 
 static int cache_table_unlock( struct shell_driver_state* state ) {
-   dbprintf("unlock cache table %p\n", state->cache_table );
+   SG_debug("unlock cache table %p\n", state->cache_table );
    return pthread_rwlock_unlock( &state->cache_lock );
 }
    
@@ -159,7 +159,7 @@ static int proc_kill( struct proc_table_entry* entry ) {
       rc = -errno;
       
       if( rc != -ESRCH ) {
-         errorf("kill %d (stdout=%s) errno = %d\n", entry->pid, entry->stdout_path, rc );
+         SG_error("kill %d (stdout=%s) errno = %d\n", entry->pid, entry->stdout_path, rc );
       }
    }
    else {
@@ -167,7 +167,7 @@ static int proc_kill( struct proc_table_entry* entry ) {
       rc = kill( entry->pid, SIGKILL );
       if( rc != 0 ) {
          rc = -errno;
-         errorf("kill SIGKILL %d (stdout=%s) errno = %d\n", entry->pid, entry->stdout_path, rc );
+         SG_error("kill SIGKILL %d (stdout=%s) errno = %d\n", entry->pid, entry->stdout_path, rc );
       }
    }
    
@@ -192,7 +192,7 @@ static int proc_remove( proc_table_t* running, proc_table_t::iterator itr ) {
       rc = proc_kill( pte );
       
       if( rc != 0 ) {
-         errorf("WARN: proc_kill(%p pid=%d) rc = %d\n", pte, pte->pid, rc );
+         SG_error("WARN: proc_kill(%p pid=%d) rc = %d\n", pte, pte->pid, rc );
       }
    }
    
@@ -247,7 +247,7 @@ void proc_sigchld_handler(int signum) {
             return;
          }
          else {
-            errorf("waitpid errno = %d\n", errsv );
+            SG_error("waitpid errno = %d\n", errsv );
             return;
          }
       }
@@ -279,11 +279,11 @@ void proc_sigchld_handler(int signum) {
             // ask the AG to post new information for our stdout--i.e. the size and mtime
             struct stat sb;
             
-            dbprintf("Process %d finished generating %s; try to re-publish\n", pid, request_path);
+            SG_debug("Process %d finished generating %s; try to re-publish\n", pid, request_path);
             
             int rc = proc_stat_data( state, request_path, &sb );
             if( rc != 0 ) {
-               errorf("proc_stat_data(%s) rc = %d\n", request_path, rc );
+               SG_error("proc_stat_data(%s) rc = %d\n", request_path, rc );
             }
             else {
                
@@ -296,7 +296,7 @@ void proc_sigchld_handler(int signum) {
                rc = AG_driver_request_reversion( request_path, &pubinfo );
                
                if( rc != 0 ) {
-                  errorf("WARN: AG_driver_request_reversion(%s) rc = %d\n", request_path, rc );
+                  SG_error("WARN: AG_driver_request_reversion(%s) rc = %d\n", request_path, rc );
                }
             }
          }
@@ -329,7 +329,7 @@ int shell_driver_state_start( struct shell_driver_state* state ) {
 // stop all running processes and clear out the cache
 int shell_driver_state_stop( struct shell_driver_state* state ) {
    
-   dbprintf("Stopping all running processes for %p\n", state );
+   SG_debug("Stopping all running processes for %p\n", state );
    
    proc_table_wlock( state );
    
@@ -339,7 +339,7 @@ int shell_driver_state_stop( struct shell_driver_state* state ) {
       
       int rc = proc_kill( pte );
       if( rc != 0 ) {
-         errorf("WARN: proc_kill( %d ) rc = %d\n", pte->pid, rc );
+         SG_error("WARN: proc_kill( %d ) rc = %d\n", pte->pid, rc );
          
          proc_table_entry_clean( pte );
       }
@@ -361,7 +361,7 @@ int shell_driver_state_stop( struct shell_driver_state* state ) {
       if( rc != 0 ) {
          
          rc = -errno;
-         errorf("WARN: unlink(%s) errno = %d\n", stdout_path, rc );
+         SG_error("WARN: unlink(%s) errno = %d\n", stdout_path, rc );
       }
    }
    
@@ -425,7 +425,7 @@ static int dup2_or_exit( int old_fd, int new_fd ) {
    if( rc != 0 ) {
       
       rc = -errno;
-      errorf("dup2 errno = %d\n", rc );
+      SG_error("dup2 errno = %d\n", rc );
       exit(4);
    }
    
@@ -449,7 +449,7 @@ int proc_evict_cache( struct shell_driver_state* state, char const* request_path
       if( rc != 0 ) {
          
          rc = -errno;
-         errorf("unlink(%s) errno = %d\n", stdout_path, rc );
+         SG_error("unlink(%s) errno = %d\n", stdout_path, rc );
       }
       
       state->cache_table->erase( itr );
@@ -474,7 +474,7 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
    if( rc != 0 ) {
       
       rc = -errno;
-      errorf("pipe rc = %d\n", rc);
+      SG_error("pipe rc = %d\n", rc);
       return rc;
    }
    
@@ -485,7 +485,7 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
    if( stdout_fd < 0 ) {
       
       rc = -errno;
-      errorf("mkstemp(%s) errno = %d\n", stdout_path, rc );
+      SG_error("mkstemp(%s) errno = %d\n", stdout_path, rc );
       
       free( stdout_path );
       
@@ -535,13 +535,13 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
       if( len < 0 ) {
          
          rc = -errno;
-         errorf("Child: read errno = %d\n", rc );
+         SG_error("Child: read errno = %d\n", rc );
          exit(1);
       }
       
       if( len == 0 ) {
          
-         errorf("%s", "BUG: parent closed pipe before writing\n");
+         SG_error("%s", "BUG: parent closed pipe before writing\n");
          exit(2);
       }
       
@@ -567,7 +567,7 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
       // run the command 
       rc = system( shell_cmd );
       if( rc == -1 || rc == 127 ) {
-         errorf("Running '%s' exited with return code %d\n", shell_cmd, rc );
+         SG_error("Running '%s' exited with return code %d\n", shell_cmd, rc );
       }
       
       // done!  parent will get SIGCHLD
@@ -578,7 +578,7 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
       // parent 
       close( stdout_fd );
       
-      struct proc_table_entry* pte = CALLOC_LIST( struct proc_table_entry, 1 );
+      struct proc_table_entry* pte = SG_CALLOC( struct proc_table_entry, 1 );
       
       // set up the process table entry 
       proc_table_entry_init( pte, request_path, stdout_path, child_pid );
@@ -592,7 +592,7 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
          
          // somehow, we failed to wake the child up 
          rc = -errno;
-         errorf("ERR: write(%d) for child %d errno = %d\n", child_pipe[1], child_pid, rc );
+         SG_error("ERR: write(%d) for child %d errno = %d\n", child_pipe[1], child_pid, rc );
          
          // clean up 
          proc_kill( pte );
@@ -624,13 +624,13 @@ static int proc_start( struct shell_driver_state* state, char const* request_pat
       
       // failed to fork
       int fork_errno = -errno;
-      errorf("ERR: fork() errno = %d\n", fork_errno );
+      SG_error("ERR: fork() errno = %d\n", fork_errno );
       
       rc = unlink( stdout_path );
       if( rc != 0 ) {
       
          rc = -errno;
-         errorf("WARN: unlink(%s) errno = %d\n", stdout_path, rc );
+         SG_error("WARN: unlink(%s) errno = %d\n", stdout_path, rc );
       }
       
       free( stdout_path );
@@ -665,7 +665,7 @@ int proc_ensure_has_data( struct shell_driver_state* state, struct proc_connecti
    int rc = proc_start( state, ctx->request_path, ctx->shell_cmd );
    if( rc != 0 && rc != -EINPROGRESS ) {
       
-      errorf("proc_start( request_path=%s proc='%s' ) rc = %d\n", ctx->request_path, ctx->shell_cmd, rc );
+      SG_error("proc_start( request_path=%s proc='%s' ) rc = %d\n", ctx->request_path, ctx->shell_cmd, rc );
       return rc;
    }
    
@@ -733,7 +733,7 @@ int proc_stat_data( struct shell_driver_state* state, char const* request_path, 
    if( rc != 0 ) {
       
       rc = -errno;
-      errorf("stat(%s) errno = %d\n", stdout_path, rc );
+      SG_error("stat(%s) errno = %d\n", stdout_path, rc );
    }
    
    free( stdout_path );
@@ -771,7 +771,7 @@ int proc_read_block_data( struct shell_driver_state* state, char const* request_
    if( rc != 0 ) {
       
       rc = -errno;
-      errorf("stat(%s) for %s errno = %d\n", stdout_path, request_path, rc );
+      SG_error("stat(%s) for %s errno = %d\n", stdout_path, request_path, rc );
       
       free( stdout_path );
       return rc;
@@ -801,7 +801,7 @@ int proc_read_block_data( struct shell_driver_state* state, char const* request_
       if( fd < 0 ) {
          
          rc = -errno;
-         errorf("open(%s) errno = %d\n", stdout_path, rc );
+         SG_error("open(%s) errno = %d\n", stdout_path, rc );
          
          free( stdout_path );
          return rc;
@@ -814,7 +814,7 @@ int proc_read_block_data( struct shell_driver_state* state, char const* request_
          if( nr < 0 ) {
             
             rc = -errno;
-            errorf("read(%s) errno = %d\n", stdout_path, rc );
+            SG_error("read(%s) errno = %d\n", stdout_path, rc );
             break;
          }
          if( nr == 0 ) {

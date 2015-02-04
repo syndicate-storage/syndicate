@@ -44,15 +44,15 @@ int main( int argc, char** argv ) {
    
    // open the file
    int rc = 0;
-   dbprintf("\n\n\nfs_entry_open( %s )\n\n\n", path );
+   SG_debug("\n\n\nfs_entry_open( %s )\n\n\n", path );
    struct fs_file_handle* fh = fs_entry_open( state->core, path, SYS_USER, state->core->volume, O_WRONLY, 0755, &rc );
    
    if( fh == NULL || rc != 0 ) {
-      errorf("\n\n\nfs_entry_open( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\nfs_entry_open( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\nfs_entry_open( %s ) rc = %d\n\n\n", path, rc );
+      SG_debug("\n\n\nfs_entry_open( %s ) rc = %d\n\n\n", path, rc );
    }
    
    // write data
@@ -72,27 +72,27 @@ int main( int argc, char** argv ) {
       size_t size = strlen(buf);
       
       // write the data
-      dbprintf("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' )\n\n\n", path, size, offset, buf );
+      SG_debug("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' )\n\n\n", path, size, offset, buf );
       ssize_t nw = fs_entry_write( state->core, fh, buf, size, offset );
       
       if( nw < 0 ) {
-         errorf("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' ) rc = %d\n\n\n", path, size, offset, buf, nw );
+         SG_error("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' ) rc = %d\n\n\n", path, size, offset, buf, nw );
          exit(1);
       }
       else {
-         dbprintf("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' ) rc = %zd\n\n\n", path, size, offset, buf, nw );
+         SG_debug("\n\n\nfs_entry_write( %s, %ld, %ld, '%s' ) rc = %zd\n\n\n", path, size, offset, buf, nw );
       }
    }
    
    // close
-   dbprintf("\n\n\nfs_entry_close( %s )\n\n\n", path );
+   SG_debug("\n\n\nfs_entry_close( %s )\n\n\n", path );
    rc = fs_entry_close( state->core, fh );
    if( rc != 0 ) {
-      errorf("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
+      SG_error("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
+      SG_debug("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
    }
    
    free( fh );

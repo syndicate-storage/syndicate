@@ -178,7 +178,7 @@ unsigned char* sha256_file( char const* path ) {
    while( !feof( f ) ) {
       num_read = fread( buf, 1, 32768, f );
       if( ferror( f ) ) {
-         errorf("sha256_file: I/O error reading %s\n", path );
+         SG_error("sha256_file: I/O error reading %s\n", path );
          SHA256_Final( new_checksum, &context );
          free( new_checksum );
          fclose( f );
@@ -205,7 +205,7 @@ unsigned char* sha256_fd( int fd ) {
    while( num_read > 0 ) {
       num_read = read( fd, buf, 32768 );
       if( num_read < 0 ) {
-         errorf("sha256_file: I/O error reading FD %d, errno=%d\n", fd, -errno );
+         SG_error("sha256_file: I/O error reading FD %d, errno=%d\n", fd, -errno );
          SHA256_Final( new_checksum, &context );
          free( new_checksum );
          return NULL;
@@ -230,7 +230,7 @@ char* md_load_file( char const* path, off_t* size ) {
       return NULL;
    }
    
-   char* ret = CALLOC_LIST( char, statbuf.st_size );
+   char* ret = SG_CALLOC( char, statbuf.st_size );
    if( ret == NULL ) {
       return NULL;
    }
@@ -372,7 +372,7 @@ int md_unix_socket( char const* path, bool server ) {
    
    // sanity check 
    if( strlen(path) >= sizeof(addr.sun_path) - 1 ) {
-      errorf("%s is too long\n", path );
+      SG_error("%s is too long\n", path );
       return -EINVAL;
    }
    
@@ -380,7 +380,7 @@ int md_unix_socket( char const* path, bool server ) {
    fd = socket( AF_UNIX, SOCK_STREAM, 0 );
    if( fd < 0 ) {
       fd = -errno;
-      errorf("socket(%s) rc = %d\n", path, fd );
+      SG_error("socket(%s) rc = %d\n", path, fd );
       return fd;
    }
    
@@ -394,7 +394,7 @@ int md_unix_socket( char const* path, bool server ) {
       rc = bind( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
       if( rc < 0 ) {
          rc = -errno;
-         errorf("bind(%s) rc = %d\n", path, rc );
+         SG_error("bind(%s) rc = %d\n", path, rc );
          close( fd );
          return rc;
       }
@@ -402,7 +402,7 @@ int md_unix_socket( char const* path, bool server ) {
       // listen on it
       rc = listen( fd, 100 );
       if( rc < 0 ) {
-         errorf("listen(%s) rc = %d\n", path, rc );
+         SG_error("listen(%s) rc = %d\n", path, rc );
          close( fd );
          return rc;
       }
@@ -412,7 +412,7 @@ int md_unix_socket( char const* path, bool server ) {
       rc = connect( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
       if( rc < 0 ) {
          rc = -errno;
-         errorf("connect(%s) rc = %d\n", path, rc );
+         SG_error("connect(%s) rc = %d\n", path, rc );
          close( fd );
          return rc;
       }
@@ -433,7 +433,7 @@ int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen
    int fd = mkstemp( so_path );
    if( fd < 0 ) {
       rc = -errno;
-      errorf("mkstemp(%s) rc = %zd\n", so_path, rc );
+      SG_error("mkstemp(%s) rc = %zd\n", so_path, rc );
       free( so_path );
       return rc;
    }
@@ -698,7 +698,7 @@ static int md_zlib_err( int zerr ) {
 int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
    uint32_t out_buf_len = compressBound( in_len );
-   char* out_buf = CALLOC_LIST( char, out_buf_len );
+   char* out_buf = SG_CALLOC( char, out_buf_len );
    
    if( out_buf == NULL ) {
       return -ENOMEM;
@@ -708,7 +708,7 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
    int rc = compress2( (unsigned char*)out_buf, &out_buf_len_ul, (unsigned char*)in, in_len, 9 );
    if( rc != Z_OK ) {
-      errorf("compress2 rc = %d\n", rc );
+      SG_error("compress2 rc = %d\n", rc );
       
       free( out_buf );
       return md_zlib_err( rc );
@@ -717,7 +717,7 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    *out = (char*)out_buf;
    *out_len = out_buf_len_ul;
    
-   dbprintf("compressed %zu bytes down to %zu bytes\n", in_len, *out_len );
+   SG_debug("compressed %zu bytes down to %zu bytes\n", in_len, *out_len );
    
    return 0;
 }
@@ -726,7 +726,7 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
 int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
    uLongf out_buf_len = *out_len;
-   char* out_buf = CALLOC_LIST( char, out_buf_len );;
+   char* out_buf = SG_CALLOC( char, out_buf_len );;
    
    if( out_buf == NULL ) {
       return -ENOMEM;
@@ -756,7 +756,7 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
          continue;
       }
       else if( rc != Z_OK ) {
-         errorf("uncompress rc = %d\n", rc );
+         SG_error("uncompress rc = %d\n", rc );
          
          free( out_buf );
          return md_zlib_err( rc );
@@ -768,7 +768,7 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
       break;
    }
    
-   dbprintf("decompressed %zu bytes up to %zu bytes\n", in_len, *out_len );
+   SG_debug("decompressed %zu bytes up to %zu bytes\n", in_len, *out_len );
    
    return 0;
 }
@@ -816,12 +816,12 @@ int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len ) {
    if( dest->ptr == NULL ) {
       int rc = mlock_calloc( dest, src_len );
       if( rc != 0 ) {
-         errorf("mlock_calloc rc = %d\n", rc );
+         SG_error("mlock_calloc rc = %d\n", rc );
          return rc;
       }
    }
    else if( dest->len < src_len) {
-      errorf("%s", "not enough space\n");
+      SG_error("%s", "not enough space\n");
       return -EINVAL;
    }
    
@@ -834,12 +834,12 @@ int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
    if( dest->ptr == NULL ) {
       int rc = mlock_calloc( dest, src->len );
       if( rc != 0 ) {
-         errorf("mlock_calloc rc = %d\n", rc );
+         SG_error("mlock_calloc rc = %d\n", rc );
          return rc;
       }
    }
    else if( dest->len < src->len ) {
-      errorf("%s", "not enough space\n");
+      SG_error("%s", "not enough space\n");
       return -EINVAL;
    }
    
@@ -850,13 +850,13 @@ int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
 
 
 // flatten a response buffer into a byte string
-char* response_buffer_to_string( response_buffer_t* rb ) {
+static char* response_buffer_to_string_impl( response_buffer_t* rb, int extra_space ) {
    size_t total_len = 0;
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       total_len += (*rb)[i].second;
    }
-
-   char* msg_buf = CALLOC_LIST( char, total_len );
+   
+   char* msg_buf = SG_CALLOC( char, total_len + extra_space );
    size_t offset = 0;
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       memcpy( msg_buf + offset, (*rb)[i].first, (*rb)[i].second );
@@ -864,6 +864,19 @@ char* response_buffer_to_string( response_buffer_t* rb ) {
    }
 
    return msg_buf;
+}
+
+// flatten a response buffer into a byte string
+// do not null-terminate
+char* response_buffer_to_string( response_buffer_t* rb ) {
+   return response_buffer_to_string_impl( rb, 0 );
+}
+
+
+
+// flatten a response buffer into a byte string, null-terminating it
+char* response_buffer_to_c_string( response_buffer_t* rb ) {
+   return response_buffer_to_string_impl( rb, 1 );
 }
 
 // free a response buffer

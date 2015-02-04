@@ -56,7 +56,7 @@ struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* fs_pat
    
    int rc = fs_entry_revalidate_path( core, path );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+      SG_error("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       return NULL;
    }
 

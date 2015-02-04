@@ -175,7 +175,7 @@ syndicate_handle_t* syndicate_open(struct syndicate_state* state, const char *pa
    struct fs_file_handle* fh = fs_entry_open( state->core, path, conf->owner, state->core->volume, flags | O_SYNC, ~conf->usermask, rc );
    
    // store the handle
-   syndicate_handle_t* sh = CALLOC_LIST( syndicate_handle_t, 1 );
+   syndicate_handle_t* sh = SG_CALLOC( syndicate_handle_t, 1 );
    sh->type = FTYPE_FILE;
    sh->fh = fh;
    
@@ -262,7 +262,7 @@ off_t syndicate_seek(syndicate_handle_t* fi, off_t pos, int whence) {
       fi->offset += pos;
    }
    else if( whence == SEEK_END ) {
-      dbprintf("%s", "FIXME: implement SEEK_END");
+      SG_debug("%s", "FIXME: implement SEEK_END");
       return -ENOSYS;
    }
    
@@ -450,7 +450,7 @@ syndicate_handle_t* syndicate_opendir(struct syndicate_state* state, const char 
    syndicate_handle_t* ret = NULL;
    
    if( *rc == 0 ) {
-      ret = CALLOC_LIST( syndicate_handle_t, 1 );
+      ret = SG_CALLOC( syndicate_handle_t, 1 );
       ret->fdh = fdh;
       ret->type = FTYPE_DIR;
    }
@@ -562,7 +562,7 @@ syndicate_handle_t* syndicate_create(struct syndicate_state* state, const char *
    struct fs_file_handle* fh = fs_entry_create( state->core, path, conf->owner, state->core->volume, mode, rc );
    syndicate_handle_t* ret = NULL;
    if( *rc == 0 && fh != NULL ) {
-      ret = CALLOC_LIST( syndicate_handle_t, 1 );
+      ret = SG_CALLOC( syndicate_handle_t, 1 );
       ret->type = FTYPE_FILE;
       ret->fh = fh;
    }
@@ -597,7 +597,7 @@ int syndicate_ftruncate(struct syndicate_state* state, off_t length, syndicate_h
    struct fs_file_handle* fh = fi->fh;
    int rc = fs_entry_ftruncate( state->core, fh, length, conf->owner, state->core->volume );
    if( rc != 0 ) {
-      errorf( "fs_entry_ftruncate rc = %d\n", rc );
+      SG_error( "fs_entry_ftruncate rc = %d\n", rc );
    }
    
    state->stats->leave( STAT_FTRUNCATE, rc );
@@ -639,7 +639,7 @@ int syndicate_fgetattr(struct syndicate_state* state, struct stat *statbuf, synd
 // initialize syndicate
 int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts, struct UG_opts* ug_opts ) {
    
-   struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
+   struct ms_client* ms = SG_CALLOC( struct ms_client, 1 );
    
    // load config file
    md_default_conf( &state->conf, SYNDICATE_UG );
@@ -648,7 +648,7 @@ int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts, 
    if( opts->config_file != NULL ) {
       int rc = md_read_conf( opts->config_file, &state->conf );
       if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
+         SG_debug("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
          if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
             // not just a simple "not found" or "permission denied"
             return rc;
@@ -678,14 +678,14 @@ int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts, 
    int rc = md_init_client( &state->conf, ms, opts );
    
    if( rc != 0 ) {
-      errorf("md_init_client rc = %d\n", rc );
+      SG_error("md_init_client rc = %d\n", rc );
       return rc;
    }
    
    // initialize state
    rc = syndicate_setup_state( state, ms );
    if( rc != 0 ) {
-      errorf("syndicate_init_state rc = %d\n", rc );
+      SG_error("syndicate_init_state rc = %d\n", rc );
       return rc;
    }
    
@@ -698,7 +698,7 @@ int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas 
    syndicate_destroy_ex( state, wait_replicas );
    
    
-   dbprintf("%s", "library shutdown\n");
+   SG_debug("%s", "library shutdown\n");
    md_shutdown();
    
    return 0;

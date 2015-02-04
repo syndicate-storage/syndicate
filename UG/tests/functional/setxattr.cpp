@@ -53,16 +53,16 @@ int main( int argc, char** argv ) {
    struct syndicate_state* state = syndicate_get_state();
    
    // get the xattr size
-   dbprintf("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s )\n\n\n", path, xattr_name, xattr_value, command );
+   SG_debug("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s )\n\n\n", path, xattr_name, xattr_value, command );
    
    int rc = fs_entry_setxattr( state->core, path, xattr_name, xattr_value, strlen(xattr_value), flags, SYS_USER, 0 );
    if( rc < 0 ) {
-      errorf("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s ) rc = %d\n\n\n", path, xattr_name, xattr_value, command, rc );
+      SG_error("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s ) rc = %d\n\n\n", path, xattr_name, xattr_value, command, rc );
       syndicate_functional_test_shutdown( &syndicate_http );
       exit(1);
    }
    
-   dbprintf("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s ) rc = %d\n\n\n", path, xattr_name, xattr_value, command, rc );
+   SG_debug("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s ) rc = %d\n\n\n", path, xattr_name, xattr_value, command, rc );
    
    // shut down the test 
    syndicate_functional_test_shutdown( &syndicate_http );

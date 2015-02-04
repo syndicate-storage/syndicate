@@ -107,11 +107,11 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    
    if( sigb64_len == 0 ) {
       // malformed message
-      errorf("%s\n", "invalid signature length");
+      SG_error("%s\n", "invalid signature length");
       return -EINVAL;
    }
    
-   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
+   char* sigb64 = SG_CALLOC( char, sigb64_len + 1 );
    if( sigb64 == NULL )
       return -ENOMEM;
    
@@ -138,7 +138,7 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    free( sigb64 );
 
    if( rc != 0 ) {
-      errorf("md_verify_signature rc = %d\n", rc );
+      SG_error("md_verify_signature rc = %d\n", rc );
    }
 
    return rc;
@@ -158,12 +158,12 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
       valid = protobuf->SerializeToString( &bits );
    }
    catch( exception e ) {
-      errorf("%s", "failed to serialize update set\n");
+      SG_error("%s", "failed to serialize update set\n");
       return -EINVAL;
    }
 
    if( !valid ) {
-      errorf("%s", "failed to serialize update set\n");
+      SG_error("%s", "failed to serialize update set\n");
       return -EINVAL;
    }
    
@@ -173,7 +173,7 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 
    int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
    if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
+      SG_error("md_sign_message rc = %d\n", rc );
       return rc;
    }
 

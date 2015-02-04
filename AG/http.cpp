@@ -89,7 +89,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
    
    // need cached MS metadata
    if( !mi->cache_valid ) {
-      errorf("Entry for %s does not have all cached metadata\n", path );
+      SG_error("Entry for %s does not have all cached metadata\n", path );
       return -EINVAL;
    }
    
@@ -138,7 +138,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
       bbmsg->add_block_versions( mi->block_version );
    }
    
-   dbprintf("Manifest: volume=%" PRIu64 " coordinator=%" PRIu64 " owner=%" PRIu64 " file_id=%" PRIX64 " file_version=%" PRId64 " size=%zu mtime=%" PRId64 ".%" PRId32 " num_blocks=%" PRIu64 " block_version=%" PRId64 "\n",
+   SG_debug("Manifest: volume=%" PRIu64 " coordinator=%" PRIu64 " owner=%" PRIu64 " file_id=%" PRIX64 " file_version=%" PRId64 " size=%zu mtime=%" PRId64 ".%" PRId32 " num_blocks=%" PRIu64 " block_version=%" PRId64 "\n",
             volume_id, gateway_id, owner_id, mi->file_id, mi->file_version, pub_info->size, pub_info->mtime_sec, pub_info->mtime_nsec, num_blocks, mi->block_version );
    
    // NOTE: no hashes, since they're served with the blocks directly (along with a signature)
@@ -149,7 +149,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
    AG_release_state( state );
    
    if( rc != 0 ) {
-      errorf("gateway_sign_manifest rc = %d\n", rc );
+      SG_error("gateway_sign_manifest rc = %d\n", rc );
       return rc;
    }
    
@@ -183,7 +183,7 @@ static int AG_HTTP_redirect_latest_block( struct AG_state* state, struct md_HTTP
    }
    
    md_con_data->status = 302;
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    char* current_url = md_url_public_block_url( state->conf->content_url, state->conf->volume, reqdat->fs_path, mi->file_id, mi->file_version, reqdat->block_id, mi->block_version );
    
@@ -209,7 +209,7 @@ static int AG_HTTP_redirect_latest_manifest( struct AG_state* state, struct md_H
    }
    
    md_con_data->status = 302;
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    struct timespec ts;
    ts.tv_sec = pubinfo->mtime_sec;
@@ -231,7 +231,7 @@ static int AG_HTTP_redirect_latest_manifest( struct AG_state* state, struct md_H
 static int AG_HTTP_error( struct md_HTTP_connection_data* md_con_data, int http_status, char const* http_msg ) {
    
    md_con_data->status = http_status;
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
    md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", http_status, http_msg, strlen(http_msg) + 1 );
    
    return 0;
@@ -275,7 +275,7 @@ static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connecti
    // sanity check: file version must match, or we must redirect
    if( reqdat->file_version != mi->file_version ) {
       
-      errorf("Stale file version %" PRId64 " (expected %" PRId64 ")\n", reqdat->file_version, mi->file_version );
+      SG_error("Stale file version %" PRId64 " (expected %" PRId64 ")\n", reqdat->file_version, mi->file_version );
       
       if( request_type == AG_REQUEST_BLOCK ) {
          rc = AG_HTTP_redirect_latest_block( state, md_con_data, reqdat, mi );
@@ -294,7 +294,7 @@ static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connecti
    // sanity check: if this is a manifest, timestamp must match 
    if( request_type == AG_REQUEST_MANIFEST && (reqdat->manifest_timestamp.tv_sec != pubinfo->mtime_sec || reqdat->manifest_timestamp.tv_nsec != pubinfo->mtime_nsec) ) {
       
-      errorf("Stale manifest timestamp %" PRId64 ".%" PRId64 " (expected %" PRId64 ".%d)\n",
+      SG_error("Stale manifest timestamp %" PRId64 ".%" PRId64 " (expected %" PRId64 ".%d)\n",
              (int64_t)reqdat->manifest_timestamp.tv_sec, (int64_t)reqdat->manifest_timestamp.tv_nsec, pubinfo->mtime_sec, pubinfo->mtime_nsec );
       
       rc = AG_HTTP_redirect_latest_manifest( state, md_con_data, reqdat, mi, pubinfo );
@@ -309,7 +309,7 @@ static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connecti
    // sanity check: if this is a block, versions must match 
    else if( request_type == AG_REQUEST_BLOCK && (reqdat->block_version != mi->block_version) ) {
       
-      errorf("Stale block version %" PRId64 " (expected %" PRId64 ")\n", reqdat->block_version, mi->block_version );
+      SG_error("Stale block version %" PRId64 " (expected %" PRId64 ")\n", reqdat->block_version, mi->block_version );
       
       rc = AG_HTTP_redirect_latest_block( state, md_con_data, reqdat, mi );
       
@@ -334,7 +334,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
    if( rc != 0 ) {
       
       // some error here 
-      errorf("AG_fs_refresh_path_metadata(%s) rc = %d\n", reqdat->fs_path, rc );
+      SG_error("AG_fs_refresh_path_metadata(%s) rc = %d\n", reqdat->fs_path, rc );
       
       AG_HTTP_internal_server_error( md_con_data );
       return NULL;
@@ -355,7 +355,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
    
    if( (unsigned)now.tv_sec > mi->refresh_deadline ) {
       
-      dbprintf("Reversion deadline for %s has passed (by %" PRIu64 " seconds).  Reversioning and telling the client to try again.\n", reqdat->fs_path, now.tv_sec - mi->refresh_deadline );
+      SG_debug("Reversion deadline for %s has passed (by %" PRIu64 " seconds).  Reversioning and telling the client to try again.\n", reqdat->fs_path, now.tv_sec - mi->refresh_deadline );
       
       // entry is stale--queue a refresh and tell the client to try again 
       int http_status = MD_HTTP_TRYAGAIN;
@@ -363,7 +363,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
       
       rc = AG_workqueue_add_reversion( state->wq, reqdat->fs_path, NULL );
       if( rc != 0 && rc != -EEXIST ) {
-         errorf("AG_workqueue_add_reversion( %s ) rc = %d\n", reqdat->fs_path, rc );
+         SG_error("AG_workqueue_add_reversion( %s ) rc = %d\n", reqdat->fs_path, rc );
          
          http_status = 500;
          http_msg = MD_HTTP_500_MSG;
@@ -384,7 +384,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
       // get the pubinfo as well 
       rc = AG_get_publish_info_lowlevel( state, reqdat->fs_path, mi, pubinfo );
       if( rc != 0 ) {
-         errorf("AG_get_map_info(%s) rc = %d\n", reqdat->fs_path, rc );
+         SG_error("AG_get_map_info(%s) rc = %d\n", reqdat->fs_path, rc );
          
          AG_map_info_free( mi );
          free( mi );
@@ -415,7 +415,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_id, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp );
    if( rc != 0 ) {
       
-      errorf( "failed to parse '%s', rc = %d\n", md_con_data->url_path, rc );
+      SG_error( "failed to parse '%s', rc = %d\n", md_con_data->url_path, rc );
       
       AG_HTTP_bad_request( md_con_data );
       return NULL;
@@ -437,7 +437,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       
       AG_release_state( state );
       
-      errorf("Invalid volume %" PRIu64 " (expected %" PRIu64 ")\n", reqdat.volume_id, state->conf->volume );
+      SG_error("Invalid volume %" PRIu64 " (expected %" PRIu64 ")\n", reqdat.volume_id, state->conf->volume );
       
       md_gateway_request_data_free( &reqdat );
       
@@ -481,7 +481,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    }
    
    // set up the connection data
-   struct AG_connection_data* con_data = CALLOC_LIST( struct AG_connection_data, 1 );
+   struct AG_connection_data* con_data = SG_CALLOC( struct AG_connection_data, 1 );
    
    con_data->rb = new response_buffer_t();
    con_data->err = 0;
@@ -498,7 +498,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    // manifest request?
    if( request_type == AG_REQUEST_MANIFEST ) {
       
-      con_data->pubinfo = CALLOC_LIST( struct AG_driver_publish_info, 1 );
+      con_data->pubinfo = SG_CALLOC( struct AG_driver_publish_info, 1 );
       memcpy( con_data->pubinfo, &pubinfo, sizeof( struct AG_driver_publish_info ) );
    }
    
@@ -509,7 +509,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    con_data->ctx.http_status = 0;
    con_data->ctx.driver = mi->driver;
    con_data->ctx.request_type = request_type;
-   con_data->ctx.query_string = strdup_or_null( mi->query_string );
+   con_data->ctx.query_string = SG_strdup_or_null( mi->query_string );
    
    // connection context is set up.
    // set up the driver state.
@@ -521,7 +521,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    
    if( rc != 0 ) {
       
-      errorf("AG_driver_connect_block(%s) rc = %d\n", md_con_data->url_path, rc );
+      SG_error("AG_driver_connect_block(%s) rc = %d\n", md_con_data->url_path, rc );
       
       AG_HTTP_driver_error( md_con_data, AG_get_driver_HTTP_status( &con_data->ctx, 502 ) );
       
@@ -544,7 +544,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
 // serialize a block 
 static int AG_serialize_block( struct AG_state* state, struct AG_connection_data* rpc, char const* block_buf, size_t block_len, char** serialized_block, size_t* serialized_block_len ) {
    
-   dbprintf("Serialize block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
+   SG_debug("Serialize block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
    
    // generate an AG_Block 
@@ -559,7 +559,7 @@ static int AG_serialize_block( struct AG_state* state, struct AG_connection_data
    // sign it
    int rc = md_sign< Serialization::AG_Block >( state->ms->my_key, &ag_block );
    if( rc != 0 ) {
-      errorf("Failed to sign AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
+      SG_error("Failed to sign AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
               rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
       
       return rc;
@@ -568,7 +568,7 @@ static int AG_serialize_block( struct AG_state* state, struct AG_connection_data
    // serialize
    rc = md_serialize< Serialization::AG_Block >( &ag_block, serialized_block, serialized_block_len );
    if( rc != 0 ) {
-      errorf("Failed to serialize AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
+      SG_error("Failed to serialize AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
               rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
       
       return rc;
@@ -583,7 +583,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
 
    int ret = 0;
    int rc = 0;
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    char* block_buf = NULL;
    size_t block_size = 0;
@@ -601,13 +601,13 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       // cache miss
       // get the bits from the driver
       block_size = ms_client_get_volume_blocksize( state->ms );
-      block_buf = CALLOC_LIST( char, block_size );
+      block_buf = SG_CALLOC( char, block_size );
       
       ret = AG_driver_get_block( rpc->ctx.driver, &rpc->ctx, rpc->ctx.reqdat.block_id, block_buf, block_size );
       
       if( ret < 0 ) {
          // driver failure 
-         errorf("AG_driver_get_block(%s %" PRIX64 ".%" PRId64 "[%" PRId64 ".%" PRId64 "]) rc = %d\n",
+         SG_error("AG_driver_get_block(%s %" PRIX64 ".%" PRId64 "[%" PRId64 ".%" PRId64 "]) rc = %d\n",
                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, ret );
          
          // clean up 
@@ -627,7 +627,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       free( block_buf );
       
       if( rc != 0 ) {
-         errorf("AG_serialize_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
+         SG_error("AG_serialize_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
          
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
@@ -635,9 +635,9 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       }
       
       // duplicate: one for the cache, one for the HTTP server (!!)
-      http_reply = CALLOC_LIST( char, serialized_block_len );
+      http_reply = SG_CALLOC( char, serialized_block_len );
       if( http_reply == NULL ) {
-         errorf("%s\n", "OOM");
+         SG_error("%s\n", "OOM");
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
          return resp;
       }
@@ -649,7 +649,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       ret = AG_cache_put_block_async( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, serialized_block, serialized_block_len );
       
       if( ret != 0 ) {
-         errorf("WARN: AG_cache_put_block_async(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
+         SG_error("WARN: AG_cache_put_block_async(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, ret );
          
          // mask this, since this isn't necessary for correctness
@@ -664,7 +664,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
       ret = AG_cache_promote_block( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
       
       if( ret != 0 ) {
-         errorf("WARN: AG_cache_promote_block(%s %" PRIX64 ".%" PRId64 ".%" PRId64 ".%" PRId64 ") rc = %d\n",
+         SG_error("WARN: AG_cache_promote_block(%s %" PRIX64 ".%" PRId64 ".%" PRId64 ".%" PRId64 ") rc = %d\n",
                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, ret );
          
          // mask this, since this isn't necessary for correctness 
@@ -679,7 +679,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
    md_HTTP_add_header( resp, "Connection", "keep-alive" );
    md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
    
-   dbprintf("Send block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
+   SG_debug("Send block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
    
    return resp;
@@ -693,10 +693,10 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
    Serialization::ManifestMsg mmsg;
    
    int rc = 0;
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    if( rpc->pubinfo == NULL ) {
-      errorf("BUG: %p is a manifest request, but no pubinfo given!\n", rpc );
+      SG_error("BUG: %p is a manifest request, but no pubinfo given!\n", rpc );
       
       md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
       return resp;
@@ -718,7 +718,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       rc = AG_populate_manifest( &mmsg, rpc->ctx.reqdat.fs_path, rpc->mi, rpc->pubinfo );
       if( rc != 0 ) {
          
-         errorf("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld ) rc = %d\n",
+         SG_error("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld ) rc = %d\n",
                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
@@ -729,7 +729,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       rc = md_serialize< Serialization::ManifestMsg >( &mmsg, &serialized_manifest, &serialized_manifest_len );
       if( rc != 0 ) {
          
-         errorf("Failed to serialize AG manifest %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld rc = %d\n",
+         SG_error("Failed to serialize AG manifest %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld rc = %d\n",
                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
          // clean up 
@@ -739,10 +739,10 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       
       // duplicate, since we need to hand off a copy to the HTTP server 
       http_reply_len = serialized_manifest_len;
-      http_reply = CALLOC_LIST( char, http_reply_len );
+      http_reply = SG_CALLOC( char, http_reply_len );
       if( http_reply == NULL ) {
          
-         errorf("%s\n", "OOM");
+         SG_error("%s\n", "OOM");
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
          return resp;
       }
@@ -754,7 +754,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
                                         serialized_manifest, serialized_manifest_len );
       
       if( rc != 0 ) {
-         errorf("WARN: AG_cache_put_manifest_async( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
+         SG_error("WARN: AG_cache_put_manifest_async( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
                  rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
          // Not an error, since not needed for correctness
@@ -767,7 +767,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       rc = AG_cache_promote_manifest( state, rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec );
       
       if( rc != 0 ) {
-         errorf("WARN: AG_cache_promote_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
+         SG_error("WARN: AG_cache_promote_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld ) rc = %d\n",
                  rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
          // not an error, since not required for correctness
@@ -783,7 +783,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
    md_HTTP_add_header( resp, "Connection", "keep-alive" );
    md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
    
-   dbprintf("Send manifest %s.%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld\n",
+   SG_debug("Send manifest %s.%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld\n",
             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec );
    
    return resp;
@@ -799,9 +799,9 @@ static struct md_HTTP_response* AG_GET_handler( struct md_HTTP_connection_data* 
    // sanity check
    if( rpc == NULL ) {
       // shouldn't happen
-      errorf("%s", "BUG: connection data is NULL\n");
+      SG_error("%s", "BUG: connection data is NULL\n");
       
-      resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+      resp = SG_CALLOC( struct md_HTTP_response, 1 );
       md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
       return resp;
    }
@@ -810,7 +810,7 @@ static struct md_HTTP_response* AG_GET_handler( struct md_HTTP_connection_data* 
    if( state == NULL ) {
       
       // shutting down 
-      resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+      resp = SG_CALLOC( struct md_HTTP_response, 1 );
       md_create_HTTP_response_ram_static( resp, "text/plain", 503, MD_HTTP_503_MSG, strlen(MD_HTTP_503_MSG) + 1);
       return resp;
    }

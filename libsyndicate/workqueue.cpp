@@ -25,7 +25,7 @@ static void* md_wq_main( void* cls ) {
    struct md_wreq wreq;
    int rc = 0;
    
-   dbprintf("workqueue %p start\n", wq );
+   SG_debug("workqueue %p start\n", wq );
    
    while( wq->running ) {
       
@@ -61,7 +61,7 @@ static void* md_wq_main( void* cls ) {
          // carry out work 
          rc = (*wreq.work)( &wreq, wreq.work_data );
          
-         dbprintf("Processed work %p (arg %p), rc = %d\n", wreq.work, wreq.work_data, rc );
+         SG_debug("Processed work %p (arg %p), rc = %d\n", wreq.work, wreq.work_data, rc );
          
          // is this a promise?  if so, tell the caller that we've fulfilled it 
          if( wreq.flags & MD_WQ_PROMISE ) {
@@ -71,7 +71,7 @@ static void* md_wq_main( void* cls ) {
       }
    }
    
-   dbprintf("workqueue %p stop\n", wq );
+   SG_debug("workqueue %p stop\n", wq );
    
    return NULL;
 }
@@ -137,7 +137,7 @@ int md_wq_start( struct md_wq* wq ) {
       wq->running = false;
       
       rc = -errno;
-      errorf("pthread_create errno = %d\n", rc );
+      SG_error("pthread_create errno = %d\n", rc );
       
       return rc;
    }

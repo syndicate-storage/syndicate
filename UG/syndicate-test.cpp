@@ -22,26 +22,26 @@ int replication_test( struct md_syndicate_conf* conf, uint64_t blocking_factor )
    char* rp_dirname = md_dirname( REPLICA_TESTFILE_PATH, NULL );
    int rc = md_mkdirs( rp_dirname );
    if( rc != 0 ) {
-      errorf(" md_mkdirs rc = %d\n", rc );
+      SG_error(" md_mkdirs rc = %d\n", rc );
       exit(1);
    }
    free( rp_dirname );
    
    FILE* rpfile = fopen( REPLICA_TESTFILE_PATH, "w" );
    if( !rpfile ) {
-      errorf(" fopen errno = %d\n", -errno );
+      SG_error(" fopen errno = %d\n", -errno );
       exit(1);
    }
 
    // make some random data
-   char* buf = CALLOC_LIST( char, blocking_factor );
+   char* buf = SG_CALLOC( char, blocking_factor );
    for( uint64_t i = 0; i < blocking_factor; i++ ) {
       buf[i] = rand() % 256;
    }
 
    rc = (int)fwrite( buf, 1, blocking_factor, rpfile );
    if( (unsigned)rc != blocking_factor ) {
-      errorf(" fwrite rc = %d\n", rc );
+      SG_error(" fwrite rc = %d\n", rc );
       exit(1);
    }
 
@@ -53,7 +53,7 @@ int replication_test( struct md_syndicate_conf* conf, uint64_t blocking_factor )
    // int replicate_begin( char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, char* replica_url );
    rc = replicate_begin_all( conf, REPLICA_TESTFILE_FS_PATH, REPLICA_TESTFILE_FILE_VERSION, REPLICA_TESTFILE_BLOCK_ID, REPLICA_TESTFILE_BLOCK_VERSION, 1, 1 );
    if( rc != 0 ) {
-      errorf(" replicate_begin rc = %d\n", rc );
+      SG_error(" replicate_begin rc = %d\n", rc );
       exit(1);
    }
 
@@ -69,7 +69,7 @@ int replication_test( struct md_syndicate_conf* conf, uint64_t blocking_factor )
 int make_md_query_file( struct md_syndicate_conf* conf, char const* fs_path, char const* output ) {
    FILE* f = fopen( output, "w" );
    if( !f ) {
-      errorf(" fopen errno = %d\n", -errno );
+      SG_error(" fopen errno = %d\n", -errno );
       exit(1);
    }
 
@@ -78,7 +78,7 @@ int make_md_query_file( struct md_syndicate_conf* conf, char const* fs_path, cha
 
    string data;
    if( !pkt.SerializeToString( &data ) ) {
-      errorf("%s", " serialization failed\n");
+      SG_error("%s", " serialization failed\n");
       exit(1);
    }
 
@@ -165,7 +165,7 @@ int main( int argc, char** argv ) {
    // read the config
    struct md_syndicate_conf conf;
    if( md_read_conf( config_file, &conf ) != 0 ) {
-      errorf("Could not read config at %s\n", config_file);
+      SG_error("Could not read config at %s\n", config_file);
       usage( argv[0], 1 );
    }
 
@@ -174,7 +174,7 @@ int main( int argc, char** argv ) {
       conf.portnum = portnum;
    }
    if( conf.portnum == 0 ) {
-      errorf("Invalid port number %d.  Specify PORTNUM in the config file or pass -p\n", conf.portnum);
+      SG_error("Invalid port number %d.  Specify PORTNUM in the config file or pass -p\n", conf.portnum);
       exit(1);
    }
 
@@ -202,7 +202,7 @@ int main( int argc, char** argv ) {
       }
    }
    else {
-      errorf("No secrets file given.  Pass -u or specify a value for %s in the config\n", SECRETS_FILE_KEY );
+      SG_error("No secrets file given.  Pass -u or specify a value for %s in the config\n", SECRETS_FILE_KEY );
       usage( argv[0], 1 );
    }*/
 
@@ -213,19 +213,19 @@ int main( int argc, char** argv ) {
    /*
    rc = replication_init( &conf );
    if( rc != 0 ) {
-      errorf(" replication_init rc = %d\n", rc );
+      SG_error(" replication_init rc = %d\n", rc );
       exit(1);
    }
 
    rc = replication_test( &conf, conf.blocking_factor );
 
-   dbprintf(" replication_test rc = %d\n", rc );
+   SG_debug(" replication_test rc = %d\n", rc );
    
    replication_shutdown();
    */
    
    struct syndicate_state* state = syndicate_get_state();
-   struct fs_entry* fent = CALLOC_LIST( struct fs_entry, 1 );
+   struct fs_entry* fent = SG_CALLOC( struct fs_entry, 1 );
    fs_entry_init_file( state->core, fent, "foo", "file:///tmp/syndicate-data/foo", NULL, 123, 12345, 0, 0666, 61440000, 1347783067, 123456789, NULL );
 
    printf("\n\n*** same url, different block\n\n");

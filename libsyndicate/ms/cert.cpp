@@ -61,7 +61,7 @@ int ms_client_gateway_cert_manifest_download( struct ms_client* client, uint64_t
    int rc = md_download_manifest( client->conf, &client->dl, url, client->volume->cache_closure, ms_client_connect_cache_impl, client->conf, mmsg, NULL, NULL );
    
    if( rc != 0 ) {
-      errorf("md_download_manifest(%s) rc = %d\n", url, rc );
+      SG_error("md_download_manifest(%s) rc = %d\n", url, rc );
       free( url );
       return rc;
    }
@@ -111,7 +111,7 @@ int ms_client_make_cert_diff( struct ms_volume* vol, Serialization::ManifestMsg*
             diffent.gateway_id = gateway_id;
             diffent.cert_version = cert_version;
             
-            dbprintf("new cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, gateway_id, cert_version );
+            SG_debug("new cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, gateway_id, cert_version );
             
             certdiff->new_certs->push_back( diffent );
          }
@@ -124,7 +124,7 @@ int ms_client_make_cert_diff( struct ms_volume* vol, Serialization::ManifestMsg*
          diffent.gateway_id = gateway_id;
          diffent.cert_version = cert_version;
          
-         dbprintf("new cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, gateway_id, cert_version );
+         SG_debug("new cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, gateway_id, cert_version );
          
          certdiff->new_certs->push_back( diffent );
       }
@@ -146,7 +146,7 @@ int ms_client_make_cert_diff( struct ms_volume* vol, Serialization::ManifestMsg*
             diffent.cert_version = itr->second->version;
             
             ms_client_gateway_type_str( diffent.cert_version, gateway_type_str );
-            dbprintf("old cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, diffent.gateway_id, diffent.cert_version );
+            SG_debug("old cert: (gateway_type=%s, gateway_id=%" PRIu64 ", cert_version=%" PRIu64 ")\n", gateway_type_str, diffent.gateway_id, diffent.cert_version );
             
             certdiff->old_certs->push_back( diffent );
          }
@@ -167,7 +167,7 @@ int ms_client_gateway_cert_download( struct ms_client* client, char const* url, 
    int rc = md_download( client->conf, &client->dl, url, MS_MAX_CERT_SIZE, client->volume->cache_closure, ms_client_connect_cache_impl, client->conf, &http_status, &buf, &buf_len );
    
    if( rc != 0 ) {
-      errorf("md_download_cached(%s) rc = %d\n", url, rc );
+      SG_error("md_download_cached(%s) rc = %d\n", url, rc );
       return rc;
    }
    
@@ -178,14 +178,14 @@ int ms_client_gateway_cert_download( struct ms_client* client, char const* url, 
       valid = ms_cert->ParseFromString( string(buf, buf_len) );
    }
    catch( exception e ) {
-      errorf("failed to parse certificate from %s\n", url );
+      SG_error("failed to parse certificate from %s\n", url );
       return -EINVAL;
    }
    
    rc = 0;
    
    if( !valid ) {
-      errorf("failed to parse certificate from %s (missing %s)\n", url, ms_cert->InitializationErrorString().c_str());
+      SG_error("failed to parse certificate from %s (missing %s)\n", url, ms_cert->InitializationErrorString().c_str());
       rc = -EINVAL;
    }
    
@@ -214,7 +214,7 @@ int ms_client_revoke_certs( struct ms_volume* vol, ms_cert_diff_list* certdiff )
          cert_bundles[diffent->gateway_type]->erase( itr );
       }
       else {
-         errorf("WARN: No certificate for gateway %" PRIu64 " (type %d)\n", diffent->gateway_id, diffent->gateway_type );
+         SG_error("WARN: No certificate for gateway %" PRIu64 " (type %d)\n", diffent->gateway_id, diffent->gateway_type );
       }
    }
    
@@ -244,7 +244,7 @@ int ms_client_find_expired_certs( struct ms_volume* vol, ms_cert_diff_list* expi
          }
          
          if( cert->expires > 0 && cert->expires < (uint64_t)now ) {
-            dbprintf("Certificate for Gateway %" PRIu64 " (type %d) expired at %" PRId64 "\n", cert->gateway_id, cert->gateway_type, cert->expires );
+            SG_debug("Certificate for Gateway %" PRIu64 " (type %d) expired at %" PRId64 "\n", cert->gateway_id, cert->gateway_type, cert->expires );
             
             struct ms_cert_diff_entry diffent;
             
@@ -274,7 +274,7 @@ int ms_client_cert_urls( char const* ms_url, uint64_t volume_id, uint64_t volume
       cert_urls.push_back( url );
    }
    
-   char** ret = CALLOC_LIST( char*, cert_urls.size() + 1 );
+   char** ret = SG_CALLOC( char*, cert_urls.size() + 1 );
    for( unsigned int i = 0; i < cert_urls.size(); i++ ) {
       ret[i] = cert_urls[i];
    }
@@ -312,11 +312,11 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
    
    int rc = ms_client_gateway_cert_manifest_download( client, volume_id, volume_cert_version, &mmsg );
    if( rc != 0 ) {
-      errorf("ms_client_gateway_cert_manifest_download(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
+      SG_error("ms_client_gateway_cert_manifest_download(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
    
-   dbprintf("Got cert manifest with %" PRIu64 " certificates\n", mmsg.size() );
+   SG_debug("Got cert manifest with %" PRIu64 " certificates\n", mmsg.size() );
    
    // lock Volume data to calculate the certs we need...
    ms_client_view_wlock( client );
@@ -327,7 +327,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
    rc = ms_client_make_cert_diff( client->volume, &mmsg, &certdiff );
    if( rc != 0 ) {
       ms_client_view_unlock( client );
-      errorf("ms_client_make_cert_diff(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
+      SG_error("ms_client_make_cert_diff(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
    
@@ -335,7 +335,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
    rc = ms_client_revoke_certs( client->volume, certdiff.old_certs );
    if( rc != 0 ){
       ms_client_view_unlock( client );
-      errorf("ms_client_revoke_certs(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
+      SG_error("ms_client_revoke_certs(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
    
@@ -344,7 +344,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
    rc = ms_client_cert_urls( client->url, volume_id, volume_cert_version, certdiff.new_certs, &cert_urls );
    if( rc != 0 ) {
       ms_client_view_unlock( client );
-      errorf("ms_client_cert_urls(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
+      SG_error("ms_client_cert_urls(volume=%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
    
@@ -360,11 +360,11 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
       
       ms::ms_gateway_cert ms_cert;
       
-      dbprintf("Get certificate %s\n", cert_urls[i] );
+      SG_debug("Get certificate %s\n", cert_urls[i] );
       
       rc = ms_client_gateway_cert_download( client, cert_urls[i], &ms_cert );
       if( rc != 0 ) {
-         errorf("ms_client_gateway_cert_download(%s) rc = %d\n", cert_urls[i], rc );
+         SG_error("ms_client_gateway_cert_download(%s) rc = %d\n", cert_urls[i], rc );
          continue;
       }
       
@@ -377,7 +377,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
          
          ms_client_view_unlock( client );
          
-         errorf("Volume cert version %" PRIu64 " is too old (expected greater than %" PRIu64 ")\n", volume_cert_version, client->volume->volume_cert_version );
+         SG_error("Volume cert version %" PRIu64 " is too old (expected greater than %" PRIu64 ")\n", volume_cert_version, client->volume->volume_cert_version );
          return 0;
       }
       
@@ -389,17 +389,17 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
       if( rc != 0 ) {
          ms_client_view_unlock( client );
          
-         errorf("Signature verification failed for certificate at %s\n", cert_urls[i] );
+         SG_error("Signature verification failed for certificate at %s\n", cert_urls[i] );
          continue;
       }
       
       // load!
-      struct ms_gateway_cert* new_cert = CALLOC_LIST( struct ms_gateway_cert, 1 );
+      struct ms_gateway_cert* new_cert = SG_CALLOC( struct ms_gateway_cert, 1 );
       rc = ms_client_gateway_cert_init( new_cert, my_gateway_id, &ms_cert );
       if( rc != 0 ) {
          ms_client_view_unlock( client );
          
-         errorf("ms_client_gateway_cert_init(%s) rc = %d\n", cert_urls[i], rc );
+         SG_error("ms_client_gateway_cert_init(%s) rc = %d\n", cert_urls[i], rc );
          free( new_cert );
          continue;
       }
@@ -416,7 +416,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
          if( old_cert->version >= new_cert->version ) {
             if( old_cert->version > new_cert->version ) {
                // tried to load an old cert
-               errorf("Downloaded certificate for Gateway %s (ID %" PRIu64 ") with old version %" PRIu64 "; expected greater than %" PRIu64 "\n", old_cert->name, old_cert->gateway_id, new_cert->version, old_cert->version);
+               SG_error("Downloaded certificate for Gateway %s (ID %" PRIu64 ") with old version %" PRIu64 "; expected greater than %" PRIu64 "\n", old_cert->name, old_cert->gateway_id, new_cert->version, old_cert->version);
             }
             
             ms_client_gateway_cert_free( new_cert );
@@ -429,7 +429,7 @@ int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_v
             cert_bundles[ new_cert->gateway_type ]->erase( itr );
          }
       }
-      dbprintf("Trusting new certificate for Gateway %s (ID %" PRIu64 ")\n", new_cert->name, new_cert->gateway_id);
+      SG_debug("Trusting new certificate for Gateway %s (ID %" PRIu64 ")\n", new_cert->name, new_cert->gateway_id);
       (*cert_bundles[ new_cert->gateway_type ])[ new_cert->gateway_id ] = new_cert;
       
       ms_client_view_unlock( client );
@@ -469,7 +469,7 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
    // only store the closure if its for us
    if( my_gateway_id == cert->gateway_id && ms_cert->closure_text().size() > 0 ) {
       cert->closure_text_len = ms_cert->closure_text().size();
-      cert->closure_text = CALLOC_LIST( char, cert->closure_text_len + 1 );
+      cert->closure_text = SG_CALLOC( char, cert->closure_text_len + 1 );
       memcpy( cert->closure_text, ms_cert->closure_text().c_str(), cert->closure_text_len );
    }
    else {
@@ -479,7 +479,7 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
    
    // validate... 
    if( !VALID_GATEWAY_TYPE( cert->gateway_type ) ) {
-      errorf("Invalid gateway type %d\n", cert->gateway_type );
+      SG_error("Invalid gateway type %d\n", cert->gateway_type );
       return -EINVAL;
    }
 
@@ -487,13 +487,13 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
    
    if( !ms_client_cert_has_public_key( ms_cert ) ) {
       // no public key for this gateway on the MS
-      dbprintf("WARN: No public key for Gateway %s\n", cert->name );
+      SG_debug("WARN: No public key for Gateway %s\n", cert->name );
       cert->pubkey = NULL;
    }
    else {
       int rc = md_load_pubkey( &cert->pubkey, ms_cert->public_key().c_str() );
       if( rc != 0 ) {
-         errorf("md_load_pubkey(Gateway %s) rc = %d\n", cert->name, rc );
+         SG_error("md_load_pubkey(Gateway %s) rc = %d\n", cert->name, rc );
       }
    }
    
@@ -501,7 +501,7 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
       char gateway_type_str[5];
       ms_client_gateway_type_str( cert->gateway_type, gateway_type_str );
       
-      dbprintf("Loaded cert (user_id=%" PRIu64 ", gateway_type=%s, gateway_id=%" PRIu64 ", gateway_name=%s, hostname=%s, portnum=%d, version=%" PRIu64 ", caps=%" PRIX64 ")\n",
+      SG_debug("Loaded cert (user_id=%" PRIu64 ", gateway_type=%s, gateway_id=%" PRIu64 ", gateway_name=%s, hostname=%s, portnum=%d, version=%" PRIu64 ", caps=%" PRIX64 ")\n",
                cert->user_id, gateway_type_str, cert->gateway_id, cert->name, cert->hostname, cert->portnum, cert->version, cert->caps );
    }
    

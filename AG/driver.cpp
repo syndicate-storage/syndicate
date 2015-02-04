@@ -42,11 +42,11 @@ int AG_load_driver( struct md_syndicate_conf* conf, struct AG_driver* driver, ch
    int rc = 0;
    
    // make the closure
-   driver->closure = CALLOC_LIST( struct md_closure, 1 );
+   driver->closure = SG_CALLOC( struct md_closure, 1 );
    
    rc = md_closure_init_bin( conf, driver->closure, driver_path, AG_CLOSURE_PROTOTYPE, true );
    if( rc != 0 ) {
-      errorf("md_closure_init_bin(%s) rc = %d\n", driver_path, rc );
+      SG_error("md_closure_init_bin(%s) rc = %d\n", driver_path, rc );
       
       free( driver->closure );
       return rc;
@@ -73,7 +73,7 @@ int AG_unload_driver( struct AG_driver* driver ) {
    // destroy the closure 
    rc = md_closure_shutdown( driver->closure );
    if( rc != 0 ) {
-      errorf("WARN: md_closure_shutdown rc = %d\n", rc );
+      SG_error("WARN: md_closure_shutdown rc = %d\n", rc );
    }
    
    free( driver->closure );
@@ -92,7 +92,7 @@ struct AG_driver* AG_lookup_driver( AG_driver_map_t* driver_map, char const* dri
    // look up the driver 
    AG_driver_map_t::iterator itr = driver_map->find( driver_name );
    if( itr == driver_map->end() ) {
-      errorf("No driver for '%s' loaded\n", driver_query_type );
+      SG_error("No driver for '%s' loaded\n", driver_query_type );
       return NULL;
    }
    
@@ -112,7 +112,7 @@ int AG_driver_init( struct AG_driver* driver ) {
       MD_CLOSURE_CALL( ret, driver->closure, "driver_init", AG_driver_init_callback_t, &driver_state );
    }
    else {
-      errorf("%s", "WARN: driver_init stub\n");
+      SG_error("%s", "WARN: driver_init stub\n");
    }
    
    driver->driver_state = driver_state;
@@ -133,7 +133,7 @@ int AG_driver_shutdown( struct AG_driver* driver ) {
       MD_CLOSURE_CALL( ret, driver->closure, "driver_shutdown", AG_driver_shutdown_callback_t, driver->driver_state );
    }
    else {
-      errorf("%s", "WARN: driver_init stub\n");
+      SG_error("%s", "WARN: driver_init stub\n");
    }
    
    if( ret == 0 ) {
@@ -147,13 +147,13 @@ int AG_driver_shutdown( struct AG_driver* driver ) {
 // load drivers
 int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map, char const* driver_dir ) {
    
-   dbprintf("Loading AG drivers from %s\n", driver_dir);
+   SG_debug("Loading AG drivers from %s\n", driver_dir);
    
    // scan the directory looking for .so files 
    DIR *dirp = opendir(driver_dir);
    if (dirp == NULL) {
       int errsv = -errno;
-      errorf("Failed to open %s, errno = %d\n", driver_dir, errsv);
+      SG_error("Failed to open %s, errno = %d\n", driver_dir, errsv);
       return errsv;
    }
    
@@ -161,13 +161,13 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
    ssize_t len = offsetof(struct dirent, d_name) + pathconf(driver_dir, _PC_NAME_MAX) + 1;
    
    struct dirent *dentry_dp = NULL;
-   struct dirent *dentry = CALLOC_LIST( struct dirent, len );
+   struct dirent *dentry = SG_CALLOC( struct dirent, len );
    
    while(true) {
       
       rc = readdir_r(dirp, dentry, &dentry_dp);
       if( rc != 0 ) {
-         errorf("readdir_r(%s) rc = %d\n", driver_dir, rc );
+         SG_error("readdir_r(%s) rc = %d\n", driver_dir, rc );
          break;
       }
       
@@ -187,7 +187,7 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
          
          // stat error 
          rc = -errno;
-         errorf("WARN: stat(%s) rc = %d\n", path, rc );
+         SG_error("WARN: stat(%s) rc = %d\n", path, rc );
          
          free( path );
       
@@ -218,15 +218,15 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
          continue;
       }
        
-      dbprintf("Load driver %s\n", path );
+      SG_debug("Load driver %s\n", path );
       
-      struct AG_driver* driver = CALLOC_LIST( struct AG_driver, 1 );
+      struct AG_driver* driver = SG_CALLOC( struct AG_driver, 1 );
       
       // load this driver 
       rc = AG_load_driver( conf, driver, path );
       if( rc != 0 ) {
          
-         errorf("WARN: AG_load_driver(%s) rc = %d\n", path, rc );
+         SG_error("WARN: AG_load_driver(%s) rc = %d\n", path, rc );
          free( path );
          free( driver );
          continue;
@@ -236,7 +236,7 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
       char* driver_query_type = AG_driver_get_query_type( driver );
       if( driver_query_type == NULL ) {
          
-         errorf("Driver %s does not identify a supported query type.  Does it implement the get_query_type() method?\n", path );
+         SG_error("Driver %s does not identify a supported query type.  Does it implement the get_query_type() method?\n", path );
          free( path );
          
          AG_unload_driver( driver );
@@ -244,7 +244,7 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
          continue;
       }
       
-      dbprintf("Will use driver %s to handle '%s' queries\n", path, driver_query_type );
+      SG_debug("Will use driver %s to handle '%s' queries\n", path, driver_query_type );
       
       // store it 
       string driver_query_type_s( driver_query_type );
@@ -265,7 +265,7 @@ int AG_load_drivers( struct md_syndicate_conf* conf, AG_driver_map_t* driver_map
 // shut down drivers 
 int AG_shutdown_drivers( AG_driver_map_t* driver_map ) {
    
-   dbprintf("%s", "Shutting down AG drivers...\n");
+   SG_debug("%s", "Shutting down AG drivers...\n");
    
    int rc = 0;
    
@@ -275,20 +275,20 @@ int AG_shutdown_drivers( AG_driver_map_t* driver_map ) {
       
       char* query_type = AG_driver_get_query_type( driver );
       
-      dbprintf("Shut down driver '%s'\n", query_type );
+      SG_debug("Shut down driver '%s'\n", query_type );
       
       free( query_type );
       
       // tell the driver to shutdown 
       rc = AG_driver_shutdown( driver );
       if( rc != 0 ) {
-         errorf("WARN: AG_driver_shutdown(%s) rc = %d\n", driver->query_type, rc );
+         SG_error("WARN: AG_driver_shutdown(%s) rc = %d\n", driver->query_type, rc );
       }
       
       // unload the driver
       rc = AG_unload_driver( driver );
       if( rc != 0 ) {
-         errorf("WARN: AG_unload_driver rc = %d\n", rc );
+         SG_error("WARN: AG_unload_driver rc = %d\n", rc );
       }
       
       free( driver );
@@ -314,7 +314,7 @@ int AG_driver_connect_block( struct AG_driver* driver, struct AG_connection_cont
       MD_CLOSURE_CALL( ret, driver->closure, "connect_dataset_block", AG_connect_block_callback_t, ctx, driver->driver_state, &connection_state );
    }
    else {
-      errorf("%s", "WARN: connect_dataset_block stub\n");
+      SG_error("%s", "WARN: connect_dataset_block stub\n");
    }
    
    if( ret == 0 ) {
@@ -337,7 +337,7 @@ ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_cont
       MD_CLOSURE_CALL( ret, driver->closure, "get_dataset_block", AG_get_block_callback_t, ctx, block_id, block_buf, block_buf_len, ctx->driver_connection_state );
    }
    else {
-      errorf("%s", "WARN: get_dataset_block stub\n");
+      SG_error("%s", "WARN: get_dataset_block stub\n");
    }
    
    return ret;
@@ -356,7 +356,7 @@ int AG_driver_cleanup_block( struct AG_driver* driver, struct AG_connection_cont
       MD_CLOSURE_CALL( ret, driver->closure, "close_dataset_block", AG_cleanup_block_callback_t, ctx->driver_connection_state );
    }
    else {
-      errorf("%s", "WARN: close_dataset_block stub\n");
+      SG_error("%s", "WARN: close_dataset_block stub\n");
    }
    
    return ret;
@@ -375,7 +375,7 @@ int AG_driver_stat( struct AG_driver* driver, char const* path, struct AG_map_in
       MD_CLOSURE_CALL( ret, driver->closure, "stat_dataset", AG_stat_dataset_callback_t, path, map_info, pub_info, driver->driver_state );
    }
    else {
-      errorf("%s", "WARN: stat_dataset stub\n");
+      SG_error("%s", "WARN: stat_dataset stub\n");
    }
    
    return ret;
@@ -395,7 +395,7 @@ int AG_driver_reversion( struct AG_driver* driver, char const* path, struct AG_m
       MD_CLOSURE_CALL( ret, driver->closure, "reversion_dataset", AG_reversion_callback_t, path, map_info, driver->driver_state );
    }
    else {
-      errorf("%s", "WARN: reversion_dataset stub\n");
+      SG_error("%s", "WARN: reversion_dataset stub\n");
    }
    
    return ret;
@@ -414,7 +414,7 @@ char* AG_driver_get_query_type( struct AG_driver* driver ) {
       MD_CLOSURE_CALL( ret, driver->closure, "get_query_type", AG_query_type_callback_t );
    }
    else {
-      errorf("%s", "WARN: get_query_type stub\n");
+      SG_error("%s", "WARN: get_query_type stub\n");
    }
    
    return ret;
@@ -434,7 +434,7 @@ int AG_driver_handle_event( struct AG_driver* driver, char* event_payload, size_
       MD_CLOSURE_CALL( ret, driver->closure, "handle_event", AG_driver_event_callback_t, event_payload, event_payload_len, driver->driver_state );
    }
    else {
-      errorf("%s", "WARN: handle_event stub\n");
+      SG_error("%s", "WARN: handle_event stub\n");
    }
    
    return ret;
@@ -463,12 +463,12 @@ char* AG_driver_get_request_path( struct AG_connection_context* ctx ) {
 
 // stable API for getting the requested path's query string
 char* AG_driver_get_query_string( struct AG_connection_context* ag_ctx ) {
-   return strdup_or_null( ag_ctx->query_string );
+   return SG_strdup_or_null( ag_ctx->query_string );
 }
 
 // stable API for getting the query string from a map_info 
 char* AG_driver_get_query_string_mi( struct AG_map_info* mi ) {
-   return strdup_or_null( mi->query_string );
+   return SG_strdup_or_null( mi->query_string );
 }
 
 // stable API for getting the requested file version 
@@ -522,7 +522,7 @@ int AG_driver_request_publish( char const* path, struct AG_map_info* mi, struct 
    // enqueue it into the publisher 
    int rc = AG_workqueue_add_publish( state->wq, path, mi, pub_info );
    if( rc != 0 ) {
-      errorf("AG_workqueue_add_publish(%s) rc = %d\n", path, rc );
+      SG_error("AG_workqueue_add_publish(%s) rc = %d\n", path, rc );
    }
    
    AG_release_state( state );
@@ -540,7 +540,7 @@ int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info
    // enqueue it into the reversioner
    int rc = AG_workqueue_add_reversion( state->wq, path, pubinfo );
    if( rc != 0 ) {
-      errorf("AG_workqueue_add_reversion(%s) rc = %d\n", path, rc );
+      SG_error("AG_workqueue_add_reversion(%s) rc = %d\n", path, rc );
    }
    
    AG_release_state( state );
@@ -559,7 +559,7 @@ int AG_driver_request_delete( char const* path ) {
    // enqueue it into the publisher 
    int rc = AG_workqueue_add_delete( state->wq, path );
    if( rc != 0 ) {
-      errorf("AG_workqueue_add_delete(%s) rc = %d\n", path, rc );
+      SG_error("AG_workqueue_add_delete(%s) rc = %d\n", path, rc );
    }
    
    AG_release_state( state );

@@ -653,7 +653,7 @@ int syndicatefs_ftruncate(const char *path, off_t length, struct fuse_file_info 
    struct fs_file_handle* fh = (struct fs_file_handle*)fi->fh;
    int rc = fs_entry_ftruncate( SYNDICATEFS_DATA->core, fh, length, conf->owner, SYNDICATEFS_DATA->core->volume );
    if( rc != 0 ) {
-      errorf( "fs_entry_ftruncate rc = %d\n", rc );
+      SG_error( "fs_entry_ftruncate rc = %d\n", rc );
    }
    
    SYNDICATEFS_DATA->stats->leave( STAT_FTRUNCATE, rc );
@@ -720,7 +720,7 @@ static fuse_args g_fargs = FUSE_ARGS_INIT( 0, NULL );
 
 int syndicatefs_handle_fuse_opt( int fuse_opt, char* fuse_arg ) {
    int rc = 0;
-   dbprintf("Fuse opt: -%c\n", fuse_opt);
+   SG_debug("Fuse opt: -%c\n", fuse_opt);
    
    switch( fuse_opt ) {
       
@@ -731,7 +731,7 @@ int syndicatefs_handle_fuse_opt( int fuse_opt, char* fuse_arg ) {
       }
       case 'o': {
          // some fuse argument
-         char* buf = CALLOC_LIST( char, strlen(fuse_arg) + 3 );
+         char* buf = SG_CALLOC( char, strlen(fuse_arg) + 3 );
          sprintf(buf, "-o%s", fuse_arg );
          fuse_opt_add_arg( &g_fargs, buf );
          free( buf );
@@ -875,7 +875,7 @@ int main(int argc, char** argv) {
    // GO GO GO!!!
    fuse_stat = fuse_main(g_fargs.argc, g_fargs.argv, &syndicatefs_oper, state );
 
-   errorf( " fuse_main returned %d\n", fuse_stat);
+   SG_error( " fuse_main returned %d\n", fuse_stat);
 
    printf( "\n\nSyndicateFS shutting down\n\n");
 

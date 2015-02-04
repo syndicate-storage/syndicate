@@ -31,7 +31,7 @@ char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx
       
       if( ctx->downloading->size() == 0 ) {
       
-         dbprintf("Only received %zu of %" PRId64 " children; searching the directory's capacity (%" PRId64 ")\n", ctx->children->size(), ctx->num_children, ctx->capacity );
+         SG_debug("Only received %zu of %" PRId64 " children; searching the directory's capacity (%" PRId64 ")\n", ctx->children->size(), ctx->num_children, ctx->capacity );
          
          // we've asked for all pages, but we haven't gotten all children yet.
          // queue some more pages
@@ -107,7 +107,7 @@ int ms_client_listdir_batch_retry( struct ms_client_listdir_context* ctx, int ba
       if( (*ctx->attempts)[batch_num] > ctx->client->conf->max_metadata_read_retry ) {
          
          // too many retries 
-         errorf("Bailing out after trying batch %d %d times\n", batch_num, (*ctx->attempts)[batch_num] );
+         SG_error("Bailing out after trying batch %d %d times\n", batch_num, (*ctx->attempts)[batch_num] );
          return -ENODATA;
       }
    }
@@ -148,7 +148,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
    ms_client_listdir_batch_set::iterator itr = ctx->downloading->find( dlctx );
    if( itr == ctx->downloading->end() && !ctx->finished ) {
       
-      errorf("BUG: %p is not downloading\n", dlctx );
+      SG_error("BUG: %p is not downloading\n", dlctx );
       pthread_mutex_unlock( &ctx->lock );
       
       return -EINVAL;
@@ -185,7 +185,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
    rc = ms_client_listing_read_entries( ctx->client, dlctx, &children, &num_children, &listing_error );
    if( rc != 0 ) {
       
-      errorf("ms_client_listing_read_entries(%p) rc = %d\n", dlctx, rc );
+      SG_error("ms_client_listing_read_entries(%p) rc = %d\n", dlctx, rc );
       
       ctx->listing_error = listing_error;
       pthread_mutex_unlock( &ctx->lock );
@@ -195,7 +195,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
    if( listing_error != MS_LISTING_NEW ) {
       
       // somehow we didn't get data.  shouldn't happen in listdir
-      errorf("BUG: failed to get listing data for %" PRIX64 ", listing_error = %d\n", ctx->parent_id, listing_error );
+      SG_error("BUG: failed to get listing data for %" PRIX64 ", listing_error = %d\n", ctx->parent_id, listing_error );
       
       pthread_mutex_unlock( &ctx->lock );
       ctx->listing_error = listing_error;
@@ -207,10 +207,10 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
       
       uint64_t file_id = children[i].file_id;
       
-      dbprintf("%p: %" PRIX64 "\n", dlctx, file_id );
+      SG_debug("%p: %" PRIX64 "\n", dlctx, file_id );
       
       if( ctx->children_ids->count( file_id ) > 0 ) {
-         errorf("Duplicate child %" PRIX64 "\n", file_id );
+         SG_error("Duplicate child %" PRIX64 "\n", file_id );
          rc = -EBADMSG;
       }
       
@@ -270,7 +270,7 @@ int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, st
          ctx->batches->push( i );
       }
       
-      dbprintf("Request %" PRId64 " pages of /%" PRIu64 "/%" PRIX64 "\n", num_pages, ctx->volume_id, parent_id );
+      SG_debug("Request %" PRId64 " pages of /%" PRIu64 "/%" PRIX64 "\n", num_pages, ctx->volume_id, parent_id );
    }
    
    ctx->num_children = num_children;
@@ -336,7 +336,7 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    struct md_download_config dlconf;
    struct md_entry* ents = NULL;
    
-   dbprintf("listdir %" PRIX64 ", num_children = %" PRId64 ", l.u.g. = %" PRId64 ", parent_capacity = %" PRId64 "\n", parent_id, num_children, least_unknown_generation, parent_capacity );
+   SG_debug("listdir %" PRIX64 ", num_children = %" PRId64 ", l.u.g. = %" PRId64 ", parent_capacity = %" PRId64 "\n", parent_id, num_children, least_unknown_generation, parent_capacity );
    
    memset( results, 0, sizeof(struct ms_client_multi_result) );
    
@@ -367,7 +367,7 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    
    if( ctx.children->size() > 0 ) {
       
-      ents = CALLOC_LIST( struct md_entry, ctx.children->size() );
+      ents = SG_CALLOC( struct md_entry, ctx.children->size() );
       
       std::copy( ctx.children->begin(), ctx.children->end(), ents );
       
@@ -388,7 +388,7 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    else {
       results->reply_error = ctx.listing_error;
       
-      errorf("md_download_all rc = %d\n", rc );
+      SG_error("md_download_all rc = %d\n", rc );
    }
    
    ms_client_listdir_context_free( &ctx );

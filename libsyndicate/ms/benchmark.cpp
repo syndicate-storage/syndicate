@@ -22,7 +22,7 @@
 static void print_timings( uint64_t* timings, size_t num_timings, char const* hdr ) {
    if( num_timings > 0 ) {
       for( size_t i = 0; i < num_timings; i++ ) {
-         DATA( hdr, (double)(timings[i]) / 1e9 );
+         SG_TIMING_DATA( hdr, (double)(timings[i]) / 1e9 );
       }
    }
 }
@@ -35,10 +35,10 @@ size_t ms_client_timing_header_func( void *ptr, size_t size, size_t nmemb, void 
    size_t len = size * nmemb;
    char* data = (char*)ptr;
 
-   char* data_str = CALLOC_LIST( char, len + 1 );
+   char* data_str = SG_CALLOC( char, len + 1 );
    strncpy( data_str, data, len );
 
-   //dbprintf("header: %s\n", data_str );
+   //SG_debug("header: %s\n", data_str );
 
    // is this one of our headers?  Find each of them
    off_t off = md_header_value_offset( data_str, len, HTTP_VOLUME_TIME );

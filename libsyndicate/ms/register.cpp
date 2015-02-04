@@ -24,7 +24,7 @@
 static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* key_password ) {
    int rc = 0;
    if( key_password == NULL ) {
-      errorf("%s\n", "No private key loaded, but no password to decrypt one with.");
+      SG_error("%s\n", "No private key loaded, but no password to decrypt one with.");
       rc = -ENOTCONN;
    }
    else {
@@ -37,7 +37,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
       
       int decode_rc = md_base64_decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
       if( decode_rc != 0 ) {
-         errorf("%s\n", "Failed to decode private key.  No gateway private key given!" );
+         SG_error("%s\n", "Failed to decode private key.  No gateway private key given!" );
          rc = -ENOTCONN;
       }
       else {
@@ -45,11 +45,11 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
          char* gateway_private_key_str = NULL;
          size_t gateway_private_key_str_len = 0;
          
-         dbprintf("%s\n", "Unsealing gateway private key...");
+         SG_debug("%s\n", "Unsealing gateway private key...");
          
          decode_rc = md_password_unseal_mlocked( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
          if( decode_rc != 0 ) {
-            errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
+            SG_error("Failed to unseal gateway private key, rc = %d\n", decode_rc );
             rc = -ENOTCONN;
          }
          else {
@@ -59,7 +59,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
             
             decode_rc = md_load_public_and_private_keys( &pubkey, &pkey, gateway_private_key_str );
             if( decode_rc != 0 ) {
-               errorf("md_load_privkey rc = %d\n", decode_rc );
+               SG_error("md_load_privkey rc = %d\n", decode_rc );
                rc = -ENODATA;
                
                memset( gateway_private_key_str, 0, gateway_private_key_str_len );
@@ -69,7 +69,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
             else {
                decode_rc = ms_client_verify_key( pkey );
                if( decode_rc != 0 ) {
-                  errorf("ms_client_verify_key rc = %d\n", decode_rc );
+                  SG_error("ms_client_verify_key rc = %d\n", decode_rc );
                   rc = -ENODATA;
                   
                   memset( gateway_private_key_str, 0, gateway_private_key_str_len );
@@ -108,7 +108,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    const ms::ms_gateway_cert& my_cert = registration_md->cert();
    rc = ms_client_gateway_cert_init( &cert, 0, &my_cert );
    if( rc != 0 ) {
-      errorf("ms_client_gateway_cert_init rc = %d\n", rc );
+      SG_error("ms_client_gateway_cert_init rc = %d\n", rc );
       return rc;
    }
 
@@ -120,7 +120,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 #ifndef _FIREWALL
    if( strcmp( cert.hostname, client->conf->hostname ) != 0 && strcasecmp( cert.hostname, "localhost" ) != 0 ) {
       // wrong host
-      errorf("ERR: This gateway is serving from %s, but the MS says it should be serving from %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, cert.hostname, cert.portnum );
+      SG_error("ERR: This gateway is serving from %s, but the MS says it should be serving from %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, cert.hostname, cert.portnum );
       ms_client_unlock( client );
 
       ms_client_gateway_cert_free( &cert );
@@ -132,7 +132,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    ms_client_unlock( client );
 
-   dbprintf("Registered as Gateway %s (%" PRIu64 ")\n", cert.name, cert.gateway_id );
+   SG_debug("Registered as Gateway %s (%" PRIu64 ")\n", cert.name, cert.gateway_id );
    
    ms_client_wlock( client );
    
@@ -156,7 +156,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    sprintf(gateway_id_str, "%" PRIu64, cert.gateway_id );
    ms_client_gateway_type_str( client->gateway_type, gateway_type_str );
 
-   client->userpass = CALLOC_LIST( char, strlen(gateway_id_str) + 1 + strlen(gateway_type_str) + 1 + strlen(client->session_password) + 1 );
+   client->userpass = SG_CALLOC( char, strlen(gateway_id_str) + 1 + strlen(gateway_type_str) + 1 + strlen(client->session_password) + 1 );
    sprintf( client->userpass, "%s_%s:%s", gateway_type_str, gateway_id_str, client->session_password );
 
    client->owner_id = cert.user_id;
@@ -166,7 +166,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    // flow control 
    client->page_size = registration_md->resolve_page_size();
    if( client->page_size < 0 ) {
-      errorf("Invalid MS page size %d\n", client->page_size );
+      SG_error("Invalid MS page size %d\n", client->page_size );
       rc = -EINVAL;
    }
    
@@ -200,7 +200,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    
    // sanity check...
    if( client->session_expires > 0 && client->session_expires < md_current_time_seconds() ) {
-      errorf("Session password expired at %" PRId64 "\n", client->session_expires );
+      SG_error("Session password expired at %" PRId64 "\n", client->session_expires );
       rc = -EINVAL;
    }
    
@@ -208,7 +208,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    if( rc == 0 && client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
       rc = ms_client_unseal_and_load_keys( client, registration_md, key_password );
       if( rc != 0 ) {
-         errorf("ms_client_unseal_and_load_keys rc = %d\n", rc );
+         SG_error("ms_client_unseal_and_load_keys rc = %d\n", rc );
       }
    }
    
@@ -220,7 +220,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    }
    
    // load the volume up
-   struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
+   struct ms_volume* volume = SG_CALLOC( struct ms_volume, 1 );
    
    volume->reload_volume_key = true;         // get the public key
 
@@ -229,7 +229,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    // load the Volume information
    rc = ms_client_volume_init( volume, vol_md, volume_pubkey_pem, client->conf, client->my_pubkey, client->my_key );
    if( rc != 0 ) {
-      errorf("ms_client_volume_init(%s) rc = %d\n", vol_md->name().c_str(), rc );
+      SG_error("ms_client_volume_init(%s) rc = %d\n", vol_md->name().c_str(), rc );
       
       ms_volume_free( volume );
       free( volume );
@@ -237,13 +237,13 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       return rc;
    }
 
-   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+   SG_debug("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
 
    ms_client_view_wlock( client );
    client->volume = volume;
    ms_client_view_unlock( client );
 
-   dbprintf("Registered with %s\n", client->url );
+   SG_debug("Registered with %s\n", client->url );
 
    ms_client_gateway_cert_free( &cert );
 
@@ -262,7 +262,7 @@ static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client
    int rc = ms_client_download( client, url, &bits, &len );
    if( rc != 0 ) {
       
-      errorf("ms_client_download(%s) rc = %d\n", url, rc );
+      SG_error("ms_client_download(%s) rc = %d\n", url, rc );
       return -rc;
    }
    
@@ -290,7 +290,7 @@ static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
    ssize_t pubkey_len = ms_client_download_syndicate_public_key( client, &syndicate_public_key_pem );
    
    if( pubkey_len < 0 ) {
-      errorf("ms_client_download_syndicate_public_key rc = %zd\n", pubkey_len );
+      SG_error("ms_client_download_syndicate_public_key rc = %zd\n", pubkey_len );
       return (int)pubkey_len;
    }
    
@@ -298,7 +298,7 @@ static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
    
    int rc = ms_client_try_load_key( client->conf, &new_public_key, NULL, syndicate_public_key_pem, true );
    if( rc != 0 ) {
-      errorf("ms_client_try_load_key rc = %d\n", rc );
+      SG_error("ms_client_try_load_key rc = %d\n", rc );
       free( syndicate_public_key_pem );
       return -ENODATA;
    }
@@ -316,7 +316,7 @@ static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
    client->syndicate_public_key = new_public_key;
    client->syndicate_public_key_pem = syndicate_public_key_pem;
    
-   dbprintf("Trusting new Syndicate public key:\n\n%s\n\n", syndicate_public_key_pem );
+   SG_debug("Trusting new Syndicate public key:\n\n%s\n\n", syndicate_public_key_pem );
    
    ms_client_unlock( client );
    
@@ -331,14 +331,14 @@ static int ms_client_finish_registration( struct ms_client* client ) {
    // load the certificate bundle   
    rc = ms_client_reload_certs( client, (uint64_t)(-1) );
    if( rc != 0 ) {
-      errorf("ms_client_reload_certs rc = %d\n", rc );
+      SG_error("ms_client_reload_certs rc = %d\n", rc );
       return -ENODATA;
    }
    
    // start the threads
    rc = ms_client_start_threads( client );
    if( rc != 0 && rc != -EALREADY ) {
-      errorf("ms_client_start_threads rc = %d\n", rc );
+      SG_error("ms_client_start_threads rc = %d\n", rc );
    }
    else {
       rc = 0;
@@ -368,14 +368,14 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
 
    ms_client_unlock( client );
    
-   dbprintf("register at %s\n", register_url );
+   SG_debug("register at %s\n", register_url );
    
    // if we don't have the public key, grab it 
    if( client->syndicate_public_key == NULL ) {
-      dbprintf("%s\n", "WARN: no Syndicate public key given.");
+      SG_debug("%s\n", "WARN: no Syndicate public key given.");
       rc = ms_client_reload_syndicate_public_key( client );
       if( rc != 0 ) {
-         errorf("ms_client_reload_syndicate_public_key rc = %d\n", rc );
+         SG_error("ms_client_reload_syndicate_public_key rc = %d\n", rc );
          
          free( register_url );
          return -ENODATA;
@@ -390,7 +390,7 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    free( register_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_openid_session rc = %d\n", rc );
+      SG_error("ms_client_openid_session rc = %d\n", rc );
       return -ENOTCONN;
    }
    
@@ -400,21 +400,21 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    free( registration_md_buf );
   
    if( !valid ) {
-      errorf( "invalid registration metadata (missing %s)\n", registration_md.InitializationErrorString().c_str() );
+      SG_error( "invalid registration metadata (missing %s)\n", registration_md.InitializationErrorString().c_str() );
       return -EINVAL;
    }
    
    // load up the registration information, including our set of Volumes
    rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, key_password );
    if( rc != 0 ) {
-      errorf("ms_client_load_registration_metadata rc = %d\n", rc );
+      SG_error("ms_client_load_registration_metadata rc = %d\n", rc );
       return -ENOTCONN;
    }
    
    // finish up 
    rc = ms_client_finish_registration( client );
    if( rc != 0 ) {
-      errorf("ms_client_finish_registration rc = %d\n", rc );
+      SG_error("ms_client_finish_registration rc = %d\n", rc );
       return -ENOTCONN;
    }
    
@@ -429,13 +429,13 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    struct ms_gateway_cert cert;
    memset( &cert, 0, sizeof(cert) );
 
-   struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
+   struct ms_volume* volume = SG_CALLOC( struct ms_volume, 1 );
    
    if( volume_public_key_pem != NULL ) {
       // attempt to load the public key 
       rc = md_load_pubkey( &volume->volume_public_key, volume_public_key_pem );
       if( rc != 0 ) {
-         errorf("md_load_pubkey rc = %d\n", rc );
+         SG_error("md_load_pubkey rc = %d\n", rc );
          return -EINVAL;
       }
    }
@@ -461,13 +461,13 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    // load the volume information
    rc = ms_client_download_volume_by_name( client, volume_name, volume, volume_public_key_pem );
    if( rc != 0 ) {
-      errorf("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
+      SG_error("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
       ms_volume_free( volume );
       free( volume );
       return -ENODATA;
    }
    
-   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+   SG_debug("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
 
    ms_client_view_wlock( client );
    client->volume = volume;
@@ -476,7 +476,7 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    // finish registration 
    rc = ms_client_finish_registration( client );
    if( rc != 0 ) {
-      errorf("ms_client_finish_registration rc = %d\n", rc );
+      SG_error("ms_client_finish_registration rc = %d\n", rc );
       return -ENOTCONN;
    }
    
@@ -543,7 +543,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
    
    int rc = md_serialize< ms::ms_register_request >( reg_req, &serialized_registration_buf, &serialized_registration_buf_len );
    if( rc != 0 ) {
-      errorf("Failed to serialize, rc = %d\n", rc );
+      SG_error("Failed to serialize, rc = %d\n", rc );
       
       curl_easy_cleanup( curl );
       return -EINVAL;
@@ -577,7 +577,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
    rc = curl_easy_perform( curl );
    
    if( rc != 0 ) {
-      errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
+      SG_error("curl_easy_perform(%s) rc = %d\n", url, rc );
          
       curl_easy_cleanup( curl );
       curl_formfree( post );
@@ -597,7 +597,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
       free( serialized_registration_buf );
       
       if( http_response != 200 ) {
-         errorf("curl_easy_perform(%s) HTTP status = %ld\n", url, http_response );
+         SG_error("curl_easy_perform(%s) HTTP status = %ld\n", url, http_response );
          response_buffer_free( rb );
          delete rb;
          return -ENODATA;
@@ -618,7 +618,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
          free( registration_md_buf );
       
          if( !valid ) {
-            errorf( "%s", "invalid registration metadata\n" );
+            SG_error( "%s", "invalid registration metadata\n" );
             return -EINVAL;
          }
       }
@@ -640,7 +640,7 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    // load the private key
    int rc = md_load_privkey( &user_pkey, user_privkey_pem );
    if( rc != 0 ) {
-      errorf("md_load_privkey rc = %d\n", rc );
+      SG_error("md_load_privkey rc = %d\n", rc );
       
       return -EINVAL;
    }
@@ -652,7 +652,7 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    if( rc != 0 ) {
       ms_client_unlock( client );
       
-      errorf("ms_client_make_public_key_registration_request rc = %d\n", rc );
+      SG_error("ms_client_make_public_key_registration_request rc = %d\n", rc );
       return -ENOTCONN;
    }
    
@@ -660,14 +660,14 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    
    ms_client_unlock( client );
    
-   dbprintf("register at %s\n", register_url );
+   SG_debug("register at %s\n", register_url );
    
    // if we don't have the public key, grab it 
    if( client->syndicate_public_key == NULL ) {
-      dbprintf("%s\n", "WARN: no Syndicate public key given.");
+      SG_debug("%s\n", "WARN: no Syndicate public key given.");
       rc = ms_client_reload_syndicate_public_key( client );
       if( rc != 0 ) {
-         errorf("ms_client_reload_syndicate_public_key rc = %d\n", rc );
+         SG_error("ms_client_reload_syndicate_public_key rc = %d\n", rc );
          
          free( register_url );
          return -ENODATA;
@@ -680,21 +680,21 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    free( register_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_send_register_request rc = %d\n", rc );
+      SG_error("ms_client_send_register_request rc = %d\n", rc );
       return -ENODATA;
    }
    
    // load up the registration information, including our set of Volumes
    rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, key_password );
    if( rc != 0 ) {
-      errorf("ms_client_load_registration_metadata rc = %d\n", rc );
+      SG_error("ms_client_load_registration_metadata rc = %d\n", rc );
       return -ENOTCONN;
    }
    
    // finish up 
    rc = ms_client_finish_registration( client );
    if( rc != 0 ) {
-      errorf("ms_client_finish_registration rc = %d\n", rc );
+      SG_error("ms_client_finish_registration rc = %d\n", rc );
       return -ENOTCONN;
    }
    

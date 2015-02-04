@@ -35,7 +35,7 @@ int main( int argc, char** argv ) {
    // get options
    rc = md_parse_opts( &opts, argc, argv, &local_optind, NULL, NULL );
    if( rc != 0 ) {
-      errorf("md_parse_opts rc = %d\n", rc );
+      SG_error("md_parse_opts rc = %d\n", rc );
       md_common_usage( argv[0] );
       exit(1);
    }
@@ -45,19 +45,19 @@ int main( int argc, char** argv ) {
    // connect to syndicate
    rc = syndicate_client_init( &state, &opts, &ug_opts );
    if( rc != 0 ) {
-      errorf("syndicate_client_init rc = %d\n", rc );
+      SG_error("syndicate_client_init rc = %d\n", rc );
       exit(1);
    }
    
    if((argc - local_optind) <= 0 ) {
-      errorf("Usage: %s [SYNDICATE OPTS] file_id [file_id...]\n", argv[0] );
+      SG_error("Usage: %s [SYNDICATE OPTS] file_id [file_id...]\n", argv[0] );
       exit(1);
    }
    
    // set up requests 
    num_requests = argc - local_optind;
-   requests = CALLOC_LIST( struct ms_client_request, num_requests );
-   results = CALLOC_LIST( struct ms_client_request_result, num_requests );
+   requests = SG_CALLOC( struct ms_client_request, num_requests );
+   results = SG_CALLOC( struct ms_client_request_result, num_requests );
    
    if( num_requests > 1 ) {
       printf("\n\n\nBegin delete multi\n\n\n");
@@ -74,13 +74,13 @@ int main( int argc, char** argv ) {
       // file_id ID 
       rc = sscanf( argv[i], "%" PRIX64, &file_id );
       if( rc != 1 ) {
-         errorf("failed to parse file_id ID '%s'\n", argv[i] );
+         SG_error("failed to parse file_id ID '%s'\n", argv[i] );
          exit(1);
       }
       
       printf("   delete(%" PRIX64 ")\n", file_id );
       
-      struct md_entry* ent = CALLOC_LIST( struct md_entry, 1 );
+      struct md_entry* ent = SG_CALLOC( struct md_entry, 1 );
       
       ent->file_id = file_id;
       

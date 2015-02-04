@@ -31,14 +31,14 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    free( getxattr_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_read(getxattr %s) rc = %d\n", xattr_name, rc );
+      SG_error("ms_client_read(getxattr %s) rc = %d\n", xattr_name, rc );
       return rc;
    }
    else {
       
       // check for the value 
       if( !reply.has_xattr_value() ) {
-         errorf("MS did not reply a value for %s\n", xattr_name );
+         SG_error("MS did not reply a value for %s\n", xattr_name );
          return -ENODATA;
       }
       
@@ -66,7 +66,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
    free( listxattr_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_read(listxattr %" PRIX64 ") rc = %d\n", file_id, rc );
+      SG_error("ms_client_read(listxattr %" PRIX64 ") rc = %d\n", file_id, rc );
       return rc;
    }
    else {
@@ -79,7 +79,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
       }
       
       // get the names, separating them with '\0'
-      char* names = CALLOC_LIST( char, names_len + 1 );
+      char* names = SG_CALLOC( char, names_len + 1 );
       off_t offset = 0;
       for( int i = 0; i < reply.xattr_names_size(); i++ ) {
          const string& xattr_name = reply.xattr_names(i);

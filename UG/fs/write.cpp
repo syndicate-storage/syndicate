@@ -88,7 +88,7 @@ struct md_cache_block_future* fs_entry_flush_block_async( struct fs_core* core, 
    
    rc = driver_write_block_preup( core, core->closure, fs_path, fent, block_id, new_block_version, block_data, block_len, &processed_block, &processed_block_len );
    if( rc != 0 ) {
-      errorf("driver_write_block_preup(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, new_block_version, rc );
+      SG_error("driver_write_block_preup(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
       return NULL;
    }
@@ -104,14 +104,14 @@ struct md_cache_block_future* fs_entry_flush_block_async( struct fs_core* core, 
    // cache the new block.  Get back the future (caller will manage it).
    struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
    if( f == NULL ) {
-      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
+      SG_error("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
       free( block_hash );
       free( processed_block );
       return NULL;
    }
    else {
-      dbprintf("cache %zu bytes for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", processed_block_len, fent->file_id, fent->version, block_id, new_block_version, prefix );
+      SG_debug("cache %zu bytes for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", processed_block_len, fent->file_id, fent->version, block_id, new_block_version, prefix );
       
       // update the manifest (including its lastmod)
       fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, block_hash );
@@ -166,10 +166,10 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       buf_off = core->blocking_factor - (offset % core->blocking_factor);
       
       ////////////////////////////////////////////////////////////
-      char* tmp = CALLOC_LIST( char, head->write_len + 1 );
+      char* tmp = SG_CALLOC( char, head->write_len + 1 );
       memcpy( tmp, head->buf_ptr, head->write_len );
       
-      dbprintf("Partial head: block %" PRIu64 " [%zu] offset %zu, data '%s'\n", head->block_id, head->write_len, head->write_offset, tmp );
+      SG_debug("Partial head: block %" PRIu64 " [%zu] offset %zu, data '%s'\n", head->block_id, head->write_len, head->write_offset, tmp );
       
       free( tmp );
       ////////////////////////////////////////////////////////////
@@ -198,10 +198,10 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       wvec->has_tail = true;
       
       ////////////////////////////////////////////////////////////
-      char* tmp = CALLOC_LIST( char, tail->write_len + 1 );
+      char* tmp = SG_CALLOC( char, tail->write_len + 1 );
       memcpy( tmp, tail->buf_ptr, tail->write_len );
       
-      dbprintf("Partial tail: block %" PRIu64 " [%zu], data '%s'\n", tail->block_id, tail->write_len, tmp );
+      SG_debug("Partial tail: block %" PRIu64 " [%zu], data '%s'\n", tail->block_id, tail->write_len, tmp );
       
       free( tmp );
       ////////////////////////////////////////////////////////////
@@ -238,10 +238,10 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
          wvec->overwritten->push_back( whole_block );
          
          ////////////////////////////////////////////////////////////
-         char* tmp = CALLOC_LIST( char, core->blocking_factor + 1 );
+         char* tmp = SG_CALLOC( char, core->blocking_factor + 1 );
          memcpy( tmp, whole_block.buf_ptr, core->blocking_factor );
          
-         dbprintf("Whole block: block %" PRIu64 ", data '%s'\n", block_id, tmp );
+         SG_debug("Whole block: block %" PRIu64 ", data '%s'\n", block_id, tmp );
             
          free( tmp );
          ////////////////////////////////////////////////////////////
@@ -304,7 +304,7 @@ int fs_entry_put_write_holes( struct fs_core* core, struct fs_entry* fent, off_t
    uint64_t start_hole_id = (fent->size / core->blocking_factor) + ((fent->size % core->blocking_factor) != 0 ? 1 : 0);
    uint64_t end_hole_id = (offset / core->blocking_factor);
    
-   dbprintf("fent->size = %jd, offset = %jd, so blocks [%" PRIu64 ",%" PRIu64 ") are holes\n", fent->size, offset, start_hole_id, end_hole_id );
+   SG_debug("fent->size = %jd, offset = %jd, so blocks [%" PRIu64 ",%" PRIu64 ") are holes\n", fent->size, offset, start_hole_id, end_hole_id );
    
    // put each hole
    for( uint64_t hole_id = start_hole_id; hole_id < end_hole_id; hole_id++ ) {
@@ -346,7 +346,7 @@ struct md_cache_block_future* fs_entry_write_block_async( struct fs_core* core, 
    struct md_cache_block_future* block_fut = fs_entry_flush_block_async( core, fs_path, fent, block_id, block, block_len, &rc );
    
    if( block_fut == NULL ) {
-      errorf("ERR: fs_entry_flush_block_async(%s/%" PRId64 ", block_len=%zu) failed, rc = %d\n", fs_path, block_id, block_len, rc );
+      SG_error("ERR: fs_entry_flush_block_async(%s/%" PRId64 ", block_len=%zu) failed, rc = %d\n", fs_path, block_id, block_len, rc );
       *ret = -EIO;
       
       if( old_hash )
@@ -374,7 +374,7 @@ struct md_cache_block_future* fs_entry_write_block_async( struct fs_core* core, 
    
    ////////////////////////////////
    char* hash_printable = BLOCK_HASH_TO_STRING( new_hash );
-   dbprintf("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s, block_len=%zu\n", fent->file_id, block_id, new_version, hash_printable, block_len );
+   SG_debug("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s, block_len=%zu\n", fent->file_id, block_id, new_version, hash_printable, block_len );
    free( hash_printable );
    ////////////////////////////////
    
@@ -395,7 +395,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
    
    if( rc != 0 && rc != -EREMOTE ) {
       // failed to get from local sources
-      errorf("fs_entry_try_read_block_local(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
+      SG_error("fs_entry_try_read_block_local(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
       
       return -ENODATA;
    }
@@ -405,7 +405,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
       rc = fs_entry_read_context_setup_downloads( core, fent, read_ctx );
       if( rc != 0 ) {
          // failed...
-         errorf("fs_entry_read_context_setup_downloads( %s ) rc = %d\n", fs_path, rc );
+         SG_error("fs_entry_read_context_setup_downloads( %s ) rc = %d\n", fs_path, rc );
          return -ENODATA;
       }
       
@@ -415,7 +415,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
          // get some data
          rc = fs_entry_read_context_run_downloads_ex( core, fent, read_ctx, write_locked, NULL, NULL );
          if( rc != 0 ) {
-            errorf("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
+            SG_error("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
             return -ENODATA;
          }
       }
@@ -436,7 +436,7 @@ static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* f
    
    int rc = 0;
    
-   dbprintf("write %zu whole blocks\n", whole_blocks->size() );
+   SG_debug("write %zu whole blocks\n", whole_blocks->size() );
    
    // flush each one
    for( fs_entry_whole_block_list_t::iterator itr = whole_blocks->begin(); itr != whole_blocks->end(); itr++ ) {
@@ -453,7 +453,7 @@ static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* f
       // flush it 
       struct md_cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, blk->block_id, blk->buf_ptr, core->blocking_factor, &old_binfo, &new_binfo, &rc );
       if( rc < 0 || fut == NULL ) {
-         errorf("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, blk->block_id, rc );
+         SG_error("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, blk->block_id, rc );
          break;
       }
       
@@ -478,7 +478,7 @@ static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* f
 static char* fs_entry_setup_partial_read_future( struct fs_core* core, struct fs_entry_read_block_future* read_fut,
                                                  uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, off_t file_size ) {
    
-   char* block_buf = CALLOC_LIST( char, core->blocking_factor );
+   char* block_buf = SG_CALLOC( char, core->blocking_factor );
    
    // get the block
    fs_entry_read_block_future_init( read_fut, gateway_id, fs_path, file_version, block_id, block_version, block_buf, core->blocking_factor, 0, core->blocking_factor, true );
@@ -499,7 +499,7 @@ int fs_entry_cache_evict_blocks_async( struct fs_core* core, struct fs_entry* fe
       int evict_rc = md_cache_evict_block_async( core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
       
       if( evict_rc != 0 && evict_rc != -ENOENT ) {
-         errorf("md_cache_evict_block_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, itr->first, itr->second.version, evict_rc );
+         SG_error("md_cache_evict_block_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, itr->first, itr->second.version, evict_rc );
       }
    }
    
@@ -518,7 +518,7 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
       // has this block been made whole?
       if( fs_entry_head_completes_block( core, &wvec->head ) ) {
          
-         dbprintf("partial head %" PRIu64 " is now a whole block\n", wvec->head.block_id );
+         SG_debug("partial head %" PRIu64 " is now a whole block\n", wvec->head.block_id );
          
          // the head block is now a full block (which we allocated)
          struct fs_entry_whole_block full_head;
@@ -530,7 +530,7 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
       }
    }
    else {
-      dbprintf("%s", "No partial head to read\n");
+      SG_debug("%s", "No partial head to read\n");
    }
    
    if( block_tail ) {
@@ -538,7 +538,7 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
       fs_entry_apply_partial_tail( block_tail, &wvec->tail );
    }
    else {
-      dbprintf("%s", "No partial tail to read\n");
+      SG_debug("%s", "No partial tail to read\n");
    }
 
    return 0;
@@ -556,7 +556,7 @@ static int fs_entry_manifest_put_bufferred_block( struct fs_core* core, struct f
    
    int rc = fs_entry_hash_bufferred_block( fent, block_id, &block_hash, &block_hash_len );
    if( rc != 0 ) {
-      errorf("fs_entry_hash_bufferred_block( %" PRIu64 " ) rc = %d\n", block_id, rc );
+      SG_error("fs_entry_hash_bufferred_block( %" PRIu64 " ) rc = %d\n", block_id, rc );
       return rc;
    }
    
@@ -579,7 +579,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
    // write the partial head to the block buffer, if we can
    if( wvec->has_head && !fs_entry_head_completes_block( core, &wvec->head ) ) {
       
-      dbprintf("write partial head block %" PRIu64 " to bufferred blocks\n", wvec->head.block_id );
+      SG_debug("write partial head block %" PRIu64 " to bufferred blocks\n", wvec->head.block_id );
       
       // update the block 
       if( opt_block_head ) {
@@ -592,7 +592,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
       }
       
       if( rc != 0 ) {
-         errorf("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
+         SG_error("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
                 fs_path, fent->file_id, fent->version, wvec->head.block_id, rc );
          
          return rc;
@@ -601,7 +601,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
          // update manifest 
          rc = fs_entry_manifest_put_bufferred_block( core, fent, wvec->head.block_id );
          if( rc != 0 ) {
-            errorf("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->head.block_id, rc );
+            SG_error("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->head.block_id, rc );
             return rc;
          }
       }
@@ -610,7 +610,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
    // write the partial tail to the block buffer, if it exists 
    else if( wvec->has_tail ) {
       
-      dbprintf("write partial tail block %" PRIu64 " to bufferred blocks\n", wvec->tail.block_id );
+      SG_debug("write partial tail block %" PRIu64 " to bufferred blocks\n", wvec->tail.block_id );
       
       // update the block 
       if( opt_block_tail ) {
@@ -623,7 +623,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
       }
       
       if( rc != 0 ) {
-         errorf("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
+         SG_error("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
                 fs_path, fent->file_id, fent->version, wvec->tail.block_id, rc );
          
          return rc;
@@ -632,7 +632,7 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
          // update manifest
          rc = fs_entry_manifest_put_bufferred_block( core, fent, wvec->tail.block_id );
          if( rc != 0 ) {
-            errorf("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->tail.block_id, rc );
+            SG_error("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->tail.block_id, rc );
             return rc;
          }
       }
@@ -676,7 +676,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // if we have a partial head and an older version of the affected block, then populate block with the block-to-be-modified
    if( wvec->has_head && wvec->head.has_old_version ) {
       
-      dbprintf("Read partial head %" PRIu64 "\n", wvec->head.block_id );
+      SG_debug("Read partial head %" PRIu64 "\n", wvec->head.block_id );
       
       uint64_t gateway_id = fent->manifest->get_block_host( core, wvec->head.block_id );
       
@@ -689,7 +689,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // if we have a partial tail and an older version of the affected block, then populate the block with the block-to-be-modified
    if( wvec->has_tail && wvec->tail.has_old_version ) {
       
-      dbprintf("Read partial tail %" PRIu64 "\n", wvec->tail.block_id );
+      SG_debug("Read partial tail %" PRIu64 "\n", wvec->tail.block_id );
       
       uint64_t gateway_id = fent->manifest->get_block_host( core, wvec->tail.block_id );
       
@@ -705,7 +705,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
       rc = fs_entry_read_partial_blocks( core, fs_path, fent, true, &read_ctx );
       if( rc != 0 ) {
          // failed to read data...can't proceed 
-         errorf("fs_entry_read_partial_blocks(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
+         SG_error("fs_entry_read_partial_blocks(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
          
          // free everything 
          // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
@@ -737,12 +737,12 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    if( write_rc != 0 || wait_rc != 0 ) {
       
       if( write_rc != 0 ) {
-         errorf("fs_entry_write_full_blocks_async( %s ) rc = %d\n", fs_path, write_rc );
+         SG_error("fs_entry_write_full_blocks_async( %s ) rc = %d\n", fs_path, write_rc );
          rc = write_rc;
       }
       
       if( wait_rc != 0 ) {
-         errorf("md_cache_flush_writes( %s ) rc = %d\n", fs_path, wait_rc );
+         SG_error("md_cache_flush_writes( %s ) rc = %d\n", fs_path, wait_rc );
          
          if( rc == 0 )
             rc = wait_rc;
@@ -766,7 +766,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // write partial blocks to the block buffer, updating the manifest in the process
    rc = fs_entry_buffer_partial_blocks( core, fs_path, fent, wvec, block_head, block_tail );
    if( rc != 0 ) {
-      errorf("fs_entry_buffer_partial_blocks( %s %" PRIX64 ".%" PRId64 ") rc = %d\n",
+      SG_error("fs_entry_buffer_partial_blocks( %s %" PRIX64 ".%" PRId64 ") rc = %d\n",
                fs_path, fent->file_id, fent->version, rc );
       
       
@@ -833,7 +833,7 @@ int fs_entry_do_fast_write( struct fs_core* core, char const* fs_path, struct fs
       int rc = fs_entry_write_bufferred_block( core, fent, block_id, buf, block_offset, count );
       
       if( rc != 0 ) {
-         errorf("fs_entry_write_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
+         SG_error("fs_entry_write_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
          return rc;
          
       }
@@ -842,7 +842,7 @@ int fs_entry_do_fast_write( struct fs_core* core, char const* fs_path, struct fs
    }
    else {
       // some other error 
-      errorf("fs_entry_has_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, has_block );
+      SG_error("fs_entry_has_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, has_block );
       return has_block;
    }
 }
@@ -859,7 +859,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    // first things first: check open mode vs whether or not we're a client and/or have read-only caps 
    if( core->gateway == GATEWAY_ANON ) {
-      errorf("%s", "Writing is forbidden for anonymous gateways\n");
+      SG_error("%s", "Writing is forbidden for anonymous gateways\n");
       return -EPERM;
    }
    
@@ -874,7 +874,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    // revalidate metadata
    int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
+      SG_error("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
       return -EREMOTEIO;
    }
@@ -888,12 +888,12 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    // is this a fast-path write?
    if( fs_entry_can_fast_write( core, fh->fent, offset, count ) ) {
       
-      dbprintf("fast write: %s offset %jd count %zu\n", fh->path, offset, count );
+      SG_debug("fast write: %s offset %jd count %zu\n", fh->path, offset, count );
       
       // do a fast write 
       rc = fs_entry_do_fast_write( core, fh->path, fh->fent, buf, offset, count );
       if( rc != 0 ) {
-         errorf("fs_entry_do_fast_write( %s offset %jd count %zu ) rc = %d\n", fh->path, offset, count, rc );
+         SG_error("fs_entry_do_fast_write( %s offset %jd count %zu ) rc = %d\n", fh->path, offset, count, rc );
          
          fs_entry_unlock( fh->fent );
          fs_file_handle_unlock( fh );
@@ -918,7 +918,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       rc = fs_entry_split_write( core, fh->fent, buf, offset, count, &wvec );
       if( rc != 0 ) {
-         errorf("fs_entry_split_write(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
+         SG_error("fs_entry_split_write(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
       
          // roll back metadata and manifest (only size and other fields; no blocks really beyond truncating any holes)
          fs_entry_revert_write( core, fh->fent, &fent_prewrite, new_size, NULL );
@@ -932,7 +932,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       // write the write vector
       rc = fs_entry_writev( core, fh->path, fh->fent, &wvec, &old_blocks );
       if( rc != 0 ) {
-         errorf("fs_entry_writev(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
+         SG_error("fs_entry_writev(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
          
          // roll back metadata and manifest (only size and other fields; no blocks really beyond truncating any holes)
          fs_entry_revert_write( core, fh->fent, &fent_prewrite, new_size, &old_blocks );
@@ -1029,17 +1029,17 @@ static int fs_entry_validate_remote_write( char const* fs_path, struct fs_entry*
    
    // validate
    if( fent->file_id != file_id ) {
-      errorf("Remote write to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
+      SG_error("Remote write to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
       return -EINVAL;
    }
    
    if( fent->coordinator != coordinator_id ) {
-      errorf("Remote write to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
+      SG_error("Remote write to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
       return -ESTALE;
    }
    
    if( fent->version != file_version ) {
-      errorf("Remote write to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, file_version, fent->version );
+      SG_error("Remote write to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, file_version, fent->version );
       return -ESTALE;
    }
    
@@ -1050,7 +1050,7 @@ static int fs_entry_validate_remote_write( char const* fs_path, struct fs_entry*
       const Serialization::BlockInfo& msg_binfo = write_msg->blocks(i);
       
       if( msg_binfo.hash().size() != BLOCK_HASH_LEN() ) {
-         errorf("Remote write to file %s version %" PRId64 " block %" PRIu64 ".%" PRId64 " has hash length of %zu (expected %zu)\n",
+         SG_error("Remote write to file %s version %" PRId64 " block %" PRIu64 ".%" PRId64 " has hash length of %zu (expected %zu)\n",
                 fs_path, file_version, msg_binfo.block_id(), msg_binfo.block_version(), msg_binfo.hash().size(), BLOCK_HASH_LEN() );
          
          return -EINVAL;
@@ -1100,7 +1100,7 @@ static int fs_entry_reversion_blocks( struct fs_core* core, struct fs_entry* fen
 static int fs_entry_list_write_message_blocks( Serialization::WriteMsg* write_msg, uint64_t** affected_blocks, size_t* num_affected_blocks ) {
    
    size_t ret_len = write_msg->blocks_size();
-   uint64_t* ret = CALLOC_LIST( uint64_t, ret_len );
+   uint64_t* ret = SG_CALLOC( uint64_t, ret_len );
    
    for( int i = 0; i < write_msg->blocks_size(); i++ ) {
       
@@ -1139,7 +1139,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    
    err = fs_entry_validate_remote_write( fs_path, fent, file_id, file_version, coordinator_id, write_msg );
    if( err != 0 ) {
-      errorf("fs_entry_validate_remote_write( %s %" PRIX64 ".%" PRId64 " from %" PRIu64 " ) rc = %d\n", fs_path, fent->file_id, file_version, coordinator_id, err );
+      SG_error("fs_entry_validate_remote_write( %s %" PRIX64 ".%" PRId64 " from %" PRIu64 " ) rc = %d\n", fs_path, fent->file_id, file_version, coordinator_id, err );
       
       fs_entry_unlock( fent );
       free( parent_name );
@@ -1154,7 +1154,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
 
    struct timespec ts, ts2, replicate_ts, garbage_collect_ts, update_ts;
    
-   BEGIN_TIMING_DATA( ts );
+   SG_BEGIN_TIMING_DATA( ts );
 
    modification_map old_block_info;
    
@@ -1168,15 +1168,15 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    fs_entry_update_modtime( fent );
       
    // replicate the manifest, synchronously
-   BEGIN_TIMING_DATA( replicate_ts );
+   SG_BEGIN_TIMING_DATA( replicate_ts );
 
    err = fs_entry_replicate_manifest( core, fs_path, fent );
    if( err != 0 ) {
-      errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fs_path, err );
+      SG_error("fs_entry_replicate_manifest(%s) rc = %d\n", fs_path, err );
       err = -EIO;
    }
    
-   END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
+   SG_END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
    
    if( err == 0 ) {
       
@@ -1188,7 +1188,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       // did the write touch bufferred blocks?  If so, clear them out 
       fs_entry_clear_bufferred_blocks( fent, &old_block_info );
       
-      BEGIN_TIMING_DATA( update_ts );
+      SG_BEGIN_TIMING_DATA( update_ts );
       
       // find the set of affected blocks
       uint64_t* affected_blocks = NULL;
@@ -1199,7 +1199,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       err = ms_client_update_write( core->ms, &fent->write_nonce, &data, affected_blocks, num_affected_blocks );
       
       if( err != 0 ) {
-         errorf("%ms_client_update(%s) rc = %d\n", fs_path, err );
+         SG_error("%ms_client_update(%s) rc = %d\n", fs_path, err );
          err = -EREMOTEIO;
       }
       
@@ -1210,20 +1210,20 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       }
       md_entry_free( &data );      
       
-      END_TIMING_DATA( update_ts, ts2, "MS update" );
+      SG_END_TIMING_DATA( update_ts, ts2, "MS update" );
       
       if( err == 0 ) {
          // metadata update succeeded!
          // garbage-collect the old manifest
          
-         BEGIN_TIMING_DATA( garbage_collect_ts );
+         SG_BEGIN_TIMING_DATA( garbage_collect_ts );
          
          int rc = fs_entry_garbage_collect_manifest_bg( core, &fent_snapshot );
          if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+            SG_error("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
          }
          
-         END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
+         SG_END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
          
          // evict old cached blocks 
          fs_entry_cache_evict_blocks_async( core, fent, &old_block_info );
@@ -1235,7 +1235,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
          
          int rc = fs_entry_garbage_collect_manifest_bg( core, &new_snapshot );
          if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+            SG_error("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
          }
       }
    }
@@ -1251,6 +1251,6 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    // free memory
    fs_entry_free_modification_map( &old_block_info );
    
-   END_TIMING_DATA( ts, ts2, "write, remote" );
+   SG_END_TIMING_DATA( ts, ts2, "write, remote" );
    return err;
 }

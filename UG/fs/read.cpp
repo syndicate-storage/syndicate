@@ -49,7 +49,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
    
    // check for error...
    if( (rc != 0 && rc != -EREMOTE) || (rc == -EREMOTE && !download_if_not_local) ) {
-      errorf("fs_entry_read_context_run_local( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+      SG_error("fs_entry_read_context_run_local( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
               fs_path, fent->file_id, fent->version, block_id, block_version, rc );
       
       fs_entry_read_context_free_all( core, &read_ctx );
@@ -68,7 +68,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
       rc = fs_entry_read_context_setup_downloads( core, fent, &read_ctx );
       if( rc != 0 ) {
          // failed...
-         errorf("fs_entry_read_context_setup_downloads( %s ) rc = %d\n", fs_path, rc );
+         SG_error("fs_entry_read_context_setup_downloads( %s ) rc = %d\n", fs_path, rc );
          
          fs_entry_read_context_free_all( core, &read_ctx );
          
@@ -81,7 +81,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
          // get some data
          rc = fs_entry_read_context_run_downloads( core, fent, &read_ctx );
          if( rc != 0 ) {
-            errorf("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
+            SG_error("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
             fs_entry_read_context_free_all( core, &read_ctx );
             
             return -ENODATA;
@@ -116,7 +116,7 @@ ssize_t fs_entry_read_block_local( struct fs_core* core, char const* fs_path, ui
    fs_entry_unlock( fent );
 
    if( rc != 0 ) {
-      errorf("fs_entry_read_block( %s %" PRIu64 " ) rc = %d\n", fs_path, block_id, rc );
+      SG_error("fs_entry_read_block( %s %" PRIu64 " ) rc = %d\n", fs_path, block_id, rc );
       return rc;
    }
    else {
@@ -141,45 +141,45 @@ static int fs_entry_parse_verify_AG_block( struct fs_core* core, struct fs_entry
    Serialization::AG_Block ag_block;
    rc = md_parse< Serialization::AG_Block >( &ag_block, serialized_msg, serialized_msg_len );
    if( rc != 0 ) {
-      errorf("Failed to de-serialize AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      SG_error("Failed to de-serialize AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
       return rc;
    }
    
    // verify the block 
    rc = ms_client_verify_gateway_message< Serialization::AG_Block >( core->ms, core->volume, SYNDICATE_AG, fent->coordinator, &ag_block );
    if( rc != 0 ) {
-      errorf("Failed to verify the signature of AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      SG_error("Failed to verify the signature of AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
       return rc;
    }
    
    // sanity check 
    if( ag_block.file_id() != fent->file_id || ag_block.block_id() != block_id ) {
-      errorf("Invalid block: expected %" PRIX64 "[%" PRIu64 "], got %" PRIX64 "[%" PRIu64 "]\n", fent->file_id, block_id, ag_block.file_id(), ag_block.block_id() );
+      SG_error("Invalid block: expected %" PRIX64 "[%" PRIu64 "], got %" PRIX64 "[%" PRIu64 "]\n", fent->file_id, block_id, ag_block.file_id(), ag_block.block_id() );
       return -EBADMSG;
    }
    
    // sanity check 
    if( ag_block.data().size() > core->blocking_factor ) {
-      errorf("AG served block of size %zu, but the volume block size is %zu\n", ag_block.data().size(), core->blocking_factor );
+      SG_error("AG served block of size %zu, but the volume block size is %zu\n", ag_block.data().size(), core->blocking_factor );
       return -EBADMSG;
    }
    
    // staleness check 
    if( ag_block.file_version() != fent->version ) {
-      errorf("file %" PRIX64 " is stale: local version = %" PRId64 ", remote version = %" PRId64 "\n", fent->file_id, fent->version, ag_block.file_version() );
+      SG_error("file %" PRIX64 " is stale: local version = %" PRId64 ", remote version = %" PRId64 "\n", fent->file_id, fent->version, ag_block.file_version() );
       fs_entry_mark_read_stale( fent );
       return -EAGAIN;
    }
    
    if( ag_block.block_version() != block_version ) {
-      errorf("block %" PRIX64 "[%" PRIu64 "] is stale: local version = %" PRId64 ", remote version = %" PRId64 "\n", fent->file_id, block_id, block_version, ag_block.block_version() );
+      SG_error("block %" PRIX64 "[%" PRIu64 "] is stale: local version = %" PRId64 ", remote version = %" PRId64 "\n", fent->file_id, block_id, block_version, ag_block.block_version() );
       fs_entry_mark_read_stale( fent );
       fent->manifest->mark_stale();
       return -EAGAIN;
    }
    
    // extract the contents! 
-   char* ret = CALLOC_LIST( char, ag_block.data().size() );
+   char* ret = SG_CALLOC( char, ag_block.data().size() );
    memcpy( ret, ag_block.data().data(), ag_block.data().size() );
    
    *block_bits = ret;
@@ -205,7 +205,7 @@ static int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, u
    free( block_hash );
    
    if( rc != 0 ) {
-      errorf("Hash mismatch (rc = %d, len = %zu)\n", rc, block_len );
+      SG_error("Hash mismatch (rc = %d, len = %zu)\n", rc, block_len );
       return -EPROTO;
    }
    else {
@@ -249,7 +249,7 @@ int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fu
 // detach the read handle from the core downloader
 int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_block_future* block_fut ) {
    
-   dbprintf("Free block future %p\n", block_fut );
+   SG_debug("Free block future %p\n", block_fut );
    
    sem_destroy( &block_fut->sem );
    
@@ -262,7 +262,7 @@ int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_
          if( rc != 0 ) {
             if( rc == -EINPROGRESS ) {
                // already getting cancelled.  wait for it 
-               dbprintf("Waiting for download context %p to cancel\n", &block_fut->dlctx );
+               SG_debug("Waiting for download context %p to cancel\n", &block_fut->dlctx );
                md_download_context_wait( &block_fut->dlctx, -1 );
             }
          }
@@ -276,7 +276,7 @@ int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_
       // TODO: recycle connection
       int rc = md_download_context_free( &block_fut->dlctx, &conn );
       if( rc == -EAGAIN ) {
-         errorf("BUG: tried to free context %p, which is still in use!\n", (void*)&block_fut->dlctx );
+         SG_error("BUG: tried to free context %p, which is still in use!\n", (void*)&block_fut->dlctx );
       }
       curl_easy_cleanup( conn );
       
@@ -304,7 +304,7 @@ int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_
 static int fs_entry_read_block_future_finalize( struct fs_entry_read_block_future* block_fut ) {
    block_fut->status = READ_FINISHED;
    
-   dbprintf("block %" PRIu64 ": finalized successfully\n", block_fut->block_id );
+   SG_debug("block %" PRIu64 ": finalized successfully\n", block_fut->block_id );
    
    sem_post( &block_fut->sem );
    return 0;
@@ -316,7 +316,7 @@ static int fs_entry_read_block_future_finalize_error( struct fs_entry_read_block
    block_fut->status = READ_ERROR;
    block_fut->err = err;
    
-   dbprintf("block %" PRIu64 ": finalized in error (rc = %d)\n", block_fut->block_id, err );
+   SG_debug("block %" PRIu64 ": finalized in error (rc = %d)\n", block_fut->block_id, err );
    
    sem_post( &block_fut->sem );
    return 0;
@@ -334,7 +334,7 @@ static int fs_entry_process_and_finalize_read_future( struct fs_core* core, char
    ssize_t processed_len = driver_read_block_postdown( core, core->closure, fs_path, fent, block_id, block_version, buf, buf_len, block_fut->result, block_fut->result_len );
    
    if( processed_len < 0 ) {
-      errorf("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+      SG_error("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
              block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_version, rc );
       
       // finalize error
@@ -376,7 +376,7 @@ static int fs_entry_try_cache_block_read( struct fs_core* core, char const* fs_p
    
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
-         errorf("WARN: md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
+         SG_error("WARN: md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
       }
       else {
          rc = -ENOENT;
@@ -385,14 +385,14 @@ static int fs_entry_try_cache_block_read( struct fs_core* core, char const* fs_p
    else {
       read_len = md_cache_read_block( block_fd, &block_buf );
       if( read_len < 0 ) {
-         errorf("md_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
+         SG_error("md_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
          rc = read_len;
       }
       else {
          // success! promote!
          md_cache_promote_block( core->cache, fent->file_id, fent->version, block_id, block_version );
          
-         dbprintf("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
+         SG_debug("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
       }
       
       close( block_fd );
@@ -532,14 +532,14 @@ static int fs_entry_read_block_future_setup_download( struct fs_core* core, stru
    CURL* curl = curl_easy_init();
    
    // connect to the CDN
-   struct driver_connect_cache_cls* driver_cls = CALLOC_LIST( struct driver_connect_cache_cls, 1 );
+   struct driver_connect_cache_cls* driver_cls = SG_CALLOC( struct driver_connect_cache_cls, 1 );
    driver_cls->core = core;
    driver_cls->client = core->ms;
    
    int rc = md_download_context_init( &block_fut->dlctx, curl, driver_connect_cache, driver_cls, -1 );
    if( rc != 0 ) {
       
-      errorf("md_download_context_init(%s) rc = %d\n", block_fut->fs_path, rc );
+      SG_error("md_download_context_init(%s) rc = %d\n", block_fut->fs_path, rc );
       
       // TODO: use connection pool
       curl_easy_cleanup( curl );
@@ -555,7 +555,7 @@ static int fs_entry_read_block_future_setup_download( struct fs_core* core, stru
    // next step: start a download
    block_fut->status = READ_DOWNLOAD_NOT_STARTED;
    
-   dbprintf("Allocated block future %p\n", block_fut );
+   SG_debug("Allocated block future %p\n", block_fut );
    
    return 0;
 }
@@ -566,7 +566,7 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
 
    // corner case: don't download from ourselves; fail over to RG
    if( core->gateway == block_fut->gateway_id ) {
-      errorf("Cannot download %s (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) from ourselves\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
+      SG_error("Cannot download %s (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) from ourselves\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
       
       return -ENETUNREACH;
    }
@@ -576,11 +576,11 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
    
    int rc = md_url_make_block_url( core->ms, block_fut->fs_path, block_fut->gateway_id, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, &block_url );
    if( rc != 0 ) {
-      errorf("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+      SG_error("md_url_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       return -ENODATA;
    }
    
-   dbprintf("block %" PRId64 ": try from primary, URL = %s\n", block_fut->block_id, block_url );
+   SG_debug("block %" PRId64 ": try from primary, URL = %s\n", block_fut->block_id, block_url );
    
    // reset the download context
    // TODO: use connection pool--point the dlctx to the keep-alive connection to the UG
@@ -589,7 +589,7 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
    // re-insert it 
    rc = md_download_context_start( &core->state->dl, &block_fut->dlctx, core->closure, block_url );
    if( rc != 0 ) {
-      errorf("md_download_context_start( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+      SG_error("md_download_context_start( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       
       free( block_url );
       return rc;
@@ -633,7 +633,7 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
       
       // have we exceeded them?
       if( (unsigned)block_fut->curr_RG >= num_RGs ) {
-         errorf("No more RGs to try (after %d attempts)\n", block_fut->curr_RG );
+         SG_error("No more RGs to try (after %d attempts)\n", block_fut->curr_RG );
          return -ENODATA;
       }
       
@@ -647,12 +647,12 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
       // TODO: use connection pool--point the dlctx to the keep-alive connection to the RG
       md_download_context_reset( &block_fut->dlctx, NULL );
       
-      dbprintf("block %" PRId64 ": try from RG, URL = %s\n", block_fut->block_id, replica_url );
+      SG_debug("block %" PRId64 ": try from RG, URL = %s\n", block_fut->block_id, replica_url );
       
       // re-insert it 
       rc = md_download_context_start( &core->state->dl, &block_fut->dlctx, core->closure, replica_url );
       if( rc != 0 ) {
-         errorf("md_download_context_start( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+         SG_error("md_download_context_start( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
          
          free( replica_url );
          return rc;
@@ -671,7 +671,7 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
    }
    else {
       // out of options
-      errorf("No more RGs to try (after %d attempts)\n", block_fut->curr_RG );
+      SG_error("No more RGs to try (after %d attempts)\n", block_fut->curr_RG );
       return -ENODATA;
    }
 }
@@ -698,7 +698,7 @@ static int fs_entry_read_block_future_start_next_download( struct fs_core* core,
             rc = 0;
          }
          else {  
-            errorf("fs_entry_read_block_future_start_primary_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            SG_error("fs_entry_read_block_future_start_primary_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                    block_fut->fs_path, fent->file_id, fent->version, block_fut->block_id, block_fut->block_version, rc );
 
             return -ENODATA;
@@ -723,7 +723,7 @@ static int fs_entry_read_block_future_start_next_download( struct fs_core* core,
       rc = fs_entry_read_block_future_start_next_replica_download( core, block_fut, fent );
       
       if( rc != 0 ) {
-         errorf("fs_entry_read_block_future_start_next_replica_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+         SG_error("fs_entry_read_block_future_start_next_replica_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                  block_fut->fs_path, fent->file_id, fent->version, block_fut->block_id, block_fut->block_version, rc );
          
          return -ENODATA;
@@ -799,13 +799,13 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
       // find un-finalized read contexts
       if( !fs_entry_is_read_block_future_finalized( block_fut ) ) {
          
-         dbprintf("block %" PRIu64 ": setup download\n", block_fut->block_id );
+         SG_debug("block %" PRIu64 ": setup download\n", block_fut->block_id );
          
          // set up for download 
          int rc = fs_entry_read_block_future_setup_download( core, block_fut );
          if( rc != 0 ) {
             
-            errorf( "fs_entry_read_block_future_setup_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            SG_error( "fs_entry_read_block_future_setup_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                     block_fut->fs_path, fent->file_id, fent->version, block_fut->block_id, block_fut->block_version, rc );
             
             // cancel and detach each block    
@@ -818,7 +818,7 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
          download_lookaside.insert( block_fut->block_id );
       }
       else {
-         dbprintf("block %" PRIu64": not downloading, status = %d\n", block_fut->block_id, block_fut->status );
+         SG_debug("block %" PRIu64": not downloading, status = %d\n", block_fut->block_id, block_fut->status );
       }
    }
    
@@ -840,7 +840,7 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
       // start downloading it 
       int rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
       if( rc != 0 ) {
-         errorf("fs_entry_read_block_future_start_next_download( %s ) rc = %d\n", block_fut->fs_path, rc );
+         SG_error("fs_entry_read_block_future_start_next_download( %s ) rc = %d\n", block_fut->fs_path, rc );
          
          // cancel and detach each block    
          fs_entry_read_context_untrack_and_cancel_downloads( core, read_ctx, 0, false, rc );
@@ -881,7 +881,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          // found EOF on this block
          block_fut->eof = true;
          
-         errorf("WARN: EOF on %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
+         SG_error("WARN: EOF on %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version );
          
          // done with the block 
          fs_entry_read_block_future_finalize( block_fut );
@@ -899,7 +899,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
             // try again 
             block_fut->retry_count++;
             
-            dbprintf("Download of %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] failed with HTTP status %d.  Trying again in at most %d milliseconds.\n",
+            SG_debug("Download of %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] failed with HTTP status %d.  Trying again in at most %d milliseconds.\n",
                      block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, MD_HTTP_TRYAGAIN, core->conf->retry_delay_ms );
             
             
@@ -919,7 +919,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          }
          else {
             // some other error--e.g. the gateway is offline, or the connection took too long
-            errorf("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
+            SG_error("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
                   block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
             
             // try a different gateway 
@@ -933,7 +933,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          if( rc != 0 ) {
             
             // out of options here 
-            errorf("%s( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", method,
+            SG_error("%s( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", method,
                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize in error 
@@ -957,7 +957,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       memset(prefix, 0, 11);
       memcpy(prefix, buf, MIN(10, buflen));
       
-      dbprintf("Downloaded data for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n", fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, prefix);
+      SG_debug("Downloaded data for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n", fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, prefix);
       
       rc = 0;
       
@@ -968,7 +968,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
          if( rc != 0 ) {
             
-            errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            SG_error("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize error 
@@ -984,7 +984,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          rc = fs_entry_parse_verify_AG_block( core, fent, block_fut->block_id, block_fut->block_version, buf, buflen, &actual_buf, &actual_buf_len );
          if( rc != 0 ) {
          
-            errorf("fs_entry_parse_verify_AG_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            SG_error("fs_entry_parse_verify_AG_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                    block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize error 
@@ -999,11 +999,11 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
             
             // if this isn't a full block, then we're EOF 
             if( buflen > 0 && (unsigned)buflen < core->blocking_factor ) {
-               dbprintf("WARN: block %" PRIu64 " has %zu bytes, but expected %zu bytes.  Assuming EOF\n", block_fut->block_id, buflen, core->blocking_factor );
+               SG_debug("WARN: block %" PRIu64 " has %zu bytes, but expected %zu bytes.  Assuming EOF\n", block_fut->block_id, buflen, core->blocking_factor );
                block_fut->result_is_partial_tail = true;
             }
             else if( buflen == 0 ) {
-               dbprintf("WARN: block %" PRIu64 " has 0 bytes.  Full EOF\n", block_fut->block_id );
+               SG_debug("WARN: block %" PRIu64 " has 0 bytes.  Full EOF\n", block_fut->block_id );
                block_fut->eof = true;
             }
          }
@@ -1016,7 +1016,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          ssize_t processed_len = driver_read_block_postdown( core, core->closure, block_fut->fs_path, fent, block_fut->block_id, block_fut->block_version, buf, buflen, block_fut->result, block_fut->result_len );
          if( processed_len < 0 ) {
             
-            errorf("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            SG_error("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize error
@@ -1065,14 +1065,14 @@ static int fs_entry_read_context_untrack_and_cancel_downloads( struct fs_core* c
          fs_entry_read_context_untrack_downloading_block( read_ctx, block_fut );
          
          if( !md_download_context_finalized( &block_fut->dlctx ) ) {
-            dbprintf("Cancel download of %s at [%" PRIu64 ".%" PRId64 "]\n",
+            SG_debug("Cancel download of %s at [%" PRIu64 ".%" PRId64 "]\n",
                         block_fut->fs_path, block_fut->block_id, block_fut->block_version );
             
             // cancel it 
             int rc = md_download_context_cancel( &core->state->dl, dlctx );
             if( rc != 0 ) {
                if( rc == -EINPROGRESS ) {
-                  dbprintf("Waiting for download %p to get cancelled\n", dlctx );
+                  SG_debug("Waiting for download %p to get cancelled\n", dlctx );
                   md_download_context_wait( dlctx, -1 );
                }
             }
@@ -1105,7 +1105,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
    int rc = 0;
    
    if( !fs_entry_read_context_has_downloading_blocks( read_ctx ) ) {
-      dbprintf("%" PRIX64 " has no downloads\n", fent->file_id );
+      SG_debug("%" PRIX64 " has no downloads\n", fent->file_id );
       return 0;
    }
    
@@ -1117,7 +1117,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
    // wait for a download to finish
    rc = md_download_context_wait_any( &read_ctx->dlset, core->conf->transfer_timeout * 1000 );
    if( rc != 0 ) {
-      errorf("md_download_context_wait_any rc = %d\n", rc );
+      SG_error("md_download_context_wait_any rc = %d\n", rc );
       return rc;
    }
    else {
@@ -1143,7 +1143,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
             
             if( block_fut != NULL ) {
                
-               dbprintf("block %" PRIu64 ": finished downloading from %s\n", block_fut->block_id, block_fut->curr_URL );
+               SG_debug("block %" PRIu64 ": finished downloading from %s\n", block_fut->block_id, block_fut->curr_URL );
                         
                // untrack the download 
                fs_entry_read_context_untrack_downloading_block_itr( read_ctx, curr_itr );
@@ -1159,7 +1159,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                // internal processing failed?
                if( rc < 0 ) {
                   // out of options here 
-                  errorf("fs_entry_read_context_process_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                  SG_error("fs_entry_read_context_process_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                         block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
                   
                   // failed to get a block
@@ -1191,7 +1191,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                // finalizer succeeded?
                if( rc == 0 && finalizer_rc != 0 ) {
                   // finalizer failed
-                  errorf("block future finalizer %p failed, rc = %d\n", finalizer, finalizer_rc );
+                  SG_error("block future finalizer %p failed, rc = %d\n", finalizer, finalizer_rc );
                   
                   // cancel this 
                   do_cancel = true;
@@ -1202,7 +1202,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                // did we find EOF?
                if( rc == 0 && block_fut->eof ) {
                   // cancel all blocks after this one, since they are EOF
-                  errorf("EOF on %s at [%" PRIu64 ".%" PRId64 "]\n",
+                  SG_error("EOF on %s at [%" PRIu64 ".%" PRId64 "]\n",
                           block_fut->fs_path, block_fut->block_id, block_fut->block_version );
                   
                   do_cancel = true;
@@ -1215,7 +1215,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
             }
             else {
                // shouldn't happen; indicates a bug
-               errorf("No block future for context %p\n", dlctx );
+               SG_error("No block future for context %p\n", dlctx );
                rc = -EIO;
                break;
             }
@@ -1251,7 +1251,7 @@ static int fs_entry_read_block_future_finalizer_cache_async( struct fs_core* cor
       struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
                                                                     block_fut->result, block_fut->result_len, false, &rc );
       if( rc != 0 || f == NULL ) {
-         errorf("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+         SG_error("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       }
       else {
@@ -1278,7 +1278,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
    
    // EOF?
    if( block_id * core->blocking_factor >= (uint64_t)fent->size ) {
-      dbprintf("%" PRIu64 " is EOF (%" PRIu64 " >= %" PRIu64 ")\n", block_id, block_id * core->blocking_factor, (uint64_t)fent->size );
+      SG_debug("%" PRIu64 " is EOF (%" PRIu64 " >= %" PRIu64 ")\n", block_id, block_id * core->blocking_factor, (uint64_t)fent->size );
       
       block_fut->eof = true;
       
@@ -1288,7 +1288,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
    
    // is this a write hole?
    if( fent->manifest->is_hole( block_id ) ) {
-      dbprintf("%" PRIX64 " is part of a write hole\n", block_id );
+      SG_debug("%" PRIX64 " is part of a write hole\n", block_id );
       
       // a hole, so 0's (no need to invoke the driver)
       memset( block_fut->result, 0, block_fut->result_len );
@@ -1304,14 +1304,14 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
       // have a bufferred block.  Read the appropriate part of it 
       rc = fs_entry_read_bufferred_block( fent, block_id, block_fut->result + block_fut->result_start, block_fut->result_start, block_fut->result_end - block_fut->result_start );
       if( rc != 0 ) {
-         errorf("fs_entry_read_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+         SG_error("fs_entry_read_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
          
          fs_entry_read_block_future_finalize_error( block_fut, rc );
          return rc;
       }
       else {
          // got it!
-         dbprintf("bufferred block HIT on %" PRIu64 "\n", block_id );
+         SG_debug("bufferred block HIT on %" PRIu64 "\n", block_id );
          fs_entry_read_block_future_finalize( block_fut );
          return block_fut->result_len;
       }
@@ -1329,7 +1329,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
       free( buf );
       
       if( rc != 0 ) {
-         errorf("fs_entry_process_and_finalize_read_future( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+         SG_error("fs_entry_process_and_finalize_read_future( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
          return rc;
       }
       else {
@@ -1361,11 +1361,11 @@ int fs_entry_read_context_run_local( struct fs_core* core, char const* fs_path, 
          if( rc == -EREMOTE ) {
             // will need to download
             final_rc = -EREMOTE;
-            dbprintf("block %" PRIu64 ": not cached; need to download\n", block_fut->block_id );
+            SG_debug("block %" PRIu64 ": not cached; need to download\n", block_fut->block_id );
          }
          else {
             // some other error 
-            errorf("fs_entry_try_read_block_local(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
+            SG_error("fs_entry_try_read_block_local(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
                      fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             final_rc = rc;
@@ -1439,7 +1439,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
          gateway_id = fent->coordinator;
       }
       if( gateway_id == 0 ) {
-         errorf("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
+         SG_error("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
          return -EINVAL;
       }
       
@@ -1454,9 +1454,9 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
          block_read_end = MIN( (unsigned)block_read_end, fent->size % core->blocking_factor );
       }
       
-      char* partial_result = CALLOC_LIST( char, core->blocking_factor );
+      char* partial_result = SG_CALLOC( char, core->blocking_factor );
       
-      struct fs_entry_read_block_future* block_fut = CALLOC_LIST( struct fs_entry_read_block_future, 1 );
+      struct fs_entry_read_block_future* block_fut = SG_CALLOC( struct fs_entry_read_block_future, 1 );
       fs_entry_read_block_future_init( block_fut, gateway_id, fs_path, fent->version, block_id, block_version, partial_result, core->blocking_factor, block_read_start, block_read_end, true );
       
       // align the next block future to the block boundary.
@@ -1466,7 +1466,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       block_fut->result_is_partial_head = true;
       has_partial_head = true;
       
-      dbprintf("block %" PRIu64 " is partial head, start = %jd, end = %jd\n", block_id, block_read_start, block_read_end );
+      SG_debug("block %" PRIu64 " is partial head, start = %jd, end = %jd\n", block_id, block_read_start, block_read_end );
       
       block_futs->insert( block_fut );
    }
@@ -1482,7 +1482,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
          gateway_id = fent->coordinator;
       }
       if( gateway_id == 0 ) {
-         errorf("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
+         SG_error("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
          return -EINVAL;
       }
       
@@ -1496,16 +1496,16 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
          block_read_end = MIN( (unsigned)block_read_end, fent->size % core->blocking_factor );
       }
       
-      char* partial_result = CALLOC_LIST( char, core->blocking_factor );
+      char* partial_result = SG_CALLOC( char, core->blocking_factor );
       
-      struct fs_entry_read_block_future* block_fut = CALLOC_LIST( struct fs_entry_read_block_future, 1 );
+      struct fs_entry_read_block_future* block_fut = SG_CALLOC( struct fs_entry_read_block_future, 1 );
       fs_entry_read_block_future_init( block_fut, gateway_id, fs_path, fent->version, block_id, block_version, partial_result, core->blocking_factor, 0, block_read_end, true );
       
       // this is a partial tail of the read 
       block_fut->result_is_partial_tail = true;
       has_partial_tail = true;
       
-      dbprintf("block %" PRIu64 " is partial tail, end = %jd\n", block_id, block_read_end );
+      SG_debug("block %" PRIu64 " is partial tail, end = %jd\n", block_id, block_read_end );
       
       block_futs->insert( block_fut );
    }
@@ -1530,17 +1530,17 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
          gateway_id = fent->coordinator;
       }
       if( gateway_id == 0 ) {
-         errorf("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
+         SG_error("BUG: gateway_id == %" PRIu64 "\n", gateway_id);
          return -EINVAL;
       }
       
-      struct fs_entry_read_block_future* block_fut = CALLOC_LIST( struct fs_entry_read_block_future, 1 );
+      struct fs_entry_read_block_future* block_fut = SG_CALLOC( struct fs_entry_read_block_future, 1 );
       
       // result_buf refers to data inside the client's read buffer.  It will be aligned to a block boundary, relative to the lowest-requested block
       char* result_buf = buf + buf_off + (core->blocking_factor * (block_id - start_id));
       fs_entry_read_block_future_init( block_fut, gateway_id, fs_path, fent->version, block_id, block_version, result_buf, core->blocking_factor, 0, core->blocking_factor, false );
       
-      dbprintf("block %" PRIu64 " is whole\n", block_id);
+      SG_debug("block %" PRIu64 " is whole\n", block_id);
       
       block_futs->insert( block_fut );
    }
@@ -1575,7 +1575,7 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
       
       // did we encounter an error?
       if( block_fut->err != 0 ) {
-         errorf("ERR: %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] download error = %d\n", 
+         SG_error("ERR: %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] download error = %d\n", 
                 fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, block_fut->err );
          
          error_rc = -EREMOTEIO;
@@ -1598,7 +1598,7 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
             
             // EOF?
             if( block_fut->eof ) {
-               dbprintf("block %" PRIu64 " is a partial read head EOF\n", block_fut->block_id );
+               SG_debug("block %" PRIu64 " is a partial read head EOF\n", block_fut->block_id );
                memset( buf, 0, result_copy );
                result_copy = 0;
             }
@@ -1608,7 +1608,7 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
                memset( prefix, 0, 11 );
                memcpy( prefix, block_fut->result + block_fut->result_start, MIN(10, result_copy));
                
-               dbprintf("block %" PRIu64 " head offset %jd length %" PRIu64 " prefix '%s'\n", block_fut->block_id, block_fut->result_start, result_copy, prefix );
+               SG_debug("block %" PRIu64 " head offset %jd length %" PRIu64 " prefix '%s'\n", block_fut->block_id, block_fut->result_start, result_copy, prefix );
                memcpy( buf, block_fut->result + block_fut->result_start, result_copy );
             }
          }
@@ -1620,11 +1620,11 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
             if( block_fut->eof ) {
                if( result_copy > 0 ) {
                   // partial EOF
-                  dbprintf("block %" PRIu64 " is a partial read tail EOF, aligned offset = %jd\n", block_fut->block_id, buf_last_block_aligned_offset );
+                  SG_debug("block %" PRIu64 " is a partial read tail EOF, aligned offset = %jd\n", block_fut->block_id, buf_last_block_aligned_offset );
                   memset( buf + buf_last_block_aligned_offset, 0, result_copy );
                }
                else {
-                  dbprintf("block %" PRIu64 " is after the EOF\n", block_fut->block_id );
+                  SG_debug("block %" PRIu64 " is after the EOF\n", block_fut->block_id );
                }
                
                result_copy = 0;
@@ -1635,13 +1635,13 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
                memset( prefix, 0, 11 );
                memcpy( prefix, block_fut->result, MIN(10, result_copy));
                
-               dbprintf("block %" PRIu64 " tail length %" PRIu64 ", aligned offset = %jd, prefix = '%s'\n", block_fut->block_id, result_copy, buf_last_block_aligned_offset, prefix );
+               SG_debug("block %" PRIu64 " tail length %" PRIu64 ", aligned offset = %jd, prefix = '%s'\n", block_fut->block_id, result_copy, buf_last_block_aligned_offset, prefix );
                memcpy( buf + buf_last_block_aligned_offset, block_fut->result, result_copy );
             }
          }
          else {
             // shouldn't reach here
-            errorf("BUG: %s offset %jd real_count %zu: block_fut->result_allocd, but neither a partial head nor tail\n", fs_path, offset, real_count );
+            SG_error("BUG: %s offset %jd real_count %zu: block_fut->result_allocd, but neither a partial head nor tail\n", fs_path, offset, real_count );
             rc = -EIO;
             break;
          }
@@ -1650,14 +1650,14 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
       // Not allocated. Full-block EOF?  Then zero it
       else if( block_fut->eof ) {
          // nothing to copy; make sure all 0's
-         dbprintf("block %" PRIu64 " eof\n", block_fut->block_id );
+         SG_debug("block %" PRIu64 " eof\n", block_fut->block_id );
          memset( block_fut->result, 0, result_copy );
          result_copy = 0;
          continue;
       }
       
       else {
-         dbprintf("block %" PRIu64 " filled in client buffer\n", block_fut->block_id );
+         SG_debug("block %" PRIu64 " filled in client buffer\n", block_fut->block_id );
          result_copy = block_fut->result_len;
       }
       
@@ -1751,7 +1751,7 @@ static int fs_entry_read_flush_cache( vector<struct md_cache_block_future*>* cac
    // finish caching all downloaded blocks to disk
    int cache_rc = md_cache_flush_writes( cache_futs );
    if( cache_rc != 0 ) {
-      errorf("md_cache_flush_writes rc = %d\n", cache_rc );
+      SG_error("md_cache_flush_writes rc = %d\n", cache_rc );
    }
    
    // clean up cache futures, releasing their internal buffers (since they point to block future buffers)
@@ -1817,7 +1817,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    
    if( rc != 0 && rc != -EREMOTE ) {
       // failed, for some reason besides some blocks being non-local 
-      errorf("fs_entry_read_context_run_local( %s ) rc = %zd\n", fs_path, rc );
+      SG_error("fs_entry_read_context_run_local( %s ) rc = %zd\n", fs_path, rc );
       
       fs_entry_read_context_free_all( core, &read_ctx );
       return rc;
@@ -1828,16 +1828,16 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
       rc = fs_entry_read_context_setup_downloads( core, fent, &read_ctx );
       if( rc != 0 ) {
          // failed...
-         errorf("fs_entry_read_context_setup_downloads( %s ) rc = %zd\n", fs_path, rc );
+         SG_error("fs_entry_read_context_setup_downloads( %s ) rc = %zd\n", fs_path, rc );
          
          fs_entry_read_context_free_all( core, &read_ctx );
          return rc;
       }
       
-      dbprintf("Begin downloading blocks for %" PRIX64 "\n", fent->file_id );
+      SG_debug("Begin downloading blocks for %" PRIX64 "\n", fent->file_id );
          
       struct timespec ts, ts2;
-      BEGIN_TIMING_DATA( ts );
+      SG_BEGIN_TIMING_DATA( ts );
       
       // Go get it/them.
       while( fs_entry_read_context_has_downloading_blocks( &read_ctx ) ) {
@@ -1845,20 +1845,20 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
          // get some data, and cache blocks as we get them 
          rc = fs_entry_read_context_run_downloads_ex( core, fent, &read_ctx, false, fs_entry_read_block_future_finalizer_cache_async, &cache_futs );
          if( rc < 0 ) {
-            errorf("fs_entry_read_context_run_downloads_ex( %s ) rc = %zd\n", fs_path, rc );
+            SG_error("fs_entry_read_context_run_downloads_ex( %s ) rc = %zd\n", fs_path, rc );
             break;
          }
          rc = 0;
       }
       
       if( rc == 0 ) {
-         END_TIMING_DATA( ts, ts2, "read remote blocks (success)" );
+         SG_END_TIMING_DATA( ts, ts2, "read remote blocks (success)" );
       }
       else {
-         END_TIMING_DATA( ts, ts2, "read remote blocks (failure)" );
+         SG_END_TIMING_DATA( ts, ts2, "read remote blocks (failure)" );
       }
    
-      dbprintf("End downloading blocks for %" PRIX64 ", rc = %zd\n", fent->file_id, rc );
+      SG_debug("End downloading blocks for %" PRIX64 ", rc = %zd\n", fent->file_id, rc );
       
       if( rc < 0 ) {
          // clean up
@@ -1873,7 +1873,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    // combine the blocks into the client buffer
    rc = fs_entry_read_block_future_combine( core, fs_path, fent, buf, real_count, offset, read_ctx.reads );
    if( rc < 0 ) {
-      errorf("fs_entry_read_context_combine( %s ) rc = %zd\n", fs_path, rc );
+      SG_error("fs_entry_read_context_combine( %s ) rc = %zd\n", fs_path, rc );
       
       // clean up
       fs_entry_read_flush_cache( &cache_futs );
@@ -1887,7 +1887,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    if( fs_entry_was_modified( fent, file_id, file_version, write_nonce ) ) {
       
       // file is not the same anymore--the data sent to the client is now stale
-      dbprintf("WARN: Will NOT cache read: file ID %" PRIX64 " --> %" PRIX64 ", version %" PRId64 " --> %" PRId64 ", write nonce %" PRId64 " --> %" PRId64 "\n",
+      SG_debug("WARN: Will NOT cache read: file ID %" PRIX64 " --> %" PRIX64 ", version %" PRId64 " --> %" PRId64 ", write nonce %" PRId64 " --> %" PRId64 "\n",
                file_id, fent->file_id, file_version, fent->version, write_nonce, fent->write_nonce );
    }
    else {
@@ -1919,7 +1919,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    // refresh path metadata and manifest
    int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
+      SG_error("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
       return rc;
    }
@@ -1940,7 +1940,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    // run the read
    ssize_t num_read = fs_entry_read_run( core, fh->path, fh->fent, buf, count, offset );
    if( num_read < 0 ) {
-      errorf("fs_entry_read_run( %s offset = %jd, count = %zu ) rc = %zd\n", fh->path, offset, count, num_read );
+      SG_error("fs_entry_read_run( %s offset = %jd, count = %zu ) rc = %zd\n", fh->path, offset, count, num_read );
       fs_file_handle_unlock( fh );
       return num_read;
    }

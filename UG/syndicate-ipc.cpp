@@ -775,7 +775,7 @@ int syndicatefs_ftruncate(off_t length, struct IPCFileInfo *fi) {
    struct fs_file_handle* fh = (struct fs_file_handle*)fi->handle;
    int rc = fs_entry_ftruncate( SYNDICATEFS_DATA->core, fh, length, conf->owner, SYNDICATEFS_DATA->core->volume );
    if( rc != 0 ) {
-      errorf( "fs_entry_ftruncate rc = %d\n", rc );
+      SG_error( "fs_entry_ftruncate rc = %d\n", rc );
    }
    
    SYNDICATEFS_DATA->stats->leave( STAT_FTRUNCATE, rc );
@@ -847,7 +847,7 @@ public:
     }
 
     void process_getStat(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - stat\n");
+        SG_debug("%s", "process - stat\n");
         char *bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -886,7 +886,7 @@ public:
     }
 
     void process_delete(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - delete\n");
+        SG_debug("%s", "process - delete\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -912,7 +912,7 @@ public:
     }
 
     void process_removeDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - remove directory\n");
+        SG_debug("%s", "process - remove directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -938,7 +938,7 @@ public:
     }
 
     void process_rename(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - rename\n");
+        SG_debug("%s", "process - rename\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char* bytes_ptr3;
@@ -968,7 +968,7 @@ public:
     }
 
     void process_makeDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - make directory\n");
+        SG_debug("%s", "process - make directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -995,7 +995,7 @@ public:
     }
 
     void process_readDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - read directory\n");
+        SG_debug("%s", "process - read directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -1048,7 +1048,7 @@ public:
     }
 
     void process_getFileHandle(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - get file handle\n");
+        SG_debug("%s", "process - get file handle\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -1057,7 +1057,7 @@ public:
         IPCFileInfo fi;
         int returncode = syndicatefs_open(path, &fi);
 
-        dbprintf("filehandle : %lld\n", fi.handle);
+        SG_debug("filehandle : %lld\n", fi.handle);
 
         int toWriteSize = 16;
         if (returncode == 0) {
@@ -1085,7 +1085,7 @@ public:
     }
 
     void process_createNewFile(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - create new file\n");
+        SG_debug("%s", "process - create new file\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
         readPath(message, path, &bytes_ptr);
@@ -1133,7 +1133,7 @@ public:
     }
 
     void process_readFileData(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - read file data\n");
+        SG_debug("%s", "process - read file data\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char* bytes_ptr3;
@@ -1141,7 +1141,7 @@ public:
         IPCFileInfo fi;
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
 
-        dbprintf("filehandle : %lld\n", fi.handle);
+        SG_debug("filehandle : %lld\n", fi.handle);
 
         long long int fileoffset;
         readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
@@ -1149,7 +1149,7 @@ public:
         int size;
         readInt(bytes_ptr3, &size, &bytes_ptr4);
 
-        dbprintf("offset : %lld, size : %d\n", fileoffset, size);
+        SG_debug("offset : %lld, size : %d\n", fileoffset, size);
 
         // call
         char* buffer = new char[size];
@@ -1183,7 +1183,7 @@ public:
     }
 
     void process_writeFileData(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - write file data\n");
+        SG_debug("%s", "process - write file data\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char* bytes_ptr3;
@@ -1191,7 +1191,7 @@ public:
         IPCFileInfo fi;
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
 
-        dbprintf("filehandle : %lld\n", fi.handle);
+        SG_debug("filehandle : %lld\n", fi.handle);
 
         long long int fileoffset;
         readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
@@ -1220,7 +1220,7 @@ public:
     }
 
     void process_flush(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - flush file data\n");
+        SG_debug("%s", "process - flush file data\n");
         char* bytes_ptr;
         IPCFileInfo fi;
         readFileInfo(message, &fi, &bytes_ptr);
@@ -1246,7 +1246,7 @@ public:
     }
 
     void process_closeFileHandle(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - close file handle\n");
+        SG_debug("%s", "process - close file handle\n");
         char* bytes_ptr;
         IPCFileInfo fi;
         readFileInfo(message, &fi, &bytes_ptr);
@@ -1272,7 +1272,7 @@ public:
     }
     
     void process_truncateFile(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - truncate file\n");
+        SG_debug("%s", "process - truncate file\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char* bytes_ptr3;
@@ -1303,7 +1303,7 @@ public:
     }
     
     void process_getXAttr(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - getxattr\n");
+        SG_debug("%s", "process - getxattr\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char* bytes_ptr3;
@@ -1366,7 +1366,7 @@ public:
     }
     
     void process_listXAttr(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
-        dbprintf("%s", "process - listxattr\n");
+        SG_debug("%s", "process - listxattr\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
         char path[MAX_PATH_SIZE];
@@ -1690,14 +1690,14 @@ public:
                         bytes_remain -= readSize;
                         // move stage
                         stage_ = STAGE_READ_DATA;
-                        //dbprintf("stage -> read_data\n");
+                        //SG_debug("stage -> read_data\n");
                         // parse header
                         op_code_ = readIntFromNetworkBytes(header_);
-                        //dbprintf("hdr opcode : %d\n", op_code_);
+                        //SG_debug("hdr opcode : %d\n", op_code_);
                         total_msg_size_ = readIntFromNetworkBytes(header_ + 4);
-                        //dbprintf("hdr msg_size : %d\n", total_msg_size_);
+                        //SG_debug("hdr msg_size : %d\n", total_msg_size_);
                         num_messages_ = readIntFromNetworkBytes(header_ + 8);
-                        //dbprintf("hdr num_messages : %d\n", num_messages_);
+                        //SG_debug("hdr num_messages : %d\n", num_messages_);
                         // allocate message if message size exceeds preallocated buffer size
                         if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
                             // allocate dynamic
@@ -1725,7 +1725,7 @@ public:
                         bytes_remain -= readSize;
 
                         if(bytes_remain > 0) {
-                            dbprintf("%s", "cut-off noises!\n");
+                            SG_debug("%s", "cut-off noises!\n");
                             bytes_remain = 0;
                         }
 
@@ -1768,7 +1768,7 @@ public:
                     boost::asio::placeholders::error,
                     boost::asio::placeholders::bytes_transferred));
         } else {
-            errorf("%s", "error\n");
+            SG_error("%s", "error\n");
             if (message_ != NULL) {
                 delete message_;
                 message_ = NULL;
@@ -1798,7 +1798,7 @@ public:
                 }
             }
         } else {
-            errorf("%s", "error\n");
+            SG_error("%s", "error\n");
 
             if (message_ != NULL) {
                 delete message_;
@@ -1817,10 +1817,10 @@ public:
 
 private:
     void handle_protocol(const char* message) {
-        //dbprintf("%s", "read done!\n");
-        dbprintf("op-code : %d\n", op_code_);
-        //dbprintf("total message size : %d\n", total_msg_size_);
-        //dbprintf("number of messages : %d\n", num_messages_);
+        //SG_debug("%s", "read done!\n");
+        SG_debug("op-code : %d\n", op_code_);
+        //SG_debug("total message size : %d\n", total_msg_size_);
+        //SG_debug("number of messages : %d\n", num_messages_);
 
         int data_out_size = 0;
 
@@ -1878,7 +1878,7 @@ private:
                 boost::bind(&session::handle_write, this,
                 boost::asio::placeholders::error));
         } else {
-            errorf("%s", "protocol handler returned 0 output\n");
+            SG_error("%s", "protocol handler returned 0 output\n");
         }
     }
 
