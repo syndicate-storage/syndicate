@@ -480,11 +480,7 @@ int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* 
 
 // get the next block version number (unique with high probability)
 int64_t fs_entry_next_random_version(void) {
-   int64_t upper = CMWC4096() & 0x7fffffff;
-   int64_t lower = CMWC4096();
-
-   int64_t ret = (upper << 32) | lower;
-   return ret;
+   return (int64_t)md_random64();
 }
 
 

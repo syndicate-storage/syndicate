@@ -42,7 +42,7 @@ int log_shutdown( FILE* logfile ) {
  * Log a message
  */
 void logmsg2( FILE* logfile, const char* fmt, ... ) {
-   if( get_debug_level() == 0 )
+   if( md_get_debug_level() == 0 )
       return;
    
    if( logfile ) {
@@ -53,7 +53,7 @@ void logmsg2( FILE* logfile, const char* fmt, ... ) {
       va_end(args);
    }
    
-   if( get_debug_level() > 0 ) {
+   if( md_get_debug_level() > 0 ) {
       va_list args;
       va_start( args, fmt );
       vprintf(fmt, args);
@@ -76,7 +76,7 @@ int logerr2( FILE* logfile, const char* fmt, ... ) {
       vfprintf(logfile, fmt, args);
       va_end(args);
    }
-   if( get_debug_level() > 0 ) {
+   if( md_get_debug_level() > 0 ) {
       va_list args;
       
       va_start(args, fmt);
@@ -90,7 +90,7 @@ int logerr2( FILE* logfile, const char* fmt, ... ) {
 
 
 void logmsg( FILE* logfile, const char* fmt, ... ) {
-   if( get_debug_level() == 0 )
+   if( md_get_debug_level() == 0 )
       return;
    
    if( logfile ) {
@@ -101,7 +101,7 @@ void logmsg( FILE* logfile, const char* fmt, ... ) {
       va_end(args);
    }
    
-   if( get_debug_level() > 0 ) {
+   if( md_get_debug_level() > 0 ) {
       va_list args;
       va_start( args, fmt );
       vprintf(fmt, args);
@@ -122,7 +122,7 @@ int logerr( FILE* logfile, const char* fmt, ... ) {
       vfprintf(logfile, fmt, args);
       va_end(args);
    }
-   if( get_debug_level() > 0 ) {
+   if( md_get_debug_level() > 0 ) {
       va_list args;
       
       va_start(args, fmt);

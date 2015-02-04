@@ -222,8 +222,10 @@ int ms_client_revoke_certs( struct ms_volume* vol, ms_cert_diff_list* certdiff )
 }
 
 
-// find all expired certs
+// find all expired certs, and put them into the expired cert diff list.
+// return 0 on success
 int ms_client_find_expired_certs( struct ms_volume* vol, ms_cert_diff_list* expired ) {
+   
    // NOTE: this is indexed to SYNDICATE_UG, SYNDICATE_AG, SYNDICATE_RG
    ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
    ms_client_cert_bundles( vol, cert_bundles );
@@ -232,9 +234,16 @@ int ms_client_find_expired_certs( struct ms_volume* vol, ms_cert_diff_list* expi
       ms_cert_bundle* cert_bundle = cert_bundles[i];
       
       for( ms_cert_bundle::iterator itr = cert_bundle->begin(); itr != cert_bundle->end(); itr++ ) {
-         struct ms_gateway_cert* cert = itr->second;
          
-         if( cert->expires > 0 && cert->expires < (uint64_t)currentTimeSeconds() ) {
+         struct ms_gateway_cert* cert = itr->second;
+         int64_t now = md_current_time_seconds();
+         
+         if( now < 0 ) {
+            // couldn't read the clock 
+            return now;
+         }
+         
+         if( cert->expires > 0 && cert->expires < (uint64_t)now ) {
             dbprintf("Certificate for Gateway %" PRIu64 " (type %d) expired at %" PRId64 "\n", cert->gateway_id, cert->gateway_type, cert->expires );
             
             struct ms_cert_diff_entry diffent;
@@ -254,6 +263,7 @@ int ms_client_find_expired_certs( struct ms_volume* vol, ms_cert_diff_list* expi
 
 // given a cert diff, calculate the set of certificate URLs
 int ms_client_cert_urls( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, ms_cert_diff_list* new_certs, char*** cert_urls_buf ) {
+   
    vector<char*> cert_urls;
    
    for( unsigned int i = 0; i < new_certs->size(); i++ ) {

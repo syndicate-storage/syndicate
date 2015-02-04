@@ -118,59 +118,12 @@ if not extra_args.has_key("DISTRO"):
 if extra_args["DISTRO"] == "DEBIAN":
    extra_args['LIBJSON'] = "json-c"
 
-# setup environment for Google Native Client
-def make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch ):
-   # Native Client library
-   import os
-   env_nacl = env.Clone()
-
-   cc = arch + "-nacl-gcc"
-   cxx = arch + "-nacl-g++"
-   env_nacl.Replace(CC = os.path.join(NACL_TOOLCHAIN, "bin/" + cc))
-   env_nacl.Replace(CXX = os.path.join(NACL_TOOLCHAIN, "bin/" + cxx))
-
-   nacl_inc = [
-      os.path.join(PEPPER_ROOT, "include"),
-      os.path.join(NACL_TOOLCHAIN, "%s-nacl/include" % arch),
-      os.path.join(NACL_TOOLCHAIN, "%s-nacl/usr/include" % arch),
-   ]
-
-   pepper_release = "Debug"
-   if not devel:
-      pepper_release = "Release"
-
-   archbits = "64"
-   if arch != "x86_64":
-      archbits = "32"
-
-   libdir = "lib%s" % archbits 
-   libcdir = "glibc_x86_%s" % archbits
-
-   nacl_libpath = [
-      os.path.join(PEPPER_ROOT, "lib/%s/%s" % (libcdir, pepper_release)),
-      os.path.join(NACL_TOOLCHAIN, "%s-nacl/usr/lib" % arch),
-      os.path.join(NACL_TOOLCHAIN, "%s-nacl/%s" % (arch, libdir))
-   ]
-
-   env_nacl.Replace(CPPPATH = Split("# .") + nacl_inc)
-   env_nacl.Replace(LIBPATH = nacl_libpath)
-   env_nacl.Append(CPPFLAGS = "-D_SYNDICATE_NACL_")
-
-   # preserve PYTHONPATH and PATH
-   env_nacl.Replace( ENV = {'PATH': os.getenv("PATH"), "PYTHONPATH": os.getenv("PYTHONPATH")} )
-   return env_nacl 
-
-Export("make_nacl_env")
-
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )
 lib_install_dir = os.path.join( install_prefix, "lib" )
 inc_install_dir = os.path.join( install_prefix, "include/libsyndicate" )
 etc_install_dir = os.path.join( install_prefix, "etc" )
 pkg_install_dir = os.path.join( install_prefix, "pkg" )
-
-nacl_lib_install_dir = None
-nacl_env = None
 
 env = Environment( 
    ENV = {'PATH': os.getenv('PATH'), 'PYTHONPATH': os.getenv('PYTHONPATH')},
@@ -188,19 +141,6 @@ env = Environment(
 )
 
 common.setup_env( env )
-
-nacl_env = None
-
-if extra_args.has_key("NACL_TOOLCHAIN") and extra_args.has_key("arch") and extra_args.has_key("PEPPER_ROOT"):
-   NACL_TOOLCHAIN = extra_args['NACL_TOOLCHAIN']
-   PEPPER_ROOT = extra_args['PEPPER_ROOT']
-   arch = extra_args['arch']
-
-   nacl_lib_install_dir = os.path.join(NACL_TOOLCHAIN, "%s-nacl/usr/lib" % arch)
-
-   nacl_env = make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch )
-
-Export("nacl_env")
 
 # begin build
 
@@ -225,12 +165,12 @@ libsyndicate_out = "build/out/lib/libsyndicate"
 libsyndicate_driver_out = "build/out/lib/syndicate-drivers/volume"
 libsyndicate_driver_install = os.path.join( lib_install_dir, "syndicate-drivers/volume" )
 
-libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_ms_client_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_ms_client_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_drivers = SConscript( "libsyndicate/drivers/SConscript", variant_dir=libsyndicate_driver_out )
 
 # all libsyndicate targets depends on protobufs
 libsyndicate_protobuf_deps = [protobufs, protobuf_cc_files]
-for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_source_paths]:
+for libsyndicate_target in [libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths]:
    if libsyndicate_target is not None:
       env.Depends( libsyndicate_target, libsyndicate_protobuf_deps )
 
@@ -241,13 +181,6 @@ libsyndicate_install_ms_client_headers = env.Install( os.path.join( inc_install_
 
 libsyndicate_install_library = env.Install( lib_install_dir, [libsyndicate] ) 
 libsyndicate_install_drivers = env.Install( libsyndicate_driver_install, [libsyndicate_drivers] )
-
-libsyndicate_install_nacl = None
-if libsyndicate_nacl is not None:
-   libsyndicate_install_nacl = env.Install( nacl_lib_install_dir, [libsyndicate_nacl] )
-
-   env.Alias( 'libsyndicate-nacl', [libsyndicate_nacl] )
-   env.Alias( 'libsyndicate-nacl-install', [libsyndicate_install_nacl] )
 
 # main targets...
 env.Alias( 'libsyndicate', [libsyndicate] )
@@ -263,7 +196,7 @@ libsyndicateUG_inc_fs_install_dir = os.path.join( install_prefix, "include/libsy
 
 ug_out = "build/out/bin/UG"
 ug_driver_out = "build/out/lib/UG/drivers"
-syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, libsyndicateUG_headers, libsyndicateUG_fs_headers, syndicate_watchdog, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, libsyndicateUG_headers, libsyndicateUG_fs_headers, syndicate_watchdog  = SConscript( "UG/SConscript", variant_dir=ug_out )
 ug_drivers = SConscript( "UG/drivers/SConscript", variant_dir=ug_driver_out )
 
 ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc, syndicate_watchdog]
@@ -275,14 +208,12 @@ env.Depends( syndicate_ipc, libsyndicate )
 env.Depends( syndicate_httpd, libsyndicate )
 env.Depends( libsyndicateUG, libsyndicate )
 env.Depends( libsyndicateUGclient, libsyndicate )
-env.Depends( UG_nacl, libsyndicate_nacl )
 
 env.Alias("syndicatefs", syndicatefs)
 env.Alias("UG-httpd", syndicate_httpd)
 env.Alias("libsyndicateUG", libsyndicateUG)
 env.Alias("libsyndicateUGclient", libsyndicateUGclient)
 env.Alias("UG-ipc", syndicate_ipc)
-env.Alias("UG-nacl", UG_nacl)
 env.Alias("UG-drivers", ug_drivers )
 
 # UG installation 

@@ -18,14 +18,14 @@
 #include "write.h"
 
 // connection initialization handler for embedded HTTP server
-void* server_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
+void* SG_server_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    struct syndicate_connection* syncon = CALLOC_LIST( struct syndicate_connection, 1 );
    syncon->state = syndicate_get_state();
    return syncon;
 }
 
 // HTTP authentication callback (does nothing, since we verify the message signature)
-uint64_t server_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+uint64_t SG_server_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
    return 0;
 }
 
@@ -87,7 +87,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
 
 
 // HTTP HEAD handler
-struct md_HTTP_response* server_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
+struct md_HTTP_response* SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
@@ -111,7 +111,7 @@ struct md_HTTP_response* server_HTTP_HEAD_handler( struct md_HTTP_connection_dat
 
 
 // HTTP GET handler
-struct md_HTTP_response* server_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
+struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
@@ -424,7 +424,7 @@ int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t 
 
 
 // POST finish--extract the pending message and handle it
-void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
+void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state *state = syncon->state;
@@ -644,26 +644,26 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 }
 
 // HTTP cleanup handler, called after the data has been sent
-void server_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, enum MHD_RequestTerminationCode term) {
+void SG_server_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, enum MHD_RequestTerminationCode term) {
    struct syndicate_connection* syncon = (struct syndicate_connection*)con_cls;
    free( syncon );
 }
 
 
 // initialize
-int server_init( struct syndicate_state* state, struct md_HTTP* http_server ) {
+int SG_server_init( struct syndicate_state* state, struct md_HTTP* http_server ) {
    
    // start HTTP server
    memset( http_server, 0, sizeof( struct md_HTTP ) );
    md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE  );
    
-   http_server->HTTP_connect = server_HTTP_connect;
-   http_server->HTTP_GET_handler = server_HTTP_GET_handler;
-   http_server->HTTP_cleanup = server_HTTP_cleanup;
-   http_server->HTTP_HEAD_handler = server_HTTP_HEAD_handler;
+   http_server->HTTP_connect = SG_server_HTTP_connect;
+   http_server->HTTP_GET_handler = SG_server_HTTP_GET_handler;
+   http_server->HTTP_cleanup = SG_server_HTTP_cleanup;
+   http_server->HTTP_HEAD_handler = SG_server_HTTP_HEAD_handler;
    http_server->HTTP_POST_iterator = md_response_buffer_upload_iterator;
-   http_server->HTTP_POST_finish = server_HTTP_POST_finish;
-   http_server->HTTP_authenticate = server_HTTP_authenticate;
+   http_server->HTTP_POST_finish = SG_server_HTTP_POST_finish;
+   http_server->HTTP_authenticate = SG_server_HTTP_authenticate;
 
    dbprintf( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
    int rc = md_start_HTTP( http_server, state->conf.portnum, &state->conf );
@@ -677,7 +677,7 @@ int server_init( struct syndicate_state* state, struct md_HTTP* http_server ) {
 
 
 // shutdown
-int server_shutdown( struct md_HTTP* server ) {
+int SG_server_shutdown( struct md_HTTP* server ) {
    dbprintf("%s", "HTTP server shutdown\n");
    md_stop_HTTP( server );
    md_free_HTTP( server );

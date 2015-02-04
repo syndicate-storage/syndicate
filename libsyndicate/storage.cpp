@@ -16,17 +16,25 @@
 
 #include "libsyndicate/storage.h"
 
-// load a file as a string.  return the buffer with the file 
+// load a file as a string.  return the buffer with the file on success, or NULL on error
 char* md_load_file_as_string( char const* path, size_t* size ) {
-   char* ret = load_file( path, size );
+   
+   off_t size_or_error = 0;
+   char* buf = md_load_file( path, &size_or_error );
 
-   if( ret == NULL ) {
-      errorf("failed to load %s\n", path );
+   if( buf == NULL ) {
+      errorf("md_load_file('%s') rc = %d\n", path, (int)size_or_error );
       return NULL;
    }
 
-   ret = (char*)realloc( ret, *size + 1 );
-
+   *size = size_or_error;
+   
+   char* ret = (char*)realloc( buf, *size + 1 );
+   if( ret == NULL ) {
+      free( buf );
+      return NULL;
+   }
+   
    ret[ *size ] = 0;
 
    return ret;
@@ -92,11 +100,7 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       // make a PID-named directory
       pid_t my_pid = 0;
       
-   #ifndef _SYNDICATE_NACL_
       my_pid = getpid();
-   #else
-      my_pid = (pid_t)rand();
-   #endif
       
       sprintf(cwd, "/tmp/syndicate-%d", my_pid );
       
@@ -132,8 +136,7 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
          c->data_root,
          NULL
       };
-
-#ifndef _SYNDICATE_NACL_
+      
       for( int i = 0; dirs[i] != NULL; i++ ) {         
          rc = md_mkdirs( dirs[i] );
          if( rc != 0 ) {
@@ -141,7 +144,6 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
             return rc;
          }
       }
-#endif
    }
 
    return rc;

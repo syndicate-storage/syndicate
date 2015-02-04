@@ -141,7 +141,7 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    state->uid = getuid();
    state->gid = getgid();
    
-   state->mounttime = currentTimeSeconds();
+   state->mounttime = md_current_time_seconds();
    
    // initialize the downloader 
    rc = md_downloader_init( &state->dl, "UG-downloader" );

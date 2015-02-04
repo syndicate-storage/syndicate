@@ -453,7 +453,7 @@ int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uin
 
    if( do_utime ) {
       struct utimbuf ub;
-      ub.actime = currentTimeSeconds();
+      ub.actime = md_current_time_seconds();
       ub.modtime = ub.actime;
 
       int rc = fs_entry_utime( state->core, md_con_data->url_path, &ub, owner, volume );
@@ -935,7 +935,7 @@ int main( int argc, char** argv ) {
    struct syndicate_state* state = syndicate_get_state();
 
    // start back-end HTTP server
-   rc = server_init( state, &syndicate_http );
+   rc = SG_server_init( state, &syndicate_http );
    if( rc != 0 ) {
       fprintf(stderr, "Failed to start HTTP server\n");
       exit(1);
@@ -1001,7 +1001,7 @@ int main( int argc, char** argv ) {
       }
    }
 
-   server_shutdown( &syndicate_http );
+   SG_server_shutdown( &syndicate_http );
 
    int wait_replicas = 0;
    if( ug_opts.flush_replicas )

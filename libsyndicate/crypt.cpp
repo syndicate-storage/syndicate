@@ -236,9 +236,9 @@ int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* s
 
    // dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
 
-   int rc = Base64Decode( sigb64, sigb64_len, &sig_bin, &sig_bin_len );
+   int rc = md_base64_decode( sigb64, sigb64_len, &sig_bin, &sig_bin_len );
    if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
+      errorf("md_base64_decode rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -347,9 +347,9 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
    
    // convert to base64
    char* b64 = NULL;
-   rc = Base64Encode( (char*)sig_bin, sig_bin_len, &b64 );
+   rc = md_base64_encode( (char*)sig_bin, sig_bin_len, &b64 );
    if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
+      errorf("md_base64_encode rc = %d\n", rc );
       md_openssl_error();
       free( sig_bin );
       return rc;

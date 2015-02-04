@@ -682,7 +682,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    }
    
    // success!
-   child->atime = currentTimeSeconds();
+   child->atime = md_current_time_seconds();
    
    // give back a file handle
    ret = fs_file_handle_create( core, child, path, parent_id, parent_name );

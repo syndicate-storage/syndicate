@@ -255,8 +255,8 @@ int main( int argc, char** argv ) {
       }
       else if( strcmp( command, "update" ) == 0 ) {
          // queue up the command several times
-         uint64_t now_ms = currentTimeMillis();
-         uint64_t total_delay = currentTimeMillis() + delay;
+         uint64_t now_ms = md_current_time_millis();
+         uint64_t total_delay = md_current_time_millis() + delay;
 
          struct md_entry new_ent;
          memset( &new_ent, 0, sizeof(new_ent) );
@@ -299,7 +299,7 @@ int main( int argc, char** argv ) {
          
          // sleep for the total delay, plus a second
          printf("waiting for update thread...\n");
-         usleep( (total_delay - currentTimeMillis() + 1500 * num_ents ) * 1000L );
+         usleep( (total_delay - md_current_time_millis() + 1500 * num_ents ) * 1000L );
       }
       else {
          fprintf(stderr, "-q and -d are only used with -c 'update'\n");

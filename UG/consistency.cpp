@@ -32,7 +32,7 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
       return true;
    }
 
-   uint64_t now_ms = currentTimeMillis();
+   uint64_t now_ms = md_current_time_millis();
    uint64_t refresh_ms = (uint64_t)(fent->refresh_time.tv_sec) * 1000 + (uint64_t)(fent->refresh_time.tv_nsec) / 1000000;
 
    if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness ) {

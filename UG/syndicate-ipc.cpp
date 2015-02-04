@@ -2020,7 +2020,7 @@ int main(int argc, char** argv) {
     struct syndicate_state* state = syndicate_get_state();
  
     // start back-end HTTP server
-    rc = server_init( state, &syndicate_http );
+    rc = SG_server_init( state, &syndicate_http );
     if( rc != 0 )
        exit(1);
 
@@ -2042,7 +2042,7 @@ int main(int argc, char** argv) {
 
    printf( "\n\nSyndicateIPC shutting down\n\n");
 
-   server_shutdown( &syndicate_http );
+   SG_server_shutdown( &syndicate_http );
 
    int wait_replicas = -1;
    if( !ug_opts.flush_replicas ) {

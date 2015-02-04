@@ -26,122 +26,66 @@ int _DEBUG_MESSAGES = 0;
 int _ERROR_MESSAGES = 1;
 
 
-void set_debug_level( int d ) {
+void md_set_debug_level( int d ) {
    _DEBUG_MESSAGES = d;
 }
 
-void set_error_level( int e ) {
+void md_set_error_level( int e ) {
    _ERROR_MESSAGES = e;
 }
 
-int get_debug_level() {
+int md_get_debug_level() {
    return _DEBUG_MESSAGES;
 }
 
-int get_error_level() {
+int md_get_error_level() {
    return _ERROR_MESSAGES;
 }
 
 /* Converts a hex character to its integer value */
-char from_hex(char ch) {
+static char from_hex(char ch) {
   return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
 }
 
 /* Converts an integer value to its hex character*/
-char to_hex(char code) {
+static char to_hex(char code) {
   static char hex[] = "0123456789abcdef";
   return hex[code & 15];
-}
-
-
-// concatenate two paths
-char* fullpath( char* root, const char* path ) {
-   char delim = 0;
-   
-   int len = strlen(path) + strlen(root) + 1;
-   if( root[strlen(root)-1] != '/' ) {
-      len++;
-      delim = '/';
-   }
-   
-   char* ret = (char*)malloc( len );
-   
-   if( ret == NULL )
-      return NULL;
-   
-   bzero(ret, len);
-      
-   strcpy( ret, root );
-   if( delim != 0 ) {
-      ret[strlen(ret)] = '/';
-   }
-   strcat( ret, path );
-   return ret;
-}
-
-/* Allocate a path from the given path, with a '/' added to the end */
-char* dir_path( const char* path ) {
-   int len = strlen(path);
-   char* ret = NULL;
-   
-   if( path[len-1] != '/' ) {
-      ret = (char*)malloc( len + 2 );
-      if( ret == NULL )
-         return NULL;
-         
-      sprintf( ret, "%s/", path );
-   }
-   else {
-      ret = (char*)malloc( len + 1 );
-      if( ret == NULL )
-         return NULL;
-         
-      strcpy( ret, path );
-   }
-   
-   return ret;
 }
 
 
 /*
  * Get the current time in seconds since the epoch, local time
  */
-int64_t currentTimeSeconds() {
+int64_t md_current_time_seconds() {
    struct timespec ts;
-   clock_gettime( CLOCK_REALTIME, &ts );
+   int rc = clock_gettime( CLOCK_REALTIME, &ts );
+   if( rc != 0 ) {
+      return -errno;
+   }
+   
    int64_t ts_sec = (int64_t)ts.tv_sec;
    return ts_sec;
 }
 
 
 // get the current time in milliseconds
-int64_t currentTimeMillis() {
+int64_t md_current_time_millis() {
    struct timespec ts;
-   clock_gettime( CLOCK_REALTIME, &ts );
+   int rc = clock_gettime( CLOCK_REALTIME, &ts );
+   if( rc != 0 ) {
+      return -errno;
+   }
+   
    int64_t ts_sec = (int64_t)ts.tv_sec;
    int64_t ts_nsec = (int64_t)ts.tv_nsec;
    return (ts_sec * 1000) + (ts_nsec / 1000000);
 }
 
-// get the current time in microseconds
-int64_t currentTimeMicros() {
-   struct timespec ts;
-   clock_gettime( CLOCK_REALTIME, &ts );
-   int64_t ts_sec = (int64_t)ts.tv_sec;
-   int64_t ts_nsec = (int64_t)ts.tv_nsec;
-   return (ts_sec * 1000000) + (ts_nsec / 1000);
-}
-
-double currentTimeMono() {
-   struct timespec ts;
-   clock_gettime( CLOCK_MONOTONIC, &ts );
-   return (ts.tv_sec * 1e9) + (double)ts.tv_nsec;
-}
-
 /*
  * Get the user's umask
  */
-mode_t get_umask() {
+mode_t md_get_umask() {
   mode_t mask = umask(0);
   umask(mask);
   return mask;
@@ -279,7 +223,7 @@ unsigned char* sha256_fd( int fd ) {
 // load a file into RAM
 // return a pointer to the bytes.
 // set the size.
-char* load_file( char const* path, size_t* size ) {
+char* md_load_file( char const* path, off_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
    if( rc != 0 ) {
@@ -298,6 +242,13 @@ char* load_file( char const* path, size_t* size ) {
    }
    
    *size = fread( ret, 1, statbuf.st_size, f );
+   
+   if( *size != statbuf.st_size ) {
+      free( ret );
+      fclose( f );
+      return NULL;
+   }
+   
    fclose( f );
    return ret;
 }
@@ -402,87 +353,6 @@ ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) 
    }
    
    return num_written;
-}
-
-// remove all files and directories within a directory, recursively.
-// return errno if we fail partway through.
-int md_clear_dir( char const* dirname ) {
-   
-   if(dirname == NULL) {
-      return -EINVAL;
-   }
-   
-   DIR *dirp = opendir(dirname);
-   if (dirp == NULL) {
-      int errsv = -errno;
-      errorf("Failed to open %s, errno = %d\n", dirname, errsv);
-      return errsv;
-   }
-   
-   int rc = 0;
-   ssize_t len = offsetof(struct dirent, d_name) + pathconf(dirname, _PC_NAME_MAX) + 1;
-   
-   struct dirent *dentry_dp = NULL;
-   struct dirent *dentry = CALLOC_LIST( struct dirent, len );
-   
-   while(true) {
-      
-      rc = readdir_r(dirp, dentry, &dentry_dp);
-      if( rc != 0 ) {
-         errorf("readdir_r(%s) rc = %d\n", dirname, rc );
-         break;
-      }
-      
-      if( dentry_dp == NULL ) {
-         // no more entries
-         break;
-      }
-      
-      // walk this directory.
-      
-      if(strncmp(dentry->d_name, ".", strlen(".")) == 0 || strncmp(dentry->d_name, "..", strlen("..")) == 0 ) {
-         // ignore . and ..
-         continue;
-      }
-
-      // path to this dir entry 
-      char* path = md_fullpath( dirname, dentry->d_name, NULL );
-      rc = 0;
-      
-      // if this is a dir, then recurse
-      if(dentry->d_type == DT_DIR) {
-         md_clear_dir( path );
-         
-         // blow away this dir 
-         rc = rmdir(path);
-         if( rc != 0 ) {
-            rc = -errno;
-            errorf("rmdir(%s) errno = %d\n", path, rc );
-         }
-      }
-      else {
-         // just unlink files 
-         rc = unlink(path);
-         if( rc != 0 ) {
-            rc = -errno;
-            errorf("unlink(%s) errno = %d\n", path, rc );
-         }
-      }
-   
-      free(path);
-      path = NULL;
-      
-      // if we encountered an error, then abort 
-      if( rc != 0 ) {
-         break;
-      }
-   }
-   
-   // clean up
-   closedir( dirp );
-   free( dentry );
-   
-   return rc;
 }
 
 // create an AF_UNIX local socket 
@@ -661,7 +531,7 @@ int calcDecodeLength(const char* b64input, size_t len) { //Calculates the length
   return (int)len*0.75 - padding;
 }
 
-int Base64Decode(const char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
+int md_base64_decode(const char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
   BIO *bio, *b64;
   int decodeLen = calcDecodeLength(b64message, b64message_len);
   long len = 0;
@@ -685,7 +555,7 @@ int Base64Decode(const char* b64message, size_t b64message_len, char** buffer, s
 }
 
 
-int Base64Encode(char const* message, size_t msglen, char** buffer) { //Encodes a string to base64
+int md_base64_encode(char const* message, size_t msglen, char** buffer) { //Encodes a string to base64
   BIO *bio, *b64;
   FILE* stream;
   int encodedSize = 4*ceil((double)msglen/3);
@@ -749,7 +619,7 @@ uint64_t md_random64(void) {
 }
 
 
-int util_init(void) {
+int md_util_init(void) {
    // pseudo random number init
    int rfd = open("/dev/urandom", O_RDONLY );
    if( rfd < 0 ) {
@@ -758,6 +628,7 @@ int util_init(void) {
 
    ssize_t nr = read( rfd, Q, 4096 * sizeof(uint32_t) );
    if( nr < 0 ) {
+      close( rfd );
       return -errno;
    }
    if( nr != 4096 * sizeof(uint32_t) ) {
@@ -769,18 +640,6 @@ int util_init(void) {
    return 0;
 }
 
-
-double timespec_to_double( struct timespec* ts ) {
-   double ret = (double)ts->tv_sec + ((double)ts->tv_nsec) / 1e9;
-   return ret;
-}
-
-double now_ns(void) {
-   struct timespec ts;
-   clock_gettime( CLOCK_REALTIME, &ts );
-   
-   return timespec_to_double( &ts );
-}
 
 // sleep for the given timespec amount of time, transparently handing EINTR
 int md_sleep_uninterrupted( struct timespec* ts ) {

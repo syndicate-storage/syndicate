@@ -26,8 +26,8 @@ int main( int argc, char** argv ) {
    int rc = 0;
    
    // activate debuggging and error logging
-   set_debug_level( 1 );
-   set_error_level( 1 );
+   md_set_debug_level( 1 );
+   md_set_error_level( 1 );
    
    // initialize a downloader 
    struct md_downloader dl;

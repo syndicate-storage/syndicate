@@ -605,7 +605,7 @@ int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, 
       fent->atime = fent->mtime_sec;
    }
 
-   fent->atime = currentTimeSeconds();
+   fent->atime = md_current_time_seconds();
 
    // post update
    struct md_entry up;

@@ -4,13 +4,11 @@ import os
 
 # get our environment
 Import('env')
-Import("nacl_env")
 env = env.Clone()
 
 Import('protobuf_cc_files')
 Import('protobuf_out')
 Import('extra_args')
-Import("make_nacl_env")
 
 BASE_FILES = """
    cache.cpp
@@ -118,24 +116,9 @@ protobuf_objs = [env.SharedObject(x) for x in protobuf_cc_files]
 # full library
 libsyndicate = env.SharedLibrary( "libsyndicate.so", protobuf_objs + create_sobjs( Split(source_files) ), LIBS=Split(LIBS + global_LIBS), LINKFLAGS=global_LINK)
 
-# Native Client library
-env_nacl = env.Clone()
-
-libsyndicate_nacl = None
-
-if nacl_env is not None:
-   env_nacl = nacl_env.Clone()
-   env_nacl.Append(CPPPATH = ["#build/out/protobufs"])
-
-   protobuf_nacl_objs = [env_nacl.Object("%s.nacl.o" % x.path, x) for x in protobuf_cc_files]
-   client_objs = [env_nacl.Object("%s.nacl.o" % x, x) for x in Split(source_files_client)]
-
-   libsyndicate_nacl = env_nacl.StaticLibrary("libsyndicate_nacl.a", protobuf_nacl_objs + scrypt_objs + client_objs, LIBS=Split(LIBS_client) )
-
-
 # generate header and source paths
 header_paths = [os.path.join( x.path ) for x in Split(headers)]
 scrypt_header_paths = [os.path.join( x.path ) for x in Split(scrypt_headers)]
 ms_client_header_paths = [os.path.join( x.path ) for x in Split(ms_client_headers)]
 source_paths = [os.path.join( x ) for x in Split(source_files)] 
-Return( 'libsyndicate libsyndicate_nacl header_paths scrypt_header_paths ms_client_header_paths source_paths' )
+Return( 'libsyndicate header_paths scrypt_header_paths ms_client_header_paths source_paths' )

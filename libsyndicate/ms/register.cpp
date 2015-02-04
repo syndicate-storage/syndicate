@@ -35,7 +35,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
       size_t encrypted_gateway_private_key_len = 0;
       char* encrypted_gateway_private_key = NULL;
       
-      int decode_rc = Base64Decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
+      int decode_rc = md_base64_decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
       if( decode_rc != 0 ) {
          errorf("%s\n", "Failed to decode private key.  No gateway private key given!" );
          rc = -ENOTCONN;
@@ -199,7 +199,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    }
    
    // sanity check...
-   if( client->session_expires > 0 && client->session_expires < currentTimeSeconds() ) {
+   if( client->session_expires > 0 && client->session_expires < md_current_time_seconds() ) {
       errorf("Session password expired at %" PRId64 "\n", client->session_expires );
       rc = -EINVAL;
    }

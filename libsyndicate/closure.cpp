@@ -95,9 +95,9 @@ static int md_parse_b64_object( struct json_object** jobj_ret, char const* obj_b
    
    int rc = 0;
    
-   rc = Base64Decode( obj_b64, obj_b64_len, &obj_json, &obj_json_len );
+   rc = md_base64_decode( obj_b64, obj_b64_len, &obj_json, &obj_json_len );
    if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
+      errorf("md_base64_decode rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -159,9 +159,9 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    
    int rc = 0;
    
-   rc = Base64Decode( closure_secrets_b64, closure_secrets_b64_len, &obj_ctext, &obj_ctext_len );
+   rc = md_base64_decode( closure_secrets_b64, closure_secrets_b64_len, &obj_ctext, &obj_ctext_len );
    if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
+      errorf("md_base64_decode rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -271,9 +271,9 @@ static int md_parse_json_b64_string( struct json_object* toplevel_obj, char cons
       size_t tmp_len = 0;
       
       // load it directly...
-      rc = Base64Decode( b64, b64_len, &tmp, &tmp_len );
+      rc = md_base64_decode( b64, b64_len, &tmp, &tmp_len );
       if( rc != 0 ) {
-         errorf("Failed to decode %s, rc = %d\n", key, rc );
+         errorf("md_base64_decode('%s') rc = %d\n", key, rc );
       }
       else {
          *val = tmp;

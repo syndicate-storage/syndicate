@@ -1244,23 +1244,20 @@ int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, stru
    return 0;
 }
 
-static uint64_t random64() {
-   return ((uint64_t)CMWC4096() << 32L) | CMWC4096();
-}
 
 // generate a manifest that indicates an error message
 // all required fields will be filled with random numbers (for cryptographic padding)
 int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg ) {
    
-   mmsg->set_volume_id( random64() );
-   mmsg->set_coordinator_id( random64() );
-   mmsg->set_file_id( random64() );
-   mmsg->set_file_version( (int64_t)random64() );
-   mmsg->set_size( (int64_t)random64() );
-   mmsg->set_mtime_sec( (int64_t)random64() );
-   mmsg->set_mtime_nsec( (int64_t)random64() );
-   mmsg->set_fent_mtime_sec( (int64_t)random64() );
-   mmsg->set_fent_mtime_nsec( (int64_t)random64() );
+   mmsg->set_volume_id( md_random64() );
+   mmsg->set_coordinator_id( md_random64() );
+   mmsg->set_file_id( md_random64() );
+   mmsg->set_file_version( (int64_t)md_random64() );
+   mmsg->set_size( (int64_t)md_random64() );
+   mmsg->set_mtime_sec( (int64_t)md_random64() );
+   mmsg->set_mtime_nsec( (int64_t)md_random64() );
+   mmsg->set_fent_mtime_sec( (int64_t)md_random64() );
+   mmsg->set_fent_mtime_nsec( (int64_t)md_random64() );
 
    mmsg->set_errorcode( error );
    mmsg->set_errortxt( string(errormsg) );

@@ -75,19 +75,6 @@ extern int _ERROR_MESSAGES;
 
 #define dbprintf( format, ... ) do { if( _DEBUG_MESSAGES ) { printf( WHERESTR format, WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
 #define errorf( format, ... ) do { if( _ERROR_MESSAGES ) { fprintf(stderr, WHERESTR format, WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
-#define QUOTE(x) #x
-
-#define dbval(var, fmt) dbprintf(WHERESTR "%s = " fmt, WHEREARG, #var, var);
-#define DIE 0xdeadbeef
-
-#define NULLCHECK( var, ret ) \
-  if( (var) == NULL ) {       \
-      errorf("%s = NULL\n", #var);      \
-      if( (ret) == DIE ) {       \
-         exit(1);              \
-      }                          \
-      return ret;             \
-  }
 
 #define CALLOC_LIST(type, count) (type*)calloc( sizeof(type) * (count), 1 )
 #define FREE_LIST(list) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { free( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
@@ -105,14 +92,10 @@ extern int _ERROR_MESSAGES;
 #define DATA_S(str) printf("DATA %s\n", str)
 #define DATA_BLOCK(name) printf("-------------------------------- %s\n", name)
 
-#define BEGIN_EXTERN_C        extern "C" {
-#define END_EXTERN_C          }
-
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
-#define SCHED_SLEEP 50000
 #define CURL_DEFAULT_SELECT_SEC 0
-#define CURL_DEFAULT_SELECT_USEC SCHED_SLEEP
+#define CURL_DEFAULT_SELECT_USEC 50000
 
 using namespace std;
 
@@ -135,18 +118,16 @@ struct mlock_buf {
 extern "C" {
 
 // debug functions
-void set_debug_level( int d );
-void set_error_level( int e );
-int get_debug_level();
-int get_error_level();
+void md_set_debug_level( int d );
+void md_set_error_level( int e );
+int md_get_debug_level();
+int md_get_error_level();
 
 // file functions
-char* dir_path( const char* path );
-char* fullpath( char* root, const char* path );
-mode_t get_umask();
-int md_clear_dir( char const* dirname );
+mode_t md_get_umask();
 int md_unix_socket( char const* path, bool server );
 int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path );
+char* md_load_file( char const* path, off_t* size );
 
 // I/O functions 
 ssize_t md_read_uninterrupted( int fd, char* buf, size_t len );
@@ -155,12 +136,8 @@ ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len );
 ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags );
 
 // time functions
-int64_t currentTimeSeconds();
-int64_t currentTimeMillis();
-double currentTimeMono();
-int64_t currentTimeMicros();
-double timespec_to_double( struct timespec* ts );
-double now_ns(void);
+int64_t md_current_time_seconds();
+int64_t md_current_time_millis();
 
 int md_sleep_uninterrupted( struct timespec* ts );
 
@@ -180,23 +157,18 @@ unsigned char* sha256_fd( int fd );
 unsigned char* sha256_dup( unsigned char const* sha256 );
 int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 );
 
-// system functions
-char* load_file( char const* path, size_t* size );
-
 // parser functions
 char* md_url_encode( char const* str, size_t len );
 char* md_url_decode( char const* str, size_t* len );
-int timespec_cmp( struct timespec* t1, struct timespec* t2 );
-int Base64Decode(const char* b64message, size_t b64len, char** buffer, size_t* buffer_len);
-int Base64Encode(const char* message, size_t len, char** buffer);
+int md_base64_decode(const char* b64message, size_t b64len, char** buffer, size_t* buffer_len);
+int md_base64_encode(const char* message, size_t len, char** buffer);
 
 // random number generator
-uint32_t CMWC4096(void);
 uint32_t md_random32(void);
 uint64_t md_random64(void);
 
 // library initialization
-int util_init(void);
+int md_util_init(void);
 
 // mlock'ed memory allocators 
 int mlock_calloc( struct mlock_buf* buf, size_t len );

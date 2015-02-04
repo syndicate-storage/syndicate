@@ -219,7 +219,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
    curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
    curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
    curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-   // curl_easy_setopt( curl, CURLOPT_VERBOSE, (get_debug_level() > 0 ? 1L: 0L) );
+   // curl_easy_setopt( curl, CURLOPT_VERBOSE, (md_get_debug_level() > 0 ? 1L: 0L) );
 
    char* url_and_path = NULL;
    char* url_qs = NULL;

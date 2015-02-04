@@ -24,7 +24,6 @@ static int _signals = 1;
 // stacktrace for uncaught C++ exceptions 
 void md_uncaught_exception_handler(void) {
    
-   #ifndef _SYNDICATE_NACL_ 
    errorf("%s", "UNCAUGHT EXCEPTION!  Stack trace follows");
    
    void *trace_elems[32];
@@ -38,7 +37,6 @@ void md_uncaught_exception_handler(void) {
    }
    
    free( stack_syms );
-   #endif 
    
    exit(1);
    
@@ -59,7 +57,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
    int rc = 0;
    
    if( !c->is_client ) {
-   #ifndef _SYNDICATE_NACL_
+      
       // get hostname
       struct addrinfo hints;
       memset( &hints, 0, sizeof(hints) );
@@ -97,10 +95,6 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       c->hostname = strdup(hn);
       
       freeaddrinfo( result );
-   #else
-      c->hostname = strdup("localhost");
-   #endif
-         
    }
    else {
       // fill in defaults, but they won't be used except for registration
@@ -124,7 +118,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    }
    
    // get the umask
-   mode_t um = get_umask();
+   mode_t um = md_get_umask();
    c->usermask = um;
    
    if( c->need_storage ) {
@@ -246,8 +240,8 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
 // if level >= 1, this turns on debug messages.
 // if level >= 2, this turns on locking debug messages
 int md_debug( struct md_syndicate_conf* conf, int level ) {
-   int prev = get_debug_level();
-   set_debug_level( level );
+   int prev = md_get_debug_level();
+   md_set_debug_level( level );
    
    conf->debug_lock = false;
    if( level >= 2 )
@@ -258,8 +252,8 @@ int md_debug( struct md_syndicate_conf* conf, int level ) {
 
 // if level >= 1, this turns on error messages
 int md_error( struct md_syndicate_conf* conf, int level ) {
-   int prev = get_error_level();
-   set_error_level( level );
+   int prev = md_get_error_level();
+   md_set_error_level( level );
    return prev;
 }
 
@@ -1619,8 +1613,6 @@ void md_update_dup2( struct md_update* src, struct md_update* dest ) {
 
 
 
-static bool _already_inited = false;
-
 // basic Syndicate initialization
 int md_init_begin( struct md_syndicate_conf* conf,
                    char const* ms_url,
@@ -1636,12 +1628,17 @@ int md_init_begin( struct md_syndicate_conf* conf,
                    char const* syndicate_pubkey_path
                  ) {
    
- 
    int rc = 0;
    
-   if( !_already_inited ) {
-   #ifndef _SYNDICATE_NACL_
-      // before we load anything, disable core dumps (i.e. to keep private keys from leaking)
+   // before we load anything, disable core dumps (i.e. to keep private keys from leaking)
+   bool disable_core_dumps = true;
+   
+#ifdef _DEVELOPMENT
+   // for development, keep user's core dump setting to facilitate debugging
+   disable_core_dumps = false;
+#endif
+   
+   if( disable_core_dumps ) {
       
       struct rlimit rlim;
       getrlimit( RLIMIT_CORE, &rlim );
@@ -1654,7 +1651,6 @@ int md_init_begin( struct md_syndicate_conf* conf,
          errorf("Failed to disable core dumps, rc = %d\n", rc );
          return rc;
       }
-   #endif
       
       // need a Volume name
       if( volume_name == NULL ) {
@@ -1662,13 +1658,11 @@ int md_init_begin( struct md_syndicate_conf* conf,
          return -EINVAL;
       }
 
-      rc = util_init();
+      rc = md_util_init();
       if( rc != 0 ) {
-         errorf("util_init rc = %d\n", rc );
+         errorf("md_util_init rc = %d\n", rc );
          return rc;
       }
-      
-      _already_inited = true;
    }
    
    // populate the config
@@ -1828,9 +1822,7 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    char const* tls_cert_path = opts->tls_cert_path;
    
    // early exception handling 
-   #ifndef _SYNDICATE_NACL_
    set_terminate( md_uncaught_exception_handler );
-   #endif
    
    int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
    

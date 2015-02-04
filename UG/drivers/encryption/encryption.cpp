@@ -63,9 +63,9 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          char* new_key_and_iv_b64 = NULL;
          size_t new_key_and_iv_b64_len = 0;
          
-         rc = Base64Encode( new_key_and_iv, 64, &new_key_and_iv_b64 );
+         rc = md_base64_encode( new_key_and_iv, 64, &new_key_and_iv_b64 );
          if( rc != 0 ) {
-            errorf("Base64Encode rc = %d\n", rc );
+            errorf("md_base64_encode rc = %d\n", rc );
             return -ENODATA;
          }
          
@@ -98,7 +98,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
       char* final_key_and_iv = NULL;
       size_t final_key_and_iv_len = 0;
       
-      rc = Base64Decode( key_and_iv, key_and_iv_len, &final_key_and_iv, &final_key_and_iv_len );
+      rc = md_base64_decode( key_and_iv, key_and_iv_len, &final_key_and_iv, &final_key_and_iv_len );
       if( rc != 0 ) {
          errorf("Failed to unserialize key, rc = %d\n", rc );
          

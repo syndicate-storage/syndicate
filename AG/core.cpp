@@ -164,7 +164,7 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
       
       // read from disk
       size_t txt_len = 0;
-      char* txt = load_file( state->ag_opts.spec_file_path, &txt_len );
+      char* txt = md_load_file( state->ag_opts.spec_file_path, &txt_len );
       
       if( txt == NULL ) {
          errorf("Failed to load spec file text from %s\n", state->ag_opts.spec_file_path );
@@ -561,11 +561,11 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
       return rc;
    }
    
-   rc = Base64Encode( tmp, 16, &state->inst_nonce );
+   rc = md_base64_encode( tmp, 16, &state->inst_nonce );
    free( tmp );
    
    if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
+      errorf("md_base64_encode rc = %d\n", rc );
       return rc;
    }
    

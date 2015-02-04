@@ -45,7 +45,7 @@ int syndicate_functional_test_init( int argc, char** argv, int* optind_out, stru
 
    // start back-end HTTP server
    memset( syndicate_http, 0, sizeof(struct md_HTTP) );
-   rc = server_init( state, syndicate_http );
+   rc = SG_server_init( state, syndicate_http );
    if( rc != 0 )
       exit(1);
    
@@ -58,7 +58,7 @@ int syndicate_functional_test_init( int argc, char** argv, int* optind_out, stru
 
 int syndicate_functional_test_shutdown( struct md_HTTP* syndicate_http ) {
    
-   server_shutdown( syndicate_http );
+   SG_server_shutdown( syndicate_http );
    
    syndicate_destroy( -1 );
    

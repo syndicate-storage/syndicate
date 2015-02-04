@@ -236,9 +236,9 @@ int replica_populate_request( ms::ms_gateway_request_info* replica_info, int req
    
    
    char* b64hash = NULL;
-   int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
+   int rc = md_base64_encode( (char*)hash, hash_len, &b64hash );
    if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
+      errorf("md_base64_encode rc = %d\n", rc );
       return -EINVAL;
    }
    
@@ -463,7 +463,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
    unsigned char fake_hash[256];
    memset( fake_hash, 0, 256 );
    for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
-      uint32_t random_bits = CMWC4096();
+      uint32_t random_bits = md_random32();
       memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
    }
    
@@ -515,7 +515,7 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
    unsigned char fake_hash[256];
    memset( fake_hash, 0, 256 );
    for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
-      uint32_t random_bits = CMWC4096();
+      uint32_t random_bits = md_random32();
       memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
    }
    

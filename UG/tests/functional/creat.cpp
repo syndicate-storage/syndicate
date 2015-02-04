@@ -17,7 +17,7 @@
 #include "common.h"
 
 void usage( char* progname ) {
-   printf("Usage %s [syndicate options] /path/to/file [data_to_write]\n", progname );
+   printf("Usage %s [syndicate options] /syndicate/path/to/file /path/to/data\n", progname );
    exit(1);
 }
 
@@ -30,70 +30,82 @@ int main( int argc, char** argv ) {
    // set up the test 
    syndicate_functional_test_init( argc, argv, &test_optind, &syndicate_http );
    
-   // arguments: creat [syndicate options] /path/to/file [data to write]
-   if( test_optind < 0 )
+   // arguments: creat [syndicate options] /syndicate/path/to/file /path/to/data
+   if( test_optind < 0 ) {
       usage( argv[0] );
+   }
    
-   if( test_optind >= argc )
+   if( test_optind >= argc ) {
       usage( argv[0] );
+   }
    
    char* path = argv[test_optind];
    
    // do we have data?
+   char* data_path = NULL;
    char* data = NULL;
-   if( test_optind + 1 < argc )
-      data = argv[test_optind + 1];
-
+   off_t data_size = 0;
+   
+   if( test_optind + 1 < argc ) {
+      data_path = argv[test_optind + 1];
+      
+      data = md_load_file( data_path, &data_size );
+      if( data == NULL ) {
+         errorf("md_read_file('%s') rc = %d\n", data_path, int(data_size));
+         exit(1);
+      }
+   }
+   
    // get state 
    struct syndicate_state* state = syndicate_get_state();
    
    // create the file
    int rc = 0;
-   dbprintf("\n\n\nfs_entry_create( %s )\n\n\n", path );
+   dbprintf("fs_entry_create( %s )\n", path );
    struct fs_file_handle* fh = fs_entry_create( state->core, path, SYS_USER, state->core->volume, 0755, &rc );
    
    if( fh == NULL || rc != 0 ) {
-      errorf("\n\n\nfs_entry_create( %s ) rc = %d\n\n\n", path, rc );
+      errorf("fs_entry_create( %s ) rc = %d\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\nfs_entry_create( %s ) rc = %d\n\n\n", path, rc );
+      dbprintf("fs_entry_create( %s ) rc = %d\n", path, rc );
    }
    
    // write data, if we're supposed to 
    if( data != NULL ) {
-      dbprintf("\n\n\nfs_entry_write( %s, '%s' )\n\n\n", path, data );
-      rc = fs_entry_write( state->core, fh, data, strlen(data), 0 );
+      dbprintf("fs_entry_write( %s, '%s' )\n", path, data );
+      rc = fs_entry_write( state->core, fh, data, data_size, 0 );
       
-      if( rc != (signed)strlen(data) ) {
-         errorf("\n\n\nfs_entry_write( %s ) rc = %d\n\n\n", path, rc );
+      if( rc != data_size ) {
+         errorf("fs_entry_write( %s ) rc = %d\n", path, rc );
          exit(1);
       }
       else {
-         dbprintf("\n\n\nfs_entry_write( %s ) rc = %d\n\n\n", path, rc );
+         dbprintf("fs_entry_write( %s ) rc = %d\n", path, rc );
       }
       
       // fsync data 
-      dbprintf("\n\n\nfs_entry_fsync( %s )\n\n\n", path );
+      dbprintf("fs_entry_fsync( %s )\n", path );
       rc = fs_entry_fsync( state->core, fh );
       if( rc != 0 ) {
-         errorf("\n\n\nfs_entry_fsync( %s ) rc = %d\n\n\n", path, rc );
+         errorf("fs_entry_fsync( %s ) rc = %d\n", path, rc );
          exit(1);
       }  
       else {
-         dbprintf("\n\n\nfs_entry_fsync( %s ) rc = %d\n\n\n", path, rc );
+         dbprintf("fs_entry_fsync( %s ) rc = %d\n", path, rc );
       }
    }
    
    // close
-   dbprintf("\n\n\nfs_entry_close( %s )\n\n\n", path );
+   dbprintf("fs_entry_close( %s )", path );
    rc = fs_entry_close( state->core, fh );
    if( rc != 0 ) {
-      errorf("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
+      errorf("fs_entry_close( %s ) rc = %d\n", path, rc );
       exit(1);
    }
    else {
-      dbprintf("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
+      dbprintf("fs_entry_close( %s ) rc = %d\n", path, rc );
    }
    
    free( fh );
