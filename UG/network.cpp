@@ -378,14 +378,14 @@ int fs_entry_prepare_detach_message( Serialization::WriteMsg* detach_msg, char c
 
 // CURL method to quickly buffer up a response
 static size_t fs_entry_response_buffer( char* ptr, size_t size, size_t nmemb, void* userdata ) {
-   response_buffer_t* respBuf = (response_buffer_t*)userdata;
+   md_response_buffer_t* respBuf = (md_response_buffer_t*)userdata;
 
    size_t tot = size * nmemb;
 
    char* ptr_dup = SG_CALLOC( char, tot );
    memcpy( ptr_dup, ptr, tot );
 
-   respBuf->push_back( buffer_segment_t( ptr_dup, tot ) );
+   respBuf->push_back( md_buffer_segment_t( ptr_dup, tot ) );
 
    return tot;
 }
@@ -394,7 +394,7 @@ static size_t fs_entry_response_buffer( char* ptr, size_t size, size_t nmemb, vo
 // send off a write message, and get back the received write message
 int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core, uint64_t gateway_id, Serialization::WriteMsg* sendMsg ) {
    CURL* curl_h = curl_easy_init();
-   response_buffer_t buf;
+   md_response_buffer_t buf;
 
    char* content_url = ms_client_get_UG_content_url( core->ms, gateway_id );
    if( content_url == NULL ) {
@@ -457,7 +457,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       
       SG_debug("curl_easy_perform(%s) rc = %d, err = %ld\n", content_url, rc, err );
       
-      response_buffer_free( &buf );
+      md_response_buffer_free( &buf );
       curl_easy_cleanup( curl_h );
       free( content_url );
       
@@ -470,7 +470,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       if( http_status != 200 ) {
          SG_error( "remote HTTP response %ld\n", http_status );
 
-         response_buffer_free( &buf );
+         md_response_buffer_free( &buf );
          curl_easy_cleanup( curl_h );
          free( content_url );
 
@@ -478,14 +478,14 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       }
 
       // got back a message--parse it
-      char* msg_buf = response_buffer_to_string( &buf );
-      size_t msg_len = response_buffer_size( &buf );
+      char* msg_buf = md_response_buffer_to_string( &buf );
+      size_t msg_len = md_response_buffer_size( &buf );
 
       // extract the messsage
       rc = md_parse< Serialization::WriteMsg >( recvMsg, msg_buf, msg_len );
       
       free( msg_buf );
-      response_buffer_free( &buf );
+      md_response_buffer_free( &buf );
       curl_easy_cleanup( curl_h );
       
       if( rc != 0 ) {

@@ -428,7 +428,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state *state = syncon->state;
-   response_buffer_t* rb = md_con_data->rb;
+   md_response_buffer_t* rb = md_con_data->rb;
    Serialization::WriteMsg ack;
 
    // prepare an ACK
@@ -439,8 +439,8 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    int rc = 0;
    bool no_ack = false;
 
-   char* msg_buf = response_buffer_to_string( rb );
-   size_t msg_sz = response_buffer_size( rb );
+   char* msg_buf = md_response_buffer_to_string( rb );
+   size_t msg_sz = md_response_buffer_size( rb );
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
 
    SG_debug("received message of length %zu\n", msg_sz);

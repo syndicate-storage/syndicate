@@ -52,7 +52,7 @@ struct AG_connection_context {
 
 // connection data
 struct AG_connection_data {
-   response_buffer_t* rb;
+   md_response_buffer_t* rb;
 
    int err;                               // error code
    struct AG_map_info* mi;                // looked-up map info

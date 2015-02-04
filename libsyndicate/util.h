@@ -92,8 +92,8 @@ extern int _SG_ERROR_MESSAGES;
 using namespace std;
 
 // small message response buffers
-typedef pair<char*, size_t> buffer_segment_t;
-typedef vector< buffer_segment_t > response_buffer_t;
+typedef pair<char*, size_t> md_buffer_segment_t;
+typedef vector< md_buffer_segment_t > md_response_buffer_t;
 
 struct thread_args {
    void* context;
@@ -143,11 +143,11 @@ unsigned char* sha256_hash( char const* input );
 unsigned char* sha256_hash_data( char const* input, size_t len );
 char* sha256_printable( unsigned char const* sha256 );
 char* sha256_hash_printable( char const* input, size_t len );
-unsigned char* sha256_data( char const* sha256_print );
+unsigned char* sha256_data( char const* printable );
 unsigned char* sha256_file( char const* path );
 unsigned char* sha256_fd( int fd );
 unsigned char* sha256_dup( unsigned char const* sha256 );
-int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 );
+int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 );
 
 // parser functions
 char* md_url_encode( char const* str, size_t len );
@@ -168,12 +168,13 @@ int mlock_free( struct mlock_buf* buf );
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );
 int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src );
 
-char* response_buffer_to_string( response_buffer_t* rb );
-void response_buffer_free( response_buffer_t* rb );
-off_t response_buffer_size( response_buffer_t* rb );
+char* md_response_buffer_to_string( md_response_buffer_t* rb );
+void md_response_buffer_free( md_response_buffer_t* rb );
+off_t md_response_buffer_size( md_response_buffer_t* rb );
 
 // linux-specific...
 pid_t gettid(void);
+
 }
 
 

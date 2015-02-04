@@ -564,7 +564,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
    // POST the request 
    struct curl_httppost *post = NULL, *last = NULL;
    long http_response = 0;
-   response_buffer_t* rb = new response_buffer_t();
+   md_response_buffer_t* rb = new md_response_buffer_t();
 
    // send as multipart/form-data file
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-register-request", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, serialized_registration_buf, CURLFORM_BUFFERLENGTH, serialized_registration_buf_len, CURLFORM_END );
@@ -583,7 +583,7 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
       curl_formfree( post );
       free( serialized_registration_buf );
       
-      response_buffer_free( rb );
+      md_response_buffer_free( rb );
       
       delete rb;
       return rc;
@@ -598,17 +598,17 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
       
       if( http_response != 200 ) {
          SG_error("curl_easy_perform(%s) HTTP status = %ld\n", url, http_response );
-         response_buffer_free( rb );
+         md_response_buffer_free( rb );
          delete rb;
          return -ENODATA;
       }
       else {
          // got 200.  Parse to registration metadata
-         char* registration_md_buf = response_buffer_to_string( rb );
-         size_t registration_md_buf_len = response_buffer_size( rb );
+         char* registration_md_buf = md_response_buffer_to_string( rb );
+         size_t registration_md_buf_len = md_response_buffer_size( rb );
          
          // free memory
-         response_buffer_free( rb );
+         md_response_buffer_free( rb );
          delete rb;
          
          // got the data

@@ -398,13 +398,13 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
 
 // download data to a response buffer
 size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data ) {
-   response_buffer_t* rb = (response_buffer_t*)user_data;
+   md_response_buffer_t* rb = (md_response_buffer_t*)user_data;
 
    size_t realsize = size * count;
    char* buf = SG_CALLOC( char, realsize );
    memcpy( buf, stream, realsize );
    
-   rb->push_back( buffer_segment_t( buf, realsize ) );
+   rb->push_back( md_buffer_segment_t( buf, realsize ) );
 
    return realsize;
 }
@@ -423,7 +423,7 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    char* buf = SG_CALLOC( char, realsize );
    memcpy( buf, stream, realsize );
    
-   brb->rb->push_back( buffer_segment_t( buf, realsize ) );
+   brb->rb->push_back( md_buffer_segment_t( buf, realsize ) );
    brb->size += realsize;
    
    return realsize;
@@ -443,7 +443,7 @@ int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_
    
    dlctx->brb.max_size = max_len;
    dlctx->brb.size = 0;
-   dlctx->brb.rb = new response_buffer_t();
+   dlctx->brb.rb = new md_response_buffer_t();
    
    dlctx->cache_func = cache_func;
    dlctx->cache_func_cls = cache_func_cls;
@@ -480,7 +480,7 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
       return -EAGAIN;
    }
    
-   response_buffer_free( dlctx->brb.rb );
+   md_response_buffer_free( dlctx->brb.rb );
    dlctx->brb.size = 0;
    
    curl_easy_setopt( dlctx->curl, CURLOPT_WRITEDATA, (void*)&dlctx->brb );
@@ -534,7 +534,7 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    SG_debug("Free download context %p\n", dlctx );
    
    if( dlctx->brb.rb != NULL ) {
-      response_buffer_free( dlctx->brb.rb );
+      md_response_buffer_free( dlctx->brb.rb );
       delete dlctx->brb.rb;
       dlctx->brb.rb = NULL;
       dlctx->brb.size = 0;
@@ -1103,8 +1103,8 @@ static void* md_downloader_main( void* arg ) {
 
 // consolidate and write back the buffer 
 int md_download_context_get_buffer( struct md_download_context* dlctx, char** buf, off_t* buf_len ) {
-   *buf = response_buffer_to_string( dlctx->brb.rb );
-   *buf_len = response_buffer_size( dlctx->brb.rb );
+   *buf = md_response_buffer_to_string( dlctx->brb.rb );
+   *buf_len = md_response_buffer_size( dlctx->brb.rb );
    return 0;
 }
 
@@ -1261,8 +1261,8 @@ int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size 
       return rc;
    }
 
-   *buf = response_buffer_to_string( dlbuf.rb );
-   *ret_size = response_buffer_size( dlbuf.rb );
+   *buf = md_response_buffer_to_string( dlbuf.rb );
+   *ret_size = md_response_buffer_size( dlbuf.rb );
    
    md_bound_response_buffer_free( &dlbuf );
    
@@ -2173,7 +2173,7 @@ int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t m
    brb->max_size = max_size;
    brb->size = 0;
    
-   brb->rb = new (nothrow) response_buffer_t();
+   brb->rb = new (nothrow) md_response_buffer_t();
    if( brb == NULL ) {
       return -ENOMEM;
    }
@@ -2184,7 +2184,7 @@ int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t m
 int md_bound_response_buffer_free( struct md_bound_response_buffer* brb ) {
    
    if( brb->rb != NULL ) {
-      response_buffer_free( brb->rb );
+      md_response_buffer_free( brb->rb );
       delete brb->rb;
    }
    

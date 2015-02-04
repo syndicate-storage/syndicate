@@ -129,7 +129,7 @@ struct md_HTTP_connection_data {
    char* version;             // HTTP version
    char* url_path;            // path requested
    char* query_string;        // url's query string
-   response_buffer_t* rb;     // response buffer for small messages
+   md_response_buffer_t* rb;     // response buffer for small messages
 };
 
 // gateway request structure

@@ -140,22 +140,23 @@ unsigned char* sha256_dup( unsigned char const* sha256 ) {
 }
 
 // compare two SHA256 hashes
-int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 ) {
-   if( sha256_1 == NULL )
+int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 ) {
+   if( hash1 == NULL ) {
       return -1;
-   if( sha256_2 == NULL )
+   }
+   if( hash2 == NULL ) {
       return 1;
-   
-   return strncasecmp( (char*)sha256_1, (char*)sha256_2, SHA_DIGEST_LENGTH );
+   }
+   return strncasecmp( (char*)hash1, (char*)hash2, SHA_DIGEST_LENGTH );
 }
 
 
 // make a sha-256 hash printable
-char* sha256_printable( unsigned char const* sha256 ) {
+char* sha256_printable( unsigned char const* hash ) {
    char* ret = (char*)calloc( sizeof(char) * (2 * SHA256_DIGEST_LENGTH + 1), 1 );
    char buf[3];
    for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
-      sprintf(buf, "%02x", sha256[i] );
+      sprintf(buf, "%02x", hash[i] );
       ret[2*i] = buf[0];
       ret[2*i + 1] = buf[1];
    }
@@ -165,19 +166,19 @@ char* sha256_printable( unsigned char const* sha256 ) {
 
 // make a printable sha256 from data
 char* sha256_hash_printable( char const* input, size_t len) {
-   unsigned char* sha256 = sha256_hash_data( input, len );
-   char* sha256_str = sha256_printable( sha256 );
-   free( sha256 );
-   return sha256_str;
+   unsigned char* hash = sha256_hash_data( input, len );
+   char* hash_str = sha256_printable( hash );
+   free( hash );
+   return hash_str;
 }
 
 // make a printable sha-1 hash into data
-unsigned char* sha256_data( char const* sha256_printed ) {
+unsigned char* sha256_data( char const* printable ) {
    unsigned char* ret = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
    
-   for( size_t i = 0; i < strlen( sha256_printed ); i+=2 ) {
-      unsigned char tmp1 = (unsigned)from_hex( sha256_printed[i] );
-      unsigned char tmp2 = (unsigned)from_hex( sha256_printed[i+1] );
+   for( size_t i = 0; i < strlen( printable ); i+=2 ) {
+      unsigned char tmp1 = (unsigned)from_hex( printable[i] );
+      unsigned char tmp2 = (unsigned)from_hex( printable[i+1] );
       ret[i >> 1] = (tmp1 << 4) | tmp2;
    }
    
@@ -873,7 +874,7 @@ int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
 
 
 // flatten a response buffer into a byte string
-static char* response_buffer_to_string_impl( response_buffer_t* rb, int extra_space ) {
+static char* md_response_buffer_to_string_impl( md_response_buffer_t* rb, int extra_space ) {
    size_t total_len = 0;
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       total_len += (*rb)[i].second;
@@ -891,19 +892,19 @@ static char* response_buffer_to_string_impl( response_buffer_t* rb, int extra_sp
 
 // flatten a response buffer into a byte string
 // do not null-terminate
-char* response_buffer_to_string( response_buffer_t* rb ) {
-   return response_buffer_to_string_impl( rb, 0 );
+char* md_response_buffer_to_string( md_response_buffer_t* rb ) {
+   return md_response_buffer_to_string_impl( rb, 0 );
 }
 
 
 
 // flatten a response buffer into a byte string, null-terminating it
-char* response_buffer_to_c_string( response_buffer_t* rb ) {
-   return response_buffer_to_string_impl( rb, 1 );
+char* md_response_buffer_to_c_string( md_response_buffer_t* rb ) {
+   return md_response_buffer_to_string_impl( rb, 1 );
 }
 
 // free a response buffer
-void response_buffer_free( response_buffer_t* rb ) {
+void md_response_buffer_free( md_response_buffer_t* rb ) {
    if( rb == NULL ) {
       return;
    }
@@ -922,7 +923,7 @@ void response_buffer_free( response_buffer_t* rb ) {
 }
 
 // size of a response buffer
-off_t response_buffer_size( response_buffer_t* rb ) {
+off_t md_response_buffer_size( md_response_buffer_t* rb ) {
    off_t ret = 0;
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       ret += rb->at(i).second;

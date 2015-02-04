@@ -222,13 +222,13 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
    SG_debug( "upload %zu bytes\n", size );
 
    struct md_HTTP_connection_data *md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
-   response_buffer_t* rb = md_con_data->rb;
+   md_response_buffer_t* rb = md_con_data->rb;
 
    // add a copy of the data
    char* data_dup = SG_CALLOC( char, size );
    memcpy( data_dup, data, size );
 
-   rb->push_back( buffer_segment_t( data_dup, size ) );
+   rb->push_back( md_buffer_segment_t( data_dup, size ) );
 
    return MHD_YES;
 }
@@ -402,7 +402,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->url_path = md_flatten_path( url );
       con_data->version = strdup(version);
       con_data->query_string = (char*)index( con_data->url_path, '?' );
-      con_data->rb = new response_buffer_t();
+      con_data->rb = new md_response_buffer_t();
       con_data->remote_host = remote_host;
       con_data->method = method;
       con_data->mode = mode;
@@ -596,7 +596,7 @@ void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
       con_data->headers = NULL;
    }
    if( con_data->rb ) {
-      response_buffer_free( con_data->rb );
+      md_response_buffer_free( con_data->rb );
       delete con_data->rb;
       con_data->rb = NULL;
    }

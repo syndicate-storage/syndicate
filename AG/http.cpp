@@ -39,7 +39,7 @@ static void AG_connection_data_free( struct AG_connection_data* con_data ) {
    
    // free memory
    if( con_data->rb != NULL ) {
-      response_buffer_free( con_data->rb );
+      md_response_buffer_free( con_data->rb );
       delete con_data->rb;
       con_data->rb = NULL;
    }
@@ -483,7 +483,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    // set up the connection data
    struct AG_connection_data* con_data = SG_CALLOC( struct AG_connection_data, 1 );
    
-   con_data->rb = new response_buffer_t();
+   con_data->rb = new md_response_buffer_t();
    con_data->err = 0;
    con_data->mi = mi;
    

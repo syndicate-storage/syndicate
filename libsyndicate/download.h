@@ -36,7 +36,7 @@ struct md_download_buf {
 struct md_bound_response_buffer {
    off_t max_size;
    off_t size;
-   response_buffer_t* rb;
+   md_response_buffer_t* rb;
 };
 
 typedef size_t (*md_download_read_func)(void*, size_t, size_t, void*);

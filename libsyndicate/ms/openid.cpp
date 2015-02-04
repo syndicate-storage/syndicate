@@ -69,7 +69,7 @@ int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* 
 // redirect parser
 // TODO: refactor; could receive header in multiple parts
 static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
-   response_buffer_t* rb = (response_buffer_t*)userdata;
+   md_response_buffer_t* rb = (md_response_buffer_t*)userdata;
 
    size_t len = size * nmemb;
 
@@ -92,7 +92,7 @@ static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nme
       char* value_str = SG_CALLOC(char, value_len );
       strncpy( value_str, value, value_len - 2 );     // strip off '\n\r'
 
-      rb->push_back( buffer_segment_t( value_str, value_len ) );
+      rb->push_back( md_buffer_segment_t( value_str, value_len ) );
    }
 
    free( data_str );
@@ -138,8 +138,8 @@ int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_
    
    free( username_encoded );
 
-   response_buffer_t rb;      // will hold the OpenID provider reply
-   response_buffer_t header_rb;
+   md_response_buffer_t rb;      // will hold the OpenID provider reply
+   md_response_buffer_t header_rb;
    
    curl_easy_setopt( curl, CURLOPT_URL, begin_url );
    curl_easy_setopt( curl, CURLOPT_POST, 1L );
@@ -179,17 +179,17 @@ int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_
 
    if( rb.size() == 0 ) {
       SG_error("%s", "no response\n");
-      response_buffer_free( &rb );
+      md_response_buffer_free( &rb );
       return -ENODATA;
    }
 
-   char* response = response_buffer_to_string( &rb );
-   size_t len = response_buffer_size( &rb );
+   char* response = md_response_buffer_to_string( &rb );
+   size_t len = md_response_buffer_size( &rb );
 
    rc = ms_client_load_openid_reply( oid_reply, response, len, syndicate_public_key );
 
    free( response );
-   response_buffer_free( &rb );
+   md_response_buffer_free( &rb );
 
    return rc;
 }
@@ -211,7 +211,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
 
    SG_debug("%s challenge to %s\n", challenge_method, openid_redirect_url );
 
-   response_buffer_t header_rb;
+   md_response_buffer_t header_rb;
    
    // inform the OpenID provider that we have been redirected by the RP by fetching the authentication page.
    // The OpenID provider may then redirect us back.
@@ -261,7 +261,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
       
       SG_error("curl_easy_perform rc = %d, err = %ld\n", rc, err );
       
-      response_buffer_free( &header_rb );
+      md_response_buffer_free( &header_rb );
       return -abs(rc);
    }
    
@@ -269,22 +269,22 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
    
    if( http_response != 200 && http_response != 302 ) {
       SG_error("curl_easy_perform HTTP status = %ld\n", http_response );
-      response_buffer_free( &header_rb );
+      md_response_buffer_free( &header_rb );
       return -http_response;
    }
 
    if( http_response == 302 ) {
       // authenticated already; we're being sent back
-      char* url = response_buffer_to_string( &header_rb );
+      char* url = md_response_buffer_to_string( &header_rb );
 
       *return_to = url;
       
-      response_buffer_free( &header_rb );
+      md_response_buffer_free( &header_rb );
 
       return 0;
    }
 
-   response_buffer_free( &header_rb );
+   md_response_buffer_free( &header_rb );
 
    // authenticate to the OpenID provider
    char const* extra_args = oid_reply->extra_args().c_str();
@@ -337,19 +337,19 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
       err = -abs(err);
       
       SG_error("curl_easy_perform rc = %d, err = %ld\n", rc, err );
-      response_buffer_free( &header_rb );
+      md_response_buffer_free( &header_rb );
       return -abs(rc);
    }
 
    if( http_response != 302 ) {
       SG_error("curl_easy_perform HTTP status = %ld\n", http_response );
-      response_buffer_free( &header_rb );
+      md_response_buffer_free( &header_rb );
       return -http_response;
    }
 
    // authenticated! we're being sent back
-   char* url = response_buffer_to_string( &header_rb );
-   response_buffer_free( &header_rb );
+   char* url = md_response_buffer_to_string( &header_rb );
+   md_response_buffer_free( &header_rb );
    
    *return_to = url;
    return 0;
