@@ -787,12 +787,14 @@ static int md_download_context_connect_cache( struct md_download_context* dlctx,
       // connect to the cache
       rc = (*dlctx->cache_func)( cache_closure, dlctx->curl, base_url, dlctx->cache_func_cls );
       if( rc != 0 ) {
+         
          SG_error("cache connect on %s rc = %d\n", base_url, rc );
          return rc;
       }
    }
    else if( dlctx->cache_func != NULL ) {
-      SG_debug("WARN: CDN closure is NULL, but cache_func = %p\n", dlctx->cache_func );
+      
+      SG_warn("CDN closure is NULL, but cache_func = %p\n", dlctx->cache_func );
    }
    
    return rc;
@@ -1237,6 +1239,8 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
 
 
 // download straight from an existing curl handle
+// return 0 on success
+// return curl error code on failure
 int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size ) {
    
    struct md_bound_response_buffer dlbuf;
@@ -1245,6 +1249,7 @@ int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size 
    
    rc = md_bound_response_buffer_init( &dlbuf, max_len );
    if( rc != 0 ) {
+      
       return rc;
    }
    
@@ -1254,6 +1259,7 @@ int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size 
    rc = curl_easy_perform( curl_h );
 
    if( rc != 0 ) {
+      
       SG_debug("curl_easy_perform rc = %d\n", rc);
       
       md_bound_response_buffer_free( &dlbuf );
@@ -1292,19 +1298,6 @@ int md_download_begin( struct md_syndicate_conf* conf,
    md_init_curl_handle( conf, curl, url, conf->connect_timeout );
    
    md_download_context_init( dlctx, curl, cache_func, cache_func_cls, max_len );
-   
-   // connect to the cache 
-   rc = md_download_context_connect_cache( dlctx, cache_closure, url );
-   if( rc != 0 ) {
-      
-      SG_error("md_download_context_connect_cache(%s) rc = %d\n", url, rc );
-      
-      // TODO: connection pool
-      md_download_context_free( dlctx, NULL );
-      curl_easy_cleanup( curl );
-      
-      return rc;
-   }
    
    // start downloading 
    rc = md_download_context_start( dl, dlctx, cache_closure, url );
@@ -1457,7 +1450,7 @@ int md_download( struct md_syndicate_conf* conf,
 // translate an HTTP status code into the approprate error code.
 // return the code if no error could be determined.
 int md_HTTP_status_code_to_error_code( int status_code ) {
-   if( status_code == MD_HTTP_TRYAGAIN ) {
+   if( status_code == SG_HTTP_TRYAGAIN ) {
       return -EAGAIN;
    }
    
@@ -1481,7 +1474,7 @@ int md_download_manifest_begin( struct md_syndicate_conf* conf,
                                 struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls,
                                 struct md_download_context* dlctx ) {
    
-   int rc = md_download_begin( conf, dl, manifest_url, SYNDICATE_MAX_MANIFEST_LEN, cache_closure, cache_func, cache_func_cls, dlctx );
+   int rc = md_download_begin( conf, dl, manifest_url, SG_MAX_MANIFEST_LEN, cache_closure, cache_func, cache_func_cls, dlctx );
    
    if( rc != 0) {
       SG_error("md_download_begin(%s) rc = %d\n", manifest_url, rc );
