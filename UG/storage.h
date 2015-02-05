@@ -19,7 +19,6 @@
 #define _STORAGE_H_
 
 #include "fs_entry.h"
-#include "url.h"
 #include "libsyndicate/storage.h"
 
 #endif

@@ -169,11 +169,11 @@ def opencloud_caps_to_syndicate_caps( cap_read, cap_write, cap_host ):
     syn_caps = 0
     
     if cap_read:
-        syn_caps |= (msconfig.GATEWAY_CAP_READ_DATA | msconfig.GATEWAY_CAP_READ_METADATA)
+        syn_caps |= (msconfig.SG_CAP_READ_DATA | msconfig.SG_CAP_READ_METADATA)
     if cap_write:
-        syn_caps |= (msconfig.GATEWAY_CAP_WRITE_DATA | msconfig.GATEWAY_CAP_WRITE_METADATA)
+        syn_caps |= (msconfig.SG_CAP_WRITE_DATA | msconfig.SG_CAP_WRITE_METADATA)
     if cap_host:
-        syn_caps |= (msconfig.GATEWAY_CAP_COORDINATE)
+        syn_caps |= (msconfig.SG_CAP_COORDINATE)
 
     return syn_caps
 

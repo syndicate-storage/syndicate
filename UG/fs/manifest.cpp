@@ -15,7 +15,6 @@
 */
 
 #include "manifest.h"
-#include "url.h"
 
 // get the pointer at a particular offset into a list of hashes
 static inline unsigned char* hash_at( unsigned char* hashes, uint64_t block_offset ) {

@@ -58,20 +58,9 @@ struct ms_client_multi_context {
    pthread_mutex_t lock;
 };
 
-
-// hash a volume and file ID together to create a unique identifier for it
-static long ms_client_hash( uint64_t volume_id, uint64_t file_id ) {
-   locale loc;
-   const collate<char>& coll = use_facet<collate<char> >(loc);
-
-   char hashable[100];
-   sprintf(hashable, "%" PRIu64 "%" PRIu64, volume_id, file_id );
-   long ret = coll.hash( hashable, hashable + strlen(hashable) );
-
-   return ret;
-}
-
 // convert an update_set into a protobuf
+// return 0 on success
+// return -EINVAL if the an update in updates is invalid
 static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms_updates* ms_updates ) {
    // populate the protobuf
    for( ms_client_update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
@@ -80,6 +69,7 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
       
       // verify that we have a valid update type...
       if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
+         
          SG_error("Invalid update type %d\n", update->op );
          return -EINVAL;
       }
@@ -161,6 +151,8 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
 
 
 // convert an update set to a string
+// return the number of bytes on success, and set *update_text 
+// return negative on error.
 ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** update_text ) {
    string update_bits;
    bool valid;
@@ -187,14 +179,14 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 // sign an update set
 static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
    if( pkey == NULL ) {
-      SG_error("%s\n", "Private key is NULL!");
+      SG_error("Private key == %p!", pkey);
       return -EINVAL;
    }
    return md_sign<ms::ms_updates>( pkey, ms_updates );
 }
 
 
-// populate an ms_update 
+// populate an ms_update with an md_entry and associated fields
 // NOTE: ths is a shallow copy of ent and affected_blocks.  The caller should NOT free them; they'll be freed internally
 int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent ) {
    memset( up, 0, sizeof(struct md_update) );
@@ -209,7 +201,7 @@ int ms_client_populate_update( struct md_update* up, int op, int flags, struct m
 
 // add an update to an update set
 static int ms_client_add_update( ms_client_update_set* updates, struct md_update* up ) {
-   (*updates)[ ms_client_hash( up->ent.volume, up->ent.file_id ) ] = *up;
+   (*updates)[ up->ent.file_id ] = *up;
    return 0;
 }
 
@@ -227,9 +219,7 @@ int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
          md_entry_free( &result->ents[i] );
       }
       
-      free( result->ents );
-      
-      result->ents = NULL;
+      SG_safe_free( result->ents );
       result->num_ents = 0;
    }
    
@@ -247,9 +237,9 @@ int ms_client_download_interpret_errors( char const* url, int http_status, int c
    
    int rc = 0;
    
-   if( http_status == MD_HTTP_TRYAGAIN || curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT || curl_rc == CURLE_GOT_NOTHING ) {
+   if( http_status == SG_HTTP_TRYAGAIN || curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT || curl_rc == CURLE_GOT_NOTHING ) {
       
-      if( http_status == MD_HTTP_TRYAGAIN ) {
+      if( http_status == SG_HTTP_TRYAGAIN ) {
          SG_error("MS says try (%s) again\n", url );
       }
       else {
@@ -413,7 +403,7 @@ static int ms_client_multi_verify_no_duplicate_listing( ms::ms_reply* reply ) {
       uint64_t id = reply->listing().entries(i).file_id();
       
       if( ids.count(id) ) {
-         SG_error("ERR: Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
+         SG_error("Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
          rc = -EBADMSG;
       }
       
@@ -450,7 +440,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
          if( entry_count >= reply->listing().entries_size() ) {
             
             // not enough
-            SG_error("ERR: MS did not return an entry for operation %d (op #%d)\n", op, entry_count );
+            SG_error("MS did not return an entry for operation %d (op #%d)\n", op, entry_count );
             rc = -EBADMSG;
             break;
          }
@@ -466,7 +456,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
    
    // too many/not enough entries?
    if( rc == 0 && entry_count != reply->listing().entries_size() ) {
-      SG_error("ERR: MS returned too many entries (expected %d, got %d)\n", entry_count, reply->listing().entries_size() );
+      SG_error("MS returned too many entries (expected %d, got %d)\n", entry_count, reply->listing().entries_size() );
       return -EBADMSG;
    }
    
@@ -1184,7 +1174,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &curl_errno );
    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_status );
    
-   rc = ms_client_download_interpret_errors( url, http_status, curl_rc, curl_errno );
+   rc = ms_client_download_interpret_errors( url, http_status, curl_rc, -curl_errno );
    
    curl_easy_cleanup( curl );
    curl_formfree( post );
@@ -1501,15 +1491,15 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
    rc = ms_client_single_rpc( client, &req, &result );
    if( rc != 0 ) {
       
-      SG_error("ms_client_single_rpc(CHCOORD) rc = %d\n", rc );
+      SG_error("ms_client_single_rpc(CHCOORD %" PRIX64 ") rc = %d\n", ent->file_id, rc );
    }
    else {
       if( result.reply_error != 0 ) {
-         SG_error("ERR: MS reply error %d\n", result.reply_error );
+         SG_error("MS reply error %d\n", result.reply_error );
          rc = result.reply_error;
       }
       else if( result.rc != 0 ) {
-         SG_error("ERR: MS file_chcoord rc = %d\n", result.rc );
+         SG_error("MS chcoord(%" PRIX64 ") rc = %d\n", ent->file_id, result.rc );
          rc = result.rc;
       }
       else {
@@ -1580,11 +1570,11 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 // parse an MS reply
 int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify ) {
 
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
    
    int rc = md_parse< ms::ms_reply >( src, buf, buf_len );
    if( rc != 0 ) {
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       
       SG_error("md_parse ms_reply failed, rc = %d\n", rc );
       
@@ -1596,7 +1586,7 @@ int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char con
       rc = md_verify< ms::ms_reply >( client->volume->volume_public_key, src );
       if( rc != 0 ) {
          
-         ms_client_view_unlock( client );
+         ms_client_config_unlock( client );
          
          SG_error("md_verify ms_reply failed, rc = %d\n", rc );
          
@@ -1604,7 +1594,7 @@ int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char con
       }
    }
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return 0;
 }

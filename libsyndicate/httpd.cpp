@@ -747,7 +747,7 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
 
 
 static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
-   uint64_t block_id = INVALID_BLOCK_ID;
+   uint64_t block_id = SG_INVALID_BLOCK_ID;
    int64_t block_version = 0;
    
    int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
@@ -787,7 +787,7 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
       return -EINVAL;
    }
    
-   uint64_t file_id = INVALID_FILE_ID;
+   uint64_t file_id = SG_INVALID_FILE_ID;
    int64_t file_version = -1;
    
    int num_read = sscanf( ptr, ".%" PRIX64 ".%" PRId64, &file_id, &file_version );
@@ -818,11 +818,11 @@ int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** 
    char* url_path = strdup( _url_path );
 
    // temporary values
-   uint64_t volume_id = INVALID_VOLUME_ID;
+   uint64_t volume_id = SG_INVALID_VOLUME_ID;
    char* file_path = NULL;
-   uint64_t file_id = INVALID_FILE_ID;
+   uint64_t file_id = SG_INVALID_FILE_ID;
    int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
+   uint64_t block_id = SG_INVALID_BLOCK_ID;
    int64_t block_version = -1;
    struct timespec manifest_timestamp;
    manifest_timestamp.tv_sec = -1;
@@ -885,7 +885,7 @@ int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** 
    manifest_part = num_parts-1;
    block_id_and_version_part = num_parts-1;
 
-   if( strcmp(prefix, SYNDICATE_DATA_PREFIX) != 0 ) {
+   if( strcmp(prefix, SG_DATA_PREFIX) != 0 ) {
       // invalid prefix
       free( parts );
       rc = -EINVAL;

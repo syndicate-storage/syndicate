@@ -126,8 +126,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       ms_client_gateway_cert_free( &cert );
       return -ENOTCONN;
    }
-#else
-   // skip verifying -- virtual ip and real ip will be different
 #endif
 
    ms_client_unlock( client );
@@ -239,9 +237,9 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    SG_debug("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
 
-   ms_client_view_wlock( client );
+   ms_client_config_wlock( client );
    client->volume = volume;
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
 
    SG_debug("Registered with %s\n", client->url );
 
@@ -469,9 +467,9 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    
    SG_debug("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
 
-   ms_client_view_wlock( client );
+   ms_client_config_wlock( client );
    client->volume = volume;
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    // finish registration 
    rc = ms_client_finish_registration( client );

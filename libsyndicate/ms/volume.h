@@ -42,8 +42,6 @@ struct ms_volume {
    uint64_t volume_cert_version;        // version of the cert bundle 
    
    struct md_entry* root;        // serialized root fs_entry
-   
-   uint64_t num_files;           // number of files in this Volume
 
    struct md_closure* cache_closure;    // closure for connecting to the cache providers
 };
@@ -74,12 +72,12 @@ int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root )
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // Verify the authenticity of a gateway message, encoded as a protobuf (class T)
 template< class T > int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_type, uint64_t gateway_id, T* protobuf ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    if( client->volume->volume_id != volume_id ) {
       // not from this volume
       SG_error("Message from outside Volume %" PRIu64 "\n", volume_id );
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -ENOENT;
    }
    
@@ -97,7 +95,7 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
    }
    else {
       SG_error("Invalid Gateway type %" PRIu64 "\n", gateway_type );
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -EINVAL;
    }
    
@@ -110,14 +108,14 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
       
       // try reloading
       sem_post( &client->uploader_sem );
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -EAGAIN;
    }
    
    // verify the cert
    int rc = md_verify< T >( itr->second->pubkey, protobuf );
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return rc;
 }

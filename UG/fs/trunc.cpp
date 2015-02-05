@@ -17,7 +17,6 @@
 
 #include "trunc.h"
 #include "manifest.h"
-#include "url.h"
 #include "network.h"
 #include "stat.h"
 #include "read.h"
@@ -451,7 +450,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
                                 int64_t known_version, uint64_t user, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
 
    
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Truncating is forbidden for anonymous gateways\n");
       return -EPERM;
    }

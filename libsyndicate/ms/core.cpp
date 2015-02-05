@@ -27,19 +27,23 @@ MD_CLOSURE_PROTOTYPE_BEGIN( MS_CLIENT_CACHE_CLOSURE_PROTOTYPE )
 MD_CLOSURE_PROTOTYPE_END
 
 // prototypes...
-static void* ms_client_view_thread( void* arg );
+static void* ms_client_config_change_thread( void* arg );
 
 // verify that a given key has our desired security parameters
 int ms_client_verify_key( EVP_PKEY* key ) {
+   
    RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
+   int size = 0;
+   
    if( ref_rsa == NULL ) {
       // not an RSA key
-      SG_error("%s", "Not an RSA key\n");
+      SG_error("Not an RSA key: %p\n", key);
       return -EINVAL;
    }
 
-   int size = RSA_size( ref_rsa );
-   if( size * 8 != RSA_KEY_SIZE ) {
+   size = RSA_size( ref_rsa );
+   if( size * 8 != SG_RSA_KEY_SIZE ) {
+      
       // not the right size
       SG_error("Invalid RSA size %d\n", size * 8 );
       return -EINVAL;
@@ -91,10 +95,12 @@ int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const
 }
 
 
-// download from the caches...
+// download from the caches, using the cache closure
+// return 0 on success 
+// return negative on error (from closure call)
 int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
    
-   int ret = -1;
+   int ret = 0;
    struct md_syndicate_conf* conf = (struct md_syndicate_conf*)cls;
    
    if( md_closure_find_callback( closure, "connect_cache" ) != NULL ) {
@@ -103,9 +109,8 @@ int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char c
    else {
       
       // download manually...
-      SG_error("%s", "WARN: connect_cache stub\n" );
+      SG_warn("%s", "connect_cache stub\n" );
       md_init_curl_handle( conf, curl, url, conf->connect_timeout );
-      ret = 0;
    }
    
    return ret;
@@ -114,11 +119,11 @@ int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char c
 // default connect cache (for external consumption)
 int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char const* url ) {
    
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
    
    int rc = ms_client_connect_cache_impl( client->volume->cache_closure, curl, url, client->conf );
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return rc;
 }
@@ -127,7 +132,7 @@ int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char c
 // client must be write-locked!
 int ms_client_start_threads( struct ms_client* client ) {
    
-   SG_debug("%s\n", "Starting MS client threads" );
+   SG_info("%s\n", "Starting MS client threads" );
    
    if( client->running ) {
       return -EALREADY;
@@ -137,7 +142,7 @@ int ms_client_start_threads( struct ms_client* client ) {
    
    client->view_thread_running = true;
 
-   client->view_thread = md_start_thread( ms_client_view_thread, client, false );
+   client->view_thread = md_start_thread( ms_client_config_change_thread, client, false );
    if( client->view_thread < 0 ) {
       client->running = false;
       return -errno;  
@@ -147,9 +152,10 @@ int ms_client_start_threads( struct ms_client* client ) {
 }
 
 // stop internal threads
+// NOTE: not thread-safe; client must be write-locked
 int ms_client_stop_threads( struct ms_client* client ) {
    
-   SG_debug("%s\n", "Stopping MS client threads" );
+   SG_info("%s\n", "Stopping MS client threads" );
    
    // shut down the uploader and view threads
    bool was_running = client->running;
@@ -162,23 +168,25 @@ int ms_client_stop_threads( struct ms_client* client ) {
       
       pthread_cancel( client->view_thread );
       
-      SG_debug("%s", "wait for view change thread to finish...\n");
+      SG_info("%s", "wait for view change thread to finish...\n");
       
-      if( client->view_thread != 0 ) {
-         pthread_join( client->view_thread, NULL );
-      }
+      pthread_join( client->view_thread, NULL );
    }
    
    return 0;
 }
 
-// load up a key, storing its OpenSSL form and optionally a duplicate of its PEM-encoded value
+// load up a key, storing its OpenSSL EVP_PKEY form and optionally a duplicate of its PEM-encoded value (if key_pem_dup is not NULL)
+// return 0 on success 
+// return non-zero on error
 int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char** key_pem_dup, char const* key_pem, bool is_public ) {
+   
    int rc = 0;
+   char const* method = NULL;
    
    if( key_pem != NULL ) {
+      
       // we were given a key.  Load it
-      char const* method = NULL;
       if( is_public ) {
          rc = md_load_pubkey( key, key_pem );
          method = "md_load_pubkey";
@@ -202,11 +210,13 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
       // hold onto the PEM form.
       // if private, mlock it
       if( key_pem_dup ) {
+         
          struct mlock_buf pkey_buf;
          memset( &pkey_buf, 0, sizeof(pkey_buf) );
          
          rc = mlock_dup( &pkey_buf, key_pem, strlen(key_pem) + 1 );
          if( rc != 0 ) {
+            
             SG_error("mlock_dup rc = %d\n", rc );
             return rc;
          }
@@ -215,7 +225,7 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
       }
    }
    else {
-      SG_debug("%s\n", "WARN: No key given" );
+      SG_warn("%s\n", "No key given" );
    }
    
    return 0;
@@ -225,35 +235,43 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
 // create an MS client context
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
 
+   int rc = 0;
+   
    if( conf == NULL ) {
       return -EINVAL;
    }
    
    memset( client, 0, sizeof(struct ms_client) );
    
+   // get MS url 
+   client->url = SG_strdup_or_null( conf->metadata_url );
+   if( client->url == NULL ) {
+      return -ENOMEM;
+   }
+   
    // set up downloader so we can register
    md_downloader_init( &client->dl, "ms-client" );
    
-   int rc = md_downloader_start( &client->dl );
+   rc = md_downloader_start( &client->dl );
    if( rc != 0 ) {
-      client->running = false;
+      
+      SG_safe_free( client->url );
       SG_error("Failed to start downloader, rc = %d\n", rc );
       return rc;
    }
 
    client->gateway_type = gateway_type;
    
-   client->url = strdup( conf->metadata_url );
-   
    // clear the / at the end...
-   if( client->url[ strlen(client->url)-1 ] == '/' ) {
-      client->url[ strlen(client->url)-1 ] = 0;
+   if( strrchr( client->url, '/' ) != NULL ) {
+      
+      md_strrstrip( client->url, "/" );
    }
    
    client->userpass = NULL;
 
    pthread_rwlock_init( &client->lock, NULL );
-   pthread_rwlock_init( &client->view_lock, NULL );
+   pthread_rwlock_init( &client->config_lock, NULL );
 
    client->conf = conf;
 
@@ -263,13 +281,22 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
    if( rc != 0 ) {
       SG_error("ms_client_try_load_key rc = %d\n", rc );
+      
+      SG_safe_free( client->url );
+      
       return rc;
    }
+   
    if( client->my_key != NULL ) {
+      
       // if we loaded the private key, derive the public key from it
       rc = md_public_key_from_private_key( &client->my_pubkey, client->my_key );
+      
       if( rc != 0 || client->my_pubkey == NULL ) {
+         
          SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->my_key, rc );
+         
+         SG_safe_free( client->url );
          return rc;
       }
    }
@@ -279,12 +306,15 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
    if( rc != 0 ) {
+      
       SG_error("ms_client_try_load_key rc = %d\n", rc );
+      
+      SG_safe_free( client->url );
       return rc;
    }
    
-   client->view_change_callback = ms_client_view_change_callback_default;
-   client->view_change_callback_cls = NULL;
+   client->config_change_callback = ms_client_config_change_callback_default;
+   client->config_change_callback_cls = NULL;
    
    client->inited = true;               // safe to destroy later
    
@@ -295,12 +325,12 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 // destroy an MS client context 
 int ms_client_destroy( struct ms_client* client ) {
    if( client == NULL ) {
-      SG_error("WARN: client is %p\n", client);
+      SG_warn("client is %p\n", client);
       return 0;
    }
    
    if( !client->inited ) {
-      SG_error("WARN: client->inited = %d\n", client->inited );
+      SG_warn("client->inited = %d\n", client->inited );
       return 0;
    }
    
@@ -313,45 +343,44 @@ int ms_client_destroy( struct ms_client* client ) {
    client->inited = false;
 
    // clean up view
-   pthread_rwlock_wrlock( &client->view_lock );
+   pthread_rwlock_wrlock( &client->config_lock );
 
-   ms_volume_free( client->volume );
-   free( client->volume );
+   if( client->volume != NULL ) {
+      ms_volume_free( client->volume );
+      SG_safe_free( client->volume );
+   }
    
-   pthread_rwlock_unlock( &client->view_lock );
-   pthread_rwlock_destroy( &client->view_lock );
+   pthread_rwlock_unlock( &client->config_lock );
+   pthread_rwlock_destroy( &client->config_lock );
    
    sem_destroy( &client->uploader_sem );
    
    // clean up our state
-   if( client->userpass ) {
-      free( client->userpass );
-   }
+   SG_safe_free( client->userpass );
+   SG_safe_free( client->url );
+   SG_safe_free( client->session_password );
    
-   if( client->url ) {
-      free( client->url );
-   }
-   if( client->session_password ) {
-      free( client->session_password );
-   }
    if( client->my_key ) {
       EVP_PKEY_free( client->my_key );
+      client->my_key = NULL;
    }
    if( client->my_pubkey ) {
       EVP_PKEY_free( client->my_pubkey );
+      client->my_pubkey = NULL;
    }
    if( client->my_key_pem ) {
       // NOTE: was mlock'ed
       if( client->my_key_pem_mlocked ) {
          munlock( client->my_key_pem, client->my_key_pem_len );
       }
-      free( client->my_key_pem );
+      SG_safe_free( client->my_key_pem );
    }
-   if( client->syndicate_public_key_pem ) {
-      free( client->syndicate_public_key_pem );
-   }
+   
+   SG_safe_free( client->syndicate_public_key_pem );
+   
    if( client->syndicate_public_key ) {
       EVP_PKEY_free( client->syndicate_public_key );
+      client->syndicate_public_key = NULL;
    }
    
    md_downloader_shutdown( &client->dl );
@@ -359,7 +388,7 @@ int ms_client_destroy( struct ms_client* client ) {
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
  
-   SG_debug("%s", "MS client shutdown\n");
+   SG_info("%s", "MS client shutdown\n");
    
    return 0;
 }
@@ -426,66 +455,66 @@ int ms_client_unlock2( struct ms_client* client, char const* from_str, int linen
 }
 
 // read-lock a client context's view
-int ms_client_view_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //SG_debug("ms_client_view_rlock %p (from %s:%d)\n", client, from_str, lineno);
-   return pthread_rwlock_rdlock( &client->view_lock );
+int ms_client_config_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //SG_debug("ms_client_config_rlock %p (from %s:%d)\n", client, from_str, lineno);
+   return pthread_rwlock_rdlock( &client->config_lock );
 }
 
 // write-lock a client context's view
-int ms_client_view_wlock2( struct ms_client* client, char const* from_str, int lineno  ) {
-   //SG_debug("ms_client_view_wlock %p (from %s:%d)\n", client, from_str, lineno);
-   return pthread_rwlock_wrlock( &client->view_lock );
+int ms_client_config_wlock2( struct ms_client* client, char const* from_str, int lineno  ) {
+   //SG_debug("ms_client_config_wlock %p (from %s:%d)\n", client, from_str, lineno);
+   return pthread_rwlock_wrlock( &client->config_lock );
 }
 
 // unlock a client context's view
-int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
-   //SG_debug("ms_client_view_unlock %p (from %s:%d)\n", client, from_str, lineno);
-   return pthread_rwlock_unlock( &client->view_lock );
+int ms_client_config_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //SG_debug("ms_client_config_unlock %p (from %s:%d)\n", client, from_str, lineno);
+   return pthread_rwlock_unlock( &client->config_lock );
 }
 
 // get the current volume version
 uint64_t ms_client_volume_version( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    uint64_t ret = client->volume->volume_version;
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
 
 // get the current cert version
 uint64_t ms_client_cert_version( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    uint64_t ret = client->volume->volume_cert_version;
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
 
 // get the Volume ID
 uint64_t ms_client_get_volume_id( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    uint64_t ret = client->volume->volume_id;
 
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
 // get the Volume name
 char* ms_client_get_volume_name( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
-   char* ret = strdup( client->volume->name );
+   char* ret = SG_strdup_or_null( client->volume->name );
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
 // get the hostname in the cert
 char* ms_client_get_hostname( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
    
    char* hostname = NULL;
    
@@ -496,33 +525,33 @@ char* ms_client_get_hostname( struct ms_client* client ) {
       
       ms_cert_bundle::iterator itr = cert_bundles[ client->conf->gateway_type ]->find( client->gateway_id );
       if( itr != cert_bundles[ client->conf->gateway_type ]->end() ) {
-         hostname = strdup( itr->second->hostname );
+         hostname = SG_strdup_or_null( itr->second->hostname );
       }
    }
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return hostname;
 }
 
 // get the port num
 int ms_client_get_portnum( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
    
    int ret = client->portnum;
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
 
 // get the blocking factor
 uint64_t ms_client_get_volume_blocksize( struct ms_client* client ) {
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    uint64_t ret = client->volume->blocksize;
 
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return ret;
 }
 
@@ -531,17 +560,18 @@ uint64_t ms_client_get_volume_blocksize( struct ms_client* client ) {
 int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root ) {
    int rc = 0;
 
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
 
    if( client->volume->root == NULL ) {
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -ENODATA;
    }
    
    memset( root, 0, sizeof(struct md_entry) );
-   md_entry_dup2( client->volume->root, root );
+   
+   rc = md_entry_dup2( client->volume->root, root );
 
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
 
    return rc;
 }
@@ -558,12 +588,13 @@ int ms_client_is_async_operation( int oper ) {
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version ) {
    int rc = 0;
    
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
    
    if( client->volume->volume_id != volume_id ) {
       return -EINVAL;
    }
    
+   // wake up volume reload thread, if there is new configuration information for us
    if( client->volume->volume_version < volume_version ) {
       sem_post( &client->uploader_sem );
    }
@@ -572,7 +603,7 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
       sem_post( &client->uploader_sem );
    }
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return rc;
 }
 
@@ -581,11 +612,12 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    
    char* buf = NULL;
    off_t buflen = 0;
+   int rc = 0;
    
-   int rc = ms_client_download( client, url, &buf, &buflen );
+   rc = ms_client_download( client, url, &buf, &buflen );
    
    if( rc != 0 ) {
-      SG_error("ms_client_download(%s) rc = %d\n", url, rc );
+      SG_error("ms_client_download('%s') rc = %d\n", url, rc );
       
       return rc;
    }
@@ -603,52 +635,52 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    return rc;
 }
 
-// set the volume view change callback
-int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls ) {
-   ms_client_view_wlock( client );
+// set the configuration change callback
+int ms_client_set_config_change_callback( struct ms_client* client, ms_client_config_change_callback clb, void* cls ) {
+   ms_client_config_wlock( client );
    
-   client->view_change_callback = clb;
-   client->view_change_callback_cls = cls;
+   client->config_change_callback = clb;
+   client->config_change_callback_cls = cls;
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return 0;
 }
 
 // set the user cls
-void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls ) {
-   ms_client_view_wlock( client );
+void* ms_client_set_config_change_callback_cls( struct ms_client* client, void* cls ) {
+   ms_client_config_wlock( client );
    
-   void* ret = client->view_change_callback_cls;
-   client->view_change_callback_cls = cls;
+   void* ret = client->config_change_callback_cls;
+   client->config_change_callback_cls = cls;
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    return ret;
 }
    
 
 // wake up the reload thread
-int ms_client_sched_volume_reload( struct ms_client* client ) {
+int ms_client_start_config_reload( struct ms_client* client ) {
    int rc = 0;
    
-   ms_client_view_wlock( client );
+   ms_client_config_wlock( client );
 
    sem_post( &client->uploader_sem );
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    return rc;
 }
 
 
 // defaut view change callback
-int ms_client_view_change_callback_default( struct ms_client* client, void* cls ) {
-   SG_debug("%s", "WARN: stub Volume view change callback\n");
+int ms_client_config_change_callback_default( struct ms_client* client, void* cls ) {
+   SG_warn("%s", "WARN: stub Volume view change callback\n");
    return 0;
 }
 
-// volume view thread body, for synchronizing Volume metadata
-static void* ms_client_view_thread( void* arg ) {
+// volume config change thread body, for synchronizing gateway configuration
+static void* ms_client_config_change_thread( void* arg ) {
    
    struct ms_client* client = (struct ms_client*)arg;
    
@@ -657,7 +689,7 @@ static void* ms_client_view_thread( void* arg ) {
    // since we don't hold any resources between downloads, simply cancel immediately
    pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
    
-   SG_debug("%s", "View thread starting up\n");
+   SG_info("%s", "View thread starting up\n");
 
    while( client->running ) {
 
@@ -670,11 +702,11 @@ static void* ms_client_view_thread( void* arg ) {
       
       // if somehow we wait 0 seconds, then set to 1 second 
       if( reload_deadline.tv_sec == now.tv_sec ) {
-         SG_error("%s", "WARN: waiting for manditory 1 second between volume reload checks\n");
+         SG_warn("%s", "Waiting for manditory 1 second between volume reload checks\n");
          reload_deadline.tv_sec ++;
       }
       
-      SG_debug("Reload Volume in at most %ld seconds (at %ld)\n", reload_deadline.tv_sec - now.tv_sec, reload_deadline.tv_sec );
+      SG_info("Reload Volume in at most %ld seconds (at %ld)\n", reload_deadline.tv_sec - now.tv_sec, reload_deadline.tv_sec );
       
       // wait to be signaled to reload 
       while( reload_deadline.tv_sec > now.tv_sec ) {
@@ -715,8 +747,8 @@ static void* ms_client_view_thread( void* arg ) {
       if( rc == 0 ) {
          ms_client_rlock( client );
          
-         if( client->view_change_callback != NULL ) {
-            rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
+         if( client->config_change_callback != NULL ) {
+            rc = (*client->config_change_callback)( client, client->config_change_callback_cls );
             if( rc != 0 ) {
                SG_error("WARN: view change callback rc = %d\n", rc );
             }

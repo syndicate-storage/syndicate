@@ -694,26 +694,55 @@ void md_entry_free_all( struct md_entry** ents ) {
    }
 }
 
-// duplicate an md_entry.  Make a new one if given NULL
+// duplicate an md_entry.
+// return a calloc'ed duplicate on success
+// return NULL on error
 struct md_entry* md_entry_dup( struct md_entry* src ) {
-   struct md_entry* ret = (struct md_entry*)calloc( sizeof(struct md_entry), 1 );
-   md_entry_dup2( src, ret );
+   
+   int rc = 0;
+   struct md_entry* ret = SG_CALLOC( struct md_entry, 1 );
+   
+   if( ret == NULL ) {
+      return NULL;
+   }
+   
+   rc = md_entry_dup2( src, ret );
+   if( rc != 0 ) {
+      
+      // OOM
+      md_entry_free( ret );
+      SG_safe_free( ret );
+   }
+   
    return ret;
 }
 
 
-// duplicate an md_entry.  Make a new one if given NULL
-void md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
+// duplicate an md_entry into a given ret 
+// return 0 on success
+// return -ENOMEM if out of memory
+int md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
+   
    // copy non-pointers
+   char* new_name = SG_strdup_or_null( src->name );
+   char* new_parent_name = SG_strdup_or_null( src->parent_name );
+   
+   if( (src->name != NULL && new_name == NULL) || (src->parent_name != NULL && new_parent_name == NULL) ) {
+      
+      // OOM
+      SG_safe_free( new_name );
+      SG_safe_free( new_parent_name );
+      return -ENOMEM;
+   }
+   
+   
+   // copy everything else 
    memcpy( ret, src, sizeof(md_entry) );
-
-   if( src->name ) {
-      ret->name = strdup( src->name );
-   }
-
-   if( src->parent_name ) {
-      ret->parent_name = strdup( src->parent_name );
-   }
+   
+   src->name = new_name;
+   src->parent_name = new_parent_name;
+   
+   return 0;
 }
 
 // concatenate root (a directory path) with path (a relative path)
@@ -1026,17 +1055,20 @@ char* md_url_hostname( char const* _url ) {
    
    // find :// separator
    char* host_port = strstr( url, "://" );
-   if( host_port == NULL )
+   if( host_port == NULL ) {
       host_port = url;
-   else
+   }
+   else {
       host_port += 3;
+   }
    
    // consume the string to find / or :
    char* tmp = NULL;
    char* ret = strtok_r( host_port, ":/", &tmp );
-   if( ret == NULL )
+   if( ret == NULL ) {
       // no : or /
       ret = host_port;
+   }
    
    ret = strdup( ret );
    free( url );
@@ -1075,7 +1107,7 @@ char* md_fs_path_from_url( char const* url ) {
 
    // extract the prefixes
    char const* prefixes[] = {
-      SYNDICATE_DATA_PREFIX,
+      SG_DATA_PREFIX,
       NULL
    };
 
@@ -1215,37 +1247,66 @@ char* md_flatten_path( char const* path ) {
 
 
 // split a url into the url+path and query string
+// return 0 on success, set *url_and_path and *qs to calloc'ed strings with the url/path and query string, respectively.
+//   if there is no query string, set *qs to NULL
+// return -ENOMEM if OOM
 int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
+   
    if( strstr( url, "?" ) != NULL ) {
       
-      char* url2 = strdup( url );
-      char* qs_start = strstr( url2, "?" );
+      // have query string
+      size_t url_path_len = strcspn( url, "?" );
       
-      if( qs_start != NULL ) {
-         *qs_start = '\0';
-         *qs = strdup( qs_start + 1 );
+      char* ret_url = SG_CALLOC( char, url_path_len + 1 );
+      if( ret_url == NULL ) {
+         return -ENOMEM;
       }
       
-      *url_and_path = url2;
+      char* ret_qs = SG_CALLOC( char, strlen(url) - url_path_len + 1 );
+      if( ret_qs == NULL ) {
+         
+         SG_safe_free( ret_url );
+         return -ENOMEM;
+      }
+      
+      strncpy( ret_url, url, url_path_len );
+      strcpy( ret_qs, strstr( url, "?" ) + 1 );
+      
+      *url_and_path = ret_url;
+      *qs = ret_qs;
+      
       return 0;
    }
    else {
-      return -EINVAL;
+      
+      char* ret_url = SG_strdup_or_null( url );
+      if( ret_url == NULL ) {
+         return -ENOMEM;
+      }
+      
+      *qs = NULL;
+      *url_and_path = ret_url;
+      return 0;
    }
 }
 
 
 // get the offset at which the value starts in a header
+// return >= 0 on success 
+// return -1 if not found
 off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name ) {
 
+   size_t off = 0;
+   
    if( strlen(header_name) >= header_len ) {
       return -1;      // header is too short
    }
    if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 ) {
       return -1;      // not found
    }
-   size_t off = strlen(header_name);
-
+   
+   off = strlen(header_name);
+   
    // find :
    while( off < header_len ) {
       if( header_buf[off] == ':' )
@@ -1272,6 +1333,41 @@ off_t md_header_value_offset( char* header_buf, size_t header_len, char const* h
 
    return off;
 }
+
+
+// parse an accumulated null-terminated header buffer, and find the first instance of the given header name
+// return 0 on success, and put the Location into *location_url as a null-terminated string
+// return -ENOENT if not found
+// return -ENOMEM if OOM 
+int md_parse_header( char* header_buf, char const* header_name, char** header_value ) {
+   
+   size_t span = 0;
+   char* location = strcasestr( header_buf, header_name );
+   
+   if( location == NULL ) {
+      return -ENOENT;
+   }
+   
+   location += strlen(header_name);
+   span = strspn( location, ": " );
+   
+   location += span;
+   
+   // location points to the header value 
+   // advance to EOL
+   span = strcspn( location, "\r\n\0" );
+   
+   char* ret = SG_CALLOC( char, span + 1 );
+   if( ret == NULL ) {
+      return -ENOMEM;
+   }
+   
+   strncpy( ret, location, span );
+   *header_value = ret;
+   
+   return 0;
+}
+
 
 // parse one value in a header (excluding UINT64_MAX)
 // return UINT64_MAX on error
@@ -1479,9 +1575,28 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 
 
 // convert ms_entry to md_entry
+// return 0 on success
+// return negative on error
 int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    memset( ent, 0, sizeof(struct md_entry) );
 
+   ent->name = SG_strdup_or_null( msent.name().c_str() );
+   if( ent->name == NULL ) {
+      return -ENOMEM;
+   }
+   
+   if( msent.has_parent_name() ) {
+      ent->parent_name = SG_strdup_or_null( msent.parent_name().c_str() );
+      if( ent->parent_name == NULL ) {
+         
+         SG_safe_free( ent->name );
+         return -ENOMEM;
+      }
+   }
+   else {
+      ent->parent_name = NULL;
+   }
+   
    ent->type = msent.type() == ms::ms_entry::MS_ENTRY_TYPE_FILE ? MD_ENTRY_FILE : MD_ENTRY_DIR;
    ent->file_id = msent.file_id();
    ent->owner = msent.owner();
@@ -1498,23 +1613,19 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->max_write_freshness = (uint64_t)msent.max_write_freshness();
    ent->version = msent.version();
    ent->size = msent.size();
-   ent->name = strdup( msent.name().c_str() );
    ent->write_nonce = msent.write_nonce();
    ent->xattr_nonce = msent.xattr_nonce();
    ent->generation = msent.generation();
    ent->num_children = msent.num_children();
    ent->capacity = msent.capacity();
    
-   if( msent.has_parent_id() )
+   if( msent.has_parent_id() ) {
       ent->parent_id = msent.parent_id();
-   else
+   }
+   else {
       ent->parent_id = -1;
+   }
 
-   if( msent.has_parent_name() )
-      ent->parent_name = strdup( msent.parent_name().c_str() );
-   else
-      ent->parent_name = NULL;
-   
    return 0;
 }
 
@@ -1550,26 +1661,6 @@ ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char** buf, st
    memcpy( *buf, text.data(), text.size() );
 
    return (ssize_t)text.size();
-}
-
-// default callback function to be used when uploading to a server
-size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *userp) {
-   size_t realsize = size * nmemb;
-   struct md_upload_buf* post = (struct md_upload_buf*)userp;
-   size_t writesize = min( post->len - post->offset, (int)realsize );
-   
-   if( post->offset >= post->len )
-      return 0;
-   
-   memcpy( ptr, post->text + post->offset, writesize );
-   post->offset += realsize;
-   
-   if( post->offset >= post->len ) {
-      return writesize;
-   }
-   else {
-      return realsize;
-   }  
 }
 
 
@@ -1753,8 +1844,8 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       conf->gateway_name = strdup("<anonymous>");
       conf->ms_username = strdup("<anonymous>");
       conf->ms_password = strdup("<anonymous>");
-      conf->owner = USER_ANON;
-      conf->gateway = GATEWAY_ANON;
+      conf->owner = SG_USER_ANON;
+      conf->gateway = SG_GATEWAY_ANON;
       rc = ms_client_anonymous_gateway_register( client, conf->volume_name, conf->volume_pubkey );
       
       if( rc != 0 ) {
@@ -1805,6 +1896,8 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    
    
 // initialize Syndicate
+// return 0 on success 
+// if this fails, the caller should shut down the library.
 static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts, bool is_client ) {
    
    char const* ms_url = opts->ms_url;
@@ -1823,13 +1916,19 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    char const* syndicate_pubkey_pem = opts->syndicate_pubkey_pem;
    char const* tls_pkey_path = opts->tls_pkey_path;
    char const* tls_cert_path = opts->tls_cert_path;
+   int rc = 0;
    
    // early exception handling 
    set_terminate( md_uncaught_exception_handler );
    
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
+   // early debugging 
+   md_set_debug_level( opts->debug_level );
+   md_set_error_level( SG_MAX_VERBOSITY );
+   
+   rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_path, tls_cert_path, syndicate_pubkey_path );
    
    if( rc != 0 ) {
+      
       SG_error("md_init_begin() rc = %d\n", rc );
       return rc;
    }
@@ -1852,10 +1951,11 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
       conf->gateway_key_len = strlen(gateway_key_pem);
       
       struct mlock_buf tmp;
-      int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len + 1 );
+      rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len + 1 );
       if( rc != 0 ) {
+         
          SG_error("mlock_dup rc = %d\n", rc );
-         exit(1);
+         return rc;
       }
       
       conf->gateway_key = (char*)tmp.ptr;

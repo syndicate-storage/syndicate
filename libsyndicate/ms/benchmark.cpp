@@ -28,7 +28,9 @@ static void print_timings( uint64_t* timings, size_t num_timings, char const* hd
 }
 
 
-// benchmark header parser
+// benchmark header parser, for libcurl
+// returns size * nmemb on success
+// returns 0 on error
 size_t ms_client_timing_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
    struct ms_client_timing* times = (struct ms_client_timing*)userdata;
 
@@ -36,6 +38,12 @@ size_t ms_client_timing_header_func( void *ptr, size_t size, size_t nmemb, void 
    char* data = (char*)ptr;
 
    char* data_str = SG_CALLOC( char, len + 1 );
+   
+   if( data_str == NULL ) {
+      // out of memory 
+      return 0;
+   }
+   
    strncpy( data_str, data, len );
 
    //SG_debug("header: %s\n", data_str );

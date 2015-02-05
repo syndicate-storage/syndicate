@@ -797,8 +797,6 @@ int main(int argc, char** argv) {
       perror("Running SyndicateFS as root opens unnacceptable security holes\n");
       return 1;
    }
-#else
-   // skip
 #endif
    
    struct md_opts syn_opts;

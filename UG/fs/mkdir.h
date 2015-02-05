@@ -18,7 +18,6 @@
 #define _MKDIR_H_
 
 #include "fs_entry.h"
-#include "url.h"
 #include "unlink.h"
 #include "consistency.h"
 

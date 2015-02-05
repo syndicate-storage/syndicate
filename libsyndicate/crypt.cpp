@@ -506,7 +506,7 @@ int md_generate_key( EVP_PKEY** key ) {
       return rc;
    }
 
-   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
+   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, SG_RSA_KEY_SIZE );
    if( rc <= 0 ) {
       md_openssl_error();
       EVP_PKEY_CTX_free( ctx );

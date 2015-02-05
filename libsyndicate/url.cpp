@@ -49,15 +49,15 @@ static char* md_url_block_url( char const* prefix, uint64_t volume_id, char cons
 
    if( local ) {
       // local
-      ret = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(prefix) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(SG_LOCAL_PROTO) + 1 + strlen(prefix) + 1 + base_len );
       sprintf(ret, "%s%s%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64,
-            SYNDICATEFS_LOCAL_PROTO, prefix, volume_id, fs_path, file_id, file_version, block_id, block_version );
+            SG_LOCAL_PROTO, prefix, volume_id, fs_path, file_id, file_version, block_id, block_version );
    }
    else {
       // remote data block
-      ret = SG_CALLOC( char, strlen(prefix) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(prefix) + 1 + strlen(SG_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64,
-            prefix, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, file_version, block_id, block_version );
+            prefix, SG_DATA_PREFIX, volume_id, fs_path, file_id, file_version, block_id, block_version );
    }
 
    return ret;  
@@ -118,7 +118,7 @@ char* md_url_RG_block_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_i
       return NULL;
    
    char* url = SG_CALLOC( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, version, block_id, block_version );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SG_DATA_PREFIX, volume_id, file_id, version, block_id, block_version );
    
    free( base_url );
    return url;
@@ -169,15 +169,15 @@ char* md_url_file_url( char const* prefix, uint64_t volume_id, char const* fs_pa
 
    if( local ) {
       // local block
-      ret = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(prefix) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(SG_LOCAL_PROTO) + 1 + strlen(prefix) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64,
-              SYNDICATEFS_LOCAL_PROTO, prefix, volume_id, fs_path, file_id, file_version );
+              SG_LOCAL_PROTO, prefix, volume_id, fs_path, file_id, file_version );
    }
    else {
       // remote data block
-      ret = SG_CALLOC( char, strlen(prefix) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
+      ret = SG_CALLOC( char, strlen(prefix) + 1 + strlen(SG_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64,
-              prefix, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, file_version );
+              prefix, SG_DATA_PREFIX, volume_id, fs_path, file_id, file_version );
    }
    
    return ret;
@@ -204,8 +204,8 @@ char* md_url_public_file_url( char const* base_url, uint64_t volume_id, char con
 
 // manifest URL generator
 char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   char* ret = SG_CALLOC( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 107 );
-   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_id, version, (long)ts->tv_sec, (long)ts->tv_nsec );
+   char* ret = SG_CALLOC( char, strlen(SG_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 107 );
+   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SG_DATA_PREFIX, volume_id, fs_path, file_id, version, (long)ts->tv_sec, (long)ts->tv_nsec );
    return ret;
 }
 
@@ -233,7 +233,7 @@ char* md_url_RG_manifest_url( struct ms_client* ms, uint64_t rg_id, uint64_t fil
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
    char* url = SG_CALLOC( char, strlen(base_url) + 1 + 25 + 1 + 25 + 1 + 25 + 25 + 1 + strlen("manifest") + 25 + 1 + 25 );
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SG_DATA_PREFIX, volume_id, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
    
    free( base_url );
    return url;

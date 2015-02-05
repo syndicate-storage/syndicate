@@ -327,7 +327,7 @@ static int md_cache_file_setup( struct md_syndicate_cache* cache, uint64_t file_
    // if so, remove it
 
    char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, version );
-   char* local_path = GET_PATH( local_file_url );
+   char* local_path = SG_URL_LOCAL_PATH( local_file_url );
 
    int rc = md_mkdirs3( local_path, mode | 0700 );
    if( rc < 0 ) {
@@ -371,7 +371,7 @@ int md_cache_is_block_readable( struct md_syndicate_cache* cache, uint64_t file_
 int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags ) {
    
    char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* block_path = GET_PATH( block_url );
+   char* block_path = SG_URL_LOCAL_PATH( block_url );
    
    int fd = 0;
    int rc = 0;
@@ -401,7 +401,7 @@ int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int
 int md_cache_stat_block_by_id( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb ) {
    
    char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* stat_path = GET_PATH( block_url );
+   char* stat_path = SG_URL_LOCAL_PATH( block_url );
    int rc = stat( stat_path, sb );
    
    if( rc != 0 )
@@ -415,7 +415,7 @@ int md_cache_stat_block_by_id( struct md_syndicate_cache* cache, uint64_t file_i
 // delete a block in the cache
 static int md_cache_evict_block_internal( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* block_path = GET_PATH( block_url );
+   char* block_path = SG_URL_LOCAL_PATH( block_url );
    int rc = unlink( block_path );
    if( rc != 0 ) {
       rc = -errno;
@@ -425,7 +425,7 @@ static int md_cache_evict_block_internal( struct md_syndicate_cache* cache, uint
       sem_post( &cache->sem_write_hard_limit );
       
       char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
-      char* local_file_path = GET_PATH( local_file_url );
+      char* local_file_path = SG_URL_LOCAL_PATH( local_file_url );
       
       // remove the file's empty directories
       md_rmdirs( local_file_path );
@@ -545,7 +545,7 @@ int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int
    
    // path to the file...
    char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
-   char* local_file_path = GET_PATH( local_file_url );
+   char* local_file_path = SG_URL_LOCAL_PATH( local_file_url );
    
    int rc = md_cache_file_blocks_apply( local_file_path, local::cache_evict_block, cache );
    
@@ -567,8 +567,8 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
    char* cur_local_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, old_file_version );
    char* new_local_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, new_file_version );
 
-   char* cur_local_path = GET_PATH( cur_local_url );
-   char* new_local_path = GET_PATH( new_local_url );
+   char* cur_local_path = SG_URL_LOCAL_PATH( cur_local_url );
+   char* new_local_path = SG_URL_LOCAL_PATH( new_local_url );
    
    // new path shouldn't exist, but old path should
    struct stat old_sb;

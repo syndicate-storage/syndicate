@@ -468,7 +468,7 @@ void* AG_reload_thread_main( void* arg ) {
 
 // view-change callback for the volume.
 // just wake up the reload thread 
-int AG_view_change_callback( struct ms_client* ms, void* arg ) {
+int AG_config_change_callback( struct ms_client* ms, void* arg ) {
    
    struct AG_state* state = (struct AG_state*)arg;
    
@@ -670,7 +670,7 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    AG_add_event_handler( state->event_listener, AG_EVENT_DRIVER_IOCTL_ID, AG_event_handler_driver_ioctl, NULL );
    
    // set up reload callback 
-   ms_client_set_view_change_callback( state->ms, AG_view_change_callback, state );
+   ms_client_set_config_change_callback( state->ms, AG_config_change_callback, state );
    
                        
    return 0;
@@ -855,10 +855,10 @@ int AG_stop( struct AG_state* state ) {
    
    // wake up the reload callback and tell it to exit
    state->specfile_reload_thread_running = false;
-   AG_view_change_callback( state->ms, state );
+   AG_config_change_callback( state->ms, state );
    
    // de-register the viewchange callback
-   ms_client_set_view_change_callback( state->ms, NULL, NULL );
+   ms_client_set_config_change_callback( state->ms, NULL, NULL );
    
    // join with the reload thread
    pthread_cancel( state->specfile_reload_thread );

@@ -131,7 +131,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
    // not handled
    // what is this a request for?
    // a block?
-   if( reqdat.block_id != INVALID_BLOCK_ID ) {
+   if( reqdat.block_id != SG_INVALID_BLOCK_ID ) {
       // serve back the block
       char* block = SG_CALLOC( char, state->core->blocking_factor );
       
@@ -462,7 +462,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          sprintf(buf, "%d", rc);
          md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 202, buf, strlen(buf) + 1);
 
-         ms_client_sched_volume_reload( state->ms );
+         ms_client_start_config_reload( state->ms );
       }
       else {
          md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
@@ -511,7 +511,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          
          
          // verify that this gateway can, in fact, write to us
-         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), SG_CAP_WRITE_DATA );
          if( rc != 0 ) {
             SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
@@ -546,7 +546,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          
          
          // verify that this gateway can, in fact, write to us
-         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), SG_CAP_WRITE_DATA );
          if( rc != 0 ) {
             SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
@@ -575,7 +575,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          
          
          // verify that this gateway can, in fact, write to us
-         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), SG_CAP_WRITE_DATA | SG_CAP_WRITE_METADATA );
          if( rc != 0 ) {
             SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
@@ -603,7 +603,7 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          
          
          // verify that this gateway can, in fact, write to us
-         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), SG_CAP_WRITE_DATA | SG_CAP_WRITE_METADATA );
          if( rc != 0 ) {
             SG_error("syndicate_verify_caller_privileges() rc = %d\n", rc );
             

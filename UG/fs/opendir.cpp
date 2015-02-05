@@ -17,7 +17,6 @@
 #include "opendir.h"
 #include "network.h"
 #include "stat.h"
-#include "url.h"
 #include "consistency.h"
 
 // create a directory handle from an fs_entry

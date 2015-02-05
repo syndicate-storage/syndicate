@@ -57,8 +57,8 @@ using namespace std;
 // prototypes 
 struct ms_volume;
 
-// callback to be alerted when a Volume's metadata changes
-typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
+// callback to be alerted when a volume's gateway config changes
+typedef int (*ms_client_config_change_callback)( struct ms_client*, void* );
 
 // MS client session
 struct ms_client {
@@ -99,10 +99,10 @@ struct ms_client {
    
    struct ms_volume* volume;        // Volume we're bound to
    
-   ms_client_view_change_callback view_change_callback;         // call this function when the Volume gets reloaded
-   void* view_change_callback_cls;                              // user-supplied argument to the above callbck
+   ms_client_config_change_callback config_change_callback;         // call this function when the Volume gets reloaded
+   void* config_change_callback_cls;                              // user-supplied argument to the above callbck
    
-   pthread_rwlock_t view_lock;          // lock governing the above
+   pthread_rwlock_t config_lock;          // lock governing the above
 
    //////////////////////////////////////////////////////////////////
    // session information
@@ -141,18 +141,18 @@ int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno
 int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno );
 int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno );
 
-// lock a client context's view of the Volume
-int ms_client_view_rlock2( struct ms_client* client, char const* from_str, int lineno );
-int ms_client_view_wlock2( struct ms_client* client, char const* from_str, int lineno  );
-int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int lineno );
+// lock a client context's configuration data
+int ms_client_config_rlock2( struct ms_client* client, char const* from_str, int lineno );
+int ms_client_config_wlock2( struct ms_client* client, char const* from_str, int lineno  );
+int ms_client_config_unlock2( struct ms_client* client, char const* from_str, int lineno );
 
 #define ms_client_rlock( fent ) ms_client_rlock2( fent, __FILE__, __LINE__ )
 #define ms_client_wlock( fent ) ms_client_wlock2( fent, __FILE__, __LINE__ )
 #define ms_client_unlock( fent ) ms_client_unlock2( fent, __FILE__, __LINE__ )
 
-#define ms_client_view_rlock( fent ) ms_client_view_rlock2( fent, __FILE__, __LINE__ )
-#define ms_client_view_wlock( fent ) ms_client_view_wlock2( fent, __FILE__, __LINE__ )
-#define ms_client_view_unlock( fent ) ms_client_view_unlock2( fent, __FILE__, __LINE__ )
+#define ms_client_config_rlock( fent ) ms_client_config_rlock2( fent, __FILE__, __LINE__ )
+#define ms_client_config_wlock( fent ) ms_client_config_wlock2( fent, __FILE__, __LINE__ )
+#define ms_client_config_unlock( fent ) ms_client_config_unlock2( fent, __FILE__, __LINE__ )
 
 // low-level network I/O
 int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url );
@@ -169,11 +169,11 @@ extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
 int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char const* url );
 int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char const* url, void* cls );
 
-// control the thread that keeps a consistent view of volume metadata
-int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls );
-void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls );
-int ms_client_sched_volume_reload( struct ms_client* client );
-int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
+// control the thread that keeps a consistent view of the configuration
+int ms_client_set_config_change_callback( struct ms_client* client, ms_client_config_change_callback clb, void* cls );
+void* ms_client_set_config_change_callback_cls( struct ms_client* client, void* cls );
+int ms_client_start_config_reload( struct ms_client* client );
+int ms_client_config_change_callback_default( struct ms_client* client, void* cls );
 
 // misc getters
 int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str );

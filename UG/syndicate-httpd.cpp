@@ -612,8 +612,8 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
          // make a directory?
          if( strlen(md_con_data->url_path) > 0 && md_con_data->url_path[ strlen(md_con_data->url_path)-1 ] == '/' ) {
             // make a URL for this directory
-            char* tmp = SG_CALLOC( char, strlen(SYNDICATEFS_LOCAL_PROTO) + strlen(state->conf.data_root) + 1 );
-            sprintf(tmp, "%s%s", SYNDICATEFS_LOCAL_PROTO, state->conf.data_root );
+            char* tmp = SG_CALLOC( char, strlen(SG_LOCAL_PROTO) + strlen(state->conf.data_root) + 1 );
+            sprintf(tmp, "%s%s", SG_LOCAL_PROTO, state->conf.data_root );
             char* dir_url = md_fullpath( tmp, md_con_data->url_path, NULL );
             free( tmp );
 

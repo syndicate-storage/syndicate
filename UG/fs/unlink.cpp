@@ -16,7 +16,6 @@
 
 #include "unlink.h"
 #include "consistency.h"
-#include "storage.h"
 #include "replication.h"
 #include "network.h"
 #include "vacuumer.h"
@@ -159,7 +158,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
                                bool check_file_id_and_coordinator_id ) {
    
    // can't modify state if anonymous
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Writing is forbidden for anonymous gateways\n");
       return -EPERM;
    }

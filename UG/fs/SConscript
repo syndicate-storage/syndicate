@@ -33,7 +33,6 @@ source_files = """
    sync.cpp
    trunc.cpp
    unlink.cpp
-   url.cpp
    write.cpp
    xattr.cpp
 """

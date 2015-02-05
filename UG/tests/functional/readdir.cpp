@@ -48,7 +48,7 @@ int main( int argc, char** argv ) {
    // open the directory 
    SG_debug("\n\n\nfs_entry_opendir( %s )\n\n\n", path );
    
-   struct fs_dir_handle* fdh = fs_entry_opendir( state->core, path, SYS_USER, state->core->volume, &rc );
+   struct fs_dir_handle* fdh = fs_entry_opendir( state->core, path, SG_SYS_USER, state->core->volume, &rc );
    
    if( rc != 0 ) {
       SG_error("\n\n\fs_entry_opendir( %s ) rc = %d\n\n\n", path, rc );

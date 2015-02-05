@@ -1153,7 +1153,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    clock_gettime( CLOCK_REALTIME, &query_time );
    
    // find the parent, so we can get its file_id 
-   parent = fs_entry_resolve_directory( core, path, SYS_USER, core->volume, false, &rc );
+   parent = fs_entry_resolve_directory( core, path, SG_SYS_USER, core->volume, false, &rc );
    if( rc != 0 ) {
       
       free( path );
@@ -1218,7 +1218,7 @@ int fs_entry_revalidate_children( struct fs_core* core, char const* fs_path ) {
    }
    
    // re-acquire the parent, so we can merge the children in 
-   parent = fs_entry_resolve_directory( core, path, SYS_USER, core->volume, false, &rc );
+   parent = fs_entry_resolve_directory( core, path, SG_SYS_USER, core->volume, false, &rc );
    if( rc != 0 ) {
       
       ms_client_multi_result_free( &results );

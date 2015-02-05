@@ -50,7 +50,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
          char* parent_path = md_dirname( fs_path, NULL );
 
          if( fent != dent ) {
-            fs_entry_to_md_entry( core, &d_ent->data, parent_path, SYS_USER, dent->volume );
+            fs_entry_to_md_entry( core, &d_ent->data, parent_path, SG_SYS_USER, dent->volume );
          }
          else {
             fs_entry_to_md_entry( core, &d_ent->data, dent, parent_id, parent_name );     // this is /

@@ -55,7 +55,7 @@ int main( int argc, char** argv ) {
    // get the xattr size
    SG_debug("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s )\n\n\n", path, xattr_name, xattr_value, command );
    
-   int rc = fs_entry_setxattr( state->core, path, xattr_name, xattr_value, strlen(xattr_value), flags, SYS_USER, 0 );
+   int rc = fs_entry_setxattr( state->core, path, xattr_name, xattr_value, strlen(xattr_value), flags, SG_SYS_USER, 0 );
    if( rc < 0 ) {
       SG_error("\n\n\nfs_entry_setxattr( %s, %s, %s, flags=%s ) rc = %d\n\n\n", path, xattr_name, xattr_value, command, rc );
       syndicate_functional_test_shutdown( &syndicate_http );

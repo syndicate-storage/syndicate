@@ -22,15 +22,15 @@ import errno
 
 syndicate_inited = False
 syndicate_ref = None
-syndicate_view_change_callback = None
+syndicate_config_change_callback = None
 runtime_privkey_path = None 
 
 # ------------------------------------------
-cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
-   global syndicate_view_change_callback
+cdef int py_config_change_callback_springboard( ms_client* client, void* cls ):
+   global syndicate_config_change_callback
    
-   if syndicate_view_change_callback is not None:
-      return syndicate_view_change_callback()
+   if syndicate_config_change_callback is not None:
+      return syndicate_config_change_callback()
    
    return 0
 
@@ -314,11 +314,11 @@ cdef class Syndicate:
    GATEWAY_TYPE_RG = SYNDICATE_RG
    GATEWAY_TYPE_AG = SYNDICATE_AG
 
-   CAP_READ_DATA        = GATEWAY_CAP_READ_DATA
-   CAP_WRITE_DATA       = GATEWAY_CAP_WRITE_DATA
-   CAP_READ_METADATA    = GATEWAY_CAP_READ_METADATA
-   CAP_WRITE_METADATA   = GATEWAY_CAP_WRITE_METADATA
-   CAP_COORDINATE       = GATEWAY_CAP_COORDINATE
+   CAP_READ_DATA        = SG_CAP_READ_DATA
+   CAP_WRITE_DATA       = SG_CAP_WRITE_DATA
+   CAP_READ_METADATA    = SG_CAP_READ_METADATA
+   CAP_WRITE_METADATA   = SG_CAP_WRITE_METADATA
+   CAP_COORDINATE       = SG_CAP_COORDINATE
 
    
    cdef md_syndicate_conf conf_inst
@@ -594,15 +594,15 @@ cdef class Syndicate:
          return None
          
       
-   cpdef set_view_change_callback( self, callback_func ):
+   cpdef set_config_change_callback( self, callback_func ):
       '''
          Set the callback to be called when the Volume information gets changed.
       '''
-      global syndicate_view_change_callback
+      global syndicate_config_change_callback
       
-      syndicate_view_change_callback = callback_func
+      syndicate_config_change_callback = callback_func
       
-      ms_client_set_view_change_callback( &self.client_inst, py_view_change_callback_springboard, NULL )
+      ms_client_set_config_change_callback( &self.client_inst, py_config_change_callback_springboard, NULL )
       
       return
    
@@ -611,7 +611,7 @@ cdef class Syndicate:
       '''
          Schedule a reload of our configuration.
       '''
-      ms_client_sched_volume_reload( &self.client_inst )
+      ms_client_start_config_reload( &self.client_inst )
       
       return
    

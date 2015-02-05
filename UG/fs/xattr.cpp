@@ -16,7 +16,6 @@
 
 #include "consistency.h"
 #include "xattr.h"
-#include "url.h"
 
 // general purpose handlers...
 int xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
@@ -135,7 +134,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
    }
    
    char* cached_file_url = md_url_local_file_url( core->conf->data_root, fent->volume, fent->file_id, fent->version );
-   char* cached_file_path = GET_PATH( cached_file_url );
+   char* cached_file_path = SG_URL_LOCAL_PATH( cached_file_url );
    
    // enough space...
    if( buf_len > 0 ) {
@@ -168,7 +167,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
 static ssize_t xattr_get_cached_file_path( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len) {
    
    char* cached_file_url = md_url_local_file_url( core->conf->data_root, fent->volume, fent->file_id, fent->version );
-   char* cached_file_path = GET_PATH( cached_file_url );
+   char* cached_file_path = SG_URL_LOCAL_PATH( cached_file_url );
    
    ssize_t len = strlen(cached_file_path);
    
@@ -487,7 +486,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
 // setxattr, with xattr modes
 int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
    
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Setting extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
@@ -699,7 +698,7 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
 
 // removexattr
 int fs_entry_removexattr( struct fs_core* core, char const* path, char const *name, uint64_t user, uint64_t volume ) {
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Removing extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
@@ -754,7 +753,7 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
 
 // change ownership of an xattr 
 int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* name, uint64_t new_user ) {
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Changing ownership of extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }
@@ -795,7 +794,7 @@ int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* nam
 
 // change mode of an xattr 
 int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* name, mode_t new_mode ) {
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Changing mode of extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
    }

@@ -49,7 +49,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
 // fail-fast if revalidating the metadata fails
 int fs_entry_mkdir_once( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
    
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Making directories is forbidden for anonymous gateways\n");
       return -EPERM;
    }

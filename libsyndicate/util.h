@@ -70,8 +70,8 @@ extern int _SG_ERROR_MESSAGES;
 #define SG_MAX_VERBOSITY 2
 
 #define SG_debug( format, ... ) do { if( _SG_DEBUG_MESSAGES ) { printf( SG_WHERESTR "DEBUG: " format, SG_WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
-#define SG_info( format, ... ) do { if( _SG_INFO_MESSAGES ) { printf( SG_WHERESTR "INFO:  " format, SG_WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
-#define SG_warn( format, ... ) do { if( _SG_WARN_MESSAGES ) { fprintf(stderr, SG_WHERESTR "WARN:  " format, SG_WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
+#define SG_info( format, ... ) do { if( _SG_INFO_MESSAGES ) { printf( SG_WHERESTR "INFO: " format, SG_WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
+#define SG_warn( format, ... ) do { if( _SG_WARN_MESSAGES ) { fprintf(stderr, SG_WHERESTR "WARN: " format, SG_WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
 #define SG_error( format, ... ) do { if( _SG_ERROR_MESSAGES ) { fprintf(stderr, SG_WHERESTR "ERROR: " format, SG_WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
 
 #define SG_CALLOC(type, count) (type*)calloc( sizeof(type) * (count), 1 )
@@ -79,10 +79,19 @@ extern int _SG_ERROR_MESSAGES;
 
 #define SG_strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
 
+#define SG_safe_new( foo ) new (nothrow) foo
+#define SG_safe_free( buf ) if( (buf) != NULL ) { free(buf); buf = NULL; }
+#define SG_safe_delete( foo ) if( (foo) != NULL ) { delete foo; foo = NULL; }
+
 // for testing
 #define SG_BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
 #define SG_END_TIMING_DATA(ts, ts2, key) clock_gettime( CLOCK_MONOTONIC, &ts2 ); printf("DATA %s %lf\n", key, ((double)(ts2.tv_nsec - ts.tv_nsec) + (double)(1e9 * (ts2.tv_sec - ts.tv_sec))) / 1e9 )
 #define SG_TIMING_DATA(key, value) printf("DATA %s %lf\n", key, value)
+
+
+#ifndef MIN
+#define MIN(x,y) ((x) < (y) ? (x) : (y))
+#endif
 
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
@@ -94,13 +103,6 @@ using namespace std;
 // small message response buffers
 typedef pair<char*, size_t> md_buffer_segment_t;
 typedef vector< md_buffer_segment_t > md_response_buffer_t;
-
-struct thread_args {
-   void* context;
-   int thread_no;
-   struct sigaction act;
-};
-
 
 struct mlock_buf {
    void* ptr;
@@ -154,6 +156,7 @@ char* md_url_encode( char const* str, size_t len );
 char* md_url_decode( char const* str, size_t* len );
 int md_base64_decode(const char* b64message, size_t b64len, char** buffer, size_t* buffer_len);
 int md_base64_encode(const char* message, size_t len, char** buffer);
+int md_strrstrip( char* str, char const* strip );
 
 // random number generator
 uint32_t md_random32(void);
@@ -169,6 +172,7 @@ int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );
 int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src );
 
 char* md_response_buffer_to_string( md_response_buffer_t* rb );
+char* md_response_buffer_to_c_string( md_response_buffer_t* rb );
 void md_response_buffer_free( md_response_buffer_t* rb );
 off_t md_response_buffer_size( md_response_buffer_t* rb );
 

@@ -91,14 +91,14 @@ cdef extern from "libsyndicate/libsyndicate.h":
    cdef int SYNDICATE_RG
    cdef int SYNDICATE_AG
 
-   cdef int GATEWAY_CAP_READ_DATA
-   cdef int GATEWAY_CAP_WRITE_DATA
-   cdef int GATEWAY_CAP_READ_METADATA
-   cdef int GATEWAY_CAP_WRITE_METADATA
-   cdef int GATEWAY_CAP_COORDINATE
+   cdef int SG_CAP_READ_DATA
+   cdef int SG_CAP_WRITE_DATA
+   cdef int SG_CAP_READ_METADATA
+   cdef int SG_CAP_WRITE_METADATA
+   cdef int SG_CAP_COORDINATE
 
    
-   ctypedef int (*ms_client_view_change_callback)( ms_client* client, void* cls )
+   ctypedef int (*ms_client_config_change_callback)( ms_client* client, void* cls )
 
    # ------------------------------------------
    # init and shutdown
@@ -134,8 +134,8 @@ cdef extern from "libsyndicate/libsyndicate.h":
    # config
    
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
-   int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
-   int ms_client_sched_volume_reload( ms_client* client )
+   int ms_client_set_config_change_callback( ms_client* client, ms_client_config_change_callback clb, void* cls )
+   int ms_client_start_config_reload( ms_client* client )
    int ms_client_my_key_pem( ms_client* client, char** my_key_pem, size_t* my_key_len )
 
    # ------------------------------------------

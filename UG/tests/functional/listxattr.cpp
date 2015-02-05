@@ -48,7 +48,7 @@ int main( int argc, char** argv ) {
    // get the xattr list size
    SG_debug("\n\n\nfs_entry_listxattr( %s )\n\n\n", path );
    
-   ssize_t rc = fs_entry_listxattr( state->core, path, xattr_listing, 0, SYS_USER, 0 );
+   ssize_t rc = fs_entry_listxattr( state->core, path, xattr_listing, 0, SG_SYS_USER, 0 );
    if( rc < 0 || rc > 65535 ) {
       SG_error("\n\n\nfs_entry_listxattr( %s ) rc = %zd\n\n\n", path, rc );
       syndicate_functional_test_shutdown( &syndicate_http );
@@ -60,7 +60,7 @@ int main( int argc, char** argv ) {
    // get the xattr list for real this time 
    memset( xattr_listing, 0, 65536 );
    
-   rc = fs_entry_listxattr( state->core, path, xattr_listing, rc, SYS_USER, 0 );
+   rc = fs_entry_listxattr( state->core, path, xattr_listing, rc, SG_SYS_USER, 0 );
    if( rc < 0 || rc > 65535 ) {
       SG_error("\n\n\nfs_entry_listxattr( %s ) rc = %zd\n\n\n", path, rc );
       syndicate_functional_test_shutdown( &syndicate_http );

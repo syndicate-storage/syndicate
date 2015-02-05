@@ -33,7 +33,6 @@
 #include "sync.h"
 #include "trunc.h"
 #include "unlink.h"
-#include "url.h"
 #include "write.h"
 #include "xattr.h"
 

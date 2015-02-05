@@ -255,7 +255,7 @@ static int AG_HTTP_not_found( struct md_HTTP_connection_data* md_con_data ) {
 
 // try again later 
 static int AG_HTTP_try_again( struct md_HTTP_connection_data* md_con_data ) {
-   return AG_HTTP_error( md_con_data, MD_HTTP_TRYAGAIN, MD_HTTP_TRYAGAIN_MSG );
+   return AG_HTTP_error( md_con_data, SG_HTTP_TRYAGAIN, SG_HTTP_TRYAGAIN_MSG );
 }
 
 // driver error 
@@ -358,8 +358,8 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
       SG_debug("Reversion deadline for %s has passed (by %" PRIu64 " seconds).  Reversioning and telling the client to try again.\n", reqdat->fs_path, now.tv_sec - mi->refresh_deadline );
       
       // entry is stale--queue a refresh and tell the client to try again 
-      int http_status = MD_HTTP_TRYAGAIN;
-      char const* http_msg = MD_HTTP_TRYAGAIN_MSG;
+      int http_status = SG_HTTP_TRYAGAIN;
+      char const* http_msg = SG_HTTP_TRYAGAIN_MSG;
       
       rc = AG_workqueue_add_reversion( state->wq, reqdat->fs_path, NULL );
       if( rc != 0 && rc != -EEXIST ) {

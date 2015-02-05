@@ -16,7 +16,6 @@
 
 #include "rename.h"
 #include "consistency.h"
-#include "url.h"
 #include "network.h"
 #include "replication.h"
 #include "unlink.h"
@@ -94,7 +93,7 @@ int fs_entry_verify_no_loop( struct fs_entry* fent, void* cls ) {
 int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume, int64_t version ) {
    
    // renaming is forbidden if anonymous
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       SG_error("%s", "Renaming is forbidden for anonymous gateways\n");
       return -EPERM;
    }

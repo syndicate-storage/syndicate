@@ -29,30 +29,30 @@ int _SG_ERROR_MESSAGES = 1;
 
 
 void md_set_debug_level( int d ) {
-   if( d == 0 ) {
+   if( d <= 0 ) {
       // no debugging
       _SG_DEBUG_MESSAGES = 0;
       _SG_INFO_MESSAGES = 0;
    }
-   else if( d >= 1 ) {
+   if( d >= 1 ) {
       _SG_INFO_MESSAGES = 1;
    }
-   else if( d >= 2 ) {
+   if( d >= 2 ) {
       // info and debug 
       _SG_DEBUG_MESSAGES = 1;
    }
 }
 
 void md_set_error_level( int e ) {
-   if( e == 0 ) {
+   if( e <= 0 ) {
       // no error 
       _SG_ERROR_MESSAGES = 0;
       _SG_WARN_MESSAGES = 0;
    }
-   else if( e >= 1 ) {
+   if( e >= 1 ) {
       _SG_ERROR_MESSAGES = 1;
    }
-   else if( e >= 2 ) {
+   if( e >= 2 ) {
       _SG_WARN_MESSAGES = 1;
    }
 }
@@ -484,9 +484,16 @@ int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen
 
 /* Returns a url-encoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
+// return the encoded URL on success
+// return NULL on OOM
 char *md_url_encode(char const *str, size_t len) {
   char *pstr = (char*)str;
   char *buf = (char*)calloc(len * 3 + 1, 1);
+  
+  if( buf == NULL ) {
+     return NULL;
+  }
+  
   char *pbuf = buf;
   size_t cnt = 0;
   while (cnt < len) {
@@ -703,6 +710,37 @@ int md_sleep_uninterrupted( struct timespec* ts ) {
    return 0;
 }
 
+// strip characters in strip from the end of str, replacing them with 0
+// return the number of characters stripped
+int md_strrstrip( char* str, char const* strip ) {
+   
+   size_t strip_len = strlen(strip);
+   char* tmp = str + strlen(str) - 1;
+   bool found = false;
+   int itrs = 0;
+   
+   while( tmp != str ) {
+      
+      found = false;
+      for( unsigned int i = 0; i < strip_len; i++ ) {
+         if( *tmp == strip[i] ) {
+            *tmp = 0;
+            found = true;
+            break;
+         }
+      }
+      
+      if( !found ) {
+         break;
+      }
+      else {
+         tmp--;
+         itrs++;
+      }
+   }
+   
+   return itrs;
+}
 
 // translate zlib error codes 
 static int md_zlib_err( int zerr ) {
@@ -895,7 +933,6 @@ static char* md_response_buffer_to_string_impl( md_response_buffer_t* rb, int ex
 char* md_response_buffer_to_string( md_response_buffer_t* rb ) {
    return md_response_buffer_to_string_impl( rb, 0 );
 }
-
 
 
 // flatten a response buffer into a byte string, null-terminating it

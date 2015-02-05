@@ -118,23 +118,24 @@ int ms_client_reload_volume( struct ms_client* client ) {
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
    off_t len = 0;
+   uint64_t volume_id = 0;
+   char* volume_url = NULL;
    
-   ms_client_view_rlock( client );
+   ms_client_config_rlock( client );
  
-   struct ms_volume* vol = client->volume;
-   
-   if( vol == NULL ) {
-      SG_error("%s", "ERR: unbound from Volume!\n" );
-      ms_client_view_unlock( client );
-      return -ENOENT;
+   if( client->volume == NULL ) {
+      
+      SG_error("No volume attached to %p\n", client );
+      
+      ms_client_config_unlock( client );
+      return -EINVAL;
    }
 
    // get the Volume ID for later
-   uint64_t volume_id = vol->volume_id;
-   
-   char* volume_url = ms_client_volume_url( client->url, vol->volume_id );
+   volume_id = client->volume->volume_id;
+   volume_url = ms_client_volume_url( client->url, volume_id );
 
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
 
    rc = ms_client_download( client, volume_url, &buf, &len );
 
@@ -157,18 +158,15 @@ int ms_client_reload_volume( struct ms_client* client ) {
       return -EINVAL;
    }
    
-   ms_client_view_wlock( client );
+   ms_client_config_wlock( client );
 
-   // re-find the Volume
-   vol = client->volume;
-   if( vol == NULL ) {
-      SG_error("%s", "ERR: unbound from Volume!" );
-      ms_client_view_unlock( client );
-      return -ENOENT;
+   if( client->volume == NULL ) {
+      ms_client_config_unlock( client );
+      return -EINVAL;
    }
 
-   uint64_t old_version = vol->volume_version;
-   uint64_t old_cert_version = vol->volume_cert_version;
+   uint64_t old_version = client->volume->volume_version;
+   uint64_t old_cert_version = client->volume->volume_cert_version;
    
    // get the new versions, and make sure they've advanced.
    uint64_t new_version = volume_md.volume_version();
@@ -176,25 +174,25 @@ int ms_client_reload_volume( struct ms_client* client ) {
    
    if( new_version < old_version ) {
       SG_error("Invalid volume version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_version, new_version );
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -ENOTCONN;
    }
    
    if( new_cert_version < old_cert_version ) {
       SG_error("Invalid certificate version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_cert_version, new_cert_version );
-      ms_client_view_unlock( client );
+      ms_client_config_unlock( client );
       return -ENOTCONN;
    }
    
    if( new_version > old_version ) {
       // have new data--load it in
-      rc = ms_client_volume_init( vol, &volume_md, NULL, client->conf, client->my_pubkey, client->my_key );
+      rc = ms_client_volume_init( client->volume, &volume_md, NULL, client->conf, client->my_pubkey, client->my_key );
    }
    else {
       rc = 0;
    }
    
-   ms_client_view_unlock( client );
+   ms_client_config_unlock( client );
    
    if( rc != 0 ) {
       SG_error("ms_client_volume_init(%" PRIu64 ") rc = %d\n", volume_id, rc );
@@ -207,6 +205,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
 
    // load new certificate information, if we have any
    if( new_cert_version > old_cert_version ) {
+      
       rc = ms_client_reload_certs( client, new_cert_version );
       if( rc != 0 ) {
          SG_error("ms_client_reload_certs rc = %d\n", rc );
@@ -218,21 +217,35 @@ int ms_client_reload_volume( struct ms_client* client ) {
 }
 
 
-// populate a Volume structure with the volume metadata
+// populate or reload a Volume structure with the volume metadata
+// return 0 on success 
+// return negative on error 
+// if this fails, the volume should be unaffected
 int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem, struct md_syndicate_conf* conf, EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_privkey ) {
 
    int rc = 0;
+   struct md_entry* root = vol->root;
+   char* new_name = vol->name;
+   
+   EVP_PKEY* volume_public_key = vol->volume_public_key;
+   bool reload_volume_key = vol->reload_volume_key;
+   
+   ms_cert_bundle* UG_certs = vol->UG_certs;
+   ms_cert_bundle* RG_certs = vol->RG_certs;
+   ms_cert_bundle* AG_certs = vol->AG_certs;
+   
+   struct md_closure* cache_closure = vol->cache_closure;
    
    // get the new public key
-   if( vol->reload_volume_key || vol->volume_public_key == NULL || volume_pubkey_pem != NULL ) {
-      vol->reload_volume_key = false;
+   if( reload_volume_key || volume_public_key == NULL || volume_pubkey_pem != NULL ) {
+      reload_volume_key = false;
       
       // trust it this time, but not in the future
       if( volume_pubkey_pem != NULL ) {
-         rc = md_load_pubkey( &vol->volume_public_key, volume_pubkey_pem );
+         rc = md_load_pubkey( &volume_public_key, volume_pubkey_pem );
       }
       else {
-         rc = md_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
+         rc = md_load_pubkey( &volume_public_key, volume_md->volume_public_key().c_str() );
       }
       
       if( rc != 0 ) {
@@ -241,75 +254,72 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       }
    }
 
-   if( vol->volume_public_key == NULL ) {
+   if( volume_public_key == NULL ) {
       SG_error("%s", "unable to verify integrity of metadata for Volume!  No public key given!\n");
       return -ENOTCONN;
    }
 
    // verify metadata
-   rc = md_verify<ms::ms_volume_metadata>( vol->volume_public_key, volume_md );
+   rc = md_verify<ms::ms_volume_metadata>( volume_public_key, volume_md );
    if( rc != 0 ) {
       SG_error("Signature verification failed on Volume %s (%" PRIu64 "), rc = %d\n", volume_md->name().c_str(), volume_md->volume_id(), rc );
+      
+      if( volume_public_key != vol->volume_public_key ) {
+         EVP_PKEY_free( volume_public_key );
+      }
+      
       return rc;
    }
 
-   // sanity check 
-   if( vol->name ) {
-      char* new_name = strdup( volume_md->name().c_str() );
-      if( strcmp( new_name, vol->name ) != 0 ) {
-         SG_error("Invalid Volume metadata: tried to change name from '%s' to '%s'\n", vol->name, new_name );
-         free( new_name );
-         return -EINVAL;
-      }
-      free( new_name );
-   }
+   // set name
+   new_name = SG_strdup_or_null( volume_md->name().c_str() );
    
-   struct md_entry* root = NULL;
-   
+   // set root
    if( volume_md->has_root() ) {
+      
       root = SG_CALLOC( struct md_entry, 1 );
-      ms_entry_to_md_entry( volume_md->root(), root );
+      
+      if( root != NULL ) {
+         
+         rc = ms_entry_to_md_entry( volume_md->root(), root );
+         if( rc != 0 ) {
+            
+            md_entry_free( root );
+            SG_safe_free( root );
+            
+            root = NULL;
+         }
+      }
    }
    
-   if( vol->root ) {
-      md_entry_free( vol->root );
-      free( vol->root );
+   if( UG_certs == NULL ) {
+      UG_certs = SG_safe_new( ms_cert_bundle() );
    }
    
-   vol->root = root;
-   
-   if( vol->UG_certs == NULL ) {
-      vol->UG_certs = new ms_cert_bundle();
+   if( RG_certs == NULL ) {
+      RG_certs = SG_safe_new( ms_cert_bundle() );
    }
    
-   if( vol->RG_certs == NULL ) {
-      vol->RG_certs = new ms_cert_bundle();
+   if( AG_certs == NULL ) {
+      AG_certs = SG_safe_new( ms_cert_bundle() );
    }
    
-   if( vol->AG_certs == NULL ) {
-      vol->AG_certs = new ms_cert_bundle();
-   }
-   
-   vol->volume_cert_version = volume_md->cert_version();
-   vol->volume_id = volume_md->volume_id();
-   vol->volume_owner_id = volume_md->owner_id();
-   vol->blocksize = volume_md->blocksize();
-   vol->volume_version = volume_md->volume_version();
-   
-   if( vol->name == NULL ) {
-      vol->name = strdup( volume_md->name().c_str() );
-   }
-   
-   vol->cache_closure = NULL;
    
    if( volume_md->has_cache_closure_text() ) {
+      
       char const* method = NULL;
       
-      if( vol->cache_closure == NULL ) {
+      if( cache_closure == NULL ) {
          method = "md_closure_init";
          
-         vol->cache_closure = SG_CALLOC( struct md_closure, 1 );
-         rc = md_closure_init( vol->cache_closure, conf, gateway_pubkey, gateway_privkey,
+         cache_closure = SG_CALLOC( struct md_closure, 1 );
+         if( cache_closure == NULL ) {
+            
+            // roll back 
+            return -ENOMEM;
+         }
+         
+         rc = md_closure_init( cache_closure, conf, gateway_pubkey, gateway_privkey,
                                MS_CLIENT_CACHE_CLOSURE_PROTOTYPE,
                                volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(),
                                false, false );
@@ -317,20 +327,85 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       else {
          method = "md_closure_reload";
          
-         rc = md_closure_reload( vol->cache_closure, conf, gateway_pubkey, gateway_privkey, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size() );
+         rc = md_closure_reload( cache_closure, conf, gateway_pubkey, gateway_privkey, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size() );
       }
       
       if( rc != 0 ) {
+         
          SG_error("%s rc = %d\n", method, rc );
-         return rc;
       }
       else {
-         SG_debug("(Re)initialized CDN closure %p for Volume %s\n", vol->cache_closure, vol->name );
+         
+         SG_debug("(Re)initialized CDN closure %p for Volume %s\n", cache_closure, vol->name );
       }
    }
    else {
-      SG_error("WARN: no CDN closure for Volume %s\n", vol->name );
+      
+      SG_warn("no CDN closure for Volume %s\n", vol->name );
    }
+   
+   // did anything fail?
+   if( rc != 0 || UG_certs == NULL || RG_certs == NULL || AG_certs == NULL || root == NULL || new_name == NULL ) {
+      
+      if( UG_certs != vol->UG_certs ) {
+         SG_safe_delete( UG_certs );
+      }
+      
+      if( RG_certs != vol->RG_certs ) {
+         SG_safe_delete( RG_certs );
+      }
+      
+      if( AG_certs != vol->AG_certs ) {
+         SG_safe_free( AG_certs );
+      }
+      
+      if( root != vol->root && root != NULL ) {
+         md_entry_free( root );
+         SG_safe_free( root );
+      }
+      
+      if( new_name != vol->name ) {
+         SG_safe_free( new_name );
+      }
+      
+      if( volume_public_key != vol->volume_public_key ) {
+         EVP_PKEY_free( volume_public_key );
+      }
+      
+      if( rc == 0 ) {
+         rc = -ENOMEM;
+      }
+      
+      return rc;
+   }
+   
+   else {
+      // make all changes take effect
+      vol->volume_cert_version = volume_md->cert_version();
+      vol->volume_id = volume_md->volume_id();
+      vol->volume_owner_id = volume_md->owner_id();
+      vol->blocksize = volume_md->blocksize();
+      vol->volume_version = volume_md->volume_version();
+      vol->volume_public_key = volume_public_key;
+      vol->reload_volume_key = reload_volume_key;
+      vol->cache_closure = cache_closure;
+      vol->UG_certs = UG_certs;
+      vol->RG_certs = RG_certs;
+      vol->AG_certs = AG_certs;
+      
+      if( root != vol->root && vol->root != NULL ) {
+         md_entry_free( vol->root );
+         SG_safe_free( vol->root );
+      }
+      vol->root = root;
+      
+      if( vol->name != new_name ) {
+         SG_safe_free( vol->name );
+      }
+      vol->name = new_name;  
+   }
+   
+   SG_debug("Reload volume '%s' (%" PRIu64 ")\n", vol->name, vol->volume_id );
    return 0;
 }
 

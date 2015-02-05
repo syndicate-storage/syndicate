@@ -52,7 +52,7 @@ int main( int argc, char** argv ) {
    // get the xattr size
    SG_debug("\n\n\nfs_entry_getxattr( %s, %s )\n\n\n", path, xattr_name );
    
-   ssize_t rc = fs_entry_getxattr( state->core, path, xattr_name, xattr_value, 0, SYS_USER, 0 );
+   ssize_t rc = fs_entry_getxattr( state->core, path, xattr_name, xattr_value, 0, SG_SYS_USER, 0 );
    if( rc < 0 || rc > 65535 ) {
       SG_error("\n\n\nfs_entry_getxattr( %s, %s ) rc = %zd\n\n\n", path, xattr_name, rc );
       syndicate_functional_test_shutdown( &syndicate_http );
@@ -62,7 +62,7 @@ int main( int argc, char** argv ) {
    SG_debug("\n\n\nfs_entry_getxattr( %s, %s, 0 ) rc = %zd\n\n\n", path, xattr_name, rc );
    
    // get the xattr for real this time 
-   rc = fs_entry_getxattr( state->core, path, xattr_name, xattr_value, rc, SYS_USER, 0 );
+   rc = fs_entry_getxattr( state->core, path, xattr_name, xattr_value, rc, SG_SYS_USER, 0 );
    if( rc < 0 || rc > 65535 ) {
       SG_error("\n\n\nfs_entry_getxattr( %s, %s ) rc = %zd\n\n\n", path, xattr_name, rc );
       syndicate_functional_test_shutdown( &syndicate_http );

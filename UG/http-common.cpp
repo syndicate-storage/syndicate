@@ -153,7 +153,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    int rc = 0;
 
    uint64_t file_id = reqdat->file_id;
-   uint64_t local_file_id = INVALID_FILE_ID;
+   uint64_t local_file_id = SG_INVALID_FILE_ID;
    uint64_t volume_id = reqdat->volume_id;
    char* fs_path = reqdat->fs_path;
    int64_t file_version = reqdat->file_version;
@@ -170,7 +170,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
       return -ENODATA;
    }
    
-   rc = fs_entry_stat_extended( state->core, fs_path, sb, &local, &latest_file_version, &gateway_id, SYS_USER, 0, false );
+   rc = fs_entry_stat_extended( state->core, fs_path, sb, &local, &latest_file_version, &gateway_id, SG_SYS_USER, 0, false );
 
    if( rc < 0 ) {
       // could not be found
@@ -182,9 +182,9 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    
    // what is this a request for?
    // was this a request for a block?
-   if( block_id != INVALID_BLOCK_ID ) {
+   if( block_id != SG_INVALID_BLOCK_ID ) {
 
-      bool block_local = fs_entry_is_block_local( state->core, fs_path, SYS_USER, 0, reqdat->block_id );
+      bool block_local = fs_entry_is_block_local( state->core, fs_path, SG_SYS_USER, 0, reqdat->block_id );
       if( !block_local ) {
          // block exists, and is remotely-hosted
          char* block_url = NULL;
@@ -340,7 +340,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
       reqdat->fs_path = strdup( url_path );
    }
 
-   if( reqdat->block_id != INVALID_BLOCK_ID )
+   if( reqdat->block_id != SG_INVALID_BLOCK_ID )
       SG_debug("volume_id = %" PRIu64 ", fs_path = '%s', file_id = %" PRIX64 ", file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld\n",
                reqdat->volume_id, reqdat->fs_path, reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
    

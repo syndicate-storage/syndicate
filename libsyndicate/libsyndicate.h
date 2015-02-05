@@ -63,15 +63,6 @@ using namespace std;
 #include "ms.pb.h"
 #include "serialization.pb.h"
 
-// if we're building a Google Native Client plugin, we have to define these...
-#ifndef EREMOTEIO
-#define EREMOTEIO 121
-#endif
-
-#ifndef MIN
-#define MIN(x,y) ((x) < (y) ? (x) : (y))
-#endif
-
 #define MD_ENTRY_FILE ms::ms_entry::MS_ENTRY_TYPE_FILE
 #define MD_ENTRY_DIR  ms::ms_entry::MS_ENTRY_TYPE_DIR
 
@@ -230,8 +221,8 @@ struct md_syndicate_conf {
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
-#define USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
-#define GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
+#define SG_USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
+#define SG_GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
 
 #define COMMENT_KEY                 '#'
 
@@ -267,23 +258,20 @@ struct md_syndicate_conf {
 #define CONTENT_URL_KEY             "PUBLIC_URL"
 #define VIEW_RELOAD_FREQ_KEY        "VIEW_RELOAD_FREQ"
 
-#define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
-#define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
-#define AG_GATEWAY_DRIVER_KEY	    "AG_GATEWAY_DRIVER"
+#define SYNDICATEFS_XATTR_URL       "user.syndicate_url"
+#define CLIENT_DEFAULT_CONFIG       "/usr/etc/syndicate/syndicate-UG.conf"
+#define AG_GATEWAY_DRIVER_KEY       "AG_GATEWAY_DRIVER"
 
 // URL protocol prefix for local files
-#define SYNDICATEFS_LOCAL_PROTO     "file://"
+#define SG_LOCAL_PROTO     "file://"
 
-#define SYNDICATE_DATA_PREFIX "SYNDICATE-DATA"
+#define SG_DATA_PREFIX "SYNDICATE-DATA"
 
 // check to see if a URL refers to local data
-#define URL_LOCAL( url ) (strlen(url) > strlen(SYNDICATEFS_LOCAL_PROTO) && strncmp( (url), SYNDICATEFS_LOCAL_PROTO, strlen(SYNDICATEFS_LOCAL_PROTO) ) == 0)
+#define SG_URL_LOCAL( url ) (strlen(url) > strlen(SG_LOCAL_PROTO) && strncmp( (url), SG_LOCAL_PROTO, strlen(SG_LOCAL_PROTO) ) == 0)
 
 // extract the absolute, underlying path from a local url
-#define GET_PATH( url ) ((char*)(url) + strlen(SYNDICATEFS_LOCAL_PROTO))
-
-// extract the filesystem path from a local url
-#define GET_FS_PATH( root, url ) ((char*)(url) + strlen(SYNDICATEFS_LOCAL_PROTO) + strlen(root) - 1)
+#define SG_URL_LOCAL_PATH( url ) ((char*)(url) + strlen(SG_LOCAL_PROTO))
 
 extern "C" {
 
@@ -299,7 +287,7 @@ int md_free_conf( struct md_syndicate_conf* conf );
 
 // md_entry
 struct md_entry* md_entry_dup( struct md_entry* src );
-void md_entry_dup2( struct md_entry* src, struct md_entry* ret );
+int md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
 
 // serialization
@@ -330,9 +318,6 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 // threading
 pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
 
-// upload callback for CURL
-size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *userp);
-
 // URL parsing
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
@@ -348,6 +333,7 @@ int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 
 // header parsing
 off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name );
+int md_parse_header( char* header_buf, char const* header_name, char** header_value );
 uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size );
 uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len );
 
@@ -415,32 +401,32 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // system UID
-#define SYS_USER 0
+#define SG_SYS_USER 0
 
-#define INVALID_BLOCK_ID (uint64_t)(-1)
-#define INVALID_GATEWAY_ID INVALID_BLOCK_ID
-#define INVALID_VOLUME_ID INVALID_BLOCK_ID
-#define INVALID_FILE_ID INVALID_BLOCK_ID
+#define SG_INVALID_BLOCK_ID (uint64_t)(-1)
+#define SG_INVALID_GATEWAY_ID SG_INVALID_BLOCK_ID
+#define SG_INVALID_VOLUME_ID SG_INVALID_BLOCK_ID
+#define SG_INVALID_FILE_ID SG_INVALID_BLOCK_ID
 
 // gateway types for md_init
 #define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY
 #define SYNDICATE_AG       ms::ms_gateway_cert::ACQUISITION_GATEWAY
 #define SYNDICATE_RG       ms::ms_gateway_cert::REPLICA_GATEWAY
-#define VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
+#define SG_VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
 
 // gateway HTTP error codes (used by the AG and UG)
-#define MD_HTTP_TRYAGAIN    503
+#define SG_HTTP_TRYAGAIN    503
 
-#define GATEWAY_CAP_READ_DATA  1
-#define GATEWAY_CAP_WRITE_DATA  2
-#define GATEWAY_CAP_READ_METADATA  4
-#define GATEWAY_CAP_WRITE_METADATA  8
-#define GATEWAY_CAP_COORDINATE  16
+#define SG_CAP_READ_DATA  1
+#define SG_CAP_WRITE_DATA  2
+#define SG_CAP_READ_METADATA  4
+#define SG_CAP_WRITE_METADATA  8
+#define SG_CAP_COORDINATE  16
 
-#define RSA_KEY_SIZE 4096
+#define SG_RSA_KEY_SIZE 4096
 
 
 // limits
-#define SYNDICATE_MAX_MANIFEST_LEN              100000000         // 100MB
+#define SG_MAX_MANIFEST_LEN              100000000         // 100MB
 
 #endif

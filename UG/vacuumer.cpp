@@ -284,7 +284,7 @@ static int fs_entry_vacuumer_get_manifest( struct fs_core* core, char const* fs_
    
    if( fent == NULL ) {
       // resolve 
-      fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+      fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
       if( fent == NULL || err != 0 ) {
          if( err == 0 )
             err = -ENOMEM;
@@ -516,7 +516,7 @@ static int fs_entry_vacuumer_set_vacuum_status( struct fs_core* core, char const
    int err = 0;
    
    // resolve 
-   fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, true, &err );
+   fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, true, &err );
    if( fent == NULL || err != 0 ) {
       if( err == 0 )
          err = -ENOMEM;

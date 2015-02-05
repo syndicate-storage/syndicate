@@ -41,7 +41,7 @@ void* create_main( void* arg ) {
       
       SG_debug("Create '%s'\n", path );
       
-      struct fs_file_handle* fh = fs_entry_create( global_state->core, path, SYS_USER, global_state->core->volume, 0755, &rc );
+      struct fs_file_handle* fh = fs_entry_create( global_state->core, path, SG_SYS_USER, global_state->core->volume, 0755, &rc );
       
       if( fh == NULL || rc != 0 ) {
          

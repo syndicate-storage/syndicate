@@ -53,7 +53,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
       
       if( gateway_type == -ENOENT ) {
          // schedule a reload of this volume...there seems to be a missing gateway 
-         ms_client_sched_volume_reload( core->ms );
+         ms_client_start_config_reload( core->ms );
          return -EAGAIN;
       }
       else {
@@ -167,7 +167,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
       if( gateway_type < 0 ) {
          // unknown gateway...try refreshing the Volume
          SG_error("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
-         ms_client_sched_volume_reload( core->ms );
+         ms_client_start_config_reload( core->ms );
          return -EAGAIN;
       }
       
@@ -179,7 +179,7 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          
          if( rc == -ENOENT ) {
             // gateway not found.  try refreshing our certs
-            ms_client_sched_volume_reload( core->ms );
+            ms_client_start_config_reload( core->ms );
             return -EAGAIN;
          }
          else {

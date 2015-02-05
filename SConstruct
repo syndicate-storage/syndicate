@@ -137,7 +137,7 @@ env = Environment(
    devel = devel,
    firewall = firewall,
    old_boost = old_boost,   # for the UG
-   install_prefix = install_prefix,
+   install_prefix = install_prefix
 )
 
 common.setup_env( env )

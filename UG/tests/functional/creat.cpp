@@ -62,7 +62,7 @@ int main( int argc, char** argv ) {
    // create the file
    int rc = 0;
    SG_debug("fs_entry_create( %s )\n", path );
-   struct fs_file_handle* fh = fs_entry_create( state->core, path, SYS_USER, state->core->volume, 0755, &rc );
+   struct fs_file_handle* fh = fs_entry_create( state->core, path, SG_SYS_USER, state->core->volume, 0755, &rc );
    
    if( fh == NULL || rc != 0 ) {
       SG_error("fs_entry_create( %s ) rc = %d\n", path, rc );

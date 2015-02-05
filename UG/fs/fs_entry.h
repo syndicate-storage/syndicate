@@ -55,15 +55,15 @@ using namespace std;
 #define FTYPE_FIFO 3
 #define FTYPE_DEAD 4
 
-#define IS_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SYS_USER || ((mode) & S_IROTH) || ((node_vol) == (vol) && ((mode) & S_IRGRP)) || ((node_user) == (user) && ((mode) & S_IRUSR)))
-#define IS_DIR_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SYS_USER || ((mode) & S_IXOTH) || ((node_vol) == (vol) && ((mode) & S_IXGRP)) || ((node_user) == (user) && ((mode) & S_IXUSR)))
-#define IS_WRITEABLE( mode, node_user, node_vol, user, vol ) (((user) == SYS_USER || (mode) & S_IWOTH) || ((node_vol) == (vol) && ((mode) & S_IWGRP)) || ((node_user) == (user) && ((mode) & S_IWUSR)))
+#define IS_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SG_SYS_USER || ((mode) & S_IROTH) || ((node_vol) == (vol) && ((mode) & S_IRGRP)) || ((node_user) == (user) && ((mode) & S_IRUSR)))
+#define IS_DIR_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SG_SYS_USER || ((mode) & S_IXOTH) || ((node_vol) == (vol) && ((mode) & S_IXGRP)) || ((node_user) == (user) && ((mode) & S_IXUSR)))
+#define IS_WRITEABLE( mode, node_user, node_vol, user, vol ) (((user) == SG_SYS_USER || (mode) & S_IWOTH) || ((node_vol) == (vol) && ((mode) & S_IWGRP)) || ((node_user) == (user) && ((mode) & S_IWUSR)))
 #define IS_EXECUTABLE( mode, node_user, node_vol, user, vol ) IS_DIR_READABLE( mode, node_user, node_vol, user, vol )
 
 #define SYNDICATEFS_XATTR_URL       "user.syndicate_url"
 #define SYNDICATEFS_MAX_FRESHNESS   "user.syndicate_max_freshness"
 
-#define INVALID_BLOCK_ID (uint64_t)(-1)
+#define SG_INVALID_BLOCK_ID (uint64_t)(-1)
 
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
@@ -374,7 +374,7 @@ size_t fs_entry_sync_context_size( struct fs_entry* fent );
 int fs_entry_sync_queue_apply( struct fs_entry* fent, void (*func)( struct sync_context*, void* ), void* cls );
 
 // view change
-int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
+int fs_entry_config_change_callback( struct ms_client* ms, void* cls );
 
 // block state management
 int fs_entry_list_block_ids( modification_map* m, uint64_t** block_ids, size_t* num_block_ids );

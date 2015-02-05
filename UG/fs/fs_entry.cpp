@@ -16,7 +16,6 @@
 
 #include "fs_entry.h"
 #include "manifest.h"
-#include "url.h"
 #include "consistency.h"
 #include "replication.h"
 #include "driver.h"
@@ -223,7 +222,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    cls->core = core;
    cls->cert_version = 0;
    
-   ms_client_set_view_change_callback( core->ms, fs_entry_view_change_callback, cls );
+   ms_client_set_config_change_callback( core->ms, fs_entry_config_change_callback, cls );
    core->viewchange_cls = cls;
    
    return rc;
@@ -248,7 +247,7 @@ int fs_core_destroy( struct fs_core* core ) {
    pthread_rwlock_destroy( &core->lock );
    pthread_rwlock_destroy( &core->fs_lock );
    
-   ms_client_set_view_change_callback( core->ms, NULL, NULL );
+   ms_client_set_config_change_callback( core->ms, NULL, NULL );
    
    if( core->viewchange_cls != NULL ) {
       free( core->viewchange_cls );
@@ -973,7 +972,7 @@ static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_en
 // returns the locked fs_entry at the end of the path on success
 struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
 
-   if( vol != core->volume && user != SYS_USER ) {
+   if( vol != core->volume && user != SG_SYS_USER ) {
       // wrong volume
       *err = -EXDEV;
       return NULL;
@@ -1413,7 +1412,7 @@ int fs_entry_free_modification_map( modification_map* m ) {
 
 
 // view change callback: reload the driver
-int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
+int fs_entry_config_change_callback( struct ms_client* ms, void* cls ) {
    struct fs_entry_view_change_cls* viewchange_cls = (struct fs_entry_view_change_cls*)cls;
    
    struct fs_core* core = viewchange_cls->core;

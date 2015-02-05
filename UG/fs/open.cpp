@@ -19,7 +19,6 @@
 #include "manifest.h"
 #include "network.h"
 #include "unlink.h"
-#include "url.h"
 #include "driver.h"
 #include "trunc.h"
 
@@ -519,7 +518,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    }
    
    // sanity check: check open mode vs whether or not we're a client and/or have read-only caps 
-   if( core->gateway == GATEWAY_ANON ) {
+   if( core->gateway == SG_GATEWAY_ANON ) {
       // no authentication; we're read-only
       if( flags & (O_CREAT | O_RDWR | O_WRONLY | O_TRUNC | O_EXCL) ) {
          SG_error("%s", "Opening to create, write, or truncate is forbidden for anonymous gateways\n");

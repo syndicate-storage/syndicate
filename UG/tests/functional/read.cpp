@@ -45,7 +45,7 @@ int main( int argc, char** argv ) {
    // open the file
    int rc = 0;
    SG_debug("\n\n\nfs_entry_open( %s )\n\n\n", path );
-   struct fs_file_handle* fh = fs_entry_open( state->core, path, SYS_USER, state->core->volume, O_RDONLY, 0755, &rc );
+   struct fs_file_handle* fh = fs_entry_open( state->core, path, SG_SYS_USER, state->core->volume, O_RDONLY, 0755, &rc );
    
    if( fh == NULL || rc != 0 ) {
       SG_error("\n\n\nfs_entry_open( %s ) rc = %d\n\n\n", path, rc );

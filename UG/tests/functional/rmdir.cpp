@@ -47,7 +47,7 @@ int main( int argc, char** argv ) {
    int rc = 0;
    SG_debug("\n\n\nfs_entry_rmdir( %s )\n\n\n", path );
    
-   rc = fs_entry_rmdir( state->core, path, SYS_USER, state->core->volume );
+   rc = fs_entry_rmdir( state->core, path, SG_SYS_USER, state->core->volume );
    
    if( rc != 0 ) {
       SG_error("\n\n\nfs_entry_rmdir( %s ) rc = %d\n\n\n", path, rc );

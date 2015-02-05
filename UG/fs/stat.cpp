@@ -21,7 +21,7 @@
 // get the in-memory version of a file
 int64_t fs_entry_get_version( struct fs_core* core, char const* fs_path ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -38,7 +38,7 @@ int64_t fs_entry_get_version( struct fs_core* core, char const* fs_path ) {
 // calculate the version of a block
 int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_t block_id ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -65,7 +65,7 @@ int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_
 // get the gateway coordinator of a file
 uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t block_id ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -92,7 +92,7 @@ uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t 
 // get a file manifest as a string
 char* fs_entry_get_manifest_str( struct fs_core* core, char* fs_path ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       return NULL;
    }
@@ -137,7 +137,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
 // get a file manifest as a serialized protobuf
 ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char** manifest_bits, bool sign ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       *manifest_bits = NULL;
       return err;
@@ -154,7 +154,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char**
 // get the mod time in its entirety
 int fs_entry_get_creation_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -172,7 +172,7 @@ int fs_entry_get_creation_time( struct fs_core* core, char const* fs_path, struc
 // get the mod time in its entirety
 int fs_entry_get_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -191,7 +191,7 @@ int fs_entry_get_mod_time( struct fs_core* core, char const* fs_path, struct tim
 // get the manifest mod time in its entirety
 int fs_entry_get_manifest_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, false, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -219,7 +219,7 @@ int fs_entry_get_manifest_mod_time( struct fs_core* core, char const* fs_path, s
 // set the mod time (at the nanosecond resolution)
 int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, true, &err );
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SG_SYS_USER, 0, true, &err );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -442,14 +442,12 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
       return err;
    }
 
-   uint64_t num_files = ms_client_get_num_files( core->ms );
-
    // populate the statv struct
    statv->f_bsize = core->blocking_factor;
    statv->f_blocks = 0;
    statv->f_bfree = 0;
    statv->f_bavail = 0;
-   statv->f_files = num_files;
+   statv->f_files = 0;
    statv->f_ffree = 0;
    statv->f_fsid = SYNDICATEFS_MAGIC;
    statv->f_namemax = 256;    // might as well keep it limited to what ext2/ext3/ext4 can handle

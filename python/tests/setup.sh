@@ -19,7 +19,7 @@ gateway_keys=gateway_keys/
 volume_keys=volume_keys/
 user_keys=user_keys/" > $SYNCONF/syndicate.conf
 
-DEFAULT_GATEWAY_CAPS="GATEWAY_CAP_READ_METADATA|GATEWAY_CAP_READ_DATA"
+DEFAULT_GATEWAY_CAPS="SG_CAP_READ_METADATA|SG_CAP_READ_DATA"
 
 $SYNTOOL -t create_user testuser@gmail.com http://www.vicci.org/id/testuser@gmail.com
 

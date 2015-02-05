@@ -37,16 +37,6 @@ typedef vector< ms_cert_diff_entry > ms_cert_diff_list;
 struct ms_cert_diff {
    ms_cert_diff_list* old_certs;
    ms_cert_diff_list* new_certs;
-   
-   ms_cert_diff() {
-      this->old_certs = new ms_cert_diff_list();
-      this->new_certs = new ms_cert_diff_list();
-   }
-   
-   ~ms_cert_diff() {
-      delete this->old_certs;
-      delete this->new_certs;
-   }
 };
 
 struct ms_gateway_cert {
