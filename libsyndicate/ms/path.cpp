@@ -28,16 +28,30 @@ void ms_client_free_listing( struct ms_listing* listing ) {
       for( unsigned int i = 0; i < listing->entries->size(); i++ ) {
          md_entry_free( &listing->entries->at(i) );
       }
-
-      delete listing->entries;
-      listing->entries = NULL;
+      
+      SG_safe_delete( listing->entries );
    }
 }
 
 // build a path ent
 // NOTE: not all fields are necessary for all operations
+// return 0 on success 
+// return -ENOMEM if out of memory
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t parent_id, uint64_t file_id, int64_t version, int64_t write_nonce,
                              int64_t num_children, int64_t generation, int64_t capacity, char const* name, void* cls ) {
+   
+   
+   if( name != NULL ) {
+      if( path_ent->name != NULL ) {
+         free( path_ent->name );
+      }
+      
+      path_ent->name = SG_strdup_or_null( name );
+      
+      if( path_ent->name == NULL ) {
+         return -ENOMEM;
+      }
+   }
    
    // build up the ms_path as we traverse our cached path
    path_ent->volume_id = volume_id;
@@ -49,25 +63,16 @@ int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, u
    path_ent->generation = generation;
    path_ent->capacity = capacity;
    
-   if( name != NULL ) {
-      if( path_ent->name != NULL ) {
-         free( path_ent->name );
-      }
-      
-      path_ent->name = strdup( name );
-   }
-   
    path_ent->cls = cls;
    return 0;
 }
    
-// free a path entry
+// free a path entry, using the given free callback to free the path cls
 void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)( void* ) ) {
-   if( path_ent->name ) {
-      free( path_ent->name );
-      path_ent->name = NULL;
-   }
-   if( path_ent->cls && free_cls ) {
+   
+   SG_safe_free( path_ent->name );
+   
+   if( path_ent->cls != NULL && free_cls ) {
       (*free_cls)( path_ent->cls );
       path_ent->cls = NULL;
    }
@@ -75,7 +80,7 @@ void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)( vo
    memset( path_ent, 0, sizeof(struct ms_path_ent) );
 }
 
-// free a path
+// free a path, using the given free callback to free the path cls
 void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) ) {
    for( unsigned int i = 0; i < path->size(); i++ ) {
       ms_client_free_path_ent( &path->at(i), free_cls );
@@ -84,26 +89,49 @@ void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) ) {
 
 
 // parse an MS listing, initializing the given ms_listing structure
+// return 0 on success
+// return -ENOMEM if we're out of memory 
 int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
    
    const ms::ms_listing& src = reply->listing();
+   int rc = 0;
    
    memset( dst, 0, sizeof(struct ms_listing) );
    
    if( src.status() != ms::ms_listing::NONE ) {
+      
       dst->status = (src.status() == ms::ms_listing::NEW ? MS_LISTING_NEW : MS_LISTING_NOCHANGE);
    }
    else {
+      
       dst->status = MS_LISTING_NONE;
    }
 
    if( dst->status == MS_LISTING_NEW ) {
+      
       dst->type = src.ftype();
-      dst->entries = new vector<struct md_entry>();
+      dst->entries = SG_safe_new( vector<struct md_entry>() );
+      
+      if( dst->entries == NULL ) {
+         
+         return -ENOMEM;
+      }
       
       for( int i = 0; i < src.entries_size(); i++ ) {
+         
          struct md_entry ent;
-         ms_entry_to_md_entry( src.entries(i), &ent );
+         rc = ms_entry_to_md_entry( src.entries(i), &ent );
+         
+         if( rc != 0 ) {
+            
+            // free all 
+            for( unsigned int i = 0; i < dst->entries->size(); i++ ) {
+               md_entry_free( &dst->entries->at(i) );
+            }
+            
+            SG_safe_delete( dst->entries );
+            return -ENOMEM;
+         }
 
          dst->entries->push_back( ent );
       }
@@ -116,7 +144,7 @@ int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
 
 // extract multiple entries from the listing 
 // return 0 on success, and set *ents to the entries and *num_ents to the number of entries.
-// return negative on error
+// return negative on error (-ENOMEM for OOM, -EBADMSG for invalid listing status)
 // if non-zero, the listing's error code is placed in listing_error.  It will be negative.
 // otherwise, the listing's status will be placed in listing_error.  It will be positive.
 int ms_client_listing_read_entries( struct ms_client* client, struct md_download_context* dlctx, struct md_entry** ents, size_t* num_ents, int* listing_error ) {
@@ -194,6 +222,11 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
       if( listing.entries->size() > 0 ) {
          // success!
          struct md_entry* tmp = SG_CALLOC( struct md_entry, listing.entries->size() );
+         if( tmp == NULL ) {
+            
+            ms_client_free_listing( &listing );
+            return -ENOMEM;
+         }
          
          // NOTE: vectors are contiguous in memory 
          memcpy( tmp, &listing.entries->at(0), sizeof(struct md_entry) * listing.entries->size() );
@@ -247,19 +280,21 @@ int ms_client_listing_read_entry( struct ms_client* client, struct md_download_c
    }
    
    if( num_ents != 1 && tmp != NULL ) {
+      
       // too many entries 
       for( unsigned int i = 0; i < num_ents; i++ ) {
          md_entry_free( &tmp[i] );
       }
       
-      free( tmp );
+      SG_safe_free( tmp );
       
       return -EBADMSG;
    }
    
    if( tmp != NULL ) {
+      
       *ent = *tmp;
-      free( tmp );
+      SG_safe_free( tmp );
    }
    else {
       // no data given (i.e. NOCHANGE)
@@ -291,12 +326,14 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
    
    // sanity check 
    if( path->size() == 0 ) {
+      
       // nothing to do 
       return 0;
    }
    
    // sanity check 
    for( unsigned int i = 0; i < path->size(); i++ ) {
+      
       if( path->at(i).name == NULL ) {
          return -EINVAL;
       }
@@ -310,11 +347,13 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       rc = ms_client_getchild( client, &path->at(i), &result );
       
       if( rc != 0 ) {
+         
          SG_error("ms_client_getchild(%" PRIX64 ".%s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
          break;
       }
       
       if( result.reply_error != 0 ) {
+         
          SG_error("MS replied %d for GETCHILD(%" PRIX64 ", %s)\n", result.reply_error, path->at(i).parent_id, path->at(i).name );
          
          *error = result.reply_error;
@@ -330,28 +369,35 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       
       // provide parent if we can 
       if( i > 0 ) {
+         
          path->at(i).parent_id = path->at(i-1).file_id;
       }
       
       // let the caller know 
       if( download_cb != NULL ) {
+         
          rc = (*download_cb)( &path->at(i), download_cls );
          
          if( rc != 0 ) {
+            
             SG_error("download_cb(%" PRIX64 ", %s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
             break;
          }
       }
    }
    
-   return 0;
+   return rc;
 }
 
 
 // convert each entry in an ms path to a string, up to max_index (use -1 for all)
-// return NULL if ms_path is empty
+// return NULL if ms_path is empty, or we're out of memory
 char* ms_path_to_string( ms_path_t* ms_path, int max_index ) {
    
+   int i = 0;
+   size_t num_chars = 0;
+   
+   // sanity check
    if( ms_path->size() == 0 || max_index == 0 ) {
       return NULL;
    }
@@ -360,14 +406,17 @@ char* ms_path_to_string( ms_path_t* ms_path, int max_index ) {
       max_index = ms_path->size();
    }
    
-   int i = 0;
-   size_t num_chars = 0;
+   // find length of path
    for( i = 0; i < max_index; i++ ) {
       num_chars += strlen(ms_path->at(i).name) + 2;
    }
    
    // build up the path 
    char* ret = SG_CALLOC( char, num_chars + 1 );
+   if( ret == NULL ) {
+      
+      return NULL;
+   }
    
    // this is root
    strcat( ret, ms_path->at(0).name );

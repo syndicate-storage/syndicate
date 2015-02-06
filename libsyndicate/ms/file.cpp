@@ -61,91 +61,102 @@ struct ms_client_multi_context {
 // convert an update_set into a protobuf
 // return 0 on success
 // return -EINVAL if the an update in updates is invalid
+// return -ENOMEM if we're out of memory
 static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms_updates* ms_updates ) {
-   // populate the protobuf
-   for( ms_client_update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
+   
+   try {
+      // populate the protobuf
+      for( ms_client_update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
 
-      struct md_update* update = &itr->second;
-      
-      // verify that we have a valid update type...
-      if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
+         struct md_update* update = &itr->second;
          
-         SG_error("Invalid update type %d\n", update->op );
-         return -EINVAL;
-      }
-      
-      ms::ms_update* ms_up = ms_updates->add_updates();
+         // verify that we have a valid update type...
+         if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
+            
+            SG_error("Invalid update type %d\n", update->op );
+            return -EINVAL;
+         }
+         
+         ms::ms_update* ms_up = ms_updates->add_updates();
 
-      ms_up->set_type( update->op );
+         ms_up->set_type( update->op );
 
-      ms::ms_entry* ms_ent = ms_up->mutable_entry();
+         ms::ms_entry* ms_ent = ms_up->mutable_entry();
 
-      md_entry_to_ms_entry( ms_ent, &update->ent );
-      
-      // if this an UPDATE, then add the affected blocks 
-      if( update->op == ms::ms_update::UPDATE ) {
-         if( update->affected_blocks != NULL ) {
-            for( size_t i = 0; i < update->num_affected_blocks; i++ ) {
-               ms_up->add_affected_blocks( update->affected_blocks[i] );
+         md_entry_to_ms_entry( ms_ent, &update->ent );
+         
+         // if this an UPDATE, then add the affected blocks 
+         if( update->op == ms::ms_update::UPDATE ) {
+            if( update->affected_blocks != NULL ) {
+               for( size_t i = 0; i < update->num_affected_blocks; i++ ) {
+                  ms_up->add_affected_blocks( update->affected_blocks[i] );
+               }
             }
          }
-      }
-      
-      // if this is a RENAME, then add the 'dest' argument
-      else if( update->op == ms::ms_update::RENAME ) {
-         ms::ms_entry* dest_ent = ms_up->mutable_dest();
-         md_entry_to_ms_entry( dest_ent, &update->dest );
-      }
-      
-      // if this is a SETXATTR, then set the flags, attr name, and attr value
-      else if( update->op == ms::ms_update::SETXATTR ) {
-         // sanity check...
-         if( update->xattr_name == NULL || update->xattr_value == NULL ) {
-            return -EINVAL;
+         
+         // if this is a RENAME, then add the 'dest' argument
+         else if( update->op == ms::ms_update::RENAME ) {
+            ms::ms_entry* dest_ent = ms_up->mutable_dest();
+            md_entry_to_ms_entry( dest_ent, &update->dest );
          }
          
-         // set flags 
-         ms_up->set_xattr_create( (update->flags & XATTR_CREATE) ? true : false );
-         ms_up->set_xattr_replace( (update->flags & XATTR_REPLACE) ? true : false );
-       
-         // set names
-         ms_up->set_xattr_name( string(update->xattr_name) );
-         ms_up->set_xattr_value( string(update->xattr_value, update->xattr_value_len) );
+         // if this is a SETXATTR, then set the flags, attr name, and attr value
+         else if( update->op == ms::ms_update::SETXATTR ) {
+            // sanity check...
+            if( update->xattr_name == NULL || update->xattr_value == NULL ) {
+               return -EINVAL;
+            }
+            
+            // set flags 
+            ms_up->set_xattr_create( (update->flags & XATTR_CREATE) ? true : false );
+            ms_up->set_xattr_replace( (update->flags & XATTR_REPLACE) ? true : false );
          
-         // set requesting user 
-         ms_up->set_xattr_owner( update->xattr_owner );
-         ms_up->set_xattr_mode( update->xattr_mode );
-      }
-      
-      // if this is a REMOVEXATTR, then set the attr name
-      else if( update->op == ms::ms_update::REMOVEXATTR ) {
-         // sanity check ...
-         if( update->xattr_name == NULL )
-            return -EINVAL;
+            // set names
+            ms_up->set_xattr_name( string(update->xattr_name) );
+            ms_up->set_xattr_value( string(update->xattr_value, update->xattr_value_len) );
+            
+            // set requesting user 
+            ms_up->set_xattr_owner( update->xattr_owner );
+            ms_up->set_xattr_mode( update->xattr_mode );
+         }
          
-         ms_up->set_xattr_name( string(update->xattr_name) );
-      }
-      
-      // if this is a CHOWNXATTR, then set the attr name and owner 
-      else if( update->op == ms::ms_update::CHOWNXATTR ) {
-         if( update->xattr_name == NULL )
-            return -EINVAL;
+         // if this is a REMOVEXATTR, then set the attr name
+         else if( update->op == ms::ms_update::REMOVEXATTR ) {
+            // sanity check ...
+            if( update->xattr_name == NULL ) {
+               return -EINVAL;
+            }
+            
+            ms_up->set_xattr_name( string(update->xattr_name) );
+         }
          
-         ms_up->set_xattr_name( string(update->xattr_name) );
-         ms_up->set_xattr_owner( update->xattr_owner );
-      }
-      
-      // if this is a CHMODXATTR, then set the attr name and mode 
-      else if( update->op == ms::ms_update::CHMODXATTR ) {
-         if( update->xattr_name == NULL )
-            return -EINVAL;
+         // if this is a CHOWNXATTR, then set the attr name and owner 
+         else if( update->op == ms::ms_update::CHOWNXATTR ) {
+            if( update->xattr_name == NULL ) {
+               return -EINVAL;
+            }
+            
+            ms_up->set_xattr_name( string(update->xattr_name) );
+            ms_up->set_xattr_owner( update->xattr_owner );
+         }
          
-         ms_up->set_xattr_name( string(update->xattr_name) );
-         ms_up->set_xattr_mode( update->xattr_mode );
+         // if this is a CHMODXATTR, then set the attr name and mode 
+         else if( update->op == ms::ms_update::CHMODXATTR ) {
+            if( update->xattr_name == NULL ) {
+               return -EINVAL;
+            }
+               
+            ms_up->set_xattr_name( string(update->xattr_name) );
+            ms_up->set_xattr_mode( update->xattr_mode );
+         }
       }
-   }
 
-   ms_updates->set_signature( string("") );
+      ms_updates->set_signature( string("") );
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+   
    return 0;
 }
 
@@ -154,6 +165,7 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
 // return the number of bytes on success, and set *update_text 
 // return negative on error.
 ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** update_text ) {
+   
    string update_bits;
    bool valid;
 
@@ -177,9 +189,12 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 
 
 // sign an update set
+// return 0 on success
+// return -EINVAL if pkey or ms_updates is NULL
+// return -EINVAL if we can't sign 
+// return -ENOMEM if OOM
 static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
-   if( pkey == NULL ) {
-      SG_error("Private key == %p!", pkey);
+   if( pkey == NULL || ms_updates == NULL ) {
       return -EINVAL;
    }
    return md_sign<ms::ms_updates>( pkey, ms_updates );

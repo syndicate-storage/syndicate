@@ -19,16 +19,26 @@
 #include "libsyndicate/ms/url.h"
 
 // get an xattr value.
-// fails with -ENOENT if the file doesn't exist or isn't readable.
+// return 0 on success
+// return -ENOENT if the file doesn't exist or isn't readable.
+// return -ENOMEM if OOM
+// return -ENODATA if the replied message has no xattr field
+// return negative on download failure
 int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
    
-   char* getxattr_url = ms_client_getxattr_url( client->url, volume_id, file_id, xattr_name );
+   char* getxattr_url = NULL;
    ms::ms_reply reply;
    int rc = 0;
+   char* val = NULL;
+   
+   getxattr_url = ms_client_getxattr_url( client->url, volume_id, file_id, xattr_name );
+   if( getxattr_url == NULL ) {
+      return -ENOMEM;
+   }
    
    rc = ms_client_read( client, getxattr_url, &reply );
    
-   free( getxattr_url );
+   SG_safe_free( getxattr_url );
    
    if( rc != 0 ) {
       SG_error("ms_client_read(getxattr %s) rc = %d\n", xattr_name, rc );
@@ -42,9 +52,12 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
          return -ENODATA;
       }
       
-      
       // get the xattr 
-      char* val = strdup( reply.xattr_value().c_str() );
+      val = SG_strdup_or_null( reply.xattr_value().c_str() );
+      if( val == NULL ) {
+         return -ENOMEM;
+      }
+      
       *xattr_value = val;
       *xattr_value_len = reply.xattr_value().size();
       
@@ -53,34 +66,48 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
 }
 
 // get the list of xattrs for this file.
-// fails with -ENOENT if the file doesn't exist or isn't readable
-// on success, populate xattr_names with a '\0'-separated list of xattr names (size stored to xattr_names_len).
+// return 0 on success, and populate xattr_names with a '\0'-separated list of xattr names (size stored to xattr_names_len).
+// return -ENOENT if the file doesn't exist or isn't readable
+// return -ENOMEM if OOM 
+// return negative on download error
 int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char** xattr_names, size_t* xattr_names_len ) {
    
-   char* listxattr_url = ms_client_listxattr_url( client->url, volume_id, file_id );
+   char* listxattr_url = NULL;
    int rc = 0;
+   off_t offset = 0;
+   char* names = NULL;
+   size_t names_len = 0;
    ms::ms_reply reply;
+   
+   listxattr_url = ms_client_listxattr_url( client->url, volume_id, file_id );
+   if( listxattr_url == NULL ) {
+      
+      return -ENOMEM;
+   }
    
    rc = ms_client_read( client, listxattr_url, &reply );
    
-   free( listxattr_url );
+   SG_safe_free( listxattr_url );
    
    if( rc != 0 ) {
+      
       SG_error("ms_client_read(listxattr %" PRIX64 ") rc = %d\n", file_id, rc );
       return rc;
    }
    else {
       
       // get the total size...
-      size_t names_len = 0;
       for( int i = 0; i < reply.xattr_names_size(); i++ ) {
          const string& xattr_name = reply.xattr_names(i);
          names_len += xattr_name.size() + 1;
       }
       
       // get the names, separating them with '\0'
-      char* names = SG_CALLOC( char, names_len + 1 );
-      off_t offset = 0;
+      names = SG_CALLOC( char, names_len + 1 );      
+      if( names == NULL ) {
+         return -ENOMEM;
+      }
+      
       for( int i = 0; i < reply.xattr_names_size(); i++ ) {
          const string& xattr_name = reply.xattr_names(i);
          strcpy( names + offset, xattr_name.c_str() );
@@ -97,7 +124,10 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
 
 // set a file's xattr.
 // flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
-// fails with -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
+// return 0 on success
+// return -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
+// return -ENOMEM if OOM 
+// return negative on RPC error
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, mode_t mode, int flags ) {
    
    // sanity check...can't have both XATTR_CREATE and XATTR_REPLACE
@@ -122,6 +152,8 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
 // remove an xattr.
 // fails if the file isn't readable or writable, or the xattr exists and it's not writable
 // succeeds even if the xattr doesn't exist (i.e. idempotent)
+// return 0 on success 
+// return negative on RPC error
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
    // generate our update 
    struct md_update up;
@@ -135,6 +167,8 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
 
 // change the owner of an xattr 
 // fails if we don't own the attribute
+// return 0 on success
+// return negative on RPC error
 int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner ) {
    // generate our update 
    struct md_update up;
@@ -149,6 +183,8 @@ int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char c
 
 // change the mode of an xattr 
 // fails if we don't own the attribute, or if it's not writable by us
+// return 0 on success
+// return negative on RPC error
 int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode ) {
    // generate our update 
    struct md_update up;

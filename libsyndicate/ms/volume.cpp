@@ -23,6 +23,9 @@ void ms_volume_free( struct ms_volume* vol ) {
       return;
    }
    
+   ms_cert_bundle* all_certs[MS_NUM_CERT_BUNDLES+1];
+   ms_client_cert_bundles( vol, all_certs );
+   
    SG_debug("Destroy Volume '%s'\n", vol->name );
    
    if( vol->volume_public_key ) {
@@ -30,10 +33,7 @@ void ms_volume_free( struct ms_volume* vol ) {
       vol->volume_public_key = NULL;
    }
    
-   ms_cert_bundle* all_certs[MS_NUM_CERT_BUNDLES+1];
-   ms_client_cert_bundles( vol, all_certs );
-
-   for( int i = 1; all_certs[i] != NULL; i++ ) {
+   for( int i = MS_CERT_BUNDLE_BEGIN; all_certs[i] != NULL; i++ ) {
       ms_cert_bundle* certs = all_certs[i];
       
       for( ms_cert_bundle::iterator itr = certs->begin(); itr != certs->end(); itr++ ) {
@@ -42,27 +42,20 @@ void ms_volume_free( struct ms_volume* vol ) {
       }
    }
    
-   delete vol->UG_certs;
-   delete vol->RG_certs;
-   delete vol->AG_certs;
+   SG_safe_delete( vol->UG_certs );
+   SG_safe_delete( vol->RG_certs );
+   SG_safe_delete( vol->AG_certs );
    
-   vol->UG_certs = NULL;
-   vol->RG_certs = NULL;
-   vol->AG_certs = NULL;
+   SG_safe_free( vol->name );
    
-   if( vol->name ) {
-      free( vol->name );
-      vol->name = NULL;
-   }
-
-   if( vol->root ) {
+   if( vol->root != NULL ) {
       md_entry_free( vol->root );
-      free( vol->root );
+      SG_safe_free( vol->root );
    }
       
-   if( vol->cache_closure ) {
+   if( vol->cache_closure != NULL ) {
       md_closure_shutdown( vol->cache_closure );
-      free( vol->cache_closure );
+      SG_safe_free( vol->cache_closure );
    }
 
    memset( vol, 0, sizeof(struct ms_volume) );
@@ -72,16 +65,17 @@ void ms_volume_free( struct ms_volume* vol ) {
 // synchronously download a volume's metadata by name
 // on success, populate the given ms_volume structure with the metadata
 int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
+   
    ms::ms_volume_metadata volume_md;
    char* buf = NULL;
    off_t len = 0;
    int rc = 0;
-
+   bool valid = false;
    char* volume_url = ms_client_volume_url_by_name( client->url, volume_name );
 
    rc = ms_client_download( client, volume_url, &buf, &len );
 
-   free( volume_url );
+   SG_safe_free( volume_url );
    
    if( rc != 0 ) {
       SG_error("ms_client_download(%s) rc = %d\n", volume_url, rc );
@@ -90,8 +84,8 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
    }
 
    // extract the message
-   bool valid = volume_md.ParseFromString( string(buf, len) );
-   free( buf );
+   valid = volume_md.ParseFromString( string(buf, len) );
+   SG_safe_free( buf );
    
    if( !valid ) {
       SG_error("Invalid data for Volume %s (missing %s)\n", volume_name, volume_md.InitializationErrorString().c_str() );
@@ -100,6 +94,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
    
    rc = ms_client_volume_init( vol, &volume_md, volume_pubkey_pem, client->conf, client->my_pubkey, client->my_key );
    if( rc != 0 ) {
+      
       SG_error("ms_client_volume_init rc = %d\n", rc );
       return rc;
    }
@@ -111,6 +106,11 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
 // reload volume metadata
 // * download new volume metadata, and load it in
 // * if the cert version has changed, then reload the certs as well
+// return 0 on success 
+// return -EINVAL if there is no volume to reload in the client
+// return -ENOMEM if OOM 
+// return negative on download failure or cert reload failure (see ms_client_download, ms_client_reload_certs)
+// return -EBADMSG if we can't parse the message, or if we get invalid certificate versions
 // client must NOT be locked.
 int ms_client_reload_volume( struct ms_client* client ) {
    
@@ -120,6 +120,15 @@ int ms_client_reload_volume( struct ms_client* client ) {
    off_t len = 0;
    uint64_t volume_id = 0;
    char* volume_url = NULL;
+   bool valid = false;
+   
+   // old volume and cert version 
+   uint64_t old_version = 0;
+   uint64_t old_cert_version = 0;
+   
+   // new volume and cert version 
+   uint64_t new_version = 0;
+   uint64_t new_cert_version = 0;
    
    ms_client_config_rlock( client );
  
@@ -134,54 +143,72 @@ int ms_client_reload_volume( struct ms_client* client ) {
    // get the Volume ID for later
    volume_id = client->volume->volume_id;
    volume_url = ms_client_volume_url( client->url, volume_id );
-
+   
    ms_client_config_unlock( client );
+   
+   if( volume_url == NULL ) {
+      return -ENOMEM;
+   }
 
    rc = ms_client_download( client, volume_url, &buf, &len );
 
    if( rc != 0 ) {
       SG_error("ms_client_download(%s) rc = %d\n", volume_url, rc );
 
-      free( volume_url );
+      SG_safe_free( volume_url );
    
       return rc;
    }
 
-   free( volume_url );
+   SG_safe_free( volume_url );
    
    // extract the message
-   bool valid = volume_md.ParseFromString( string(buf, len) );
-   free( buf );
+   try {
+      valid = volume_md.ParseFromString( string(buf, len) );
+   }
+   catch( bad_alloc& ba ) {
+      SG_safe_free( buf );
+      return -ENOMEM;
+   }
+   catch( exception ) {
+      valid = false;
+   }
+   
+   SG_safe_free( buf );
    
    if( !valid ) {
       SG_error("Invalid data for Volume %" PRIu64 " (missing %s)\n", volume_id, volume_md.InitializationErrorString().c_str() );
-      return -EINVAL;
+      return -EBADMSG;
    }
    
    ms_client_config_wlock( client );
 
    if( client->volume == NULL ) {
+      // somehow this got freed out from under us?
+      SG_error("No volume attached to %p\n", client );
       ms_client_config_unlock( client );
       return -EINVAL;
    }
 
-   uint64_t old_version = client->volume->volume_version;
-   uint64_t old_cert_version = client->volume->volume_cert_version;
+   old_version = client->volume->volume_version;
+   old_cert_version = client->volume->volume_cert_version;
    
    // get the new versions, and make sure they've advanced.
-   uint64_t new_version = volume_md.volume_version();
-   uint64_t new_cert_version = volume_md.cert_version();
+   new_version = volume_md.volume_version();
+   new_cert_version = volume_md.cert_version();
    
    if( new_version < old_version ) {
+      
       SG_error("Invalid volume version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_version, new_version );
       ms_client_config_unlock( client );
-      return -ENOTCONN;
+      return -EBADMSG;
    }
    
    if( new_cert_version < old_cert_version ) {
+      
       SG_error("Invalid certificate version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_cert_version, new_cert_version );
       ms_client_config_unlock( client );
-      return -ENOTCONN;
+      return -EBADMSG;
    }
    
    if( new_version > old_version ) {
@@ -195,6 +222,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    ms_client_config_unlock( client );
    
    if( rc != 0 ) {
+      
       SG_error("ms_client_volume_init(%" PRIu64 ") rc = %d\n", volume_id, rc );
       return rc;
    }
@@ -219,7 +247,9 @@ int ms_client_reload_volume( struct ms_client* client ) {
 
 // populate or reload a Volume structure with the volume metadata
 // return 0 on success 
-// return negative on error 
+// return -ENODATA if we can't load the volume public key 
+// return -ENOMEM if OOM 
+// return -EINVAL if we can't verify the volume metadata
 // if this fails, the volume should be unaffected
 int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem, struct md_syndicate_conf* conf, EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_privkey ) {
 
@@ -250,13 +280,13 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       
       if( rc != 0 ) {
          SG_error("md_load_pubkey rc = %d\n", rc );
-         return -ENOTCONN;
+         return -ENODATA;
       }
    }
 
    if( volume_public_key == NULL ) {
       SG_error("%s", "unable to verify integrity of metadata for Volume!  No public key given!\n");
-      return -ENOTCONN;
+      return -ENODATA;
    }
 
    // verify metadata

@@ -113,23 +113,6 @@ static size_t ms_client_dummy_callback( void *ptr, size_t size, size_t nmemb, vo
    return size * nmemb;
 }
 
-// read from an md_post_buf
-static size_t ms_client_read_upload_buf( void* ptr, size_t size, size_t nmemb, void* userdata ) {
-   struct md_upload_buf* buf = (struct md_upload_buf*)userdata;
-   
-   size_t len = size * nmemb;
-   size_t to_copy = MAX( len, (size_t)(buf->len - buf->offset) );
-   
-   memcpy( ptr, buf->text + buf->offset, to_copy );
-   
-   return to_copy;
-}
-
-// dummy CURL write
-static size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userdata) {
-   return size * nmemb;
-}
-
 
 // begin the authentication process.  Ask to be securely redirected from the MS to the OpenID provider.
 // on success, return 0 and populate the ms_openid_provider_reply structure with the information needed to proceed with the OpenID authentication
@@ -586,7 +569,7 @@ int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, 
                                char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
                                char* syndicate_public_key_pem ) {
    
-   CURL* curl = curl_easy_init();
+   CURL* curl = NULL;
    
    EVP_PKEY* pubkey = NULL;
    int rc = 0;
@@ -624,11 +607,27 @@ int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, 
    ms_openid_url_begin = SG_CALLOC( char, strlen(ms_openid_url) + strlen("/begin") + 1 );
    if( ms_openid_url_begin == NULL ) {
       
-      EVP_PKEY_free( pubkey );
+      if( pubkey != NULL ) {
+         EVP_PKEY_free( pubkey );
+      }
       return -ENOMEM;
    }
    
    sprintf( ms_openid_url_begin, "%s/begin", ms_openid_url );
+   
+   // start curl 
+   curl = curl_easy_init();
+   if( curl == NULL ) {
+      
+      if( pubkey != NULL ) {
+         EVP_PKEY_free( pubkey );
+         pubkey = NULL;
+      }
+      
+      SG_safe_free( ms_openid_url_begin );
+      
+      return -ENOMEM;
+   }
    
    // TODO: elegant way to avoid hard constants?
    md_init_curl_handle2( curl, NULL, 30, true );

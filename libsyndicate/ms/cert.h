@@ -19,6 +19,7 @@
 
 #include "libsyndicate/ms/core.h"
 
+#define MS_CERT_BUNDLE_BEGIN    1
 #define MS_NUM_CERT_BUNDLES     ms::ms_gateway_cert::NUM_CERT_TYPES
 
 // prototypes 

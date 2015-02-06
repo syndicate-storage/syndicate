@@ -48,7 +48,7 @@
 
 using namespace std;
 
-// use STRONG crypto.
+// use STRONG TLS crypto.
 // Use ephemeral Diffie-Helman for symmetric key (with in RSA, DSA, or ECC for key exchange)
 // Use at least 256-bit keys in the data encryption
 // Use at least 256-bit MACs

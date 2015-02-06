@@ -39,12 +39,14 @@ int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_i
 
 // set a vacuum entry's affected blocks (i.e. if they weren't known at the time of initialization).
 // the caller must allocate affected_blocks; the ms_vacuum_entry will own the array.
+// return 0 on success
 // return -EINVAL if the entry already has blocks 
 int ms_client_vacuum_entry_set_blocks( struct ms_vacuum_entry* vreq, uint64_t* affected_blocks, size_t num_affected_blocks ) {
    
-   if( vreq->affected_blocks != NULL || vreq->num_affected_blocks != 0 ) 
+   if( vreq->affected_blocks != NULL || vreq->num_affected_blocks != 0 ) {
       return -EINVAL;
- 
+   }
+   
    vreq->affected_blocks = affected_blocks;
    vreq->num_affected_blocks = num_affected_blocks;
    
@@ -53,6 +55,7 @@ int ms_client_vacuum_entry_set_blocks( struct ms_vacuum_entry* vreq, uint64_t* a
 
 // free a vacuum entry 
 int ms_client_vacuum_entry_free( struct ms_vacuum_entry* vreq ) {
+   
    if( vreq->affected_blocks ) {
       free( vreq->affected_blocks );
    }
@@ -63,9 +66,14 @@ int ms_client_vacuum_entry_free( struct ms_vacuum_entry* vreq ) {
 
 
 // extract the affected blocks from an ms_reply 
+// return 0 on success, and set *affected_blocs and *num_affected_blocks (the former is calloc'ed)
+// return -ENOMEM on OOM
 static int ms_client_vacuum_entry_get_affected_blocks( ms::ms_reply* reply, uint64_t** affected_blocks, size_t* num_affected_blocks ) {
    
    uint64_t* ret = SG_CALLOC( uint64_t, reply->affected_blocks_size() );
+   if( ret == NULL ) {
+      return -ENOMEM;
+   }
    
    for( int64_t i = 0; i < reply->affected_blocks_size(); i++ ) {
       ret[i] = reply->affected_blocks(i);
@@ -78,6 +86,10 @@ static int ms_client_vacuum_entry_get_affected_blocks( ms::ms_reply* reply, uint
 }
 
 // get the head of the vacuum log for a file 
+// return 0 on success
+// return -ENOMEM if OOM
+// return -ENODATA if there is no manifest timestamp in the message
+// return negative if we couldn't download or parse the result
 int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uint64_t file_id, struct ms_vacuum_entry* ve ) {
    
    char* vacuum_url = ms_client_vacuum_url( client->url, volume_id, file_id );
@@ -103,7 +115,10 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
       uint64_t* affected_blocks = NULL;
       size_t num_affected_blocks = 0;
       
-      ms_client_vacuum_entry_get_affected_blocks( &reply, &affected_blocks, &num_affected_blocks );
+      rc = ms_client_vacuum_entry_get_affected_blocks( &reply, &affected_blocks, &num_affected_blocks );
+      if( rc != 0 ) {
+         return rc;
+      }
       
       ms_client_vacuum_entry_init( ve, volume_id, file_id, reply.file_version(), reply.manifest_mtime_sec(), reply.manifest_mtime_nsec(), affected_blocks, num_affected_blocks );
       
@@ -112,6 +127,9 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
 }
 
 // remove a vacuum log entry 
+// return 0 on success
+// return -ENOMEM on OOM
+// return negative on RPC error (see ms_client_update_rpc)
 int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec ) {
    
    // generate our update 
@@ -121,8 +139,14 @@ int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume
    memset( &ent, 0, sizeof(ent) );
    
    // sentinel values
-   ent.name = strdup("");
-   ent.parent_name = strdup("");
+   ent.name = SG_strdup_or_null("");
+   ent.parent_name = SG_strdup_or_null("");
+   
+   if( ent.name == NULL || ent.parent_name == NULL ) {
+      SG_safe_free( ent.name );
+      SG_safe_free( ent.parent_name );
+      return -ENOMEM;
+   }
    
    // sentinel md_entry with all of our given information
    ent.volume = volume_id;

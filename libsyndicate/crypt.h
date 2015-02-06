@@ -104,6 +104,7 @@ size_t md_decrypt_symmetric_ex_plaintext_len( size_t ciphertext_len );
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    // get the signature
    size_t sigb64_len = protobuf->signature().size();
+   int rc = 0;
    
    if( sigb64_len == 0 ) {
       // malformed message
@@ -112,30 +113,52 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    }
    
    char* sigb64 = SG_CALLOC( char, sigb64_len + 1 );
-   if( sigb64 == NULL )
+   if( sigb64 == NULL ) {
       return -ENOMEM;
+   }
    
    memcpy( sigb64, protobuf->signature().data(), sigb64_len );
    
-   protobuf->set_signature( "" );
-
+   try {
+      protobuf->set_signature( "" );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( sigb64 );
+      return -ENOMEM;
+   }
+   
    string bits;
    try {
       protobuf->SerializeToString( &bits );
    }
    catch( exception e ) {
-      // revert
-      protobuf->set_signature( string(sigb64) );
+      try {
+         // revert
+         protobuf->set_signature( string(sigb64) );
+         rc = -EINVAL;
+      }
+      catch( bad_alloc& ba ) {
+         rc = -ENOMEM;
+      }
+      
       free( sigb64 );
-      return -EINVAL;
+      return rc;
    }
    
    // verify the signature
-   int rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
+   rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
    
    // revert
-   protobuf->set_signature( string(sigb64) );
-   free( sigb64 );
+   try {
+      protobuf->set_signature( string(sigb64) );
+   }
+   catch( bad_alloc& ba ) {
+      SG_safe_free( sigb64 );
+      return -ENOMEM;
+   }
+   
+   SG_safe_free( sigb64 );
 
    if( rc != 0 ) {
       SG_error("md_verify_signature rc = %d\n", rc );
@@ -149,7 +172,13 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE: class T should be a protobuf, and should have a string signature field 
 template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
-   protobuf->set_signature( "" );
+   
+   try {
+      protobuf->set_signature( "" );
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
 
    string bits;
    bool valid;
@@ -173,13 +202,21 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 
    int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
    if( rc != 0 ) {
+      
       SG_error("md_sign_message rc = %d\n", rc );
       return rc;
    }
 
-   protobuf->set_signature( string(sigb64, sigb64_len) );
+   try {
+      protobuf->set_signature( string(sigb64, sigb64_len) );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( sigb64 );
+      return -ENOMEM;
+   }
    
-   free( sigb64 );
+   SG_safe_free( sigb64 );
    return 0;
 }
 

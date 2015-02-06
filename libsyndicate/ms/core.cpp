@@ -358,7 +358,6 @@ int ms_client_destroy( struct ms_client* client ) {
    // clean up our state
    SG_safe_free( client->userpass );
    SG_safe_free( client->url );
-   SG_safe_free( client->session_password );
    
    if( client->my_key ) {
       EVP_PKEY_free( client->my_key );
@@ -395,7 +394,8 @@ int ms_client_destroy( struct ms_client* client ) {
 
 // synchronously download metadata from the MS
 // return 0 on success
-// return negative on error
+// return -ENOMEM if out of memory
+// return negative on download error
 int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen ) {
    
    int rc = 0;
@@ -409,6 +409,10 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
    
    // connect (TODO: connection pool)
    curl = curl_easy_init();  
+   if( curl == NULL ) {
+      return -ENOMEM;
+   }
+   
    ms_client_init_curl_handle( client, curl, url );
    
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
@@ -426,7 +430,8 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
    curl_easy_cleanup( curl );
    
    if( rc != 0 ) {
-      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+      
+      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d on '%s'\n", curl_rc, http_status, curl_errno, rc, url );
    }
    else {
       ms_client_timing_log( &timing );
