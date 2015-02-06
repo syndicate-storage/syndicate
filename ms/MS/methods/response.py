@@ -27,7 +27,7 @@ import base64
 
 
 # ----------------------------------
-def read_gateway_basic_auth( headers ):
+def response_read_gateway_basic_auth( headers ):
    """
    Given a dict of HTTP headers, extract the gateway's type, id, and session secret.
    """
@@ -195,7 +195,7 @@ def response_load_gateway( request_handler, vol ):
    """
    
    # get the gateway's credentials
-   gateway_type_str, g_id, password = read_gateway_basic_auth( request_handler.request.headers )
+   gateway_type_str, g_id, password = response_read_gateway_basic_auth( request_handler.request.headers )
 
    if (gateway_type_str == None or g_id == None or password == None) and vol.need_gateway_auth():
       response_user_error( request_handler, 401 )
@@ -230,6 +230,8 @@ def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=T
    Begin a response to a calling gateway, given the request handler and either the volume name or ID.
    Load up the calling gateway and the volume it's trying to access, and return both along with 
    some benchmark information.  Return Nones on failure.
+   
+   TODO: load volume and gateway in parallel
    """
    
    timing = {}
