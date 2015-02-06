@@ -270,30 +270,30 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       SG_safe_free( client->userpass );
    }
    
-   if( new_pkey != NULL && client->my_key != NULL ) {
+   if( new_pkey != NULL && client->gateway_key != NULL ) {
       
-      EVP_PKEY_free( client->my_key );
+      EVP_PKEY_free( client->gateway_key );
       
-      client->my_key = new_pkey;
+      client->gateway_key = new_pkey;
    }
    
-   if( new_pubkey != NULL && client->my_pubkey != NULL ) {
+   if( new_pubkey != NULL && client->gateway_pubkey != NULL ) {
       
-      EVP_PKEY_free( client->my_pubkey );
+      EVP_PKEY_free( client->gateway_pubkey );
       
-      client->my_pubkey = new_pubkey;
+      client->gateway_pubkey = new_pubkey;
    }
    
-   if( new_pkey_pem != NULL && client->my_key_pem != NULL ) {
+   if( new_pkey_pem != NULL && client->gateway_key_pem != NULL ) {
       
-      if( client->my_key_pem_mlocked ) {
-         munlock( client->my_key_pem, client->my_key_pem_len );
+      if( client->gateway_key_pem_mlocked ) {
+         munlock( client->gateway_key_pem, client->gateway_key_pem_len );
       }
-      SG_safe_free( client->my_key_pem );
+      SG_safe_free( client->gateway_key_pem );
       
-      client->my_key_pem = new_pkey_pem;
-      client->my_key_pem_len = new_pkey_len;
-      client->my_key_pem_mlocked = new_pkey_mlocked;
+      client->gateway_key_pem = new_pkey_pem;
+      client->gateway_key_pem_len = new_pkey_len;
+      client->gateway_key_pem_mlocked = new_pkey_mlocked;
    }
    
    // set new fields

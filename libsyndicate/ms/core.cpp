@@ -278,7 +278,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    // uploader thread 
    sem_init( &client->uploader_sem, 0, 0 );
    
-   rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
+   rc = ms_client_try_load_key( conf, &client->gateway_key, &client->gateway_key_pem, conf->gateway_key, false );
    if( rc != 0 ) {
       SG_error("ms_client_try_load_key rc = %d\n", rc );
       
@@ -287,14 +287,14 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
       return rc;
    }
    
-   if( client->my_key != NULL ) {
+   if( client->gateway_key != NULL ) {
       
       // if we loaded the private key, derive the public key from it
-      rc = md_public_key_from_private_key( &client->my_pubkey, client->my_key );
+      rc = md_public_key_from_private_key( &client->gateway_pubkey, client->gateway_key );
       
-      if( rc != 0 || client->my_pubkey == NULL ) {
+      if( rc != 0 || client->gateway_pubkey == NULL ) {
          
-         SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->my_key, rc );
+         SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->gateway_key, rc );
          
          SG_safe_free( client->url );
          return rc;
@@ -302,7 +302,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    }
    
    // NOTE: ms_client_try_load_key will mlock a private key 
-   client->my_key_pem_mlocked = true;
+   client->gateway_key_pem_mlocked = true;
    
    rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
    if( rc != 0 ) {
@@ -359,20 +359,20 @@ int ms_client_destroy( struct ms_client* client ) {
    SG_safe_free( client->userpass );
    SG_safe_free( client->url );
    
-   if( client->my_key ) {
-      EVP_PKEY_free( client->my_key );
-      client->my_key = NULL;
+   if( client->gateway_key ) {
+      EVP_PKEY_free( client->gateway_key );
+      client->gateway_key = NULL;
    }
-   if( client->my_pubkey ) {
-      EVP_PKEY_free( client->my_pubkey );
-      client->my_pubkey = NULL;
+   if( client->gateway_pubkey ) {
+      EVP_PKEY_free( client->gateway_pubkey );
+      client->gateway_pubkey = NULL;
    }
-   if( client->my_key_pem ) {
+   if( client->gateway_key_pem ) {
       // NOTE: was mlock'ed
-      if( client->my_key_pem_mlocked ) {
-         munlock( client->my_key_pem, client->my_key_pem_len );
+      if( client->gateway_key_pem_mlocked ) {
+         munlock( client->gateway_key_pem, client->gateway_key_pem_len );
       }
-      SG_safe_free( client->my_key_pem );
+      SG_safe_free( client->gateway_key_pem );
    }
    
    SG_safe_free( client->syndicate_public_key_pem );

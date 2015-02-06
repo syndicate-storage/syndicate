@@ -144,7 +144,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
    // NOTE: no hashes, since they're served with the blocks directly (along with a signature)
    
    // sign the message
-   int rc = md_sign< Serialization::ManifestMsg >( state->ms->my_key, mmsg );
+   int rc = md_sign< Serialization::ManifestMsg >( state->ms->gateway_key, mmsg );
    
    AG_release_state( state );
    
@@ -557,7 +557,7 @@ static int AG_serialize_block( struct AG_state* state, struct AG_connection_data
    ag_block.set_block_version( rpc->ctx.reqdat.block_version );
    
    // sign it
-   int rc = md_sign< Serialization::AG_Block >( state->ms->my_key, &ag_block );
+   int rc = md_sign< Serialization::AG_Block >( state->ms->gateway_key, &ag_block );
    if( rc != 0 ) {
       SG_error("Failed to sign AG block %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n",
               rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );

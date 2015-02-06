@@ -112,14 +112,14 @@ struct ms_client {
    
    //////////////////////////////////////////////////////////////////
    // identity and authentication
-   // key information (read-only, never changes)
-   EVP_PKEY* my_key;
-   EVP_PKEY* my_pubkey;
+   // gateway key information (read-only, never changes)
+   EVP_PKEY* gateway_key;
+   EVP_PKEY* gateway_pubkey;
    
    // raw private key (read-only, never changes)
-   char* my_key_pem;
-   size_t my_key_pem_len;
-   bool my_key_pem_mlocked;     // if true, then my_key_pem is mlock'ed and needs to be munlock'ed before being freed
+   char* gateway_key_pem;
+   size_t gateway_key_pem_len;
+   bool gateway_key_pem_mlocked;     // if true, then gateway_key_pem is mlock'ed and needs to be munlock'ed before being freed
    
    EVP_PKEY* syndicate_public_key;      // syndicate public key (read-only, never changes)
    char* syndicate_public_key_pem;      // raw data of the above

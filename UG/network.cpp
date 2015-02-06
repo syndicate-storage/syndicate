@@ -411,7 +411,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    
    // sign this
-   int rc = md_sign<Serialization::WriteMsg>( core->ms->my_key, sendMsg );
+   int rc = md_sign<Serialization::WriteMsg>( core->ms->gateway_key, sendMsg );
    if( rc != 0 ) {
       SG_error("md_sign rc = %d\n", rc );
       curl_easy_cleanup( curl_h );

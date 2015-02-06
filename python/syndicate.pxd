@@ -37,7 +37,7 @@ cdef extern from "string.h":
 # ------------------------------------------
 cdef extern from "libsyndicate/ms/ms-client.h":
    cdef struct ms_client:
-      EVP_PKEY* my_key
+      EVP_PKEY* gateway_key
       uint64_t gateway_id
       uint64_t owner_id
       pass
@@ -136,7 +136,7 @@ cdef extern from "libsyndicate/libsyndicate.h":
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
    int ms_client_set_config_change_callback( ms_client* client, ms_client_config_change_callback clb, void* cls )
    int ms_client_start_config_reload( ms_client* client )
-   int ms_client_my_key_pem( ms_client* client, char** my_key_pem, size_t* my_key_len )
+   int ms_client_gateway_key_pem( ms_client* client, char** gateway_key_pem, size_t* gateway_key_len )
 
    # ------------------------------------------
    # debugging 

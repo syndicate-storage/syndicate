@@ -181,7 +181,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
             Serialization::ManifestMsg error_mmsg;
             fs_entry_manifest_error( &error_mmsg, manifest_txt_len, "" );
             
-            md_sign< Serialization::ManifestMsg >( state->ms->my_key, &error_mmsg );
+            md_sign< Serialization::ManifestMsg >( state->ms->gateway_key, &error_mmsg );
             
             char* manifest_bits = NULL;
             size_t manifest_len = 0;
@@ -332,7 +332,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
    char* sigb64 = NULL;
    size_t sigb64_len = 0;
 
-   int rc = md_sign_message( client->my_key, ack_txt, ack_txt_len, &sigb64, &sigb64_len );
+   int rc = md_sign_message( client->gateway_key, ack_txt, ack_txt_len, &sigb64, &sigb64_len );
    if( rc != 0 ) {
       SG_error("md_sign_message rc = %d\n", rc );
       md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );

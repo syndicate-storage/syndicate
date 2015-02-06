@@ -11,13 +11,13 @@ settings_kw = {
       "oid_username" : "testuser@gmail.com",
       "oid_password" : "sniff",
       "ms_url" : "http://localhost:8080",
-      "my_key_pem" : open( os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name) ).read(),
+      "gateway_key_pem" : open( os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name) ).read(),
       "storage_root" : "/tmp/test-syndicate-python-volume"
 }
 
 anonymous_settings_kw = {
       "volume_name" : "testvolume",
       "ms_url" : "http://localhost:8080",
-      "my_key_pem" : open( os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name) ).read(),
+      "gateway_key_pem" : open( os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name) ).read(),
       "storage_root" : "/tmp/test-syndicate-python-volume-anonymous",
 }

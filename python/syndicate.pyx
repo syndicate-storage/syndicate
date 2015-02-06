@@ -530,7 +530,7 @@ cdef class Syndicate:
       cdef char* sigb64 = NULL
       cdef size_t sigb64_len = 0
       
-      rc = md_sign_message( self.client_inst.my_key, c_data, c_data_len, &sigb64, &sigb64_len )
+      rc = md_sign_message( self.client_inst.gateway_key, c_data, c_data_len, &sigb64, &sigb64_len )
       
       if rc != 0:
          raise Exception("md_sign_message rc = %d" % rc )
@@ -639,7 +639,7 @@ cdef class Syndicate:
       cdef char* c_privkey_pem = NULL
       cdef size_t c_privkey_len = 0
 
-      rc = ms_client_my_key_pem( &self.client_inst, &c_privkey_pem, &c_privkey_len );
+      rc = ms_client_gateway_key_pem( &self.client_inst, &c_privkey_pem, &c_privkey_len );
       if rc == 0:
          py_privkey_pem = None
          try:

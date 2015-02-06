@@ -705,7 +705,7 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
    }
 
    // sign it
-   rc = ms_client_sign_updates( client->my_key, &ms_updates );
+   rc = ms_client_sign_updates( client->gateway_key, &ms_updates );
    if( rc != 0 ) {
       SG_error("ms_client_sign_updates rc = %d\n", rc );
       return rc;

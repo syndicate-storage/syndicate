@@ -443,16 +443,16 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
 // return 0 on success, and copy the PEM-encoded key into *buf and put its length in *len
 // return -ENOMEM if we're out of memory 
 // return -ENODATA if we have no public key
-int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
+int ms_client_gateway_key_pem( struct ms_client* client, char** buf, size_t* len ) {
    
    int rc = 0;
    char* ret = NULL;
    
    ms_client_rlock( client );
    
-   if( client->my_key_pem != NULL ) {
+   if( client->gateway_key_pem != NULL ) {
       
-      ret = SG_strdup_or_null( client->my_key_pem );
+      ret = SG_strdup_or_null( client->gateway_key_pem );
       
       if( ret == NULL ) {
          rc = -ENOMEM;

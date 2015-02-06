@@ -122,7 +122,7 @@ def setup_syndicate( config ):
    ms_url = config.get('MS', None)
    user_pkey = config.get('user_pkey', None)
    user_pkey_pem = config.get('user_pkey_pem', None)
-   my_key_file = config.get('gateway_pkey', None)
+   gateway_key_file = config.get('gateway_pkey', None)
    volume_name = config.get('volume', None)
    volume_pubkey = config.get('volume_pubkey', None)
    tls_pkey = config.get('tls_pkey', None)
@@ -148,7 +148,7 @@ def setup_syndicate( config ):
                                          password=rg_password,
                                          user_pkey_pem=user_pkey_pem,
                                          gateway_pkey_decryption_password=key_password,
-                                         gateway_pkey_path=my_key_file,
+                                         gateway_pkey_path=gateway_key_file,
                                          config_file=config_file,
                                          volume_pubkey_path=volume_pubkey,
                                          tls_pkey_path=tls_pkey,
@@ -231,10 +231,10 @@ def init_from_config( config ):
       return (-errno.ENOTCONN, None, None)
       
    # get our key files
-   my_key_file = config.get("gateway_pkey", None )
+   gateway_key_file = config.get("gateway_pkey", None )
    
    # get our configuration from the MS and start keeping it up to date 
-   rc = rg_closure.init( syndicate, my_key_file )
+   rc = rg_closure.init( syndicate, gateway_key_file )
    if rc < 0:
       log.error("Failed to initialize (rc = %s)" % rc)
       return (rc, None, None)

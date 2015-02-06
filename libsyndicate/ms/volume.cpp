@@ -92,7 +92,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
       return -EINVAL;
    }
    
-   rc = ms_client_volume_init( vol, &volume_md, volume_pubkey_pem, client->conf, client->my_pubkey, client->my_key );
+   rc = ms_client_volume_init( vol, &volume_md, volume_pubkey_pem, client->conf, client->gateway_pubkey, client->gateway_key );
    if( rc != 0 ) {
       
       SG_error("ms_client_volume_init rc = %d\n", rc );
@@ -213,7 +213,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    
    if( new_version > old_version ) {
       // have new data--load it in
-      rc = ms_client_volume_init( client->volume, &volume_md, NULL, client->conf, client->my_pubkey, client->my_key );
+      rc = ms_client_volume_init( client->volume, &volume_md, NULL, client->conf, client->gateway_pubkey, client->gateway_key );
    }
    else {
       rc = 0;

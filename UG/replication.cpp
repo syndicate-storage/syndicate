@@ -303,7 +303,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    }
    
    // sign the metadata portion
-   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->gateway_key, &replica_info );
    if( rc != 0 ) {
       SG_error("md_sign rc = %d\n", rc );
       free( manifest_data );
@@ -410,7 +410,7 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
       return -EINVAL;
    }
    
-   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->gateway_key, &replica_info );
    if( rc != 0 ) {
       SG_error("md_sign rc = %d\n", rc );
       fclose( f );
@@ -475,7 +475,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
       return -EINVAL;
    }
    
-   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->gateway_key, &replica_info );
    if( rc != 0 ) {
       SG_error("md_sign rc = %d\n", rc );
       return -EINVAL;
@@ -527,7 +527,7 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
       return -EINVAL;
    }
    
-   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->gateway_key, &replica_info );
    if( rc != 0 ) {
       SG_error("md_sign rc = %d\n", rc );
       return -EINVAL;
