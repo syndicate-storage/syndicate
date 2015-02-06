@@ -955,6 +955,7 @@ void md_sanitize_path( char* path ) {
 }
 
 // start a thread
+// return 0 on success
 // return -1 on failure
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
 

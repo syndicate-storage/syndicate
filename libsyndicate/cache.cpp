@@ -18,6 +18,8 @@
 #include "libsyndicate/url.h"
 #include "libsyndicate/storage.h"
 
+// compare two cache records
+// they're ordered by file id, then version, then block id, then block version
 bool md_cache_entry_key_comp_func( const struct md_cache_entry_key& c1, const struct md_cache_entry_key& c2 ) {
    if( c1.file_id < c2.file_id ) {
       return true;
@@ -141,6 +143,9 @@ struct md_cache_cb_add_lru_args {
 
 // callback to apply over a file's blocks.
 // cls must be of type struct md_cache_cb_add_lru_args
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EINVAL if we couldn't parse the block path 
 static int md_cache_cb_add_lru( char const* block_path, void* cls ) {
    struct md_cache_cb_add_lru_args* args = (struct md_cache_cb_add_lru_args*)cls;
    
@@ -153,6 +158,9 @@ static int md_cache_cb_add_lru( char const* block_path, void* cls ) {
    
    // scan path for block ID and block version
    char* block_path_basename = md_basename( block_path, NULL );
+   if( block_path_basename == NULL ) {
+      return -ENOMEM;
+   }
    
    int rc = sscanf( block_path_basename, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
    if( rc != 2 ) {
@@ -169,17 +177,23 @@ static int md_cache_cb_add_lru( char const* block_path, void* cls ) {
       lru_key.block_id = block_id;
       lru_key.block_version = block_version;
       
-      cache_lru->push_back( lru_key );
-      
       rc = 0;
+      
+      try {
+         cache_lru->push_back( lru_key );
+      }
+      catch( bad_alloc& ba ) {
+         rc = -ENOMEM;
+      }
    }
    
-   free( block_path_basename );
+   SG_safe_free( block_path_basename );
    
    return rc;
 }
 
 // clean up a future
+// always succeeds
 int md_cache_block_future_clean( struct md_cache_block_future* f ) {
    if( f->block_fd >= 0 ) {
       fsync( f->block_fd );
@@ -187,15 +201,8 @@ int md_cache_block_future_clean( struct md_cache_block_future* f ) {
       f->block_fd = -1;
    }
    
-   if( f->block_data ) {
-      free( f->block_data );
-      f->block_data = NULL;
-   }
-   
-   if( f->aio.aio_sigevent.sigev_value.sival_ptr ) {
-      free( f->aio.aio_sigevent.sigev_value.sival_ptr );
-      f->aio.aio_sigevent.sigev_value.sival_ptr = NULL;
-   }
+   SG_safe_free( f->block_data );
+   SG_safe_free( f->aio.aio_sigevent.sigev_value.sival_ptr );
    
    memset( &f->aio, 0, sizeof(f->aio) );
    
@@ -205,13 +212,17 @@ int md_cache_block_future_clean( struct md_cache_block_future* f ) {
 }
 
 // free a future
+// always succeeds
 int md_cache_block_future_free( struct md_cache_block_future* f ) {
-   md_cache_block_future_clean( f );
-   free( f );
+   if( f != NULL ) {
+      md_cache_block_future_clean( f );
+      SG_safe_free( f );
+   }
    return 0;
 }
 
 // apply a function over a list of futures 
+// always succeeds
 int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs, void (*func)( struct md_cache_block_future*, void* ), void* func_cls ) {
    
    for( vector<struct md_cache_block_future*>::iterator itr = futs->begin(); itr != futs->end(); itr++ ) {
@@ -224,13 +235,18 @@ int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs
    return 0;
 }
 
-// free cache futures 
+// free cache futures with md_cache_block_future_free
+// if close_fds is true, then this will close the cache block file descriptors 
+// otherwise, it will leave them open, so the caller has to deal with them.
+// this is useful for when the caller needs to do things with the cached data, even if the data gets evicted
+// always succeeds
 int md_cache_block_future_free_all( vector<struct md_cache_block_future*>* futs, bool close_fds ) {
    
    struct local {
       
       // free a cache block future, optionally releasing its file descriptor
       static void release_and_free( struct md_cache_block_future* fut, void* cls ) {
+         
          bool* close_fds_ptr = (bool*)cls;
          
          if( !(*close_fds_ptr) ) {
@@ -246,42 +262,25 @@ int md_cache_block_future_free_all( vector<struct md_cache_block_future*>* futs,
    return 0;
 }
 
-// clean cache futures 
-int md_cache_block_future_clean_all( vector<struct md_cache_block_future*>* futs, bool close_fds ) {
-   
-   struct local {
-      
-      // free a cache block future, optionally releasing its file descriptor
-      static void release_and_clean( struct md_cache_block_future* fut, void* cls ) {
-         bool* close_fds_ptr = (bool*)cls;
-         
-         if( *close_fds_ptr ) {
-            // release the file FD from the future, so we can use it later 
-            md_cache_block_future_release_fd( fut );
-         }
-         md_cache_block_future_clean( fut );
-      }
-   };
-   
-   md_cache_block_future_apply_all( futs, local::release_and_clean, &close_fds );
-   
-   return 0;
-}
-
 
 // flush a cache write 
+// return 0 on success
+// return -EIO if the block failed to write 
+// return negative if there was a problem with the semaphore (see md_download_sem_wait)
 int md_cache_flush_write( struct md_cache_block_future* f ) {
 
    // wait for this block to finish 
    int rc = md_cache_block_future_wait( f );
    
    if( rc != 0 ) {
+      
       SG_error("md_cache_block_future_wait rc = %d\n", rc );
       return rc;
    }
    
    // was there an IO error?
    if( md_cache_block_future_has_error( f ) ) {
+      
       int aio_rc = md_cache_block_future_get_aio_error( f );
       int write_rc = md_cache_block_future_get_write_error( f );
       
@@ -294,7 +293,10 @@ int md_cache_flush_write( struct md_cache_block_future* f ) {
 }
 
 
-// flush cache writes 
+// flush cache writes
+// try to flush all writes, even if some fail 
+// return 0 on success 
+// return negative on error--the last error encountered
 int md_cache_flush_writes( vector<struct md_cache_block_future*>* futs ) {
    
    struct local {
@@ -322,19 +324,26 @@ int md_cache_flush_writes( vector<struct md_cache_block_future*>* futs ) {
 
 
 // set up a file's cache directory.
+// return 0 on success
+// return -ENOMEM on OOM 
+// return negative if we failed to create the directory to hold the data
 static int md_cache_file_setup( struct md_syndicate_cache* cache, uint64_t file_id, int64_t version, mode_t mode ) {
    // it is possible for there to be a 0-sized non-directory here, to indicate the next version to be created.
    // if so, remove it
 
+   int rc = 0;
+   char* local_path = NULL;
    char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, version );
-   char* local_path = SG_URL_LOCAL_PATH( local_file_url );
-
-   int rc = md_mkdirs3( local_path, mode | 0700 );
-   if( rc < 0 ) {
-      rc = -errno;
+   
+   if( local_file_url == NULL ) {
+      return -ENOMEM;
    }
    
-   free( local_file_url );
+   local_path = SG_URL_LOCAL_PATH( local_file_url );
+
+   rc = md_mkdirs3( local_path, mode | 0700 );
+   
+   SG_safe_free( local_file_url );
    
    return rc;
 }
@@ -368,20 +377,30 @@ int md_cache_is_block_readable( struct md_syndicate_cache* cache, uint64_t file_
 }
 
 // open a block in the cache
+// return a file descriptor >= 0 on success
+// return -ENOMEM if OOM
+// return negative on error
 int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags ) {
    
-   char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* block_path = SG_URL_LOCAL_PATH( block_url );
-   
-   int fd = 0;
    int rc = 0;
+   int fd = 0;
+   char* block_path = NULL;
+   char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
+   if( block_url == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   block_path = SG_URL_LOCAL_PATH( block_url );
    
    // if we're creating the block, go ahead and create all the directories up to it.
    if( flags & O_CREAT ) {
+      
       rc = md_cache_file_setup( cache, file_id, file_version, 0700 );
       if( rc != 0 ) {
+         
          SG_error("md_cache_file_setup( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
-         free( block_url );
+         SG_safe_free( block_url );
          return rc;
       }
    }
@@ -392,55 +411,93 @@ int md_cache_open_block( struct md_syndicate_cache* cache, uint64_t file_id, int
       SG_error("open(%s) rc = %d\n", block_path, fd );
    }
    
-   free( block_url );
+   SG_safe_free( block_url );
    return fd;
 }
 
 
 // stat a block in the cache (system use only)
+// return 0 on success 
+// return -ENOMEM if OOM
+// return negative (from stat(2) errno) on error
 int md_cache_stat_block_by_id( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb ) {
    
-   char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* stat_path = SG_URL_LOCAL_PATH( block_url );
-   int rc = stat( stat_path, sb );
+   char* stat_path = NULL;
+   int rc = 0;
+   char* block_url = NULL;
    
-   if( rc != 0 )
+   block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
+   if( block_url == NULL ) {
+      return -ENOMEM;
+   }
+   
+   stat_path = SG_URL_LOCAL_PATH( block_url );
+   rc = stat( stat_path, sb );
+   
+   if( rc != 0 ) {
       rc = -errno;
-
-   free( block_url );
+   }
+   
+   SG_safe_free( block_url );
    
    return rc;
 }
 
 // delete a block in the cache
+// return 0 on success
+// return -ENOMEM on OOM 
+// return negative (from unlink) on error
 static int md_cache_evict_block_internal( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   char* block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
-   char* block_path = SG_URL_LOCAL_PATH( block_url );
-   int rc = unlink( block_path );
+   
+   char* block_path = NULL;
+   int rc = 0;
+   char* block_url = NULL;
+   char* local_file_url = NULL;
+   char* local_file_path = NULL;
+   
+   block_url = md_url_local_block_url( cache->conf->data_root, cache->conf->volume, file_id, file_version, block_id, block_version );
+   if( block_url == NULL ) {
+      return -ENOMEM;
+   }
+   
+   block_path = SG_URL_LOCAL_PATH( block_url );
+   rc = unlink( block_path );
+   
    if( rc != 0 ) {
       rc = -errno;
    }
+   
    if( rc == 0 || rc == -ENOENT ) {
+      
       // let another block get queued
       sem_post( &cache->sem_write_hard_limit );
       
-      char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
-      char* local_file_path = SG_URL_LOCAL_PATH( local_file_url );
+      local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
+      if( local_file_url == NULL ) {
+         
+         SG_safe_free( block_url );
+         return -ENOMEM;
+      }
+      
+      local_file_path = SG_URL_LOCAL_PATH( local_file_url );
       
       // remove the file's empty directories
       md_rmdirs( local_file_path );
       
-      free( local_file_url );
+      SG_safe_free( local_file_url );
    }
    
-   free( block_url );
+   SG_safe_free( block_url );
    
    return rc;
 }
 
 // delete a block in the cache, and decrement the number of blocks.
 // for use with external clients of this module only.
+// return 0 on success
+// return negative on error (see md_cache_evict_block_internal)
 int md_cache_evict_block( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+   
    int rc = md_cache_evict_block_internal( cache, file_id, file_version, block_id, block_version );
    if( rc == 0 ) {
       __sync_fetch_and_sub( &cache->num_blocks_written, 1 );
@@ -451,6 +508,9 @@ int md_cache_evict_block( struct md_syndicate_cache* cache, uint64_t file_id, in
 
 
 // schedule a block to be deleted.
+// return 0 on success
+// return -EAGAIN if the cache is not running
+// return -ENOMEM if OOM
 int md_cache_evict_block_async( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    int rc = 0;
    
@@ -463,7 +523,12 @@ int md_cache_evict_block_async( struct md_syndicate_cache* cache, uint64_t file_
    
    md_cache_promotes_wlock( cache );
    
-   cache->evicts->push_back( c );
+   try {
+      cache->evicts->push_back( c );
+   }
+   catch( bad_alloc& ba ) {
+      rc = -ENOMEM;
+   }
    
    md_cache_promotes_unlock( cache );
    
@@ -471,7 +536,18 @@ int md_cache_evict_block_async( struct md_syndicate_cache* cache, uint64_t file_
 }
 
 // apply a function over a file's cached blocks
+// keep applying it even if the callback fails on some of them
+// return 0 on success
+// return -ENOMEM on OOM
+// return negative on opendir(2) failure 
+// return non-zero if the block_func callback does not return 0
 int md_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls ) {
+   
+   struct dirent* result = NULL;
+   char* block_path = NULL;
+   int rc = 0;
+   int worst_rc = 0;
+   int dirent_sz = 0;
    
    DIR* dir = opendir( local_path );
    if( dir == NULL ) {
@@ -479,30 +555,43 @@ int md_cache_file_blocks_apply( char const* local_path, int (*block_func)( char 
       return rc;
    }
 
-   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(local_path, _PC_NAME_MAX) + 1;
+   dirent_sz = offsetof(struct dirent, d_name) + pathconf(local_path, _PC_NAME_MAX) + 1;
 
-   struct dirent* dent = (struct dirent*)malloc( dirent_sz );
-   struct dirent* result = NULL;
-   char block_path[PATH_MAX+1];
-   int rc = 0;
-   int worst_rc = 0;
-
+   struct dirent* dent = SG_CALLOC( struct dirent, dirent_sz );
+   if( dent == NULL ) {
+      
+      closedir( dir );
+      return -ENOMEM;
+   }
+   
    do {
+      
       readdir_r( dir, dent, &result );
       if( result != NULL ) {
-         if( strcmp(result->d_name, ".") == 0 || strcmp(result->d_name, "..") == 0 )
+         
+         if( strcmp(result->d_name, ".") == 0 || strcmp(result->d_name, "..") == 0 ) {
             continue;
-
-         md_fullpath( local_path, result->d_name, block_path );
+         }
+         
+         block_path = md_fullpath( local_path, result->d_name, NULL );
+         if( block_path == NULL ) {
+            
+            worst_rc = -ENOMEM;
+            break;
+         }
          
          rc = (*block_func)( block_path, cls );
          if( rc != 0 ) {
+            
             // could not unlink
             rc = -errno;
             SG_error( "block_func(%s) errno = %d\n", block_path, rc );
             worst_rc = rc;
          }
+         
+         SG_safe_free( block_path );
       }
+      
    } while( result != NULL );
 
    closedir( dir );
@@ -513,10 +602,19 @@ int md_cache_file_blocks_apply( char const* local_path, int (*block_func)( char 
 
 
 // evict a file from the cache
+// return 0 on success
+// return -ENOMEM on OOM
+// return negative if unlink(2) fails due to something besides -ENOENT
 int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version ) {
+   
+   char* local_file_path = NULL;
+   char* local_file_url = NULL;
+   int rc = 0;
+   
    struct local {
       // lambda function for deleting a block and evicting it 
       static int cache_evict_block( char const* block_path, void* cls ) {
+         
          struct md_syndicate_cache* c = (struct md_syndicate_cache*)cls;
          
          int rc = unlink( block_path );
@@ -525,6 +623,7 @@ int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int
          }
          
          if( rc == 0 || rc == -ENOENT ) {
+            
             // evicted!
             __sync_fetch_and_sub( &c->num_blocks_written, 1 );
             
@@ -544,17 +643,22 @@ int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int
    };
    
    // path to the file...
-   char* local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
-   char* local_file_path = SG_URL_LOCAL_PATH( local_file_url );
+   local_file_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, file_version );
+   if( local_file_url == NULL ) {
+      return -ENOMEM;
+   }
    
-   int rc = md_cache_file_blocks_apply( local_file_path, local::cache_evict_block, cache );
+   local_file_path = SG_URL_LOCAL_PATH( local_file_url );
+   
+   rc = md_cache_file_blocks_apply( local_file_path, local::cache_evict_block, cache );
    
    if( rc == 0 ) {
+      
       // remove this file's directories
       md_rmdirs( local_file_path );
    }
    
-   free( local_file_url );
+   SG_safe_free( local_file_url );
    return rc;
 }
 
@@ -563,9 +667,22 @@ int md_cache_evict_file( struct md_syndicate_cache* cache, uint64_t file_id, int
 // move it into place, and then insert the new cache_entry_key records for it to the cache_lru list.
 // don't bother removing the old cache_entry_key records; they will be removed from the cache_lru list automatically.
 // NOTE: the corresponding fent structure should be write-locked for this, to make it atomic.
+// return 0 on success
+// return -ENOMEM on OOM 
+// return negative if stat(2) on the new path fails for some reason besides -ENOENT
 int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id, int64_t old_file_version, int64_t new_file_version ) {
+   
    char* cur_local_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, old_file_version );
+   if( cur_local_url == NULL ) {
+      return -ENOMEM;
+   }
+   
    char* new_local_url = md_url_local_file_url( cache->conf->data_root, cache->conf->volume, file_id, new_file_version );
+   if( new_local_url == NULL ) {
+      
+      SG_safe_free( cur_local_url );
+      return -ENOMEM;
+   }
 
    char* cur_local_path = SG_URL_LOCAL_PATH( cur_local_url );
    char* new_local_path = SG_URL_LOCAL_PATH( new_local_url );
@@ -577,13 +694,15 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
    
    rc = stat( cur_local_path, &old_sb );
    if( rc != 0 ) {
+      
       rc = -errno;
       if( rc != -ENOENT ) {
+         
          // problem 
          SG_error("Failed to stat %s, rc = %d\n", cur_local_path, rc );
          
-         free( cur_local_url );
-         free( new_local_url );
+         SG_safe_free( cur_local_url );
+         SG_safe_free( new_local_url );
          
          return rc;
       }
@@ -596,11 +715,13 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
    else {
       rc = -errno;
    }
+   
    if( rc != -ENOENT ) {
+      
       SG_error("Failed to stat %s, rc = %d\n", new_local_path, rc );
       
-      free( cur_local_url );
-      free( new_local_url );
+      SG_safe_free( cur_local_url );
+      SG_safe_free( new_local_url );
       
       return rc;
    }
@@ -608,11 +729,12 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
    // move the file data over
    rc = rename( cur_local_path, new_local_path );
    if( rc != 0 ) {
+      
       rc = -errno;
       SG_error("rename(%s,%s) rc = %d\n", cur_local_path, new_local_path, rc );
    
-      free( cur_local_url );
-      free( new_local_url );
+      SG_safe_free( cur_local_url );
+      SG_safe_free( new_local_url );
       
       return rc;
    }
@@ -631,21 +753,32 @@ int md_cache_reversion_file( struct md_syndicate_cache* cache, uint64_t file_id,
       // promote these blocks in the cache
       md_cache_promotes_wlock( cache );
       
-      for( md_cache_lru_t::iterator itr = lru.begin(); itr != lru.end(); itr++ ) 
-         cache->promotes->push_back( *itr );
-      
+      for( md_cache_lru_t::iterator itr = lru.begin(); itr != lru.end(); itr++ ) {
+         try {
+            cache->promotes->push_back( *itr );
+         }
+         catch( bad_alloc& ba ) {
+            rc = -ENOMEM;
+            break;
+         }
+      }
       md_cache_promotes_unlock( cache );
    }
    
-   free( cur_local_url );
-   free( new_local_url );
+   SG_safe_free( cur_local_url );
+   SG_safe_free( new_local_url );
    
    return rc;
 }
 
 
 // initialize the cache 
+// return 0 on success
+// return -ENOMEM if OOM 
+// return -EINVAL if soft_limit and hard_limit are both 0
 int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* conf, size_t soft_limit, size_t hard_limit ) {
+   
+   int rc = 0;
    
    if( soft_limit == 0 && hard_limit == 0 ) {
       return -EINVAL;
@@ -665,7 +798,18 @@ int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* c
    cache->conf = conf;
    
    for( int i = 0; locks[i] != NULL; i++ ) {
-      pthread_rwlock_init( locks[i], NULL );
+      rc = pthread_rwlock_init( locks[i], NULL );
+      if( rc != 0 ) {
+         
+         rc = -errno;
+         
+         // free up and return 
+         for( int j = 0; j < i; j++ ) {
+            pthread_rwlock_destroy( locks[i] );
+         }
+         
+         return rc;
+      }
    }
    
    SG_debug("Soft limit: %zu blocks.  Hard limit: %zu blocks\n", soft_limit, hard_limit );
@@ -676,30 +820,44 @@ int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* c
    sem_init( &cache->sem_write_hard_limit, 0, hard_limit );
    sem_init( &cache->sem_blocks_writing, 0, 0 );
    
-   cache->pending_1 = new md_cache_block_buffer_t();
-   cache->pending_2 = new md_cache_block_buffer_t();
+   cache->pending_1 = SG_safe_new( md_cache_block_buffer_t() );
+   cache->pending_2 = SG_safe_new( md_cache_block_buffer_t() );
    cache->pending = cache->pending_1;
    
-   cache->completed_1 = new md_cache_completion_buffer_t();
-   cache->completed_2 = new md_cache_completion_buffer_t();
+   cache->completed_1 = SG_safe_new( md_cache_completion_buffer_t() );
+   cache->completed_2 = SG_safe_new( md_cache_completion_buffer_t() );
    cache->completed = cache->completed_1;
    
-   cache->cache_lru = new md_cache_lru_t();
+   cache->cache_lru = SG_safe_new( md_cache_lru_t() );
    
-   cache->promotes_1 = new md_cache_lru_t();
-   cache->promotes_2 = new md_cache_lru_t();
+   cache->promotes_1 = SG_safe_new( md_cache_lru_t() );
+   cache->promotes_2 = SG_safe_new( md_cache_lru_t() );
    cache->promotes = cache->promotes_1;
    
-   cache->evicts_1 = new md_cache_lru_t();
-   cache->evicts_2 = new md_cache_lru_t();
+   cache->evicts_1 = SG_safe_new( md_cache_lru_t() );
+   cache->evicts_2 = SG_safe_new( md_cache_lru_t() );
    cache->evicts = cache->evicts_1;
    
-   cache->ongoing_writes = new md_cache_ongoing_writes_t();
+   cache->ongoing_writes = SG_safe_new( md_cache_ongoing_writes_t() );
+   
+   // verify all alloc's succeeded
+   if( cache->pending_1 == NULL || cache->pending_2 == NULL ||
+       cache->completed_1 == NULL || cache->completed_2 == NULL ||
+       cache->promotes_1 == NULL || cache->promotes_2 == NULL ||
+       cache->evicts_1 == NULL || cache->evicts_2 == NULL ||
+       cache->ongoing_writes == NULL ) {
+      
+      cache->running = false;
+      md_cache_destroy( cache );
+      return -ENOMEM;
+   }
    
    return 0;
 }
 
 // start the cache thread
+// return 0 on success
+// return -1 if we failed to start the thread
 int md_cache_start( struct md_syndicate_cache* cache ) {
    
    // start the thread up 
@@ -710,6 +868,7 @@ int md_cache_start( struct md_syndicate_cache* cache ) {
    
    cache->thread = md_start_thread( md_cache_main_loop, (void*)args, false );
    if( cache->thread == (pthread_t)(-1) ) {
+      
       SG_error("md_start_thread rc = %d\n", (int)cache->thread );
       return -1;
    }
@@ -718,6 +877,7 @@ int md_cache_start( struct md_syndicate_cache* cache ) {
 }
 
 // stop the cache thread 
+// always succeeds
 int md_cache_stop( struct md_syndicate_cache* cache ) {
    
    cache->running = false;
@@ -734,6 +894,8 @@ int md_cache_stop( struct md_syndicate_cache* cache ) {
 
 
 // destroy the cache
+// return 0 on success
+// return -EINVAL if the cache is still running
 int md_cache_destroy( struct md_syndicate_cache* cache ) {
    
    if( cache->running ) {
@@ -752,12 +914,12 @@ int md_cache_destroy( struct md_syndicate_cache* cache ) {
    
    for( int i = 0; pendings[i] != NULL; i++ ) {
       for( md_cache_block_buffer_t::iterator itr = pendings[i]->begin(); itr != pendings[i]->end(); itr++ ) {
-         if( *itr ) {
-            free( *itr );
+         if( *itr != NULL ) {
+            SG_safe_free( *itr );
          }
       }
       
-      delete pendings[i];
+      SG_safe_delete( pendings[i] );
    }
    
    md_cache_completion_buffer_t* completeds[] = {
@@ -772,7 +934,7 @@ int md_cache_destroy( struct md_syndicate_cache* cache ) {
          md_cache_block_future_free( f );
       }
       
-      delete completeds[i];
+      SG_safe_delete( completeds[i] );
    }
    
    md_cache_lru_t* lrus[] = {
@@ -785,24 +947,10 @@ int md_cache_destroy( struct md_syndicate_cache* cache ) {
    };
    
    for( int i = 0; lrus[i] != NULL; i++ ) {
-      delete lrus[i];
+      SG_safe_delete( lrus[i] );
    }
    
-   cache->pending_1 = NULL;
-   cache->pending_2 = NULL;
-   
-   cache->completed_1 = NULL;
-   cache->completed_2 = NULL;
-   
-   cache->evicts_1 = NULL;
-   cache->evicts_2 = NULL;
-   
-   cache->cache_lru = NULL;
-   cache->promotes_1 = NULL;
-   cache->promotes_2 = NULL;
-   
-   delete cache->ongoing_writes;
-   cache->ongoing_writes = NULL;
+   SG_safe_delete( cache->ongoing_writes );
    
    pthread_rwlock_t* locks[] = {
       &cache->pending_lock,
@@ -826,10 +974,18 @@ int md_cache_destroy( struct md_syndicate_cache* cache ) {
 
 // create an ongoing write
 // NOTE: the future will need to hold onto data, so the caller shouldn't free it!
+// return 0 on success
+// return -ENOMEM on OOM
 int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cache_block_future* f,
                                 uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd,
                                 char* data, size_t data_len,
                                 bool detached ) {
+   
+   // set up completion args
+   struct md_syndicate_cache_aio_write_args* wargs = SG_CALLOC( struct md_syndicate_cache_aio_write_args, 1 );
+   if( wargs == NULL ) {
+      return -ENOMEM;
+   }
    
    memset( f, 0, sizeof( struct md_cache_block_future ) );
    
@@ -854,9 +1010,6 @@ int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cach
    f->aio.aio_sigevent.sigev_notify_function = md_cache_aio_write_completion;
    f->aio.aio_sigevent.sigev_notify_attributes = NULL;
    
-   // set up completion args
-   struct md_syndicate_cache_aio_write_args* wargs = SG_CALLOC( struct md_syndicate_cache_aio_write_args, 1 );
-   
    wargs->cache = cache;
    wargs->future = f;
    
@@ -869,19 +1022,39 @@ int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cach
 
 // add a block future to ongoing 
 // cache->ongoing_lock must be write-locked
+// return 0 on success
+// return -ENOMEM on OOM
 static int md_cache_add_ongoing( struct md_syndicate_cache* cache, struct md_cache_block_future* f ) {
-   cache->ongoing_writes->insert( f );   
+   
+   try {
+      cache->ongoing_writes->insert( f );   
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+   
    return 0;
 }
 
 // remove a block future from ongoing
 // cache->ongoing_lock must be write-locked 
+// return 0 on success
+// return -ENOMEM on OOM 
 static int md_cache_remove_ongoing( struct md_syndicate_cache* cache, struct md_cache_block_future* f ) {
-   cache->ongoing_writes->erase( f );
+   
+   try {
+      cache->ongoing_writes->erase( f );
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+   
    return 0;
 }
 
 // asynchronously write a block 
+// return 0 on success
+// return negative errno on aio_write(3) failure
 static int md_cache_aio_write( struct md_syndicate_cache* cache, struct md_cache_block_future* f ) {
    
    // allow external clients to keep track of pending writes for this file
@@ -893,6 +1066,11 @@ static int md_cache_aio_write( struct md_syndicate_cache* cache, struct md_cache
       // put one new block
       md_cache_add_ongoing( cache, f );
    }
+   else {
+      
+      rc = -errno;
+      SG_error("aio_write(%p) rc = %d\n", &f->aio, rc );
+   }
    
    md_cache_ongoing_writes_unlock( cache );
    
@@ -901,6 +1079,8 @@ static int md_cache_aio_write( struct md_syndicate_cache* cache, struct md_cache
 
 
 // handle a completed write operation
+// put error codes into future->aio_rc and future->write_rc
+// always succeeds
 void md_cache_aio_write_completion( sigval_t sigval ) {
    
    struct md_syndicate_cache_aio_write_args* wargs = (struct md_syndicate_cache_aio_write_args*)sigval.sival_ptr;
@@ -912,6 +1092,7 @@ void md_cache_aio_write_completion( sigval_t sigval ) {
    int write_rc = 0;
    int aio_rc = aio_error( &future->aio );
    if( aio_rc == 0 ) {
+      
       // yup!
       write_rc = aio_return( &future->aio );
       
@@ -939,9 +1120,13 @@ void md_cache_aio_write_completion( sigval_t sigval ) {
 }
 
 
-// start pending writes
+// start pending writes.  keep trying even if some fail to start
 // NOTE: we assume that only one thread calls this, for a given cache
-void md_cache_begin_writes( struct md_syndicate_cache* cache ) {
+// return 0 on success
+// return negative on failure (see md_cache_aio_write)
+int md_cache_begin_writes( struct md_syndicate_cache* cache ) {
+   
+   int worst_rc = 0;
    
    // get the pending set, and switch the cache over to the other one
    md_cache_block_buffer_t* pending = NULL;
@@ -949,10 +1134,12 @@ void md_cache_begin_writes( struct md_syndicate_cache* cache ) {
    md_cache_pending_wlock( cache );
    
    pending = cache->pending;
-   if( cache->pending == cache->pending_1 )
+   if( cache->pending == cache->pending_1 ) {
       cache->pending = cache->pending_2;
-   else
+   }
+   else {
       cache->pending = cache->pending_1;
+   }
    
    md_cache_pending_unlock( cache );
    
@@ -966,15 +1153,20 @@ void md_cache_begin_writes( struct md_syndicate_cache* cache ) {
       int rc = md_cache_aio_write( cache, f );
       if( rc < 0 ) {
          SG_error("md_cache_aio_write( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ), rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, rc );
+         worst_rc = rc;
       }
    }
    
    pending->clear();
+   
+   return worst_rc;
 }
 
 
 // reap completed writes
+// if a write failed, remove the data from the cache.
 // NOTE: we assume that only one thread calls this at a time, for a given cache
+// always succeeds
 void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t* write_lru ) {
    
    md_cache_completion_buffer_t* completed = NULL;
@@ -983,10 +1175,12 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
    md_cache_completed_wlock( cache );
    
    completed = cache->completed;
-   if( cache->completed == cache->completed_1 )
+   if( cache->completed == cache->completed_1 ) {
       cache->completed = cache->completed_2;
-   else
+   }
+   else {
       cache->completed = cache->completed_1;
+   }
    
    md_cache_completed_unlock( cache );
    
@@ -996,6 +1190,7 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
    
    // reap completed writes
    for( md_cache_completion_buffer_t::iterator itr = completed->begin(); itr != completed->end(); itr++ ) {
+      
       struct md_cache_block_future* f = *itr;
       struct md_cache_entry_key* c = &f->key;
       
@@ -1054,69 +1249,99 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
 
 
 // promote blocks in a cache LRU
-void md_cache_promote_blocks( md_cache_lru_t* cache_lru, md_cache_lru_t* promotes ) {
-   // process block promotions
-   // we can (probably) afford to be linear here, since we won't have millions of entries.
-   // TODO: investigate boost biamp if not
-   for( md_cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
-      // search from the back first, since we might be hitting blocks that were recently read.
-      md_cache_lru_t::iterator citr = cache_lru->end();
-      citr--;
-      for( ; citr != cache_lru->begin(); citr-- ) {
+// return 0 on success
+// return -ENOMEM on OOM
+int md_cache_promote_blocks( md_cache_lru_t* cache_lru, md_cache_lru_t* promotes ) {
+   
+   try {
+      // process block promotions
+      // we can (probably) afford to be linear here, since we won't have millions of entries.
+      // TODO: investigate boost biamp if not
+      for( md_cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
          
-         if( md_cache_entry_key_comp::equal( *pitr, *citr ) ) {
-            // promote this entry--take it out of the LRU and splice it at the end (below)
-            citr = cache_lru->erase( citr );
+         // search from the back first, since we might be hitting blocks that were recently read.
+         md_cache_lru_t::iterator citr = cache_lru->end();
+         citr--;
+         for( ; citr != cache_lru->begin(); citr-- ) {
+            
+            if( md_cache_entry_key_comp::equal( *pitr, *citr ) ) {
+               // promote this entry--take it out of the LRU and splice it at the end (below)
+               citr = cache_lru->erase( citr );
+            }
          }
       }
+      
+      // add the newly-promoted blocks to the end of the LRU (i.e. they are most-recently-used)
+      cache_lru->splice( cache_lru->end(), *promotes );
+      
+      return 0;
    }
-   
-   // add the newly-promoted blocks to the end of the LRU (i.e. they are most-recently-used)
-   cache_lru->splice( cache_lru->end(), *promotes );
+   catch( bad_alloc& ba ) {
+      
+      return -ENOMEM;
+   }
 }
 
 
 // demote blocks in a cache LRU 
-void md_cache_demote_blocks( md_cache_lru_t* cache_lru, md_cache_lru_t* demotes ) {
-   // process block demotions
-   // we can (probably) afford to be linear here, since we won't have millions of entries.
-   // TODO: investigate boost biamp if not
-   for( md_cache_lru_t::iterator pitr = demotes->begin(); pitr != demotes->end(); pitr++ ) {
-      // search from the beginning, since we might be hitting blocks that are close to eviction anyway
-      for( md_cache_lru_t::iterator citr = cache_lru->begin(); citr != cache_lru->end(); citr++ ) {   
-         if( md_cache_entry_key_comp::equal( *pitr, *citr ) ) {
-            // demote this entry--take it out of the LRU and splite it at the beginning (below)
-            citr = cache_lru->erase( citr );
+// return 0 on success
+// return -ENOMEM on OOM 
+int md_cache_demote_blocks( md_cache_lru_t* cache_lru, md_cache_lru_t* demotes ) {
+   
+   try {
+      // process block demotions
+      // we can (probably) afford to be linear here, since we won't have millions of entries.
+      // TODO: investigate boost biamp if not
+      for( md_cache_lru_t::iterator pitr = demotes->begin(); pitr != demotes->end(); pitr++ ) {
+         // search from the beginning, since we might be hitting blocks that are close to eviction anyway
+         for( md_cache_lru_t::iterator citr = cache_lru->begin(); citr != cache_lru->end(); citr++ ) {   
+            if( md_cache_entry_key_comp::equal( *pitr, *citr ) ) {
+               // demote this entry--take it out of the LRU and splite it at the beginning (below)
+               citr = cache_lru->erase( citr );
+            }
          }
       }
+      
+      // add the newly-dmoted blocks to the beginning of the LRU (i.e. they are now the least-recently-used)
+      cache_lru->splice( cache_lru->begin(), *demotes );
+      
+      return 0;
    }
-   
-   // add the newly-dmoted blocks to the beginning of the LRU (i.e. they are now the least-recently-used)
-   cache_lru->splice( cache_lru->begin(), *demotes );
+   catch( bad_alloc& ba ) {
+      
+      return -ENOMEM;
+   }
 }
 
 
 // evict blocks, according to their LRU ordering and whether or not they are requested to be eagerly evicted
 // NOTE: we assume that only one thread calls this at a time, for a given cache
-void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* new_writes ) {
+// return 0 on success
+// return the last eviction-related error on failure (i.e. due to bad I/O) (see md_cache_evict_block_internal)
+int md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* new_writes ) {
    
    md_cache_lru_t* promotes = NULL;
    md_cache_lru_t* evicts = NULL;
+   int worst_rc = 0;
    
    // swap promotes
    md_cache_promotes_wlock( cache );
    
    promotes = cache->promotes;
-   if( cache->promotes == cache->promotes_1 )
+   if( cache->promotes == cache->promotes_1 ) {
       cache->promotes = cache->promotes_2;
-   else
+   }
+   else {
       cache->promotes = cache->promotes_1;
+   }
    
    evicts = cache->evicts;
-   if( cache->evicts == cache->evicts_1 )
+   if( cache->evicts == cache->evicts_1 ) {
       cache->evicts = cache->evicts_2;
-   else
+   }
+   else {
       cache->evicts = cache->evicts_1;
+   }
    
    md_cache_promotes_unlock( cache );
    
@@ -1125,8 +1350,9 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
    md_cache_lru_wlock( cache );
    
    // merge in the new writes, as the most-recently-used
-   if( new_writes )
+   if( new_writes ) {
       cache->cache_lru->splice( cache->cache_lru->end(), *new_writes );
+   }
    
    // process promotions
    md_cache_promote_blocks( cache->cache_lru, promotes );
@@ -1144,6 +1370,7 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
    
    // work to do?
    if( cache->cache_lru->size() > 0 && ((unsigned)num_blocks_written > cache->soft_max_size || eager_evictions > 0) ) {
+      
       // start evicting
       do { 
          
@@ -1154,7 +1381,9 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
          int rc = md_cache_evict_block_internal( cache, c.file_id, c.file_version, c.block_id, c.block_version );
          
          if( rc != 0 && rc != -ENOENT ) {
-            SG_error("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
+            
+            SG_warn("Failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
+            worst_rc = rc;
          }
          else {
             // successfully evicted a block
@@ -1176,6 +1405,8 @@ void md_cache_evict_blocks( struct md_syndicate_cache* cache, md_cache_lru_t* ne
    // done with this
    promotes->clear();
    evicts->clear();
+   
+   return worst_rc;
 }
 
 
@@ -1188,6 +1419,7 @@ void* md_cache_main_loop( void* arg ) {
    
    struct md_syndicate_cache* cache = args->cache;
    
+   // cancel whenever by default
    pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
    
    SG_debug("%s", "Cache writer thread strated\n" );
@@ -1195,20 +1427,22 @@ void* md_cache_main_loop( void* arg ) {
    while( cache->running ) {
       
       // wait for there to be blocks, if there are none
-      if( cache->ongoing_writes->size() == 0 )
+      if( cache->ongoing_writes->size() == 0 ) {
          sem_wait( &cache->sem_blocks_writing );
+      }
       
       // waken up to die?
-      if( !cache->running )
+      if( !cache->running ) {
          break;
+      }
+      
+      md_cache_lru_t new_writes;
       
       // don't get cancelled while doing this
       pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
       
       // begin all pending writes
       md_cache_begin_writes( cache );
-      
-      md_cache_lru_t new_writes;
       
       // reap completed writes
       md_cache_complete_writes( cache, &new_writes );
@@ -1242,7 +1476,7 @@ void* md_cache_main_loop( void* arg ) {
       sleep(1);
    }
    
-   free( args );
+   SG_safe_free( args );
    
    SG_debug("%s", "Cache writer thread exited\n" );
    
@@ -1250,7 +1484,12 @@ void* md_cache_main_loop( void* arg ) {
 }
 
 // add a block to the cache, to be written asynchronously.
-// return a future that can be waited on.
+// return a future that can be waited on 
+// return NULL on error, and set *_rc to the error code
+// *_rc can be:
+// * -EAGAN if the cache is not running
+// * -ENOMEM if OOM
+// * negative if we failed to open the block (see md_cache_open_block)
 // NOTE: the given data will be referenced!  Do NOT free it!
 struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_cache* cache,
                                                           uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
@@ -1260,27 +1499,45 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
    *_rc = 0;
    
    if( !cache->running ) {
-      *_rc = -ENOTCONN;
+      *_rc = -EAGAIN;
       return NULL;
    }
    
    // reserve the right to cache this block
    sem_wait( &cache->sem_write_hard_limit );
    
-   // create the block to cache
-   int block_fd = md_cache_open_block( cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
-   if( block_fd < 0 ) {
-      *_rc = block_fd;
-      SG_error("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
+   struct md_cache_block_future* f = SG_CALLOC( struct md_cache_block_future, 1 );
+   if( f == NULL ) {
+      
+      *_rc = -ENOMEM;
       return NULL;
    }
    
-   struct md_cache_block_future* f = SG_CALLOC( struct md_cache_block_future, 1 );
+   // create the block to cache
+   int block_fd = md_cache_open_block( cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
+   if( block_fd < 0 ) {
+      
+      *_rc = block_fd;
+      SG_error("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
+      
+      SG_safe_free( f );
+      return NULL;
+   }
+   
    md_cache_block_future_init( cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len, detached );
    
    md_cache_pending_wlock( cache );
    
-   cache->pending->push_back( f );
+   try {
+      cache->pending->push_back( f );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( f );
+      f = NULL;
+      
+      *_rc = -ENOMEM;
+   }
    
    // wake up the thread--we have another block
    sem_post( &cache->sem_blocks_writing );
@@ -1291,53 +1548,74 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
 }
 
 // wait for a write to finish
+// return 0 on success
+// return negative if we couldn't wait on the semaphore (see md_download_sem_wait)
 int md_cache_block_future_wait( struct md_cache_block_future* f ) {
+   
    int rc = md_download_sem_wait( &f->sem_ongoing, -1 );
    if( rc != 0 ) {
+      
       SG_error("md_download_sem_wait rc = %d\n", rc );
-      return rc;
    }
+   
    return rc;
 }
 
-// do we have an error?
+// does a block future have an error?
+// return 0 if no error 
+// return -EAGAIN if the future is not yet finalized 
+// return 1 if either aio_rc or write_rc has been set to indicate error
 int md_cache_block_future_has_error( struct md_cache_block_future* f ) {
-   if( !f->finalized )
+   
+   if( !f->finalized ) {
       return -EAGAIN;
- 
-   if( f->aio_rc != 0 || f->write_rc < 0 ) 
+   }
+   
+   if( f->aio_rc != 0 || f->write_rc < 0 ) {
       return 1;
+   }
    
    return 0;
 }
 
 // what's the aio rc?
+// return -EAGAIN if f is not finalized
 int md_cache_block_future_get_aio_error( struct md_cache_block_future* f ) {
-   if( !f->finalized )
+   if( !f->finalized ) {
       return -EAGAIN;
+   }
    
    return f->aio_rc;
 }
 
 // what's the write error?
+// return -EAGAIN if the future is not finalized
 int md_cache_block_future_get_write_error( struct md_cache_block_future* f ) {
-   if( !f->finalized )
+   if( !f->finalized ) {
       return -EAGAIN;
- 
+   }
+   
    return f->write_rc;
 }
 
-// extract the block file descriptor from a future.
+// get the block future's file descriptor 
+int md_cache_block_future_get_fd( struct md_cache_block_future* f ) {
+   return f->block_fd;
+}
+
+// extract the block file descriptor from a future, making it so the cache is no longer responsible for it.
 // caller must close and clean up.
 // NOTE: only call this after the future has finished!
+// return the file descriptor (>= 0)
 int md_cache_block_future_release_fd( struct md_cache_block_future* f ) {
+   
    int fd = f->block_fd;
    f->block_fd = -1;
    return fd;
 }
 
-// extract the data from a future
-// caller must free 
+// extract the data from a future, and return it
+// the caller must free it
 char* md_cache_block_future_release_data( struct md_cache_block_future* f ) {
    char* ret = f->block_data;
    f->block_data = NULL;
@@ -1345,18 +1623,27 @@ char* md_cache_block_future_release_data( struct md_cache_block_future* f ) {
 }
 
 // promote a cached block, so it doesn't get evicted
+// return 0 on success
+// return -EAGAIN if the cache isn't running 
+// return -ENOMEM on OOM
 int md_cache_promote_block( struct md_syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    int rc = 0;
    
-   if( !cache->running )
+   if( !cache->running ) {
       return -EAGAIN;
+   }
    
    struct md_cache_entry_key c;
    md_cache_entry_key_init( &c, file_id, file_version, block_id, block_version );
    
    md_cache_promotes_wlock( cache );
    
-   cache->promotes->push_back( c );
+   try {
+      cache->promotes->push_back( c );
+   }
+   catch( bad_alloc& ba ) {
+      rc = -ENOMEM;
+   }
    
    md_cache_promotes_unlock( cache );
    
@@ -1365,20 +1652,30 @@ int md_cache_promote_block( struct md_syndicate_cache* cache, uint64_t file_id, 
 
 
 // read a block from the cache, in its entirety
+// return the number of bytes read on success (>= 0)
+// return -errno if we couldn't fstat(2) the block 
+// return -ENOMEM if OOM
 ssize_t md_cache_read_block( int block_fd, char** buf ) {
-   ssize_t nr = 0;
    
+   ssize_t nr = 0;
    struct stat sb;
-   int rc = fstat( block_fd, &sb );
+   int rc = 0;
+   ssize_t len = 0;
+   char* block_buf = NULL;
+   
+   rc = fstat( block_fd, &sb );
    if( rc != 0 ) {
+      
       rc = -errno;
       SG_error("fstat(%d) rc = %d\n", block_fd, rc );
       return rc;
    }
    
-   ssize_t len = sb.st_size;
-   char* block_buf = SG_CALLOC( char, len );
+   len = sb.st_size;
+   block_buf = SG_CALLOC( char, len );
+   
    if( block_buf == NULL ) {
+      
       return -ENOMEM;
    }
    

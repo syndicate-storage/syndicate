@@ -218,9 +218,11 @@ int md_cache_block_future_has_error( struct md_cache_block_future* f );
 int md_cache_block_future_get_aio_error( struct md_cache_block_future* f );
 int md_cache_block_future_get_write_error( struct md_cache_block_future* f );
 
+// getters 
+int md_cache_block_future_get_fd( struct md_cache_block_future* f );
+
 // memory management 
 int md_cache_block_future_free_all( vector<struct md_cache_block_future*>* futs, bool close_fds );
-int md_cache_block_future_clean_all( vector<struct md_cache_block_future*>* futs, bool close_fds );
 
 // misc
 int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs, void (*func)( struct md_cache_block_future*, void* ), void* func_cls );

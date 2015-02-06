@@ -362,7 +362,7 @@ struct md_cache_block_future* fs_entry_write_block_async( struct fs_core* core, 
    // store information about the old and new block
    // NOTE: we're passing the block_fd into the fs_entry_block_info structure from the cache_block_future.  DO NOT CLOSE IT!
    // NOTE: don't free the hash--pass it in
-   fs_entry_block_info_replicate_init( binfo_new, new_version, new_hash, BLOCK_HASH_LEN(), core->gateway, block_fut->block_fd );
+   fs_entry_block_info_replicate_init( binfo_new, new_version, new_hash, BLOCK_HASH_LEN(), core->gateway, md_cache_block_future_get_fd( block_fut ) );
    
    if( has_old_version ) {
       fs_entry_block_info_garbage_init( binfo_old, old_version, old_hash, old_hash_len, core->gateway );

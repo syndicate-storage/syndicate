@@ -151,30 +151,47 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
 
 // recursively make a directory.
 // return 0 if the directory exists at the end of the call.
+// return -ENOMEM if OOM
 // return negative if the directory could not be created.
 int md_mkdirs2( char const* dirp, int start, mode_t mode ) {
-   char* currdir = (char*)calloc( strlen(dirp) + 1, 1 );
+   
    unsigned int i = start;
+   struct stat statbuf;
+   int rc = 0;
+   char* currdir = SG_CALLOC( char, strlen(dirp) + 1 );
+   
+   if( currdir == NULL ) {
+      return -ENOMEM;
+   }
+   
    while( i <= strlen(dirp) ) {
+      
       if( dirp[i] == '/' || i == strlen(dirp) ) {
+         
          strncpy( currdir, dirp, i == 0 ? 1 : i );
-         struct stat statbuf;
-         int rc = stat( currdir, &statbuf );
+         
+         rc = stat( currdir, &statbuf );
          if( rc == 0 && !S_ISDIR( statbuf.st_mode ) ) {
-            free( currdir );
+            
+            SG_safe_free( currdir );
             return -EEXIST;
          }
          if( rc != 0 ) {
+            
             rc = mkdir( currdir, mode );
             if( rc != 0 ) {
-               free(currdir);
-               return -errno;
+               
+               rc = -errno;
+               SG_safe_free(currdir);
+               return rc;
             }
          }
       }
+      
       i++;
    }
-   free(currdir);
+   
+   SG_safe_free(currdir);
    return 0;
 }
 
@@ -187,20 +204,41 @@ int md_mkdirs( char const* dirp ) {
 }
 
 // remove a bunch of empty directories
+// return 0 on success 
+// return -ENOMEM on OOM
+// return negative on error from rmdir(2)
 int md_rmdirs( char const* dirp ) {
-   char* dirname = strdup( dirp );
+   
+   char* dirname = SG_strdup_or_null( dirp );
+   if( dirname == NULL ) {
+      return -ENOMEM;
+   }
+   
+   char* dirname_buf = SG_CALLOC( char, strlen(dirp) + 1 );
+   if( dirname_buf == NULL ) {
+      
+      SG_safe_free( dirname );
+      return -ENOMEM;
+   }
+   
    int rc = 0;
+   
    while( strlen(dirname) > 0 ) {
+      
       rc = rmdir( dirname );
       if( rc != 0 ) {
+         
+         rc = -errno;
          break;
       }
       else {
-         char* tmp = md_dirname( dirname, NULL );
-         free( dirname );
-         dirname = tmp;
+         
+         md_dirname( dirname, dirname_buf );
+         strcpy( dirname, dirname_buf );
       }
    }
-   free( dirname );
+   
+   SG_safe_free( dirname );
+   SG_safe_free( dirname_buf );
    return rc;
 }
