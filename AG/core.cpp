@@ -1163,11 +1163,6 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
 
 // main method
 int AG_main( int argc, char** argv ) {
-   curl_global_init(CURL_GLOBAL_ALL);
-
-   // start up protocol buffers
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
-
    int rc = 0;
    
    // register our death handlers 
@@ -1190,7 +1185,7 @@ int AG_main( int argc, char** argv ) {
    memset( &opts, 0, sizeof(struct md_opts));
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, NULL, "e:i:D:s:nqM:", AG_handle_opt );
+   rc = md_opts_parse( &opts, argc, argv, NULL, "e:i:D:s:nqM:", AG_handle_opt );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       AG_usage();

@@ -26,7 +26,7 @@ extern "C" {
    
 // daemon
 int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
-int md_release_privileges();
+int md_release_privileges( char const* username );
 
 }
 

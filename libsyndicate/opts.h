@@ -63,9 +63,10 @@ struct md_opts {
 
 extern "C" {
 
-int md_default_opts( struct md_opts* opts );
-int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
-int md_cleanup_opts( struct md_opts* opts );
+int md_opts_default( struct md_opts* opts );
+int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
+int md_opts_cleanup( struct md_opts* opts );
+int md_opts_free( struct md_opts* opts );
 void md_common_usage( char const* progname );
 
 int md_opts_parse_long( int c, char* opt, long* result );

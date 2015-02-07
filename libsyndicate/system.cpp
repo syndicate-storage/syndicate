@@ -16,51 +16,70 @@
 
 #include "libsyndicate/system.h"
 
-// turn into a deamon
+// turn into a daemonn. if non-null, log to the file referred to by logfile_path.  If non-null, put the child PID into the file referred to by pidfile_path
+// return 0 on success (to both the child and parent), and set *logfile to the logfile stream opened if logfile_path is not NULL
+// return 0 to the parent if the fork() succeeded, -errno if not (see fork(2))
+// return 0 to the child if the child started successfully.
+// return -errno if the child failed to create the logfile or PID file (see open(2), fopen(3))
 int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
 
    FILE* log = NULL;
    int pid_fd = -1;
-   
-   if( logfile_path ) {
-      log = fopen( logfile_path, "a" );
-   }
-   if( pidfile_path ) {
-      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
-      if( pid_fd < 0 ) {
-         // specified a PID file, and we couldn't make it.  someone else is running
-         int errsv = -errno;
-         SG_error( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
-         return errsv;
-      }
-   }
-   
+   int rc = 0;
    pid_t pid, sid;
 
    pid = fork();
    if (pid < 0) {
-      int rc = -errno;
-      SG_error( "Failed to fork (errno = %d)\n", -errno);
+      
+      rc = -errno;
+      SG_error( "fork() rc = %d\n", rc);
       return rc;
    }
 
    if (pid > 0) {
-      exit(0);
+      // parent 
+      return 0;
    }
 
    // child process 
    // umask(0);
+   
+   // create logfile 
+   if( logfile_path ) {
+      
+      log = fopen( logfile_path, "a" );
+      if( log == NULL ) {
+         
+         rc = -errno;
+         return rc;
+      }
+   }
+   
+   // create PID file
+   if( pidfile_path ) {
+      
+      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
+      if( pid_fd < 0 ) {
+         
+         // specified a PID file, and we couldn't make it.  someone else is running
+         rc = -errno;
+         SG_error( "open('%s') rc = %d\n", pidfile_path, rc );
+         return rc;
+      }
+   }
 
    sid = setsid();
    if( sid < 0 ) {
-      int rc = -errno;
-      SG_error("setsid errno = %d\n", rc );
+      
+      rc = -errno;
+      SG_error("setsid() rc = %d\n", rc );
       return rc;
    }
-
+   
    if( chdir("/") < 0 ) {
-      int rc = -errno;
-      SG_error("chdir errno = %d\n", rc );
+      
+      rc = -errno;
+      SG_error("chdir() rc = %d\n", rc );
       return rc;
    }
 
@@ -69,31 +88,43 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
    close( STDERR_FILENO );
 
    if( log ) {
+      
+      // send stdout and stderr to the log
       int log_fileno = fileno( log );
 
       if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
-         int errsv = -errno;
-         SG_error( "dup2 errno = %d\n", errsv);
-         return errsv;
+         
+         rc = -errno;
+         SG_error( "dup2 errno = %d\n", rc);
+         return rc;
       }
       if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
-         int errsv = -errno;
-         SG_error( "dup2 errno = %d\n", errsv);
-         return errsv;
+         
+         rc = -errno;
+         SG_error( "dup2 errno = %d\n", rc);
+         return rc;
       }
 
-      if( logfile )
+      if( logfile ) {
+         
          *logfile = log;
-      else
+      }
+      
+      else {
          fclose( log );
+      }
    }
    else {
+      
+      // send stdout and stderr to /dev/null
       int null_fileno = open("/dev/null", O_WRONLY);
       dup2( null_fileno, STDOUT_FILENO );
       dup2( null_fileno, STDERR_FILENO );
    }
 
    if( pid_fd >= 0 ) {
+      
+      // write the PID
       char buf[10];
       sprintf(buf, "%d", getpid() );
       write( pid_fd, buf, strlen(buf) );
@@ -105,21 +136,26 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
 }
 
 
-// assume daemon privileges
-int md_release_privileges() {
+// assume the privileges of a lesser user
+// return 0 on success
+// return negative on failure (see getpwnam(3))
+// NOTE: this is not thread-safe
+int md_release_privileges( char const* username ) {
+   
    struct passwd* pwd;
    int ret = 0;
    
-   // switch to "daemon" user, if possible
-   pwd = getpwnam( "daemon" );
+   // switch to the user, if possible
+   pwd = getpwnam( username );
    if( pwd != NULL ) {
+      
       setuid( pwd->pw_uid );
-      SG_debug( "became user '%s'\n", "daemon" );
+      SG_debug( "became user '%s'\n", username );
       ret = 0;
    }
    else {
-      SG_debug( "could not become '%s'\n", "daemon" );
-      ret = -1;
+      SG_debug( "getpwnam('%s') rc = %d\n", username, ret );
+      ret = -abs(ret);
    }
    
    return ret;

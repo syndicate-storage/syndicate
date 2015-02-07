@@ -24,63 +24,98 @@
 ////////////////////////////////////////////////////////////////////////////////
 // derived from http://www.cs.odu.edu/~cs772/sourcecode/NSwO/compiled/common.c
 
-void md_init_OpenSSL(void) {
-    if (!md_openssl_thread_setup() || !SSL_library_init())
-    {
-        SG_error("%s", "OpenSSL initialization failed!\n");
-        exit(1);
-    }
-    
-    OpenSSL_add_all_digests();
-    ERR_load_crypto_strings();
+// set up OpenSSL 
+// return 1 on success
+// return 0 on failure
+int md_init_OpenSSL(void) {
+   
+   int rc = md_openssl_thread_setup();
+   if( rc == 0 ) {
+      
+      SG_error("md_openssl_thread_setup rc = %d\n", rc );
+      return 0;
+   }
+   
+   rc = SSL_library_init();
+   if( rc == 0 ) {
+      
+      SG_error("SSL_library_init() rc = %d\n", rc);
+      return 0;
+   }
+   
+   OpenSSL_add_all_digests();
+   ERR_load_crypto_strings();
+   
+   return 1;
 }
 
 
 /* This array will store all of the mutexes available to OpenSSL. */
 static MD_MUTEX_TYPE *md_openssl_mutex_buf = NULL ;
 
-static void locking_function(int mode, int n, const char * file, int line)
-{
-  if (mode & CRYPTO_LOCK)
-    MD_MUTEX_LOCK(md_openssl_mutex_buf[n]);
-  else
-    MD_MUTEX_UNLOCK(md_openssl_mutex_buf[n]);
+// callback to libssl for locking
+static void md_ssl_locking_function(int mode, int n, const char * file, int line) {
+   
+   if (mode & CRYPTO_LOCK) {
+      MD_MUTEX_LOCK( md_openssl_mutex_buf[n] );
+   }
+   
+   else {
+      MD_MUTEX_UNLOCK( md_openssl_mutex_buf[n] );
+   }
 }
 
-static unsigned long id_function(void)
-{
+// callback to libssl for thread id
+static unsigned long md_ssl_thread_id_function(void) {
   return ((unsigned long)MD_THREAD_ID);
 }
 
-int md_openssl_thread_setup(void)
-{
-  if( md_openssl_mutex_buf != NULL )
+// set up libssl threads
+// return 1 on success
+// return 0 on failure
+int md_openssl_thread_setup(void) {
+   
+  if( md_openssl_mutex_buf != NULL ) {
      // already initialized
      return 1;
+  }
      
   int i;
   md_openssl_mutex_buf = (MD_MUTEX_TYPE *) malloc(CRYPTO_num_locks( ) * sizeof(MD_MUTEX_TYPE));
-  if(!md_openssl_mutex_buf)
+  if( md_openssl_mutex_buf == NULL ) {
     return 0;
-  for (i = 0; i < CRYPTO_num_locks( ); i++)
-    MD_MUTEX_SETUP(md_openssl_mutex_buf[i]);
-  CRYPTO_set_id_callback(id_function);
-  CRYPTO_set_locking_callback(locking_function);
+  }
+  
+  for (i = 0; i < CRYPTO_num_locks(); i++) {
+    MD_MUTEX_SETUP( md_openssl_mutex_buf[i] );
+  }
+  
+  CRYPTO_set_id_callback(md_ssl_thread_id_function);
+  CRYPTO_set_locking_callback(md_ssl_locking_function);
+  
   return 1;
 }
 
-int md_openssl_thread_cleanup(void)
-{
-  int i;
-  if (!md_openssl_mutex_buf)
-    return 0;
-  CRYPTO_set_id_callback(NULL);
-  CRYPTO_set_locking_callback(NULL);
-  for (i = 0; i < CRYPTO_num_locks( ); i++)
-    MD_MUTEX_CLEANUP(md_openssl_mutex_buf[i]);
-  free(md_openssl_mutex_buf);
-  md_openssl_mutex_buf = NULL;
-  return 1;
+// clean up libssl threads 
+// return 1 on success
+// return 0 on failure 
+int md_openssl_thread_cleanup(void) {
+
+   int i;
+   if ( md_openssl_mutex_buf == NULL ) {
+      return 0;
+   }
+   
+   CRYPTO_set_id_callback(NULL);
+   CRYPTO_set_locking_callback(NULL);
+   
+   for (i = 0; i < CRYPTO_num_locks(); i++) {
+      MD_MUTEX_CLEANUP( md_openssl_mutex_buf[i] );
+   }
+   
+   free(md_openssl_mutex_buf);
+   md_openssl_mutex_buf = NULL;
+   return 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -89,13 +124,23 @@ static int urandom_fd = -1;     // /dev/urandom
 static int inited = 0;
 
 // initialize crypto libraries and set up state
+// return 0 on success
+// return -EPERM if we failed to set up OpenSSL
+// return -errno if we failed to open /dev/urandom (see open(2))
+// NOTE: this is not thread-safe!
 int md_crypt_init() {
    SG_debug("%s\n", "starting up");
    
-   md_init_OpenSSL();
+   int rc = md_init_OpenSSL();
+   if( rc == 0 ) {
+      
+      SG_error("md_init_OpenSSL() rc = %d\n", rc );
+      return -EPERM;
+   }
    
    urandom_fd = open("/dev/urandom", O_RDONLY );
    if( urandom_fd < 0 ) {
+      
       int errsv = -errno;
       SG_error("open(/dev/urandom) rc = %d\n", errsv);
       return errsv;
@@ -107,7 +152,9 @@ int md_crypt_init() {
 }
 
 // shut down crypto libraries and free state
+// always succeeds
 int md_crypt_shutdown() {
+   
    SG_debug("%s\n", "shutting down");
    
    if( urandom_fd >= 0 ) {
@@ -125,17 +172,25 @@ int md_crypt_shutdown() {
 }
 
 
-// check initialization
+// check crypt initialization
+// return 1 if initialized
+// return 0 if not.
 int md_crypt_check_init() {
-   if( inited == 0 )
+   if( inited == 0 ) {
       return 0;
-   else
+   }
+   else {
       return 1;
+   }
 }
 
 // read bytes from /dev/urandom
+// return 0 on success (i.e. read len bytes)
+// return -EINVAL if the crypto hasn't been initialized 
+// return -errno if we failed to read
 int md_read_urandom( char* buf, size_t len ) {
    if( urandom_fd < 0 ) {
+      
       SG_error("%s", "crypto is not initialized\n");
       return -EINVAL;
    }
@@ -143,12 +198,15 @@ int md_read_urandom( char* buf, size_t len ) {
    ssize_t nr = 0;
    size_t num_read = 0;
    while( num_read < len ) {
+      
       nr = read( urandom_fd, buf + num_read, len - num_read );
       if( nr < 0 ) {
+         
          int errsv = -errno;
          SG_error("read(/dev/urandom) errno %d\n", errsv);
          return errsv;
       }
+      
       num_read += nr;
    }
    
@@ -156,7 +214,7 @@ int md_read_urandom( char* buf, size_t len ) {
 }
 
 
-// print a crypto error message
+// print an OpenSSL error message
 int md_openssl_error() {
    unsigned long err = ERR_get_error();
    char buf[4096];
@@ -167,6 +225,9 @@ int md_openssl_error() {
 }
 
 // verify a message, given a base64-encoded signature
+// return 0 on success
+// return -EINVAL if we failed to parse the buffer
+// return -EBADMSG if we failed to verify the digest
 int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len, char* sig_bin, size_t sig_bin_len ) {
       
    const EVP_MD* sha256 = EVP_sha256();
@@ -177,6 +238,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
    
    rc = EVP_DigestVerifyInit( mdctx, &pkey_ctx, sha256, NULL, public_key );
    if( rc <= 0 ) {
+      
       SG_error("EVP_DigestVerifyInit_ex( %p ) rc = %d\n", public_key, rc);
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
@@ -188,6 +250,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
    // activate PSS
    rc = EVP_PKEY_CTX_set_rsa_padding( pkey_ctx, RSA_PKCS1_PSS_PADDING );
    if( rc <= 0 ) {
+      
       SG_error( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
@@ -198,6 +261,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
    // This is only because PyCrypto (used by the MS) does this in its PSS implementation.
    rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( pkey_ctx, -1 );
    if( rc <= 0 ) {
+      
       SG_error( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
@@ -206,6 +270,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
 
    rc = EVP_DigestVerifyUpdate( mdctx, (void*)data, len );
    if( rc <= 0 ) {
+      
       SG_error("EVP_DigestVerifyUpdate rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
@@ -214,6 +279,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
 
    rc = EVP_DigestVerifyFinal( mdctx, (unsigned char*)sig_bin, sig_bin_len );
    if( rc <= 0 ) {
+      
       SG_error("EVP_DigestVerifyFinal rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
@@ -226,11 +292,23 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
 }
 
 // verify a message with base64 signature
+// if it hasn't been initialized yet, initialize the crypto subsystems
+// return 0 on success
+// return negative if we failed to set up the crypto subsystem (if it was not initialized)
+// return -EINVAL if the message could not be decoded
+// return -ENOMEM if we ran out of memory
 int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* sigb64, size_t sigb64_len ) {
+   
    // safety for external clients
-   if( !md_crypt_check_init() )
-      md_crypt_init();
-      
+   if( !md_crypt_check_init() ) {
+      int rc = md_crypt_init();
+      if( rc != 0 ) {
+         
+         SG_error("md_crypt_init() rc = %d\n", rc );
+         return rc;
+      }
+   }
+   
    char* sig_bin = NULL;
    size_t sig_bin_len = 0;
 
@@ -238,13 +316,14 @@ int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* s
 
    int rc = md_base64_decode( sigb64, sigb64_len, &sig_bin, &sig_bin_len );
    if( rc != 0 ) {
+      
       SG_error("md_base64_decode rc = %d\n", rc );
-      return -EINVAL;
+      return rc;
    }
    
    rc = md_verify_signature_raw( pubkey, data, len, sig_bin, sig_bin_len );
    
-   free( sig_bin );
+   SG_safe_free( sig_bin );
    return rc;
 }
 

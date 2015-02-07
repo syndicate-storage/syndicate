@@ -1998,7 +1998,7 @@ int main(int argc, char** argv) {
     memset( &opts, 0, sizeof(struct md_opts) );
     UG_opts_init();
     
-    rc = md_parse_opts( &opts, argc, argv, NULL, "O:", grab_ipc_opts );
+    rc = md_opts_parse( &opts, argc, argv, NULL, "O:", grab_ipc_opts );
     if( rc != 0 ) {
        md_common_usage( argv[0] );
        UG_usage();

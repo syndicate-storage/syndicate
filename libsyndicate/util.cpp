@@ -118,7 +118,11 @@ mode_t md_get_umask() {
 // calculate the sha-256 hash of something.
 // caller must free the hash buffer.
 unsigned char* sha256_hash_data( char const* input, size_t len ) {
-   unsigned char* obuf = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
+   unsigned char* obuf = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   if( obuf == NULL ) {
+      return NULL;
+   }
+   
    SHA256( (unsigned char*)input, len, obuf );
    return obuf;
 }
@@ -132,10 +136,15 @@ unsigned char* sha256_hash( char const* input ) {
    return sha256_hash_data( input, strlen(input) );
 }
 
-// duplicate a sha1
+// duplicate a sha256
 unsigned char* sha256_dup( unsigned char const* sha256 ) {
-   unsigned char* ret = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
-   memcpy( ret, sha256, SHA_DIGEST_LENGTH );
+   
+   unsigned char* ret = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   if( ret == NULL ) {
+      return NULL;
+   }
+   
+   memcpy( ret, sha256, SHA256_DIGEST_LENGTH );
    return ret;
 }
 
@@ -147,13 +156,20 @@ int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 ) {
    if( hash2 == NULL ) {
       return 1;
    }
-   return strncasecmp( (char*)hash1, (char*)hash2, SHA_DIGEST_LENGTH );
+   return strncasecmp( (char*)hash1, (char*)hash2, SHA256_DIGEST_LENGTH );
 }
 
 
 // make a sha-256 hash printable
+// return the printable SHA256 on success
+// return NULL on OOM 
 char* sha256_printable( unsigned char const* hash ) {
-   char* ret = (char*)calloc( sizeof(char) * (2 * SHA256_DIGEST_LENGTH + 1), 1 );
+   
+   char* ret = SG_CALLOC( char, 2 * SHA256_DIGEST_LENGTH + 1 );
+   if( ret == NULL ) {
+      return NULL;
+   }
+   
    char buf[3];
    for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
       sprintf(buf, "%02x", hash[i] );
@@ -165,16 +181,29 @@ char* sha256_printable( unsigned char const* hash ) {
 }
 
 // make a printable sha256 from data
+// return the printable string on success
+// return NULL on OOM
 char* sha256_hash_printable( char const* input, size_t len) {
+   
    unsigned char* hash = sha256_hash_data( input, len );
+   if( hash == NULL ) {
+      return NULL;  
+   }
+   
    char* hash_str = sha256_printable( hash );
    free( hash );
    return hash_str;
 }
 
-// make a printable sha-1 hash into data
+// make a sha256 hash from printable data
+// return the SHA256 on success
+// return NULL on OOM
 unsigned char* sha256_data( char const* printable ) {
-   unsigned char* ret = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
+   
+   unsigned char* ret = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   if( ret == NULL ) {
+      return NULL;  
+   }
    
    for( size_t i = 0; i < strlen( printable ); i+=2 ) {
       unsigned char tmp1 = (unsigned)from_hex( printable[i] );
@@ -187,25 +216,37 @@ unsigned char* sha256_data( char const* printable ) {
 
 
 // hash a file
+// return the SHA256 on success
+// return NULL on OOM or file-related errors
 unsigned char* sha256_file( char const* path ) {
    FILE* f = fopen( path, "r" );
-   if( !f ) {
+   if( f == NULL ) {
+      return NULL;
+   }
+   
+   unsigned char* new_checksum = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   if( new_checksum == NULL ) {
+      SG_safe_free( new_checksum );
+      fclose( f );
       return NULL;
    }
    
    SHA256_CTX context;
    SHA256_Init( &context );
-   unsigned char* new_checksum = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
+   
    unsigned char buf[32768];
    
    ssize_t num_read;
    while( !feof( f ) ) {
+      
       num_read = fread( buf, 1, 32768, f );
       if( ferror( f ) ) {
+         
          SG_error("sha256_file: I/O error reading %s\n", path );
          SHA256_Final( new_checksum, &context );
-         free( new_checksum );
+         SG_safe_free( new_checksum );
          fclose( f );
+         
          return NULL;
       }
       
@@ -219,19 +260,30 @@ unsigned char* sha256_file( char const* path ) {
 }
 
 // hash a file, given its descriptor 
+// return the SHA256 on success
+// return NULL on OOM
 unsigned char* sha256_fd( int fd ) {
+   
+   unsigned char* new_checksum = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   
    SHA256_CTX context;
    SHA256_Init( &context );
-   unsigned char* new_checksum = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
+   
+   if( new_checksum == NULL ) {
+      return NULL;
+   }
+   
    unsigned char buf[32768];
    
    ssize_t num_read = 1;
    while( num_read > 0 ) {
+      
       num_read = read( fd, buf, 32768 );
       if( num_read < 0 ) {
+         
          SG_error("sha256_file: I/O error reading FD %d, errno=%d\n", fd, -errno );
          SHA256_Final( new_checksum, &context );
-         free( new_checksum );
+         SG_safe_free( new_checksum );
          return NULL;
       }
       
@@ -245,8 +297,8 @@ unsigned char* sha256_fd( int fd ) {
 
 
 // load a file into RAM
-// return a pointer to the bytes.
-// set the size.
+// return a pointer to the bytes on success, and set *size to the size of the file 
+// return NULL on error, such as OOM or failure to stat or read the file
 char* md_load_file( char const* path, off_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
@@ -261,14 +313,14 @@ char* md_load_file( char const* path, off_t* size ) {
    
    FILE* f = fopen( path, "r" );
    if( !f ) {
-      free( ret );
+      SG_safe_free( ret );
       return NULL;
    }
    
    *size = fread( ret, 1, statbuf.st_size, f );
    
    if( *size != statbuf.st_size ) {
-      free( ret );
+      SG_safe_free( ret );
       fclose( f );
       return NULL;
    }
@@ -282,6 +334,7 @@ ssize_t md_read_uninterrupted( int fd, char* buf, size_t len ) {
    
    ssize_t num_read = 0;
    while( (unsigned)num_read < len ) {
+      
       ssize_t nr = read( fd, buf + num_read, len - num_read );
       if( nr < 0 ) {
          
@@ -308,6 +361,7 @@ ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags ) {
    
    ssize_t num_read = 0;
    while( (unsigned)num_read < len ) {
+      
       ssize_t nr = recv( fd, buf + num_read, len - num_read, flags );
       if( nr < 0 ) {
          
@@ -333,6 +387,7 @@ ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len ) {
    
    ssize_t num_written = 0;
    while( (unsigned)num_written < len ) {
+      
       ssize_t nw = write( fd, buf + num_written, len - num_written );
       if( nw < 0 ) {
          
@@ -359,6 +414,7 @@ ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) 
    
    ssize_t num_written = 0;
    while( (unsigned)num_written < len ) {
+      
       ssize_t nw = send( fd, buf + num_written, len - num_written, flags );
       if( nw < 0 ) {
          
@@ -417,6 +473,7 @@ int md_unix_socket( char const* path, bool server ) {
       // bind on it 
       rc = bind( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
       if( rc < 0 ) {
+         
          rc = -errno;
          SG_error("bind(%s) rc = %d\n", path, rc );
          close( fd );
@@ -426,6 +483,8 @@ int md_unix_socket( char const* path, bool server ) {
       // listen on it
       rc = listen( fd, 100 );
       if( rc < 0 ) {
+         
+         rc = -errno;
          SG_error("listen(%s) rc = %d\n", path, rc );
          close( fd );
          return rc;
@@ -435,6 +494,7 @@ int md_unix_socket( char const* path, bool server ) {
       // client 
       rc = connect( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
       if( rc < 0 ) {
+         
          rc = -errno;
          SG_error("connect(%s) rc = %d\n", path, rc );
          close( fd );
@@ -447,18 +507,23 @@ int md_unix_socket( char const* path, bool server ) {
 
 
 // dump data to a temporary file.
-// on success, allocate and return the path to the temporary file and return 0
-// on failure, return negative and remove the temporary file that was created
+// return 0 on success, and allocate and set *tmpfile_path to the path created 
+// return -errno on mkstemp or md_write_uninterrupted failure 
+// return -ENOMEM if out of memory
 int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path ) {
    
-   char* so_path = strdup( tmpfile_fmt );
+   char* so_path = SG_strdup_or_null( tmpfile_fmt );
+   if( so_path == NULL ) {
+      return -ENOMEM;
+   }
+   
    ssize_t rc = 0;
    
    int fd = mkstemp( so_path );
    if( fd < 0 ) {
       rc = -errno;
       SG_error("mkstemp(%s) rc = %zd\n", so_path, rc );
-      free( so_path );
+      SG_safe_free( so_path );
       return rc;
    }
    
@@ -470,7 +535,7 @@ int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen
    if( rc < 0 ) {
       // failure 
       unlink( so_path );
-      free( so_path );
+      SG_safe_free( so_path );
    }
    else {
       *tmpfile_path = so_path;
@@ -487,64 +552,81 @@ int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen
 // return the encoded URL on success
 // return NULL on OOM
 char *md_url_encode(char const *str, size_t len) {
-  char *pstr = (char*)str;
-  char *buf = (char*)calloc(len * 3 + 1, 1);
-  
-  if( buf == NULL ) {
-     return NULL;
-  }
-  
-  char *pbuf = buf;
-  size_t cnt = 0;
-  while (cnt < len) {
-    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') {
-      *pbuf++ = *pstr;
-    }
-    else if (*pstr == ' ') {
-      *pbuf++ = '+';
-    }
-    else {
-      *pbuf++ = '%';
-      *pbuf++ = to_hex(*pstr >> 4);
-      *pbuf++ = to_hex(*pstr & 15);
-    }
-    pstr++;
-    cnt++;
-  }
-  *pbuf = '\0';
-  return buf;
+   char *pstr = (char*)str;
+   char *buf = SG_CALLOC( char, len * 3 + 1 );
+   
+   if( buf == NULL ) {
+      return NULL;
+   }
+   
+   char *pbuf = buf;
+   size_t cnt = 0;
+   while (cnt < len) {
+      
+      if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') {
+         
+         *pbuf++ = *pstr;
+      }
+      else if (*pstr == ' ') {
+         
+         *pbuf++ = '+';
+      }
+      else {
+         
+         *pbuf++ = '%';
+         *pbuf++ = to_hex(*pstr >> 4);
+         *pbuf++ = to_hex(*pstr & 15);
+      }
+      
+      pstr++;
+      cnt++;
+   }
+   
+   *pbuf = '\0';
+   return buf;
 }
 
 /* Returns a url-decoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
+// return NULL on OOM
 char *md_url_decode(char const *str, size_t* len) {
-  char *pstr = (char*)str, *buf = (char*)calloc(strlen(str) + 1, 1), *pbuf = buf;
-  size_t l = 0;
-  while (*pstr) {
-    if (*pstr == '%') {
-      if (pstr[1] && pstr[2]) {
-        *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-        pstr += 2;
-        l++;
+   char *pstr = (char*)str;
+   char* buf = SG_CALLOC( char, strlen(str) + 1 );
+   
+   if( buf == NULL ) {
+      return NULL;
+   }
+   
+   char *pbuf = buf;
+   size_t l = 0;
+   while (*pstr) {
+      
+      if (*pstr == '%') {
+         if (pstr[1] && pstr[2]) {
+            *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
+            pstr += 2;
+            l++;
+         }
+      } 
+      else if (*pstr == '+') { 
+         *pbuf++ = ' ';
+         l++;
+      } 
+      else {
+         *pbuf++ = *pstr;
+         l++;
       }
-    } 
-    else if (*pstr == '+') { 
-      *pbuf++ = ' ';
-      l++;
-    } 
-    else {
-      *pbuf++ = *pstr;
-      l++;
-    }
-    pstr++;
-  }
-  *pbuf = '\0';
-  l++;
-  if( len != NULL ) {
-     *len = l;
-  }
-  
-  return buf;
+      pstr++;
+   }
+   
+   *pbuf = '\0';
+   l++;
+   
+   if( len != NULL ) {
+      *len = l;
+   }
+
+   return buf;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -554,27 +636,81 @@ char *md_url_decode(char const *str, size_t* len) {
 int calcDecodeLength(const char* b64input, size_t len) { //Calculates the length of a decoded base64 string
   int padding = 0;
 
-  if (b64input[len-1] == '=' && b64input[len-2] == '=') //last two chars are =
+  if (b64input[len-1] == '=' && b64input[len-2] == '=') { //last two chars are =
     padding = 2;
-  else if (b64input[len-1] == '=') //last char is =
+  }
+  else if (b64input[len-1] == '=') { //last char is =
     padding = 1;
-
-  return (int)len*0.75 - padding;
+  }
+  
+  return ((len * 3) >> 2) - padding;
 }
 
+// decode a message (b64message) from base64
+// return 0 on success, and put the malloc'ed result into *buffer and its length into *buffer_len 
+// return -ENOMEM on OOM
+// return -EPERM if base64 encoding fails
 int md_base64_decode(const char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
+   
   BIO *bio, *b64;
   int decodeLen = calcDecodeLength(b64message, b64message_len);
   long len = 0;
-  *buffer = (char*)malloc(decodeLen+1);
+  *buffer = SG_CALLOC( char, decodeLen + 1 );
+  
+  if( *buffer == NULL ) {
+     return -ENOMEM;
+  }
+  
   FILE* stream = fmemopen((void*)b64message, b64message_len, "r");
+  if( stream == NULL ) {
+   
+     SG_safe_free( *buffer );
+     return -ENOMEM;
+     
+  }
 
   b64 = BIO_new(BIO_f_base64());
+  if( b64 == NULL ) {
+     
+     fclose( stream );
+     SG_safe_free( *buffer );
+     return -ENOMEM;
+  }
+  
   bio = BIO_new_fp(stream, BIO_NOCLOSE);
+  if( bio == NULL ) {
+     
+     BIO_free_all( b64 );
+     SG_safe_free( *buffer );
+     return -ENOMEM;
+  }
+  
   bio = BIO_push(b64, bio);
   BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Do not use newlines to flush buffer
   len = BIO_read(bio, *buffer, b64message_len);
-    //Can test here if len == decodeLen - if not, then return an error
+  
+  if( len < 0 || (unsigned)len != b64message_len ) {
+     
+     // we're reading memory, so failure here *should* be an error
+     SG_error("BIO_read() rc = %ld\n", len );
+     
+     BIO_free_all( bio );
+     fclose( stream );
+     SG_safe_free( *buffer );
+     return -EPERM;
+  }
+  
+  if( len != decodeLen ) {
+     
+     // didn't encode everything
+     SG_error("BIO_read encoded %zu of %ld bytes\n", b64message_len, len );
+     
+     BIO_free_all( bio );
+     fclose( stream );
+     SG_safe_free( *buffer );
+     return -EPERM;
+  }
+  
   (*buffer)[len] = '\0';
 
   BIO_free_all(bio);
@@ -582,27 +718,65 @@ int md_base64_decode(const char* b64message, size_t b64message_len, char** buffe
 
   *buffer_len = (size_t)len;
 
-  return (0); //success
+  return 0;
 }
 
 
+// encode a message as bas64.
+// return 0 on success, and put the resulting malloc'ed NULL-terminated string into *buffer
+// return -ENOMEM if OOM
 int md_base64_encode(char const* message, size_t msglen, char** buffer) { //Encodes a string to base64
-  BIO *bio, *b64;
-  FILE* stream;
-  int encodedSize = 4*ceil((double)msglen/3);
-  *buffer = (char *)malloc(encodedSize+1);
 
-  stream = fmemopen(*buffer, encodedSize+1, "w");
-  b64 = BIO_new(BIO_f_base64());
-  bio = BIO_new_fp(stream, BIO_NOCLOSE);
-  bio = BIO_push(b64, bio);
-  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
-  BIO_write(bio, message, msglen);
-  (void)BIO_flush(bio);
-  BIO_free_all(bio);
-  fclose(stream);
+   BIO *bio, *b64;
+   FILE* stream;
+   int rc = 0;
+   int encodedSize = 4*ceil((double)msglen/3);
 
-  return (0); //success
+   *buffer = SG_CALLOC( char, encodedSize + 1 );
+   if( *buffer == NULL ) {
+      return -ENOMEM;
+   }
+
+   stream = fmemopen(*buffer, encodedSize+1, "w");
+   if( stream == NULL ) {
+      
+      SG_safe_free( *buffer );
+      return -ENOMEM;
+   }
+   
+   b64 = BIO_new(BIO_f_base64());
+   
+   if( b64 == NULL ) {
+      
+      fclose( stream );
+      SG_safe_free( *buffer );
+      return -ENOMEM;
+   }
+   
+   bio = BIO_new_fp(stream, BIO_NOCLOSE);
+   
+   if( bio == NULL ) {
+      
+      BIO_free_all( b64 );
+      fclose( stream );
+      SG_safe_free( *buffer );
+      return -ENOMEM;
+   }
+   
+   bio = BIO_push(b64, bio);
+   BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
+   BIO_write(bio, message, msglen);
+   
+   rc = BIO_flush(bio);
+   if( rc != 1 ) {
+      SG_error("BIO_flush rc = %d\n", rc);
+      rc = -EPERM;
+   }
+   
+   BIO_free_all(bio);
+   fclose(stream);
+   
+   return rc;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -745,14 +919,18 @@ int md_strrstrip( char* str, char const* strip ) {
 // translate zlib error codes 
 static int md_zlib_err( int zerr ) {
    if( zerr == Z_MEM_ERROR ) {
+      
       return -ENOMEM;
    }
    else if( zerr == Z_BUF_ERROR ) {
+      
       return -ENOMEM;
    }
    else if( zerr == Z_DATA_ERROR ) {
+      
       return -EINVAL;
    }
+   
    return -EPERM;
 }
 
@@ -763,6 +941,7 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    char* out_buf = SG_CALLOC( char, out_buf_len );
    
    if( out_buf == NULL ) {
+      
       return -ENOMEM;
    }
    
@@ -772,7 +951,7 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    if( rc != Z_OK ) {
       SG_error("compress2 rc = %d\n", rc );
       
-      free( out_buf );
+      SG_safe_free( out_buf );
       return md_zlib_err( rc );
    }
    
@@ -791,6 +970,7 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    char* out_buf = SG_CALLOC( char, out_buf_len );;
    
    if( out_buf == NULL ) {
+      
       return -ENOMEM;
    }
    
@@ -808,7 +988,7 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
          char* tmp = (char*)realloc( out_buf, out_buf_len );
          
          if( tmp == NULL ) {
-            free( out_buf );
+            SG_safe_free( out_buf );
             return -ENOMEM;
          }
          else {
@@ -820,7 +1000,7 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
       else if( rc != Z_OK ) {
          SG_error("uncompress rc = %d\n", rc );
          
-         free( out_buf );
+         SG_safe_free( out_buf );
          return md_zlib_err( rc );
       }
       
@@ -836,12 +1016,16 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
 }
 
 // alloc and then mlock 
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -EINVAL on improper memory alignment (shouldn't happen--this is a bug)
 int mlock_calloc( struct mlock_buf* buf, size_t len ) {
    memset( buf, 0, sizeof( struct mlock_buf ) );
    
    int rc = posix_memalign( &buf->ptr, sysconf(_SC_PAGESIZE), len );
    if( rc != 0 ) {
-      return rc;
+      
+      return -abs(rc);
    }
    
    memset( buf->ptr, 0, len );
@@ -850,7 +1034,9 @@ int mlock_calloc( struct mlock_buf* buf, size_t len ) {
    
    rc = mlock( buf->ptr, buf->len );
    if( rc != 0 ) {
-      free( buf->ptr );
+      
+      rc = -errno;
+      SG_safe_free( buf->ptr );
       
       buf->ptr = NULL;
       buf->len = 0;
@@ -864,25 +1050,34 @@ int mlock_calloc( struct mlock_buf* buf, size_t len ) {
 // free an mlock'ed buf (unlock it first)
 int mlock_free( struct mlock_buf* buf ) {
    if( buf->ptr != NULL ) {
+      
       memset( buf->ptr, 0, buf->len );
       munlock( buf->ptr, buf->len );
-      free( buf->ptr );
+      SG_safe_free( buf->ptr );
    }
+   
    buf->ptr = NULL;
    buf->len = 0;
    return 0;
 }
 
 // duplicate a string into an mlock'ed buffer, allocating if needed
+// return 0 on success
+// return -EINVAL if not enough space in dest 
+// return -ENOMEM if OOM 
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len ) {
+   
    if( dest->ptr == NULL ) {
+      
       int rc = mlock_calloc( dest, src_len );
       if( rc != 0 ) {
+         
          SG_error("mlock_calloc rc = %d\n", rc );
          return rc;
       }
    }
    else if( dest->len < src_len) {
+      
       SG_error("%s", "not enough space\n");
       return -EINVAL;
    }
@@ -892,15 +1087,22 @@ int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len ) {
 }
 
 // duplicate an mlock'ed buffer's contents, allocating dest if need be.
+// return 0 on success
+// return -EINVAL if not enough space in dest
+// return -ENOMEM if OOM
 int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
+   
    if( dest->ptr == NULL ) {
+      
       int rc = mlock_calloc( dest, src->len );
       if( rc != 0 ) {
+         
          SG_error("mlock_calloc rc = %d\n", rc );
          return rc;
       }
    }
    else if( dest->len < src->len ) {
+      
       SG_error("%s", "not enough space\n");
       return -EINVAL;
    }
@@ -912,14 +1114,23 @@ int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
 
 
 // flatten a response buffer into a byte string
+// return 0 on success
+// return NULL on OOM
 static char* md_response_buffer_to_string_impl( md_response_buffer_t* rb, int extra_space ) {
+   
    size_t total_len = 0;
+   
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       total_len += (*rb)[i].second;
    }
    
    char* msg_buf = SG_CALLOC( char, total_len + extra_space );
+   if( msg_buf == NULL ) {
+      return NULL;
+   }
+   
    size_t offset = 0;
+   
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       memcpy( msg_buf + offset, (*rb)[i].first, (*rb)[i].second );
       offset += (*rb)[i].second;

@@ -136,14 +136,17 @@ struct md_upload_buf {
 
 
 // merge command-line options with the config....
-#define MD_SYNDICATE_CONF_OPT( conf, optname, value ) \
+#define MD_SYNDICATE_CONF_OPT( conf, optname, value, result ) \
    do { \
      if( (value) ) { \
         if( (conf).optname ) { \
-           free( (conf).optname ); \
+           SG_safe_free( (conf).optname ); \
         } \
         \
-        (conf).optname = strdup( value ); \
+        (conf).optname = SG_strdup_or_null( value ); \
+        if( (conf).optname == NULL ) { \
+            result = -ENOMEM; \
+        } \
       } \
    } while( 0 );
 
@@ -156,8 +159,8 @@ struct md_syndicate_conf {
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
    bool gather_stats;                                 // gather statistics or not?
-   char* content_url;                                 // what is the URL under which local data can be accessed publicly?
-   char* storage_root;                                // toplevel directory that stores local syndicate state (blocks, manifests, logs, etc)
+   char* content_url;                                 // what is the URL under which local data can be accessed publicly?.  Must end in /
+   char* storage_root;                                // toplevel directory that stores local syndicate state (blocks, manifests, logs, etc).  Must end in /
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
    int max_read_retry;                                // maximum number of times to retry a read (i.e. fetching a block or manifest) before considering it failed 
@@ -229,38 +232,29 @@ struct md_syndicate_conf {
 #define DEBUG_KEY                   "DEBUG_LEVEL"
 
 // config elements 
-#define DEFAULT_READ_FRESHNESS_KEY  "DEFAULT_READ_FRESHNESS"
-#define DEFAULT_WRITE_FRESHNESS_KEY "DEFAULT_WRITE_FRESHNESS"
-#define METADATA_URL_KEY            "METADATA_URL"
-#define LOGFILE_PATH_KEY            "LOGFILE"
-#define GATHER_STATS_KEY            "GATHER_STATISTICS"
-#define MS_USERNAME_KEY             "USERNAME"
-#define MS_PASSWORD_KEY             "PASSWORD"
-#define STORAGE_ROOT_KEY            "STORAGE_ROOT"
-
-#define CONNECT_TIMEOUT_KEY         "CONNECT_TIMEOUT"
-#define TRANSFER_TIMEOUT_KEY        "TRANSFER_TIMEOUT"
-#define NUM_HTTP_THREADS_KEY        "HTTP_THREADPOOL_SIZE"
-
-#define PORTNUM_KEY                 "PORTNUM"
-#define SSL_PKEY_KEY                "TLS_PKEY"
-#define SSL_CERT_KEY                "TLS_CERT"
-#define GATEWAY_KEY_KEY             "GATEWAY_KEY"
-#define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
-#define SYNDICATE_PUBKEY_KEY        "SYNDICATE_PUBKEY"
-#define VOLUME_NAME_KEY             "VOLUME_NAME"
-#define GATEWAY_NAME_KEY            "GATEWAY_NAME"
-
-#define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
-
-// misc
-#define VERIFY_PEER_KEY             "SSL_VERIFY_PEER"
-#define CONTENT_URL_KEY             "PUBLIC_URL"
-#define VIEW_RELOAD_FREQ_KEY        "VIEW_RELOAD_FREQ"
-
-#define SYNDICATEFS_XATTR_URL       "user.syndicate_url"
-#define CLIENT_DEFAULT_CONFIG       "/usr/etc/syndicate/syndicate-UG.conf"
-#define AG_GATEWAY_DRIVER_KEY       "AG_GATEWAY_DRIVER"
+#define SG_CONFIG_DEFAULT_READ_FRESHNESS  "DEFAULT_READ_FRESHNESS"
+#define SG_CONFIG_DEFAULT_WRITE_FRESHNESS "DEFAULT_WRITE_FRESHNESS"
+#define SG_CONFIG_CONNECT_TIMEOUT         "CONNECT_TIMEOUT"
+#define SG_CONFIG_MS_USERNAME             "USERNAME"
+#define SG_CONFIG_MS_PASSWORD             "PASSWORD"
+#define SG_CONFIG_RELOAD_FREQUENCY        "RELOAD_FREQUENCY"
+#define SG_CONFIG_TLS_VERIFY_PEER         "TLS_VERIFY_PEER"
+#define SG_CONFIG_MS_URL                  "MS_URL"
+#define SG_CONFIG_LOGFILE_PATH            "LOGFILE"
+#define SG_CONFIG_GATHER_STATS            "GATHER_STATISTICS"
+#define SG_CONFIG_NUM_HTTP_THREADS        "HTTP_THREADPOOL_SIZE"
+#define SG_CONFIG_STORAGE_ROOT            "STORAGE_ROOT"
+#define SG_CONFIG_TLS_PKEY_PATH           "TLS_PKEY"
+#define SG_CONFIG_TLS_CERT_PATH           "TLS_CERT"
+#define SG_CONFIG_GATEWAY_NAME            "GATEWAY_NAME"
+#define SG_CONFIG_GATEWAY_PKEY_PATH       "GATEWAY_PKEY"
+#define SG_CONFIG_SYNDICATE_PUBKEY_PATH   "SYNDICATE_PUBKEY"
+#define SG_CONFIG_VOLUME_NAME             "VOLUME_NAME"
+#define SG_CONFIG_PORTNUM                 "PORTNUM"
+#define SG_CONFIG_PUBLIC_URL              "PUBLIC_URL"
+#define SG_CONFIG_DEBUG_LEVEL             "DEBUG_LEVEL"
+#define SG_CONFIG_LOCAL_DRIVERS_DIR       "LOCAL_DRIVERS_DIR"
+#define SG_CONFIG_TRANSFER_TIMEOUT        "TRANSFER_TIMEOUT"
 
 // URL protocol prefix for local files
 #define SG_LOCAL_PROTO     "file://"
@@ -293,11 +287,10 @@ void md_entry_free( struct md_entry* ent );
 // serialization
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
-ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char **buf, vector<struct md_update>* updates );
 ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char **buf, struct md_update* (*iterator)( void* ), void* arg );
 char* md_clear_version( char* path );
 void md_update_free( struct md_update* update );
-void md_update_dup2( struct md_update* src, struct md_update* dest );
+int md_update_dup2( struct md_update* src, struct md_update* dest );
 
 // path manipulation
 char* md_fullpath( char const* root, char const* path, char* dest );
@@ -320,13 +313,7 @@ pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach 
 
 // URL parsing
 char** md_parse_cgi_args( char* query_string );
-char* md_url_hostname( char const* url );
-char* md_url_scheme( char const* url );
 char* md_path_from_url( char const* url );
-char* md_fs_path_from_url( char const* url );
-char* md_url_strip_path( char const* url );
-int md_portnum_from_url( char const* url );
-char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
 
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );

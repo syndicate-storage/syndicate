@@ -17,7 +17,7 @@
 #include "libsyndicate/opts.h"
 
 // fill opts with defaults
-int md_default_opts( struct md_opts* opts ) {
+int md_opts_default( struct md_opts* opts ) {
    memset( opts, 0, sizeof(struct md_opts) );
    return 0;
 }
@@ -27,9 +27,10 @@ int md_opts_parse_long( int c, char* opt, long* result ) {
    char* tmp = NULL;
    int rc = 0;
    
+   errno = 0;
    *result = strtol( opt, &tmp, 10 );
    
-   if( tmp == opt ) {
+   if( tmp == opt || errno != 0 ) {
       fprintf(stderr, "Invalid value for option -%c", c );
       rc = -1;
    }
@@ -37,6 +38,8 @@ int md_opts_parse_long( int c, char* opt, long* result ) {
 }
 
 // read all of stdin 
+// return the number of bytes read on success
+// return -EOVERFLOW if we read more than SYNDICATE_OPTS_STDIN_MAX
 ssize_t md_read_stdin( char* stdin_buf ) {
    ssize_t nr = 0;
    size_t r = 0;
@@ -74,12 +77,18 @@ ssize_t md_read_stdin( char* stdin_buf ) {
 }
 
 // get options from stdin.
-// on success, set argc and argv with the actual arguments (the caller must free them) and return 0
-// on failure, return negative
+// return 0 on success, and set *argc and *argv with the actual arguments (the caller must free them) and return 0
+// return -ENODATA if we failed to read stdin 
+// return -EINVAL if we failed to parse stdin
+// return -ENOMEM if OOM
 int md_read_opts_from_stdin( int* argc, char*** argv ) {
    
    // realistically speaking, stdin can't really be longer than SYNDICATE_OPTS_STDIN_MAX 
    char* stdin_buf = SG_CALLOC( char, SYNDICATE_OPTS_STDIN_MAX + 1 );
+   if( stdin_buf == NULL ) {
+      return -ENOMEM;
+   }
+   
    ssize_t stdin_len = md_read_stdin( stdin_buf );
    
    if( stdin_len < 0 ) {
@@ -96,21 +105,22 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
       SG_error("wordexp rc = %d\n", rc );
       
       wordfree( &expanded_stdin );
-      free( stdin_buf );
+      SG_safe_free( stdin_buf );
       return -EINVAL;
    }
    else {
       // got it!
       *argc = expanded_stdin.we_wordc;
       *argv = expanded_stdin.we_wordv;
-      free( stdin_buf );
+      SG_safe_free( stdin_buf );
       return 0;
    }
 }
 
 
 // clean up the opts structure, freeing things we don't need 
-int md_cleanup_opts( struct md_opts* opts ) {
+// always succeeds
+int md_opts_cleanup( struct md_opts* opts ) {
    struct mlock_buf* to_free[] = {
       &opts->user_pkey_pem,
       &opts->gateway_pkey_pem,
@@ -128,14 +138,50 @@ int md_cleanup_opts( struct md_opts* opts ) {
    return 0;
 }
 
+// free the opts structure 
+// always succeeds 
+int md_opts_free( struct md_opts* opts ) {
+   
+   md_opts_cleanup( opts );
+   
+   char* to_free[] = {
+      opts->config_file,
+      opts->username,
+      opts->volume_name,
+      opts->ms_url,
+      opts->gateway_name,
+      opts->volume_pubkey_path,
+      opts->gateway_pkey_path,
+      opts->syndicate_pubkey_path,
+      opts->hostname,
+      opts->storage_root,
+      opts->first_nonopt_arg,
+      opts->volume_pubkey_pem,
+      opts->syndicate_pubkey_pem,
+      opts->tls_pkey_path,
+      opts->tls_cert_path,
+      NULL
+   };
+   
+   for( int i = 0; to_free[i] != NULL; i++ ) {
+      SG_safe_free( to_free[i] );
+   }
+   
+   memset( opts, 0, sizeof(struct md_opts) );
+   
+   return 0;
+}
+
 // load an optarg into an mlock'ed buffer.
-// exit on failure, since this is used to load sensitive (i.e. secret) information.
+// return 0 on success
+// return negative on error (see mlock_calloc)
 int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
    size_t len = strlen(str);
    int rc = mlock_calloc( buf, len + 1 );
+   
    if( rc != 0 ) {
       SG_error("mlock_calloc rc = %d\n", rc );
-      exit(1);
+      return rc;
    }
    else {
       memcpy( buf->ptr, str, len );
@@ -148,8 +194,9 @@ int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
 // parse opts from argv.
 // optionally supply the optind after parsing (if it's not NULL)
 // return 0 on success
-// return -1 on failure
-int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
+// return -EINVAL if there are duplicate short opt definitions
+// return -ENOMEM if out of memory
+int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
@@ -177,6 +224,8 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
    };
 
    struct option* all_options = NULL;
+   char** special_longopts = NULL;
+   int special_longopts_idx = 0;
    
    int rc = 0;
    int opt_index = 0;
@@ -210,7 +259,20 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          return -EINVAL;
       }
       
+      // update the optstr
       optstr = SG_CALLOC( char, strlen(default_optstr) + strlen(special_opts) + 1 );
+      if( optstr == NULL ) {
+         return -ENOMEM;
+      }
+      
+      // store long-options 
+      special_longopts = SG_CALLOC( char*, strlen(special_opts) + 1 );
+      if( special_longopts == NULL ) {
+      
+         SG_safe_free( optstr );
+         return -ENOMEM;
+      }
+      
       sprintf( optstr, "%s%s", default_optstr, special_opts );
       
       // how many options?
@@ -231,14 +293,21 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       
       // make a new options table
       all_options = SG_CALLOC( struct option, num_options + 1 );
+      if( all_options == NULL ) {
+         
+         SG_safe_free( optstr );
+         return -ENOMEM;
+      }
       
       memcpy( all_options, syndicate_options, num_default_options * sizeof(struct option) );
       
       int k = 0;
       for( int i = 0; i < num_special_options; i++ ) {
+         
          int ind = i + num_default_options;
          
          int has_arg = no_argument;
+         
          if( k + 1 < (signed)strlen(special_opts) && special_opts[k+1] == ':' ) {
             has_arg = required_argument;
          }
@@ -250,6 +319,18 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          }
          
          char* buf = SG_CALLOC( char, 12 );
+         if( buf == NULL ) {
+            
+            // free all previously-alloced long options, and free everything else 
+            SG_FREE_LIST( special_longopts, free );
+            SG_safe_free( all_options );
+            SG_safe_free( optstr );
+         }
+         
+         // save this so we can free it later
+         special_longopts[ special_longopts_idx ] = buf;
+         special_longopts_idx++;
+         
          sprintf(buf, "special-%c", special_opts[k] );
          
          all_options[ind].name = buf;
@@ -258,8 +339,9 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
          all_options[ind].val = special_opts[k];
          
          k++;
-         if( has_arg )
+         if( has_arg ) {
             k++;
+         }
       }
    }
    else {
@@ -277,63 +359,136 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       
       switch( c ) {
          case 'v': {
-            opts->volume_name = optarg;
+            
+            opts->volume_name = SG_strdup_or_null( optarg );
+            if( opts->volume_name == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
+            
             break;
          }
          case 'c': {
-            opts->config_file = optarg;
+            
+            opts->config_file = SG_strdup_or_null( optarg );
+            if( opts->config_file == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
+            
             break;
          }
          case 'u': {
-            opts->username = optarg;
+            
+            opts->username = SG_strdup_or_null( optarg );
+            if( opts->username == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
+            
             break;
          }
          case 'p': {
-            md_load_mlock_buf( &opts->password, optarg );
+            
+            rc = md_load_mlock_buf( &opts->password, optarg );
+            if( rc != 0 ) {
+               break;
+            }
+            
+            // clear this--it's sensitive
             memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'm': {
-            opts->ms_url = optarg;
+            
+            opts->ms_url = SG_strdup_or_null( optarg );
+            if( opts->ms_url == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
+            
             break;
          }
          case 'g': {
-            opts->gateway_name = optarg;
+            
+            opts->gateway_name = SG_strdup_or_null( optarg );
+            if( opts->gateway_name == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
+            
             break;
          }
          case 'V': {
-            opts->volume_pubkey_path = optarg;
+            
+            opts->volume_pubkey_path = SG_strdup_or_null( optarg );
+            if( opts->volume_pubkey_path == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'G': {
-            opts->gateway_pkey_path = optarg;
+            
+            opts->gateway_pkey_path = SG_strdup_or_null( optarg );
+            if( opts->gateway_pkey_path == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'S': {
-            opts->syndicate_pubkey_path = optarg;
+            
+            opts->syndicate_pubkey_path = SG_strdup_or_null( optarg );
+            if( opts->syndicate_pubkey_path == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'T': {
-            opts->tls_pkey_path = optarg;
+            
+            opts->tls_pkey_path = SG_strdup_or_null( optarg );
+            if( opts->tls_pkey_path == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'C': {
-            opts->tls_cert_path = optarg;
+            
+            opts->tls_cert_path = SG_strdup_or_null( optarg );
+            if( opts->tls_pkey_path == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'r': {
-            opts->storage_root = optarg;
+            
+            opts->storage_root = SG_strdup_or_null( optarg );
+            if( opts->storage_root == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'K': {
-            md_load_mlock_buf( &opts->gateway_pkey_decryption_password, optarg );
+            rc = md_load_mlock_buf( &opts->gateway_pkey_decryption_password, optarg );
+            if( rc != 0 ) {
+               break;
+            }
+            
+            // clear this--it's sensitive
             memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'U': {
+            
             // read the file...
-            int rc = md_load_secret_as_string( &opts->user_pkey_pem, optarg );
+            rc = md_load_secret_as_string( &opts->user_pkey_pem, optarg );
             if( rc != 0 ) {
+               
                SG_error("md_load_secret_as_string(%s) rc = %d\n", optarg, rc );
                rc = -1;
                break;
@@ -341,15 +496,22 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             break;
          }
          case 'P': {
-            md_load_mlock_buf( &opts->user_pkey_pem, optarg );
+            
+            rc = md_load_mlock_buf( &opts->user_pkey_pem, optarg );
+            if( rc != 0 ) {
+               break;
+            }
+            
+            // clear this--it's sensitive
             memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'R': {
+            
             if( no_stdin ) {
                // this is invalid--we're already parsing from stdin 
                fprintf(stderr, "Invalid argument: cannot process -R when reading args from stdin\n");
-               return -EINVAL;
+               rc = -EINVAL;
             }
             else {
                SG_debug("%s", "Reading arguments from stdin\n");
@@ -358,13 +520,14 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             break;
          }
          case 'd': {
+            
             long debug_level = 0;
             rc = md_opts_parse_long( c, optarg, &debug_level );
             if( rc == 0 ) {
                opts->debug_level = (int)debug_level;
             }
             else {
-               SG_error("Failed to parse -d, rc = %d\n", rc );
+               fprintf(stderr, "Failed to parse -d, rc = %d\n", rc );
                rc = -1;
             }
             break;
@@ -374,34 +537,42 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             break;
          }
          case 'H': {
-            opts->hostname = strdup( optarg );
+            
+            opts->hostname = SG_strdup_or_null( optarg );
+            if( opts->hostname == NULL ) {
+               rc = -ENOMEM;
+               break;
+            }
             break;
          }
          case 'l': {
+            
             long l = 0;
             rc = md_opts_parse_long( c, optarg, &l );
             if( rc == 0 ) {
                opts->cache_soft_limit = l;
             }
             else {
-               SG_error("Failed to parse -l, rc = %d\n", rc );
+               fprintf(stderr, "Failed to parse -l, rc = %d\n", rc );
                rc = -1;
             }
             break;
          }
          case 'L': {
+            
             long l = 0;
             rc = md_opts_parse_long( c, optarg, &l );
             if( rc == 0 ) {
                opts->cache_hard_limit = l;
             }
             else {
-               SG_error("Failed to parse -L, rc = %d\n", rc );
+               fprintf(stderr, "Failed to parse -L, rc = %d\n", rc );
                rc = -1;
             }
             break;
          }
          default: {
+            
             rc = -1;
             if( special_opt_handler ) {
                rc = special_opt_handler( c, optarg );
@@ -416,38 +587,50 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
    }
 
    if( optstr != default_optstr ) {
-      free( optstr );
+      SG_safe_free( optstr );
+   }
+   if( special_longopts != NULL ) {
+      
+      SG_FREE_LIST( special_longopts, free );
    }
    
    if( all_options != syndicate_options ) {
+      
       for( int i = num_default_options; all_options[i].name != NULL; i++ ) {
          free( (void*)all_options[i].name );
+         all_options[i].name = NULL;
       }
-      free( all_options );
+      SG_safe_free( all_options );
    }
    
-   if( out_optind != NULL ) {
-      *out_optind = optind;
+   if( rc == 0 ) {
+      if( out_optind != NULL ) {
+         *out_optind = optind;
+      }
+      
+      if( optind < argc ) {
+         opts->first_nonopt_arg = argv[optind];
+      }
    }
-   
-   if( optind < argc ) {
-      opts->first_nonopt_arg = argv[optind];
+   else {
+      // blow away the options 
+      md_opts_free( opts );
    }
-   
    
    return rc;
 }
 
 // parse syndicate options
-int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
+int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
    
-   int rc = md_parse_opts_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
+   int rc = md_opts_parse_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
    if( rc != 0 ) {
       return rc;
    }
    
    // do we need to parse stdin?
    if( opts->read_stdin ) {
+      
       int new_argc = 0;
       char** new_argv = NULL;
       
@@ -458,15 +641,16 @@ int md_parse_opts( struct md_opts* opts, int argc, char** argv, int* out_optind,
       }
       else {
          // clear opts 
-         md_default_opts( opts );
+         md_opts_free( opts );
+         md_opts_default( opts );
          
          // NOTE: set this to 0, since otherwise getopt_long decides to skip the first argument
          optind = 0;
          
          // got new data.  parse it
-         rc = md_parse_opts_impl( opts, new_argc, new_argv, out_optind, special_opts, special_opt_handler, true );
+         rc = md_opts_parse_impl( opts, new_argc, new_argv, out_optind, special_opts, special_opt_handler, true );
          
-         // NOTE: don't free new_argv--opts currently points to its strings.  It's fine to let this leak for now.
+         SG_FREE_LIST( new_argv, free );
       }
    }
    
@@ -526,8 +710,9 @@ Common optional arguments:\n\
    -d, --debug-level DEBUG_LEVEL\n\
             Debugging level.\n\
             Pass 0 (the default) for no debugging output.\n\
-            Pass 1 for global debugging messages.\n\
-            Pass 2 to add locking debugging.\n\
+            Pass 1 for info messages.\n\
+            Pass 2 for info and debugging messages.\n\
+            Pass 3 for info, debugging, and locking messages.\n\
    -l, --cache-soft-limit LIMIT\n\
             Soft on-disk cache size limit (in bytes)\n\
    -L, --cache-hard-limit LIMIT\n\

@@ -16,6 +16,7 @@ BASE_FILES = """
    closure.cpp
    download.cpp
    libsyndicate.cpp
+   ini.cpp
    opts.cpp
    storage.cpp
    url.cpp

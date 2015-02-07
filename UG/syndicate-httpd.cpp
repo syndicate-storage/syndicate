@@ -906,7 +906,7 @@ int main( int argc, char** argv ) {
    
    int rc = 0;
 
-   rc = md_parse_opts( &opts, argc, argv, NULL, UG_SHORTOPTS "A:i:Q:", syndicate_httpd_handle_all_opts );
+   rc = md_opts_parse( &opts, argc, argv, NULL, UG_SHORTOPTS "A:i:Q:", syndicate_httpd_handle_all_opts );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       UG_usage();
@@ -986,9 +986,9 @@ int main( int argc, char** argv ) {
          exit(1);
       }
       else {
-         rc = md_release_privileges();
+         rc = md_release_privileges( "daemon" );
          if( rc != 0 ) {
-            SG_error("md_release_privileges rc = %d\n", rc );
+            SG_error("md_release_privileges('daemon') rc = %d\n", rc );
             fprintf(stderr, "Failed to drop privileges\n");
             exit(1);
          }

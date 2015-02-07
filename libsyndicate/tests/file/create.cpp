@@ -30,12 +30,12 @@ int main( int argc, char** argv ) {
    size_t num_requests = 0;
    ms_client_results_list_t results;              // multi result
    
-   md_default_opts( &opts );
+   md_opts_default( &opts );
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, &local_optind, NULL, NULL );
+   rc = md_opts_parse( &opts, argc, argv, &local_optind, NULL, NULL );
    if( rc != 0 ) {
-      SG_error("md_parse_opts rc = %d\n", rc );
+      SG_error("md_opts_parse rc = %d\n", rc );
       md_common_usage( argv[0] );
       exit(1);
    }

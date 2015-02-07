@@ -781,9 +781,6 @@ void usage( char const* progname ) {
 // Program execution starts here!
 int main(int argc, char** argv) {
 
-   curl_global_init(CURL_GLOBAL_ALL);
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
-   
    int fuse_stat = 0;
    int rc = 0;
    int fuse_optind = 0;
@@ -805,7 +802,7 @@ int main(int argc, char** argv) {
    UG_opts_init();
    
    // get options
-   rc = md_parse_opts( &syn_opts, argc, argv, &fuse_optind, UG_SHORTOPTS "so:", syndicatefs_handle_opt );
+   rc = md_opts_parse( &syn_opts, argc, argv, &fuse_optind, UG_SHORTOPTS "so:", syndicatefs_handle_opt );
    if( rc != 0 ) {
       usage( argv[0] );
       exit(1);

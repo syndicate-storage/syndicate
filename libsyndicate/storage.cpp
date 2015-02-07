@@ -31,7 +31,7 @@ char* md_load_file_as_string( char const* path, size_t* size ) {
    
    char* ret = (char*)realloc( buf, *size + 1 );
    if( ret == NULL ) {
-      free( buf );
+      SG_safe_free( buf );
       return NULL;
    }
    
@@ -42,20 +42,37 @@ char* md_load_file_as_string( char const* path, size_t* size ) {
 
 
 // safely load secret information as a null-terminated string, ensuring that the memory allocated is mlocked
+// return 0 on success
+// return negative errno on stat(2) failure on path
+// return -ENODATA if we failed to allocate a buffer of sufficient size for the file referred to by the path 
+// return -ENODATA if we failed to open path for reading, or failed to read all of the file
+// return -EINVAL if the path does not refer to a regular file (or a symlink to a regular file)
+// return -EOVERFLOW if the buf was allocated, but does not contain sufficient space
 int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
+   
    struct stat statbuf;
-   int rc = stat( path, &statbuf );
+   int rc = 0;
+   
+   rc = stat( path, &statbuf );
    if( rc != 0 ) {
+      
       rc = -errno;
       SG_error("stat(%s) errno = %d\n", path, rc );
       return rc;
    }
    
+   if( !S_ISREG( statbuf.st_mode ) ) {
+      
+      return -EINVAL;
+   }
+   
    bool alloced = false;
    
    if( buf->ptr == NULL ) {
+      
       rc = mlock_calloc( buf, statbuf.st_size + 1 );
       if( rc != 0 ) {
+         
          SG_error("mlock_calloc rc = %d\n", rc );
          return -ENODATA;
       }
@@ -63,24 +80,38 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
       alloced = true;
    }
    else if( buf->len <= (size_t)statbuf.st_size ) {
+      
       SG_error("insufficient space for %s\n", path );
       return -EOVERFLOW;
    }
    
    FILE* f = fopen( path, "r" );
-   if( !f ) {
+   if( f == NULL ) {
       rc = -errno;
       
-      if( alloced )
+      if( alloced ) {
          mlock_free( buf );
+      }
       
-      SG_error("fopen(%s) errno = %d\n", path, rc );
+      SG_error("fopen(%s) rc = %d\n", path, rc );
       return -ENODATA;
    }
    
    buf->len = fread( buf->ptr, 1, statbuf.st_size, f );
    fclose( f );
+   
+   if( buf->len != (unsigned)statbuf.st_size ) {
+      
+      SG_error("Read only %zu of %zu bytes\n", buf->len, statbuf.st_size );
+      
+      if( alloced ) {
+         mlock_free( buf );
+      }
+      
+      return -ENODATA;
+   }
 
+   // null-terminate
    char* char_ptr = (char*)buf->ptr;
    char_ptr[ buf->len ] = 0;
 
@@ -89,6 +120,9 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
 
 
 // initialize local storage
+// return 0 on success
+// return -ENOMEM if OOM
+// return negative on storage-related error (md_mkdirs)
 int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    char cwd[PATH_MAX + 1];
@@ -96,7 +130,15 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    int rc = 0;
    
-   if( c->storage_root == NULL ) {
+   char* storage_root = c->storage_root;
+   char* data_root = c->data_root;
+   char* logfile_path = c->logfile_path;
+   
+   bool alloc_storage_root = false;
+   bool alloc_data_root = false;
+   bool alloc_logfile_path = false;
+   
+   if( storage_root == NULL ) {
       // make a PID-named directory
       pid_t my_pid = 0;
       
@@ -104,47 +146,79 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       
       sprintf(cwd, "/tmp/syndicate-%d", my_pid );
       
-      c->storage_root = strdup(cwd);
+      storage_root = SG_strdup_or_null(cwd);
+      alloc_storage_root = true;
    }
    else {
-      if( strlen(c->storage_root) >= PATH_MAX - 20 ) {          // - 20 for any schema prefixes we'll apply; shouldn't be a problem otherwise
-         SG_error("Directory '%s' too long\n", c->storage_root );
+      
+      if( strlen(storage_root) >= PATH_MAX - 20 ) {          // - 20 for any schema prefixes we'll apply; shouldn't be a problem otherwise
+         SG_error("Directory '%s' too long\n", storage_root );
          return -EINVAL;
       }
       
-      strncpy( cwd, c->storage_root, PATH_MAX );
+      strncpy( cwd, storage_root, PATH_MAX );
    }
    
-   char* data_root = md_fullpath( cwd, "data/", NULL );
-   char* logfile_path = md_fullpath( cwd, "access.log", NULL );
+   if( data_root == NULL ) {
+      data_root = md_fullpath( cwd, "data/", NULL );
+      alloc_data_root = true;
+   }
    
-   if( c->data_root == NULL )
-      c->data_root = strdup( data_root );
-
-   if( c->logfile_path == NULL )
-      c->logfile_path = strdup( logfile_path );
-
-   free( data_root );
-   free( logfile_path );
-
-   SG_debug("data root:     %s\n", c->data_root );
-   SG_debug("access log:    %s\n", c->logfile_path );
-
-   // make sure the storage roots exist
-   if( rc == 0 ) {
-      const char* dirs[] = {
-         c->data_root,
-         NULL
-      };
+   if( logfile_path == NULL ) {
+      logfile_path = md_fullpath( cwd, "access.log", NULL );
+      alloc_logfile_path = true;
+   }
+   
+   // check for allocation errors
+   if( (alloc_data_root && data_root == NULL) ||
+       (alloc_storage_root && storage_root == NULL ) || 
+       (alloc_logfile_path && logfile_path == NULL) ) {
       
-      for( int i = 0; dirs[i] != NULL; i++ ) {         
-         rc = md_mkdirs( dirs[i] );
-         if( rc != 0 ) {
-            SG_error("md_mkdirs(%s) rc = %d\n", dirs[i], rc );
-            return rc;
-         }
+      if( alloc_data_root ) {
+         SG_safe_free( data_root );
       }
+      
+      if( alloc_storage_root ) {
+         SG_safe_free( storage_root );
+      }
+      
+      if( alloc_logfile_path ) {
+         SG_safe_free( logfile_path );
+      }
+      
+      return -ENOMEM;
    }
+   
+   SG_debug("data root:     %s\n", data_root );
+   SG_debug("access log:    %s\n", logfile_path );
+   
+   // try to set up directories 
+   rc = md_mkdirs( data_root );
+   if( rc != 0 ) {
+      
+      SG_error("md_mkdirs('%s') rc = %d\n", data_root, rc );
+      
+      // clean up 
+      
+      if( alloc_data_root ) {
+         SG_safe_free( data_root );
+      }
+      
+      if( alloc_storage_root ) {
+         SG_safe_free( storage_root );
+      }
+      
+      if( alloc_logfile_path ) {
+         SG_safe_free( logfile_path );
+      }
+      
+      return rc;
+   }
+   
+   // success!
+   c->data_root = data_root;
+   c->storage_root = storage_root;
+   c->logfile_path = logfile_path;
 
    return rc;
 }

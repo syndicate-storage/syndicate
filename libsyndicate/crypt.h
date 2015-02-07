@@ -52,7 +52,7 @@ int md_crypt_shutdown();
 int md_openssl_thread_setup(void);
 int md_openssl_thread_cleanup(void);
 
-void md_init_OpenSSL(void);
+int md_init_OpenSSL(void);
 int md_openssl_error(void);
 
 int md_read_urandom( char* buf, size_t len );

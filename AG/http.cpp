@@ -849,8 +849,6 @@ int AG_http_init( struct md_HTTP* http, struct md_syndicate_conf* conf ) {
    md_HTTP_connect( *http, AG_HTTP_connect );
    md_HTTP_GET( *http, AG_GET_handler );
    md_HTTP_close( *http, AG_cleanup );
-
-   md_signals( 0 );        // no signals
    
    return 0;
 }

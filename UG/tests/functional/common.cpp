@@ -22,12 +22,12 @@ int syndicate_functional_test_init( int argc, char** argv, int* optind_out, stru
    struct UG_opts ug_opts;
    
    UG_opts_get( &ug_opts );
-   md_default_opts( &syn_opts );
+   md_opts_default( &syn_opts );
    
    int rc = 0;
    
    // get options
-   rc = md_parse_opts( &syn_opts, argc, argv, optind_out, NULL, NULL );
+   rc = md_opts_parse( &syn_opts, argc, argv, optind_out, NULL, NULL );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       exit(1);
