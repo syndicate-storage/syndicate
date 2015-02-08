@@ -29,7 +29,6 @@ int main( int argc, char** argv ) {
    struct md_opts opts;
    struct UG_opts ug_opts;
    int local_optind = 0;
-   uint64_t file_id = 0;
    uint64_t parent_id = 0;
    ms_path_t path;
    struct ms_client_multi_result result;
@@ -71,7 +70,7 @@ int main( int argc, char** argv ) {
    
    printf("\n\n\nBegin listdir\n\n\n");
    
-   rc = ms_client_listdir( state.ms, parent_id, 0, 0, 100, &result );
+   rc = ms_client_listdir( state.ms, parent_id, 100, 100, &result );
       
    if( rc != 0 ) {
       SG_error("ms_client_listdir rc = %d\n", rc );

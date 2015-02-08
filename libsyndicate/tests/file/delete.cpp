@@ -28,8 +28,8 @@ int main( int argc, char** argv ) {
    int local_optind = 0;
    struct ms_client_request* requests = NULL;
    size_t num_requests = 0;
-   ms_client_results_list_t results;              // multi result
-   
+   struct ms_client_request_result* results = NULL;
+
    md_opts_default( &opts );
    
    // get options
@@ -92,7 +92,7 @@ int main( int argc, char** argv ) {
    if( num_requests > 1 ) {
       
       // multi RPC 
-      rc = ms_client_multi_run( state.ms, requests, results, num_requests );
+      rc = ms_client_run_requests( state.ms, requests, results, num_requests );
       
       printf("\n\n\nms_client_multi_run(DELETE) rc = %d\n\n\n", rc );
       

@@ -66,7 +66,7 @@ int main( int argc, char** argv ) {
       }
       
       printf("   getattr(%" PRIX64 ")\n", file_id );
-      ms_client_make_path_ent( &path_ent, volume_id, 0, file_id, 0, 0, 0, 0, NULL, NULL );
+      ms_client_make_path_ent( &path_ent, volume_id, 0, file_id, 0, 0, 0, 0, 0, NULL, NULL );
       path.push_back( path_ent );
    }
    

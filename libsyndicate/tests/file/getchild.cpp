@@ -81,7 +81,7 @@ int main( int argc, char** argv ) {
       
       printf("   getchild(%" PRIX64 ", %s)\n", parent_id, argv[i] );
       
-      ms_client_make_path_ent( &path_ent, volume_id, parent_id, file_id, 0, 0, 0, 0, argv[i], NULL );
+      ms_client_make_path_ent( &path_ent, volume_id, parent_id, file_id, 0, 0, 0, 0, 0, argv[i], NULL );
       path.push_back( path_ent );
    }
    

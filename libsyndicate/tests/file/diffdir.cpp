@@ -79,7 +79,7 @@ int main( int argc, char** argv ) {
    
    printf("\n\n\nBegin diffdir\n\n\n");
 
-   rc = ms_client_diffdir( state.ms, parent_id, 0, 0, 100, least_unknown_generation, &result );
+   rc = ms_client_diffdir( state.ms, parent_id, 0, least_unknown_generation, &result );
    
    if( rc != 0 ) {
       SG_error("ms_client_diffdir rc = %d\n", rc );
