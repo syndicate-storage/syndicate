@@ -250,7 +250,7 @@ int ms_client_revoke_certs( struct ms_volume* vol, ms_cert_diff_list* certdiff )
          
          // revoke!
          ms_client_gateway_cert_free( itr->second );
-         free( itr->second );
+         SG_safe_free( itr->second );
          cert_bundles[diffent->gateway_type]->erase( itr );
       }
       else {
