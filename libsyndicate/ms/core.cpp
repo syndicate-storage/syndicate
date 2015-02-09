@@ -233,6 +233,9 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
    
 
 // create an MS client context
+// return 0 on success 
+// return -EINVAL if config is NULL 
+// return -ENOMEM if OOM
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
 
    int rc = 0;
@@ -243,6 +246,20 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    memset( client, 0, sizeof(struct ms_client) );
    
+   rc = pthread_rwlock_init( &client->lock, NULL );
+   if( rc != 0 ) {
+      return -rc;
+   }
+   
+   rc = pthread_rwlock_init( &client->config_lock, NULL );
+   if( rc != 0 ) {
+      
+      pthread_rwlock_destroy( &client->lock );
+      return rc;
+   }
+   
+   sem_init( &client->uploader_sem, 0, 0 );
+   
    // get MS url 
    client->url = SG_strdup_or_null( conf->metadata_url );
    if( client->url == NULL ) {
@@ -250,16 +267,19 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    }
    
    // set up downloader so we can register
-   md_downloader_init( &client->dl, "ms-client" );
-   
-   rc = md_downloader_start( &client->dl );
+   rc = md_downloader_init( &client->dl, "ms-client" );
    if( rc != 0 ) {
       
+      SG_error("md_downloader_start rc = %d\n", rc );
+      
       SG_safe_free( client->url );
-      SG_error("Failed to start downloader, rc = %d\n", rc );
+      pthread_rwlock_destroy( &client->config_lock );
+      pthread_rwlock_destroy( &client->lock );
+      sem_destroy( &client->uploader_sem );
+      
       return rc;
    }
-
+   
    client->gateway_type = gateway_type;
    
    // clear the / at the end...
@@ -270,19 +290,17 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    client->userpass = NULL;
 
-   pthread_rwlock_init( &client->lock, NULL );
-   pthread_rwlock_init( &client->config_lock, NULL );
-
    client->conf = conf;
 
    // uploader thread 
-   sem_init( &client->uploader_sem, 0, 0 );
-   
    rc = ms_client_try_load_key( conf, &client->gateway_key, &client->gateway_key_pem, conf->gateway_key, false );
    if( rc != 0 ) {
       SG_error("ms_client_try_load_key rc = %d\n", rc );
       
       SG_safe_free( client->url );
+      pthread_rwlock_destroy( &client->config_lock );
+      pthread_rwlock_destroy( &client->lock );
+      sem_destroy( &client->uploader_sem );
       
       return rc;
    }
@@ -296,7 +314,18 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
          
          SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->gateway_key, rc );
          
+         
          SG_safe_free( client->url );
+         pthread_rwlock_destroy( &client->config_lock );
+         pthread_rwlock_destroy( &client->lock );
+         sem_destroy( &client->uploader_sem );
+         
+         // NOTE: was mlock'ed
+         munlock( client->gateway_key_pem, client->gateway_key_pem_len );
+         SG_safe_free( client->gateway_key_pem );
+         
+         EVP_PKEY_free( client->gateway_key );
+         
          return rc;
       }
    }
@@ -307,14 +336,48 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
    if( rc != 0 ) {
       
-      SG_error("ms_client_try_load_key rc = %d\n", rc );
-      
       SG_safe_free( client->url );
+      pthread_rwlock_destroy( &client->config_lock );
+      pthread_rwlock_destroy( &client->lock );
+      sem_destroy( &client->uploader_sem );
+      
+      // NOTE: was mlock'ed
+      munlock( client->gateway_key_pem, client->gateway_key_pem_len );
+      SG_safe_free( client->gateway_key_pem );
+      
+      EVP_PKEY_free( client->gateway_key );
+      EVP_PKEY_free( client->gateway_pubkey );
+      
+      SG_error("ms_client_try_load_key rc = %d\n", rc );
       return rc;
    }
    
    client->config_change_callback = ms_client_config_change_callback_default;
    client->config_change_callback_cls = NULL;
+   
+   // start downloading
+   rc = md_downloader_start( &client->dl );
+   if( rc != 0 ) {
+      
+      SG_error("Failed to start downloader, rc = %d\n", rc );
+      
+      SG_safe_free( client->url );
+      pthread_rwlock_destroy( &client->config_lock );
+      pthread_rwlock_destroy( &client->lock );
+      sem_destroy( &client->uploader_sem );
+      
+      // NOTE: was mlock'ed
+      munlock( client->gateway_key_pem, client->gateway_key_pem_len );
+      SG_safe_free( client->gateway_key_pem );
+      
+      EVP_PKEY_free( client->gateway_key );
+      EVP_PKEY_free( client->gateway_pubkey );
+      EVP_PKEY_free( client->syndicate_public_key );
+      
+      SG_safe_free( client->syndicate_public_key_pem );
+      
+      return rc;
+   }
    
    client->inited = true;               // safe to destroy later
    
@@ -323,6 +386,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 
 
 // destroy an MS client context 
+// always succeeds
 int ms_client_destroy( struct ms_client* client ) {
    if( client == NULL ) {
       SG_warn("client is %p\n", client);
@@ -360,14 +424,19 @@ int ms_client_destroy( struct ms_client* client ) {
    SG_safe_free( client->url );
    
    if( client->gateway_key ) {
+      
       EVP_PKEY_free( client->gateway_key );
       client->gateway_key = NULL;
    }
-   if( client->gateway_pubkey ) {
+   
+   if( client->gateway_pubkey != NULL ) {
+      
       EVP_PKEY_free( client->gateway_pubkey );
       client->gateway_pubkey = NULL;
    }
-   if( client->gateway_key_pem ) {
+   
+   if( client->gateway_key_pem != NULL ) {
+      
       // NOTE: was mlock'ed
       if( client->gateway_key_pem_mlocked ) {
          munlock( client->gateway_key_pem, client->gateway_key_pem_len );
@@ -590,6 +659,9 @@ int ms_client_is_async_operation( int oper ) {
 
 // process a gateway message's header, in order to detect when we have stale metadata.
 // if we have stale metadata, then wake up the reloader thread and synchronize our volume metadata
+// return 0 on success
+// return 1 if the configuration must be reloaded 
+// return -EINVAL if the volumes do not match
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version ) {
    int rc = 0;
    
@@ -613,6 +685,9 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 }
 
 // synchronous method to GET data
+// expects an ms_reply
+// return 0 on success
+// return negative on error
 int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* reply ) {
    
    char* buf = NULL;
@@ -630,8 +705,7 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    // parse and verify
    rc = ms_client_parse_reply( client, reply, buf, buflen, true );
    
-   free( buf );
-   buf = NULL;
+   SG_safe_free( buf );
    
    if( rc != 0 ) {
       SG_error("ms_client_parse_reply rc = %d\n", rc );
@@ -642,6 +716,7 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
 
 // set the configuration change callback
 int ms_client_set_config_change_callback( struct ms_client* client, ms_client_config_change_callback clb, void* cls ) {
+   
    ms_client_config_wlock( client );
    
    client->config_change_callback = clb;
@@ -654,6 +729,7 @@ int ms_client_set_config_change_callback( struct ms_client* client, ms_client_co
 
 // set the user cls
 void* ms_client_set_config_change_callback_cls( struct ms_client* client, void* cls ) {
+   
    ms_client_config_wlock( client );
    
    void* ret = client->config_change_callback_cls;
