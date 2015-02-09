@@ -64,6 +64,9 @@ void ms_volume_free( struct ms_volume* vol ) {
 
 // synchronously download a volume's metadata by name
 // on success, populate the given ms_volume structure with the metadata
+// return 0 on success
+// return -EINVAL if we failed to unserialize 
+// return -errno if we failed to download data, or failed to initialize the volume
 int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
    
    ms::ms_volume_metadata volume_md;
@@ -334,7 +337,7 @@ int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume
       AG_certs = SG_safe_new( ms_cert_bundle() );
    }
    
-   
+   // TODO: depricate in favor of unified gateway closure
    if( volume_md->has_cache_closure_text() ) {
       
       char const* method = NULL;
