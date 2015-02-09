@@ -357,6 +357,9 @@ ssize_t md_read_uninterrupted( int fd, char* buf, size_t len ) {
 
 
 // recv, but mask EINTR 
+// return the number of bytes received on success
+// return negative on error
+// return non-negative (less than len) on EOF
 ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags ) {
    
    ssize_t num_read = 0;
@@ -383,6 +386,8 @@ ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags ) {
 }
 
 // write, but mask EINTR
+// return the number of bytes written on success
+// return negative or less than len on error
 ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len ) {
    
    ssize_t num_written = 0;
@@ -410,6 +415,8 @@ ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len ) {
 
 
 // send, but mask EINTR
+// return the number of bytes sent on success
+// return negative or less than len on error
 ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) {
    
    ssize_t num_written = 0;
