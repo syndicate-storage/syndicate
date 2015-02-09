@@ -227,10 +227,6 @@ struct md_syndicate_conf {
 #define SG_USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
 #define SG_GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
 
-#define COMMENT_KEY                 '#'
-
-#define DEBUG_KEY                   "DEBUG_LEVEL"
-
 // config elements 
 #define SG_CONFIG_DEFAULT_READ_FRESHNESS  "DEFAULT_READ_FRESHNESS"
 #define SG_CONFIG_DEFAULT_WRITE_FRESHNESS "DEFAULT_WRITE_FRESHNESS"
