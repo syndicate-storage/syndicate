@@ -19,6 +19,8 @@
 #include "libsyndicate/ms/path.h"
 
 // generate a URL for a batch to download as part of listdir or diffdir
+// return the URL on success
+// return NULL on OOM or out of URLs to request
 char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx, void* cls, bool generation_url ) {
    
    struct ms_client_listdir_context* ctx = (struct ms_client_listdir_context*)cls;
@@ -38,8 +40,15 @@ char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx
          int64_t page_start = (ctx->num_children / ctx->client->page_size) + 2;
          int64_t page_end = (ctx->capacity / ctx->client->page_size);
          
-         for( int64_t i = page_start; i <= page_end; i++ ) {
-            ctx->batches->push( i );
+         try {
+            for( int64_t i = page_start; i <= page_end; i++ ) {
+               ctx->batches->push( i );
+            }
+         }
+         catch( bad_alloc& ba ) {
+            
+            pthread_mutex_unlock( &ctx->lock );
+            return NULL;
          }
       }
    }
@@ -61,23 +70,45 @@ char* ms_client_listdir_generate_batch_url_ex( struct md_download_context* dlctx
          url = ms_client_file_listdir_url( ctx->client->url, ctx->volume_id, ctx->parent_id, next_batch, -1 );
       }
       
-      // remember which download this was for
-      (*ctx->downloading)[ dlctx ] = next_batch;
+      if( url == NULL ) {
+         pthread_mutex_unlock( &ctx->lock );
+         return NULL;
+      }
+      
+      try {
+         
+         // remember which download this was for
+         (*ctx->downloading)[ dlctx ] = next_batch;
+      }
+      catch( bad_alloc& ba ) {
+         pthread_mutex_lock( &ctx->lock );
+         
+         SG_safe_free( url );
+         return NULL;
+      }
    }
    
    pthread_mutex_unlock( &ctx->lock );
    return url;
 }
 
+// generate a URL to a batch of entries, named by page number
+// return the URL on success
+// return NULL on OOM, or no more URLs
 char* ms_client_listdir_generate_batch_url( struct md_download_context* dlctx, void* cls ) {
    return ms_client_listdir_generate_batch_url_ex( dlctx, cls, false );
 }
 
+// generate a URL to a batch of entries, named by generation number 
+// return the URL on success
+// return NULL on OOM, or no more URLs
 char* ms_client_diffdir_generate_batch_url( struct md_download_context* dlctx, void* cls ) {
    return ms_client_listdir_generate_batch_url_ex( dlctx, cls, true );
 }
 
 // listdir curl init'er 
+// return the curl hnndle on success
+// return NULL on OOM
 static CURL* ms_client_listdir_curl_generator( void* cls ) {
    
    struct ms_client_listdir_context* ctx = (struct ms_client_listdir_context*)cls;
@@ -87,37 +118,50 @@ static CURL* ms_client_listdir_curl_generator( void* cls ) {
    
    curl = curl_easy_init();
    
-   ms_client_init_curl_handle( ctx->client, curl, NULL );
+   if( curl != NULL ) {
+      ms_client_init_curl_handle( ctx->client, curl, NULL );
+   }
    
    return curl;
 }
 
 
-// retry a listdir 
+// retry a listdir on a batch
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -ENODATA if we've tried this batch too many times
+// return -ENOMEM if OOM
+// ctx must be locked
 int ms_client_listdir_batch_retry( struct ms_client_listdir_context* ctx, int batch_num ) {
    
-   if( ctx->attempts->find( batch_num ) == ctx->attempts->end() ) {
-      
-      (*ctx->attempts)[batch_num] = 1;
-   }
-   else {
-      
-      (*ctx->attempts)[batch_num] ++;
-      
-      if( (*ctx->attempts)[batch_num] > ctx->client->conf->max_metadata_read_retry ) {
+   try {
+      if( ctx->attempts->find( batch_num ) == ctx->attempts->end() ) {
          
-         // too many retries 
-         SG_error("Bailing out after trying batch %d %d times\n", batch_num, (*ctx->attempts)[batch_num] );
-         return -ENODATA;
+         (*ctx->attempts)[batch_num] = 1;
       }
+      else {
+         
+         (*ctx->attempts)[batch_num] ++;
+         
+         if( (*ctx->attempts)[batch_num] > ctx->client->conf->max_metadata_read_retry ) {
+            
+            // too many retries 
+            SG_error("Bailing out after trying batch %d %d times\n", batch_num, (*ctx->attempts)[batch_num] );
+            return -ENODATA;
+         }
+      }
+      
+      ctx->batches->push( batch_num );
    }
-   
-   ctx->batches->push( batch_num );
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
    
    return 0;
 }
 
-// cancel a download 
+// cancel a download
+// always succeeds; it's idempotent
 int ms_client_listdir_download_cancel( struct md_download_context* dlctx, void* cls ) {
    
    struct ms_client_listdir_context* ctx = (struct ms_client_listdir_context*)cls;
@@ -133,6 +177,10 @@ int ms_client_listdir_download_cancel( struct md_download_context* dlctx, void* 
 }
 
 // postprocess a downloaded entry 
+// return 0 on success
+// return -EINVAL if we can't look up the download state for this download (shouldn't happen)
+// return -ENODATA if we could not get a response from the MS
+// return -EBADMSG if we failed to parse a response
 int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, void* cls ) {
    
    struct ms_client_listdir_context* ctx = (struct ms_client_listdir_context*)cls;
@@ -171,7 +219,7 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
          // can't retry
          
          pthread_mutex_unlock( &ctx->lock );
-         return rc;
+         return -ENODATA;
       }
    }
    else if( rc < 0 ) {
@@ -215,42 +263,79 @@ int ms_client_listdir_download_postprocess( struct md_download_context* dlctx, v
       }
       
       if( rc == 0 ) {
-         ctx->children_ids->insert( file_id );
-         ctx->children->push_back( children[i] );
+         
+         try {
+            ctx->children_ids->insert( file_id );
+            ctx->children->push_back( children[i] );
+         }
+         catch( bad_alloc& ba ) {
+            rc = -ENOMEM;
+         }
       }
       
       // do we have all children?
-      if( ctx->children->size() >= (size_t)ctx->num_children ) {
+      if( rc == 0 && ctx->children->size() >= (size_t)ctx->num_children ) {
          
          // can cancel all other downloads--they're empty 
          rc = MD_DOWNLOAD_FINISH;
          ctx->finished = true;
       }
+      
+      if( rc != 0 ) {
+         break;
+      }
    }
    
-   free( children );
+   SG_safe_free( children );
    
    pthread_mutex_unlock( &ctx->lock );
    return rc;
 }
 
 
+// free a listdir context 
+int ms_client_listdir_context_free( struct ms_client_listdir_context* ctx ) {
+   
+   SG_safe_delete( ctx->downloading );
+   SG_safe_delete( ctx->children );
+   SG_safe_delete( ctx->attempts );
+   SG_safe_delete( ctx->batches );
+   SG_safe_delete( ctx->children_ids );
+   
+   pthread_mutex_destroy( &ctx->lock );
+   return 0;
+}
+
+
 // set up a listdir or diffdir context 
 // if least_unknown_generation >= 0, then fetch by generation number 
 // otherwise, fetch by directory index
+// return 0 on success
+// return -ENOMEM on OOM
 int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t parent_capacity ) {
    
    memset( ctx, 0, sizeof(struct ms_client_listdir_context) );
+   
+   int rc = pthread_mutex_init( &ctx->lock, NULL );
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
    
    ctx->client = client;
    ctx->parent_id = parent_id;
    ctx->volume_id = ms_client_get_volume_id( client );
    
-   ctx->downloading = new ms_client_listdir_batch_set();
-   ctx->children = new vector<struct md_entry>();
-   ctx->attempts = new ms_client_listdir_attempt_set();
-   ctx->batches = new queue<int>();
-   ctx->children_ids = new set<uint64_t>();
+   ctx->downloading = new (nothrow) ms_client_listdir_batch_set();
+   ctx->children = new (nothrow) vector<struct md_entry>();
+   ctx->attempts = new (nothrow) ms_client_listdir_attempt_set();
+   ctx->batches = new (nothrow) queue<int>();
+   ctx->children_ids = new (nothrow) set<uint64_t>();
+   
+   if( ctx->downloading == NULL || ctx->children == NULL || ctx->attempts == NULL || ctx->batches == NULL || ctx->children_ids == NULL ) {
+      
+      ms_client_listdir_context_free( ctx );
+      return -ENOMEM;
+   }
    
    if( least_unknown_generation >= 0 ) {
       
@@ -258,78 +343,64 @@ int ms_client_listdir_context_init_ex( struct ms_client_listdir_context* ctx, st
       int64_t curr_generation = least_unknown_generation;
       while( curr_generation < num_children ) {
          
-         ctx->batches->push( curr_generation );
+         try {
+            ctx->batches->push( curr_generation );
+         }
+         catch( bad_alloc& ba ) {
+            
+            ms_client_listdir_context_free( ctx );
+            return -ENOMEM;
+         }
+         
          curr_generation += client->page_size;
       }
    }
    else {
       
-      // one batch == one page
-      int64_t num_pages = (num_children / client->page_size) + 1;
-      for( int64_t i = 0; i <= num_pages; i++ ) {
-         ctx->batches->push( i );
+      try {
+         // one batch == one page
+         int64_t num_pages = (num_children / client->page_size) + 1;
+         for( int64_t i = 0; i <= num_pages; i++ ) {
+            ctx->batches->push( i );
+         }
+         
+         SG_debug("Request %" PRId64 " pages of /%" PRIu64 "/%" PRIX64 "\n", num_pages, ctx->volume_id, parent_id );
       }
-      
-      SG_debug("Request %" PRId64 " pages of /%" PRIu64 "/%" PRIX64 "\n", num_pages, ctx->volume_id, parent_id );
+      catch( bad_alloc& ba ) {
+         
+         ms_client_listdir_context_free( ctx );
+         return -ENOMEM;
+      }
    }
    
    ctx->num_children = num_children;
    ctx->capacity = parent_capacity;
       
-   pthread_mutex_init( &ctx->lock, NULL );
    return 0;
 }
 
 // set up a listdir context 
+// return 0 on success
+// return -ENOMEM on OOM
 int ms_client_listdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity ) {
    return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, -1, parent_capacity );
 }
 
 // set up a diffdir context 
+// return 0 on success
+// return -ENOMEM on OOM
 int ms_client_diffdir_context_init( struct ms_client_listdir_context* ctx, struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation ) {
    return ms_client_listdir_context_init_ex( ctx, client, parent_id, num_children, least_unknown_generation, -1 );
 }
 
-// free a listdir context 
-int ms_client_listdir_context_free( struct ms_client_listdir_context* ctx ) {
-   
-   if( ctx->downloading != NULL ) {
-      
-      delete ctx->downloading;
-      ctx->downloading = NULL;
-   }
-   
-   if( ctx->children != NULL ) {
-      
-      delete ctx->children;
-      ctx->children = NULL;
-   }
-   
-   if( ctx->attempts != NULL ) {
-      
-      delete ctx->attempts;
-      ctx->attempts = NULL;
-   }
-   
-   if( ctx->batches != NULL ) {
-      
-      delete ctx->batches;
-      ctx->batches = NULL;
-   }
-   
-   if( ctx->children_ids ) {
-      
-      delete ctx->children_ids;
-      ctx->children_ids = NULL;
-   }
-   
-   return 0;
-}
 
 // download metadata for a directory.
 // if least_unknown_generation >= 0, then this is a diffdir operation.
 // otherwise, it's a listdir operation.
 // return partial results, even on error.
+// return 0 on success
+// return -ENOMEM on OOM 
+// return negative on download error or processing error (but results might still have some data in it)
 int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t parent_capacity, struct ms_client_multi_result* results ) {
    
    int rc = 0;
@@ -368,6 +439,11 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    if( ctx.children->size() > 0 ) {
       
       ents = SG_CALLOC( struct md_entry, ctx.children->size() );
+      if( ents == NULL ) {
+         
+         ms_client_listdir_context_free( &ctx );
+         return -ENOMEM;
+      }
       
       std::copy( ctx.children->begin(), ctx.children->end(), ents );
       
@@ -377,9 +453,8 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    results->num_ents = ctx.children->size();
    results->num_processed = ctx.children->size();
    
-   ctx.children->clear();
-   delete ctx.children;
-   ctx.children = NULL;
+   // prevent the children from getting freed, since we moved them over to result->ents
+   SG_safe_delete( ctx.children );
    
    if( rc == 0 ) {
       // success! convert to multi result
@@ -395,11 +470,18 @@ int ms_client_listdir_ex( struct ms_client* client, uint64_t parent_id, int64_t 
    return rc;
 }
 
-
+// list a directory, and put the data into results
+// return 0 on success
+// return negative on failure
+// NOTE: even if this method fails, the caller should free the contents of results
 int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity, struct ms_client_multi_result* results ) {
    return ms_client_listdir_ex( client, parent_id, num_children, -1, parent_capacity, results );
 }
 
+// get new directory entries, and put the data into results 
+// return 0 on success 
+// return negative on failure 
+// NOTE: even if this method fails, the caller should free the contents of results
 int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results ) {
    return ms_client_listdir_ex( client, parent_id, num_children, least_unknown_generation, -1, results );
 }
