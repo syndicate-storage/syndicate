@@ -1,6 +1,6 @@
 CPP			:= g++ -Wall -fPIC -g -Wno-format
 LIBINC		:= -L../
-INC			:= -I/usr/include -I../
+INC			:= -I/usr/include -I/usr/local/include
 
 LIB			:= -lpthread -lcurl -lcrypto -lmicrohttpd -luriparser -lprotobuf -lrt -lsyndicate
 DEFS			:= -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_THREAD_SAFE
