@@ -1,2 +1,10 @@
 *~
 *.pyc
+AG/datasets/*.xml
+AG/datasets/*.stats
+*.bak
+*.o
+*.pem
+build/out/*
+.sconsign.*
+RG/drivers/*/*secret*
