@@ -59,50 +59,105 @@ int md_downloader_cancelling_unlock( struct md_downloader* dl ) {
 }
 
 // set up a downloader 
+// return 0 on success
+// return -ENOMEM on OOM 
 int md_downloader_init( struct md_downloader* dl, char const* name ) {
+   
+   int rc = 0;
+   
    memset( dl, 0, sizeof(struct md_downloader) );
    
-   dl->name = strdup( name );
-   dl->downloading = new md_downloading_map_t();
-   dl->pending = new md_pending_set_t();
-   dl->cancelling = new md_pending_set_t();
+   rc = pthread_rwlock_init( &dl->downloading_lock, NULL );
+   if( rc != 0 ) {
+      
+      return -rc;
+   }
    
-   pthread_rwlock_init( &dl->downloading_lock, NULL );
-   pthread_rwlock_init( &dl->pending_lock, NULL );
-   pthread_rwlock_init( &dl->cancelling_lock, NULL );
+   rc = pthread_rwlock_init( &dl->pending_lock, NULL );
+   if( rc != 0 ) {
+      
+      pthread_rwlock_destroy( &dl->downloading_lock );
+      return -rc;
+   }
+   
+   rc = pthread_rwlock_init( &dl->cancelling_lock, NULL );
+   if( rc != 0 ) {
+      
+      pthread_rwlock_destroy( &dl->downloading_lock );
+      pthread_rwlock_destroy( &dl->pending_lock );
+      return -rc;
+   }
    
    dl->curlm = curl_multi_init();
    
+   dl->name = SG_strdup_or_null( name );
+   dl->downloading = SG_safe_new( md_downloading_map_t() );
+   dl->pending = SG_safe_new( md_pending_set_t() );
+   dl->cancelling = SG_safe_new( md_pending_set_t() );
+   
+   if( dl->name == NULL || dl->downloading == NULL || dl->pending == NULL || dl->cancelling == NULL || dl->curlm == NULL ) {
+      
+      SG_safe_free( dl->name );
+      SG_safe_free( dl->downloading );
+      SG_safe_free( dl->pending );
+      SG_safe_free( dl->cancelling );
+      
+      if( dl->curlm != NULL ) {
+         curl_multi_cleanup( dl->curlm );
+      }
+      
+      pthread_rwlock_destroy( &dl->downloading_lock );
+      pthread_rwlock_destroy( &dl->pending_lock );
+      pthread_rwlock_destroy( &dl->cancelling_lock );
+      
+      return -ENOMEM;
+   }
+   
+   dl->inited = true;
    return 0;
 }
 
 // start up a downloader 
+// return 0 on success
+// return -1 if we failed to start the thread, or if we're already running 
 int md_downloader_start( struct md_downloader* dl ) {
-   dl->running = true;
    
-   dl->thread = md_start_thread( md_downloader_main, dl, false );
-   if( dl->thread == (pthread_t)(-1) ) {
-      SG_error("%s: failed to start\n", dl->name);
-      return -1;
+   if( !dl->running ) {
+      
+      dl->running = true;
+      
+      dl->thread = md_start_thread( md_downloader_main, dl, false );
+      if( dl->thread == (pthread_t)(-1) ) {
+         
+         SG_error("%s: failed to start\n", dl->name);
+         dl->running = false;
+         return -1;
+      }
    }
    
    return 0;
 }
 
 // stop a downloader 
+// return 0 on success 
+// return negative if we failed to join with the downloader thread
 int md_downloader_stop( struct md_downloader* dl ) {
-   dl->running = false;
    
-   int rc = pthread_join( dl->thread, NULL );
-   if( rc != 0 ) {
-      SG_error("%s: pthread_join rc = %d\n", dl->name, rc );
-      return rc;
+   if( dl->running ) {
+      dl->running = false;
+      
+      int rc = pthread_join( dl->thread, NULL );
+      if( rc != 0 ) {
+         SG_error("%s: pthread_join rc = %d\n", dl->name, rc );
+         return rc;
+      }
    }
    
    return 0;
 }
 
-// signal every element of a pending_set 
+// signal every element of a pending_set by incrementing its semaphore
+// always succeeds
 static int md_signal_pending_set( md_pending_set_t* ps ) {
    
    // signal each waiting thread 
@@ -120,16 +175,26 @@ static int md_signal_pending_set( md_pending_set_t* ps ) {
 }
 
 
-// shut down a downloader.
+// shut down a downloader.  it must be stopped first.
 // stops all CURL transfers abruptly.
+// return 0 on success 
+// return -EINVAL if the downloader was running, or if the downloader was never initialized
 int md_downloader_shutdown( struct md_downloader* dl ) {
+   
    if( dl->running ) {
       // not stopped yet 
       return -EINVAL;
    }
    
+   if( !dl->inited ) {
+      // not initialized
+      return -EINVAL;
+   }
+   
    // destroy downloading
    md_downloader_downloading_wlock( dl );
+   
+   dl->inited = false;
    
    if( dl->downloading != NULL ) {
       
@@ -202,8 +267,14 @@ int md_downloader_shutdown( struct md_downloader* dl ) {
 }
 
 
-// insert a pending context 
+// insert a pending context.
+// return 0 on success, and mark it as pending and unsafe to free on success
+// return -EPERM if the downloader is not running 
+// return -EINVAL if the download context is finalized, already pending, or already cancelling
+// return -ENOMEM if OOM
 int md_downloader_insert_pending( struct md_downloader* dl, struct md_download_context* dlctx ) {
+   
+   int rc = 0;
    
    md_downloader_pending_wlock( dl );
    
@@ -231,23 +302,39 @@ int md_downloader_insert_pending( struct md_downloader* dl, struct md_download_c
    dlctx->pending = true;
    dlctx->safe_to_free = false;
    
-   dl->pending->insert( dlctx );
+   try {
+      dl->pending->insert( dlctx );
+   }
+   catch( bad_alloc& ba ) {
+      
+      dlctx->pending = false;
+      dlctx->safe_to_free = true;
+      rc = -ENOMEM;
+   }
    
    pthread_mutex_unlock( &dlctx->finalize_lock );
    
    md_downloader_pending_unlock( dl );
    
-   dl->has_pending = true;
+   if( rc == 0 ) {
+      dl->has_pending = true;
    
-   SG_debug("Start download context %p\n", dlctx );
+      SG_debug("Start download context %p\n", dlctx );
+   }
    
-   return 0;
+   return rc;
 }
 
 
-// insert a cancelling context 
+// insert a context to cancel 
+// return 0 on success, and mark the download context as cancelling 
+// return 0 if the download context is already cancelling
+// return -EPERM if the downloader was not running 
+// return -EINPROGRESS if the download context is already cancelling 
+// return -ENOMEM on OOM
 int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_download_context* dlctx ) {
    
+   int rc = 0;
    SG_debug("Cancel download context %p\n", dlctx );
    
    md_downloader_cancelling_wlock( dl );
@@ -277,8 +364,14 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
    
    dlctx->cancelling = true;
    
-   if( !dlctx->pending ) {
-      dl->cancelling->insert( dlctx );
+   try {
+      if( !dlctx->pending ) {
+         dl->cancelling->insert( dlctx );
+      }
+   }
+   catch( bad_alloc& ba ) {
+      rc = -ENOMEM;
+      dlctx->cancelling = false;
    }
    
    pthread_mutex_unlock( &dlctx->finalize_lock );
@@ -287,12 +380,18 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
    
    md_downloader_cancelling_unlock( dl );
    
-   return 0;
+   return rc;
 }
 
 // add all pending to downloading 
-// dl->downloading_lock MUST BE WRITE LOCKED
+// the downloader must be write-locked for downloading
+// return 0 on success 
+// return -EPERM if we failed to insert the curl handle
+// return -ENOMEM on OOM 
 int md_downloader_start_all_pending( struct md_downloader* dl ) {
+   
+   int rc = 0;
+   
    if( dl->has_pending ) {
          
       md_downloader_pending_wlock( dl );
@@ -326,14 +425,30 @@ int md_downloader_start_all_pending( struct md_downloader* dl ) {
             continue;
          }
          
-         curl_multi_add_handle( dl->curlm, dlctx->curl );
+         // add the handle
+         rc = curl_multi_add_handle( dl->curlm, dlctx->curl );
+         if( rc != 0 ) {
+            rc = -EPERM;
+            
+            SG_error("curl_multi_add_handle( %p ) rc = %d\n", dlctx, rc );
+            
+            pthread_mutex_unlock( &dlctx->finalize_lock );
+            break;
+         }
+         
          dlctx->running = true;
          dlctx->pending = false;
          dlctx->safe_to_free = false;
          
          pthread_mutex_unlock( &dlctx->finalize_lock );
          
-         (*dl->downloading)[ dlctx->curl ] = dlctx;
+         try {
+            (*dl->downloading)[ dlctx->curl ] = dlctx;
+         }
+         catch( bad_alloc& ba ) {
+            rc = -ENOMEM;
+            break;
+         }
       }
       
       dl->pending->clear();
@@ -343,13 +458,19 @@ int md_downloader_start_all_pending( struct md_downloader* dl ) {
       md_downloader_pending_unlock( dl );
    }
    
-   return 0;
+   return rc;
 }
 
 
 // remove all cancelling downloads from downloading.
-// dl->downloading_lock MUST BE WRITE LOCKED 
+// the downloader must be write-locked for downloading 
+// return 0 on success 
+// return -EPERM if we fail to remove the curl handle
+// return -ENOMEM for OOM 
 int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
+   
+   int rc = 0;
+   
    if( dl->has_cancelling ) {
          
       md_downloader_cancelling_wlock( dl );
@@ -362,9 +483,22 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
             continue;
          }
          
-         curl_multi_remove_handle( dl->curlm, dlctx->curl );
+         rc = curl_multi_remove_handle( dl->curlm, dlctx->curl );
+         if( rc != 0 ) {
+            
+            rc = -EPERM;
+            SG_error("curl_multi_remove_handle( %p ) rc = %d\n", dlctx, rc );
+            
+            break;
+         }
          
-         dl->downloading->erase( dlctx->curl );
+         try {
+            dl->downloading->erase( dlctx->curl );
+         }
+         catch( bad_alloc& ba ) {
+            rc = -ENOMEM;
+            break;
+         }
          
          pthread_mutex_lock( &dlctx->finalize_lock );
          
@@ -397,20 +531,39 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
 
 
 // download data to a response buffer
+// return size * count on success 
+// return 0 on OOM
 size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data ) {
+   
    md_response_buffer_t* rb = (md_response_buffer_t*)user_data;
 
    size_t realsize = size * count;
    char* buf = SG_CALLOC( char, realsize );
+   
+   if( buf == NULL ) {
+      // OOM
+      return 0;
+   }
+   
    memcpy( buf, stream, realsize );
    
-   rb->push_back( md_buffer_segment_t( buf, realsize ) );
+   try {
+      rb->push_back( md_buffer_segment_t( buf, realsize ) );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( buf );
+      return 0;
+   }
 
    return realsize;
 }
 
 // download to a bound response buffer
+// return size * count on success 
+// return 0 on OOM
 size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data ) {
+   
    struct md_bound_response_buffer* brb = (struct md_bound_response_buffer*)user_data;
    
    //SG_debug("size = %zu, count = %zu, max_size = %ld, size = %ld\n", size, count, brb->max_size, brb->size );
@@ -421,9 +574,21 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    }
    
    char* buf = SG_CALLOC( char, realsize );
+   if( buf == NULL ) {
+      return 0;
+   }
+   
    memcpy( buf, stream, realsize );
    
-   brb->rb->push_back( md_buffer_segment_t( buf, realsize ) );
+   try {
+      brb->rb->push_back( md_buffer_segment_t( buf, realsize ) );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( buf );
+      return 0;
+   }
+   
    brb->size += realsize;
    
    return realsize;
@@ -433,17 +598,27 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
 // The only things it sets in the CURL handle are:
 // * CURLOPT_WRITEDATA
 // * CURLOPT_WRITEFUNCTION
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -errno on failure to initialize a pthread lock 
 int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_cache_connector_func cache_func, void* cache_func_cls, off_t max_len ) {
    
    SG_debug("Initialize download context %p\n", dlctx );
    
+   int rc = 0;
    memset( dlctx, 0, sizeof(struct md_download_context) );
    
-   pthread_mutex_init( &dlctx->finalize_lock, NULL );
+   rc = pthread_mutex_init( &dlctx->finalize_lock, NULL );
+   if( rc != 0 ) {
+      return -rc;
+   }
    
-   dlctx->brb.max_size = max_len;
-   dlctx->brb.size = 0;
-   dlctx->brb.rb = new md_response_buffer_t();
+   rc = md_bound_response_buffer_init( &dlctx->brb, max_len );
+   if( rc != 0 ) {
+      
+      pthread_mutex_destroy( &dlctx->finalize_lock );
+      return rc;
+   }
    
    dlctx->cache_func = cache_func;
    dlctx->cache_func_cls = cache_func_cls;
@@ -457,8 +632,6 @@ int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_
    
    dlctx->dlset = NULL;
    
-   pthread_mutex_init( &dlctx->finalize_lock, NULL );
-   
    dlctx->safe_to_free = true;
    
    return 0;
@@ -467,6 +640,8 @@ int md_download_context_init( struct md_download_context* dlctx, CURL* curl, md_
 
 // reset a download context.
 // don't call this until it's finalized
+// return 0 on success
+// return -EAGAIN if the donload context is not finalized
 int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl ) {
    
    SG_debug("Reset download context %p\n", dlctx );
@@ -496,12 +671,17 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
    dlctx->running = false;
    dlctx->safe_to_free = true;
    
-   if( dlctx->effective_url ) {
-      free( dlctx->effective_url );
-      dlctx->effective_url = NULL;
+   if( dlctx->effective_url != NULL ) {
+      
+      SG_safe_free( dlctx->effective_url );
    }
    
-   if( new_curl ) {
+   if( dlctx->__downloader_url != NULL ) {
+   
+      SG_safe_free( dlctx->__downloader_url );
+   }
+   
+   if( new_curl != NULL ) {
       dlctx->curl = new_curl;
    }
    
@@ -513,6 +693,8 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
 // free a download context
 // this will return -EAGAIN if the download context is queued to be inserted or cancelled.
 // if this download context was finalized, then it's guaranteed to be freed
+// return 0 on success
+// return -EINVAL if the download context is referenced by a download set
 int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    
    pthread_mutex_lock( &dlctx->finalize_lock );
@@ -533,12 +715,7 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    
    SG_debug("Free download context %p\n", dlctx );
    
-   if( dlctx->brb.rb != NULL ) {
-      md_response_buffer_free( dlctx->brb.rb );
-      delete dlctx->brb.rb;
-      dlctx->brb.rb = NULL;
-      dlctx->brb.size = 0;
-   }
+   md_bound_response_buffer_free( &dlctx->brb );
    
    if( curl != NULL ) {
       *curl = dlctx->curl;
@@ -546,18 +723,12 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
    
    if( dlctx->effective_url != NULL ) {
       
-      char* tmp = dlctx->effective_url;
-      dlctx->effective_url = NULL;
-      
-      free( tmp );
+      SG_safe_free( dlctx->effective_url );
    }
    
    if( dlctx->__downloader_url != NULL ) {
       
-      char* tmp = dlctx->__downloader_url;
-      dlctx->__downloader_url = NULL;
-      
-      free( tmp );
+      SG_safe_free( dlctx->__downloader_url );
    }
    
    dlctx->curl = NULL;
@@ -574,6 +745,7 @@ int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
 
 
 // if a download context is part of a download set, remove it 
+// always succeeds
 int md_download_context_clear_set( struct md_download_context* dlctx ) {
 
    if( dlctx != NULL && dlctx->dlset != NULL ) {
@@ -584,8 +756,13 @@ int md_download_context_clear_set( struct md_download_context* dlctx ) {
    return 0;
 }
 
-// wrapper around sem_wait and sem_trywait.
+// wait for a semaphore to be signaled, up to a given number of milliseconds.
+// if timeout_ms is less than or equal to 0, then wait indefinitely.
+// this method masks -EINTR.
 // if timeout_ms < 0, then use sem_wait.  Otherwise, use sem_trywait +timeout_ms seconds into the future.
+// return 0 on success
+// return -ETIMEDOUT if we timed out waiting 
+// return -errno if sem_timedwait(2) or sem_wait(2) failed for some other reason
 int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
    
    int rc = 0;
@@ -599,16 +776,21 @@ int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
       abs_ts.tv_nsec += timeout_ms / 1000000L;
       
       if( abs_ts.tv_nsec >= 1000000000L) {
+         
+         // wrap around
          abs_ts.tv_nsec %= 1000000000L;
          abs_ts.tv_sec ++;
       }
       
       while( true ) {
+         
          rc = sem_timedwait( sem, &abs_ts );
          if( rc == 0 ) {
+            
             break;
          }
          else if( errno != EINTR ) {
+            
             rc = -errno;
             SG_error("sem_timedwait errno = %d\n", rc );
             break;
@@ -619,11 +801,14 @@ int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
    }
    else {
       while( true ) {
+         
          rc = sem_wait( sem );
          if( rc == 0 ) {
+            
             break;
          }
          else if( errno != EINTR ) {
+            
             rc = -errno;
             SG_error("sem_wait errno = %d\n", rc );
             break;
@@ -639,6 +824,8 @@ int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
 
 // wait for a download to finish, either in error or not 
 // return the result of waiting, NOT the result of the download 
+// (see md_download_sem_wait for possible return codes)
+// return 0 on success
 int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout_ms ) {
    
    SG_debug("Wait on download context %p\n", dlctx );
@@ -654,6 +841,9 @@ int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout
 
 // wait for a download to finish within a download set, either in error or not.
 // return the result of waiting, NOT the result of the download 
+// (see md_downlaod_sem_wait for possible return codes)
+// return 0 on success
+// return -EINVAL if the download set does not have any waiting contexts
 int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout_ms ) {
 
    if( dlset->waiting == NULL ) {
@@ -679,11 +869,16 @@ int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout
 }
 
 // set up a download set 
+// return 0 on success
+// return -ENOMEM on OOM
 int md_download_set_init( struct md_download_set* dlset ) {
    
    SG_debug("Initialize download set %p\n", dlset );
    
-   dlset->waiting = new md_pending_set_t();
+   dlset->waiting = SG_safe_new( md_pending_set_t() );
+   if( dlset->waiting == NULL ) {
+      return -ENOMEM;
+   }
    
    sem_init( &dlset->sem, 0, 0 );
    
@@ -692,13 +887,14 @@ int md_download_set_init( struct md_download_set* dlset ) {
 
 
 // free a download set 
+// return 0 on success
 int md_download_set_free( struct md_download_set* dlset ) {
    
    SG_debug("Free download set %p\n", dlset );
    
    if( dlset->waiting ) {
-      delete dlset->waiting;
-      dlset->waiting = NULL;
+      
+      SG_safe_delete( dlset->waiting );
    }
    
    sem_destroy( &dlset->sem );
@@ -711,38 +907,62 @@ int md_download_set_free( struct md_download_set* dlset ) {
 
 // add a download context to a download set.
 // do this before starting the download.
+// return 0 on success
+// return -ENOMEM on OOM
 int md_download_set_add( struct md_download_set* dlset, struct md_download_context* dlctx ) {
    
-   md_pending_set_t::iterator itr = dlset->waiting->find( dlctx );
-   if( itr == dlset->waiting->end() ) {
-      dlset->waiting->insert( dlctx );
-      
-      dlctx->dlset = dlset;
-      
-      SG_debug("Add download context %p to download set %p\n", dlctx, dlset );
+   int rc = 0;
+   
+   try {
+      md_pending_set_t::iterator itr = dlset->waiting->find( dlctx );
+      if( itr == dlset->waiting->end() ) {
+         
+         dlset->waiting->insert( dlctx );
+         
+         dlctx->dlset = dlset;
+         
+         SG_debug("Add download context %p to download set %p\n", dlctx, dlset );
+      }
+   }
+   catch( bad_alloc& ba ) {
+      rc = -ENOMEM;
    }
    
-   return 0;
+   return rc;
 }
 
 
 // remove a download context from a download set by iterator
 // don't do this in e.g. a for() loop where you're iterating over download contexts
+// return 0 on success 
+// return -ENOMEM on OOM
 int md_download_set_clear_itr( struct md_download_set* dlset, const md_download_set_iterator& itr ) {
    
-   struct md_download_context* dlctx = *itr;
-   dlset->waiting->erase( itr );
-   dlctx->dlset = NULL;
+   try {
+      struct md_download_context* dlctx = *itr;
+      dlset->waiting->erase( itr );
+      dlctx->dlset = NULL;
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
    
    return 0;
 }
 
 // remove a download context from a download set by value
 // don't do this in e.g. a for() loop where you're iterating over download contexts
+// return 0 on success 
+// return -ENOMEM on OOM 
 int md_download_set_clear( struct md_download_set* dlset, struct md_download_context* dlctx ) {
 
-   if( dlctx != NULL && dlset->waiting != NULL ) {
-      dlset->waiting->erase( dlctx );
+   try {
+      if( dlctx != NULL && dlset->waiting != NULL ) {
+         dlset->waiting->erase( dlctx );
+      }
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
    }
    
    if( dlctx != NULL ) {
@@ -754,6 +974,7 @@ int md_download_set_clear( struct md_download_set* dlset, struct md_download_con
 
 
 // how many items in a download set?
+// return the number of items
 size_t md_download_set_size( struct md_download_set* dlset ) {
    
    return dlset->waiting->size();
@@ -761,22 +982,28 @@ size_t md_download_set_size( struct md_download_set* dlset ) {
 
 
 // iterate: begin 
+// return an iterator to the waiting set
 md_download_set_iterator md_download_set_begin( struct md_download_set* dlset ) {
    return dlset->waiting->begin();
 }
 
 // iterate: end 
+// return an interator to the waiting set
 md_download_set_iterator md_download_set_end( struct md_download_set* dlset ) {
    return dlset->waiting->end();
 }
 
 // iterate: deref 
+// return a pointer to the download context
 struct md_download_context* md_download_set_iterator_get_context( const md_download_set_iterator& itr ) {
    return *itr;
 }
 
 
-// connect a donwload context to the caches 
+// connect a donwload context to the caches.
+// this is a no-op if cache_closure == NULL and the dlctx's cache_func is NULL as well
+// return 0 on success
+// return non-zero if the cache_func is non-NULL and it failed
 static int md_download_context_connect_cache( struct md_download_context* dlctx, struct md_closure* cache_closure, char const* base_url ) {
    
    int rc = 0;
@@ -802,24 +1029,43 @@ static int md_download_context_connect_cache( struct md_download_context* dlctx,
 
 
 // begin downloading something 
+// return 0 on success
+// return non-zero if we failed to connect to the cache 
+// return non-zero if we failed to insert the download into the downloader 
 int md_download_context_start( struct md_downloader* dl, struct md_download_context* dlctx, struct md_closure* cache_closure, char const* base_url ) {
    
    int rc = md_download_context_connect_cache( dlctx, cache_closure, base_url );
    if( rc != 0 ) {
-      SG_error("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
+      
+      SG_error("%s: md_download_context_connect_cache('%s') rc = %d\n", dl->name, base_url, rc );
       return rc;
    }
    
    // enqueue the context into the downloader 
-   md_downloader_insert_pending( dl, dlctx );
+   rc = md_downloader_insert_pending( dl, dlctx );
+   if( rc != 0 ) {
+      
+      SG_error("%s: md_downloader_insert_pending('%s') rc = %d\n", dl->name, base_url, rc );
+      return rc;
+   }
+   
    return 0;
 }
 
 // cancel downloading something 
-// dctx must be write-locked
+// return 0 on successful insert, or if the download is already cancelled or finalized
+// return -EPERM if the downloader was not running 
+// return negative if we failed to insert (but mask EINPROGRESS)
+// return negative if we failed to wait for the download to get cancelled
 int md_download_context_cancel( struct md_downloader* dl, struct md_download_context* dlctx ) {
    
+   if( !dl->running ) {
+      return -EPERM;
+   }
+   
    if( dlctx->cancelled || dlctx->finalized ) {
+      
+      SG_debug("already cancelled %p\n", dlctx );
       return 0;
    }
    
@@ -839,14 +1085,17 @@ int md_download_context_cancel( struct md_downloader* dl, struct md_download_con
    if( rc != 0 ) {
       SG_error("md_download_context_wait(%p) rc = %d\n", dlctx, rc );
    }
-   
-   SG_debug("cancelled %p\n", dlctx );
+   else {
+      SG_debug("cancelled %p\n", dlctx );
+   }
    
    return rc;
 }
 
 
 // release a waiting context set, given one of its now-finished entries.
+// return 0 on success
+// return -EINVAL if the download set is NULL;
 int md_download_set_wakeup( struct md_download_set* dlset ) {
    
    SG_debug("Wake up download set %p\n", dlset );
@@ -863,7 +1112,9 @@ int md_download_set_wakeup( struct md_download_set* dlset ) {
 }
 
 // run multiple downloads for a bit
-// dl->downloading_lock MUST BE WRITE-LOCKED
+// dl must be write-locked for downloading 
+// return positive non-zero if curl failed somehow 
+// return negative if select() failed
 int md_downloader_run_multi( struct md_downloader* dl ) {
    
    int still_running = 0;
@@ -883,13 +1134,23 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
    long curl_timeo = -1;
    
    // download for a bit
-   curl_multi_perform( dl->curlm, &still_running );
+   rc = curl_multi_perform( dl->curlm, &still_running );
+   if( rc != 0 ) {
+      
+      SG_error("%s: curl_multi_perform rc = %d\n", dl->name, rc );
+      return rc;
+   }
 
    // don't wait more than 5ms
    timeout.tv_sec = 0;
    timeout.tv_usec = 5000;      // 5ms
 
-   curl_multi_timeout( dl->curlm, &curl_timeo );
+   rc = curl_multi_timeout( dl->curlm, &curl_timeo );
+   if( rc != 0 ) {
+      
+      SG_error("%s: curl_multi_timeout rc = %d\n", dl->name, rc );
+      return rc;
+   }
    
    if( curl_timeo > 0 ) {
       timeout.tv_sec = curl_timeo / 1000;
@@ -904,6 +1165,7 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
    // get fd set
    rc = curl_multi_fdset( dl->curlm, &fdread, &fdwrite, &fdexcep, &maxfd );
    if( rc != 0 ) {
+      
       SG_error("%s: curl_multi_fdset rc = %d\n", dl->name, rc );
       return rc;
    }
@@ -911,8 +1173,9 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
    // select on them
    rc = select( maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout );
    if( rc < 0 ) {
+      
       rc = -errno;
-      SG_error("%s: select errno = %d\n", dl->name, rc );
+      SG_error("%s: select rc = %d\n", dl->name, rc );
       return rc;
    }
    else {
@@ -922,7 +1185,11 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
 }
 
 
-// finalize a download context
+// finalize a download context. On success, populate it with the curl rc, the HTTP status, the transfer OS errno, and the effective URL
+// http_status == -1 means that we couldn't get the HTTP status 
+// os_errno == EIO means that we couldn't get the OS errno or the URL
+// return 0 on success, or if the download was already finalized (if the latter, then the fields in dlctx are untouched)
+// return -ENOMEM on OOM
 int md_downloader_finalize_download_context( struct md_download_context* dlctx, int curl_rc ) {
    
    pthread_mutex_lock( &dlctx->finalize_lock );
@@ -940,9 +1207,11 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    long http_status = 0;
    long os_errno = 0;
    char* url = NULL;
+   char* url_dup = NULL;
    
    rc = curl_easy_getinfo( dlctx->curl, CURLINFO_RESPONSE_CODE, &http_status );
    if( rc != 0 ) {
+      
       SG_error("curl_easy_getinfo(%p) rc = %d\n", dlctx, rc );
       http_status = -1;
    }
@@ -960,9 +1229,18 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    // get URL 
    rc = curl_easy_getinfo( dlctx->curl, CURLINFO_EFFECTIVE_URL, &url );
    
-   if( rc != 0 ) {
+   if( rc != 0 || url == NULL ) {
       SG_error("curl_easy_getinfo(%p) rc = %d\n", dlctx, rc );
       os_errno = EIO;
+   }
+   
+   if( url != NULL ) {
+      url_dup = SG_strdup_or_null( url );
+      if( url_dup == NULL ) {
+         
+         pthread_mutex_unlock( &dlctx->finalize_lock );
+         return -ENOMEM;
+      }
    }
    
    dlctx->curl_rc = curl_rc;
@@ -970,8 +1248,8 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    dlctx->transfer_errno = (int)os_errno;
    dlctx->effective_url = NULL;
    
-   if( url != NULL ) {
-      dlctx->effective_url = strdup( url );
+   if( url_dup != NULL ) {
+      dlctx->effective_url = url_dup;
       
       SG_debug("Finalized download context %p (%s)\n", dlctx, dlctx->effective_url );
    }
@@ -994,7 +1272,11 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
 
 
 // finalize all finished downloads 
-// dl->downloading_lock MUST BE WRITE-LOCKED
+// try to remove all downloads, even if we fail to remove some.
+// dl must be write-locked for downloads 
+// return 0 on success
+// return -ENOMEM on OOM
+// return positive if curl did something fatal
 int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
    CURLMsg* msg = NULL;
    int msgs_left = 0;
@@ -1003,8 +1285,10 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
    do {
       msg = curl_multi_info_read( dl->curlm, &msgs_left );
 
-      if( msg == NULL )
-         break;
+      if( msg == NULL ) {
+         // no messages
+         break;  
+      }
 
       if( msg->msg == CURLMSG_DONE ) {
          // a transfer finished.  Find out which one
@@ -1017,23 +1301,42 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
             // get this now, before removing it from the curlm handle
             int result = msg->data.result;
             
-            // remove from the downloader 
-            dl->downloading->erase( itr );
+            try {
+               // remove from the downloader 
+               dl->downloading->erase( itr );
+            }
+            catch( bad_alloc& ba ) {
+               rc = -ENOMEM;
+               break;
+            }
             
             if( dlctx == NULL ) {
-               SG_error("WARN: no download context for curl handle %p\n", msg->easy_handle);
                
-               curl_multi_remove_handle( dl->curlm, msg->easy_handle );
+               SG_warn("no download context for curl handle %p\n", msg->easy_handle);
+               
+               rc = curl_multi_remove_handle( dl->curlm, msg->easy_handle );
+               if( rc != 0 ) {
+                  
+                  SG_error("curl_multi_remove_handle( %p ) rc = %d\n", msg->easy_handle, rc );
+                  rc = 0;
+               }
+               
                continue;
             }
             
             if( dlctx->curl == NULL ) {
                SG_error("BUG: curl handle of download context %p is NULL\n", dlctx );
                
-               curl_multi_remove_handle( dl->curlm, msg->easy_handle );
+               rc = curl_multi_remove_handle( dl->curlm, msg->easy_handle );
             }
             else {
-               curl_multi_remove_handle( dl->curlm, dlctx->curl );
+               rc = curl_multi_remove_handle( dl->curlm, dlctx->curl );
+            }
+            
+            if( rc != 0 ) {
+               SG_error("curl_multi_remove_handle( %p ) rc = %d\n", msg->easy_handle, rc );
+               rc = 0;
+               continue;
             }
             
             // get the download set from this dlctx, so we can awaken it later
@@ -1042,12 +1345,22 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
             // finalize the download context
             rc = md_downloader_finalize_download_context( dlctx, result );
             if( rc != 0 ) {
+               
                SG_error("%s: md_downloader_finalize_download_context rc = %d\n", dl->name, rc );
+               rc = 0;
+               continue;
             }
             
             // wake up the set waiting on this dlctx 
             if( dlset != NULL ) {
-               md_download_set_wakeup( dlset );
+               
+               rc = md_download_set_wakeup( dlset );
+               if( rc != 0 ) {
+                  
+                  SG_error("md_download_set_wakeup( %p ) rc = %d\n", dlset, rc );
+                  rc = 0;
+                  continue;
+               }
             }
          }
       } 
@@ -1059,7 +1372,9 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
 
 
 // main downloader loop
+// return NULL
 static void* md_downloader_main( void* arg ) {
+   
    struct md_downloader* dl = (struct md_downloader*)arg;
    
    SG_debug("%s: starting\n", dl->name );
@@ -1104,13 +1419,22 @@ static void* md_downloader_main( void* arg ) {
 
 
 // consolidate and write back the buffer 
+// return 0 on success, and set *buf and *buf_len accordingly
+// return -ENOMEM on OOM
 int md_download_context_get_buffer( struct md_download_context* dlctx, char** buf, off_t* buf_len ) {
    *buf = md_response_buffer_to_string( dlctx->brb.rb );
    *buf_len = md_response_buffer_size( dlctx->brb.rb );
+   
+   if( *buf == NULL ) {
+      return -ENOMEM;
+   }
+   
    return 0;
 }
 
 // get the http status
+// return the positive HTTP status on success
+// return -EAGAIN if the download context was not finalized 
 int md_download_context_get_http_status( struct md_download_context* dlctx ) {
    if( !dlctx->finalized ) {
       return -EAGAIN;
@@ -1119,6 +1443,8 @@ int md_download_context_get_http_status( struct md_download_context* dlctx ) {
 }
 
 // get the errno 
+// return the transfer error code (non-negative number) on sucess
+// return -EAGAIN if the download context was not finalized
 int md_download_context_get_errno( struct md_download_context* dlctx ) {
    if( !dlctx->finalized ) {
       return -EAGAIN;
@@ -1128,6 +1454,8 @@ int md_download_context_get_errno( struct md_download_context* dlctx ) {
 }
 
 // get the curl rc
+// return the non-negative return code on success
+// return -EAGAIN if the download was not finalized
 int md_download_context_get_curl_rc( struct md_download_context* dlctx ) {
    if( !dlctx->finalized ) {
       return -EAGAIN;
@@ -1137,6 +1465,9 @@ int md_download_context_get_curl_rc( struct md_download_context* dlctx ) {
 }
 
 // get the effective URL 
+// return 0 on success, and set *url to a malloc'ed copy of the URL (if there was a URL to begin with)
+// return -ENOMEM on OOM 
+// return -EAGAIN if the download was not finalized
 int md_download_context_get_effective_url( struct md_download_context* dlctx, char** url ) {
    if( !dlctx->finalized ) {
       return -EAGAIN;
@@ -1146,49 +1477,63 @@ int md_download_context_get_effective_url( struct md_download_context* dlctx, ch
       *url = NULL;
    }
    else {
-      *url = strdup( dlctx->effective_url );
+      
+      *url = SG_strdup_or_null( dlctx->effective_url );
+      if( *url == NULL ) {
+         return -ENOMEM;
+      }
    }
    
    return 0;
 }
 
 // get the download handle's curl handle 
+// return the curl handle
 CURL* md_download_context_get_curl( struct md_download_context* dlctx ) {
    return dlctx->curl;
 }
 
 // get the cache cls (only in reference)
+// return a pointer to the cache function closure 
 void* md_download_context_get_cache_cls( struct md_download_context* dlctx ) {
    return dlctx->cache_func_cls;
 }
 
 // did a download context work?
+// return true if the download's curl rc is 0, its transfer errno is 0, and its HTTP status is the desired HTTP status
+// return false otherwise
 bool md_download_context_succeeded( struct md_download_context* dlctx, int desired_HTTP_status ) {
    return (dlctx->curl_rc == 0 && dlctx->transfer_errno == 0 && dlctx->http_status == desired_HTTP_status); 
 }
 
 // is a download finalized?
+// return the finalization flag
 bool md_download_context_finalized( struct md_download_context* dlctx ) {
    return dlctx->finalized;
 }
 
 // is a download running?
+// return the running flag
 bool md_download_context_running( struct md_download_context* dlctx ) {
    return dlctx->running;
 }
 
 // is a download pending?
+// return the pending flag
 bool md_download_context_pending( struct md_download_context* dlctx ) {
    return dlctx->pending;
 }
 
 // is a download cancelled?
+// return the cancelled flag
 bool md_download_context_cancelled( struct md_download_context* dlctx ) {
    return dlctx->cancelled;
 }
 
 // run a single download context 
 // dlctx *cannot* be locked
+// return 0 on successful finalization, even if the download failed
+// return negative otherwise (see md_downloader_finalize_download_context)
 int md_download_context_run( struct md_download_context* dlctx ) {
    
    int rc = 0;
@@ -1197,6 +1542,10 @@ int md_download_context_run( struct md_download_context* dlctx ) {
    dlctx->running = true;
    
    rc = curl_easy_perform( dlctx->curl );
+   if( rc != 0 ) {
+      
+      SG_error("curl_easy_perform( %p ) rc = %d\n", dlctx, rc );
+   }
    
    rc = md_downloader_finalize_download_context( dlctx, rc );
    
@@ -1204,12 +1553,14 @@ int md_download_context_run( struct md_download_context* dlctx ) {
 }
 
 // initialze a curl handle
+// always succeeds
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char const* url, time_t query_timeout ) {
    md_init_curl_handle2( curl_h, url, query_timeout, conf->verify_peer );
 }
 
 // initialze a curl handle
 void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer ) {
+   
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
    curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    
@@ -1240,7 +1591,8 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
 
 // download straight from an existing curl handle
 // return 0 on success
-// return curl error code on failure
+// return non-negative curl error code on failure
+// return negative on 
 int md_download_file2( CURL* curl_h, char** buf, off_t max_len, off_t* ret_size ) {
    
    struct md_bound_response_buffer dlbuf;
@@ -1284,6 +1636,7 @@ int md_download_file( CURL* curl_h, char** buf, off_t* size ) {
 // start downloading data from zero or more CDNs
 // pass NULL for cache_closure, cache_func, and cache_func_cls if you want to avoid CDNs
 // return 0 on success
+// return -ENOMEM on OOM
 // return negative on error
 int md_download_begin( struct md_syndicate_conf* conf,
                        struct md_downloader* dl,
@@ -1295,13 +1648,23 @@ int md_download_begin( struct md_syndicate_conf* conf,
    
    // TODO: connection pool 
    CURL* curl = curl_easy_init();
+   if( curl == NULL ) {
+      return -ENOMEM;
+   }
+   
    md_init_curl_handle( conf, curl, url, conf->connect_timeout );
    
-   md_download_context_init( dlctx, curl, cache_func, cache_func_cls, max_len );
+   rc = md_download_context_init( dlctx, curl, cache_func, cache_func_cls, max_len );
+   if( rc != 0 ) {
+      
+      curl_easy_cleanup( curl );
+      return rc;
+   }
    
    // start downloading 
    rc = md_download_context_start( dl, dlctx, cache_closure, url );
    if( rc != 0 ) {
+      
       SG_error("md_download_context_start(%s) rc = %d\n", url, rc );
       
       // TODO: connection pool 
@@ -1317,6 +1680,9 @@ int md_download_begin( struct md_syndicate_conf* conf,
 
 // finish downloading data, freeing up the download context
 // return 0 on success, and allocate and fill bits, ret_len, and http_status
+// return -ENOMEM on OOM 
+// return -ENODATA if we didn't get any data 
+// return -EPERM if the downloader is not running
 // return negative on error 
 // dlctx *cannot* be locked
 int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx, int timeout, int* http_status, char** bits, size_t* ret_len ) {
@@ -1327,15 +1693,18 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
    // wait for download
    rc = md_download_context_wait( dlctx, timeout );
    if( rc != 0 ) {
-      SG_error("md_download_context_wait rc = %d\n", rc );
+      
+      SG_error("md_download_context_wait( %p ) rc = %d\n", dlctx, rc );
       
       rc = md_download_context_cancel( dl, dlctx );
       
       if( rc != 0 ) {
+         
          if( rc == -EPERM ) {
             // downloader isn't running.  Try again 
             return rc;
          }
+         
          else if( rc == -EINPROGRESS ) {
             // already in the process of getting cancelled.  Wait for it
             SG_debug("Waiting for %p to get cancelled\n", dlctx );
@@ -1344,6 +1713,7 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
             rc = 0;
          }
          else if( rc == -EINVAL ) {
+            
             // otherwise, it was already finalized
             rc = 0;
          }
@@ -1358,15 +1728,23 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
    else {
       
       // check for errors 
-      md_download_context_get_effective_url( dlctx, &base_url );
+      rc = md_download_context_get_effective_url( dlctx, &base_url );
+      if( rc != 0 ) {
+         return rc;
+      }
+      
       rc = md_download_context_get_curl_rc( dlctx );
       
       if( rc != 0 ) {
+         
+         // curl failed
          int errsv = md_download_context_get_errno( dlctx );
       
-         SG_error("md_download_context_get_errno(%s) CURL rc = %d, errno = %d\n", base_url, rc, errsv );
+         SG_error("md_download_context_get_errno('%s') CURL rc = %d, errno = %d\n", base_url, rc, errsv );
       
          if( errsv == 0 ) {
+            
+            // translate curl error to OS error
             if( rc == CURLE_COULDNT_CONNECT ) {
                errsv = -ECONNREFUSED;
             }
@@ -1380,10 +1758,15 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
          
          // give back the data 
          off_t len = 0;
+         
          rc = md_download_context_get_buffer( dlctx, bits, &len );
          if( rc != 0 || len < 0 ) {
-            SG_error("md_download_context_get_buffer(%s) rc = %d, len = %jd\n", base_url, rc, len );
-            rc = -ENODATA;
+            
+            SG_error("md_download_context_get_buffer('%s') rc = %d, len = %jd\n", base_url, rc, len );
+            
+            if( rc != -ENOMEM ) {
+               rc = -ENODATA;
+            }
          }
          
          else {
@@ -1402,9 +1785,7 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
    
    curl_easy_cleanup( old_curl );
    
-   if( base_url != NULL ) {
-      free( base_url );
-   }
+   SG_safe_free( base_url );
    
    return rc;
 }
@@ -1413,8 +1794,9 @@ int md_download_end( struct md_downloader* dl, struct md_download_context* dlctx
 // download data from one or more CDNs, and then fall back to a direct download if that fails.
 // return 0 on success (which means "the server responded with some data")
 // return negative on error.
-// fill in the HTTP status code 
+// in all cases, set *http_code to the HTTP result if the download succeeded
 // NOTE: the http code can be an error code (i.e. 40x, 50x), which the caller should check
+// TODO: refactor to avoid thread context switch to downloader
 int md_download( struct md_syndicate_conf* conf,
                  struct md_downloader* dl,
                  char const* base_url, off_t max_len,
@@ -1429,6 +1811,7 @@ int md_download( struct md_syndicate_conf* conf,
    // start the download
    rc = md_download_begin( conf, dl, base_url, max_len, closure, cache_func, cache_func_cls, &dlctx );
    if( rc != 0 ) {
+      
       SG_error( "md_download_begin(%s) rc = %d\n", base_url, rc );
       return rc;
    }
@@ -1467,7 +1850,8 @@ int md_HTTP_status_code_to_error_code( int status_code ) {
 
 
 // start downloading a manifest 
-// return 0 on success; negative on error
+// return 0 on success
+// return negative on error (see md_download_begin)
 int md_download_manifest_begin( struct md_syndicate_conf* conf,
                                 struct md_downloader* dl,
                                 char const* manifest_url, 
@@ -1484,7 +1868,7 @@ int md_download_manifest_begin( struct md_syndicate_conf* conf,
 }
 
 // finish donwloading a manifest, and parse it.
-// return 0 on success, with the parsed data.
+// return 0 on success, and fill in mmsg with the parsed data
 // return negative on error.
 // NOTE: no authenticity checks will be performed on the manifest!  The caller *MUST* do this itself!
 int md_download_manifest_end( struct md_syndicate_conf* conf,
@@ -1503,10 +1887,7 @@ int md_download_manifest_end( struct md_syndicate_conf* conf,
    if( rc != 0 ) {
       SG_error("md_download_end rc = %d\n", rc );
       
-      if( manifest_bits != NULL ) {
-         free( manifest_bits );
-      }
-      
+      SG_safe_free( manifest_bits );
       return rc;
    }
    
@@ -1514,7 +1895,7 @@ int md_download_manifest_end( struct md_syndicate_conf* conf,
       SG_error("md_download_end HTTP status = %d\n", http_status );
       
       if( manifest_bits != NULL ) {
-         free( manifest_bits );
+         SG_safe_free( manifest_bits );
       }
       
       return md_HTTP_status_code_to_error_code( http_status );
@@ -1537,16 +1918,13 @@ int md_download_manifest_end( struct md_syndicate_conf* conf,
          
          SG_error("manifest_func rc = %d\n", rc );
          
-         if( manifest_bits != NULL ) {
-            free( manifest_bits );
-         }
-         
+         SG_safe_free( manifest_bits );
          return rc;
       }
       
       // move data over
       if( manifest_bits != NULL ) {
-         free( manifest_bits );
+         SG_safe_free( manifest_bits );
       }
       
       manifest_bits = processed_manifest_data;
@@ -1559,23 +1937,18 @@ int md_download_manifest_end( struct md_syndicate_conf* conf,
       
       SG_error("md_parse rc = %d\n", rc );
       
-      if( manifest_bits != NULL ) {
-         free( manifest_bits );
-      }
-      
+      SG_safe_free( manifest_bits );
       return rc;
    }
    
-   if( manifest_bits != NULL ) {
-      free( manifest_bits );
-   }
-   
+   SG_safe_free( manifest_bits );
    return rc;
 }
 
 
 // synchronously download and parse a manifest 
-// return 0 on success; negative on error
+// return 0 on success, and fill in mmsg
+// return neative negative on error
 // NOTE: does not check the authenticity!
 int md_download_manifest( struct md_syndicate_conf* conf,
                           struct md_downloader* dl, 
@@ -1606,7 +1979,7 @@ int md_download_manifest( struct md_syndicate_conf* conf,
 }
 
 // default curl generator
-// download to RAM
+// generate and return a curl handle
 static CURL* md_download_default_curl_generator( void* ignored ) {
    
    CURL* curl = curl_easy_init();
@@ -1615,16 +1988,19 @@ static CURL* md_download_default_curl_generator( void* ignored ) {
 }
 
 // default curl release 
+// clean up the curl handle
 static void md_download_default_curl_release( CURL* curl, void* ignored ) {
    curl_easy_cleanup( curl );
 }
 
 // default post-processor 
+// no-op; always succeeds
 static int md_download_default_postprocess( struct md_download_context* dlctx, void* ignored ) {
    return 0;
 }
 
-// fill in a download config with defaults 
+// fill in a download config with defaults (no-ops)
+// always succeeds
 static int md_download_config_defaults( struct md_download_config* dlconf ) {
    
    if( dlconf->max_downloads <= 0 ) {
@@ -1654,6 +2030,8 @@ static int md_download_config_defaults( struct md_download_config* dlconf ) {
 }
 
 // allocate downloads 
+// return 0 on success 
+// return -ENOMEM on error
 static int md_download_context_alloc_all( struct md_download_context*** ret_downloads, int max_downloads ) {
    
    int rc = 0;
@@ -1678,15 +2056,7 @@ static int md_download_context_alloc_all( struct md_download_context*** ret_down
    
    if( rc != 0 ) {
       
-      for( int i = 0; i < max_downloads; i++ ) {
-         
-         if( downloads[i] != NULL ) {
-            free( downloads[i] );
-            downloads[i] = NULL;
-         }
-      }
-      
-      free( downloads );
+      SG_FREE_LIST( downloads, SG_safe_free );
       return rc;
    }
    
@@ -1696,8 +2066,11 @@ static int md_download_context_alloc_all( struct md_download_context*** ret_down
 }
    
 
-// cancel downloads 
+// cancel downloads, and on successsful cancellation, call the canceller function
+// try to cancel all downloads, even if some fail
 // none of the downloads can be locked
+// return 0 on success 
+// return negative on error (see md_download_context_cancel); the last error to occur
 static int md_download_context_cancel_all( struct md_downloader* dl, struct md_download_context** downloads, int num_downloads, struct md_download_config* dlconf ) {
    
    int rc = 0;
@@ -1708,10 +2081,11 @@ static int md_download_context_cancel_all( struct md_downloader* dl, struct md_d
       
       rc = md_download_context_cancel( dl, downloads[i] );
       if( rc != 0 ) {
+         
          SG_error("md_download_context_cancel(%p) rc = %d\n", downloads[i], rc );
       }
       
-      if( dlconf->canceller_func != NULL ) {
+      else if( dlconf->canceller_func != NULL ) {
          // user-specific cancellation logic 
          (*dlconf->canceller_func)( downloads[i], dlconf->canceller_func_cls );
       }
@@ -1720,9 +2094,10 @@ static int md_download_context_cancel_all( struct md_downloader* dl, struct md_d
    return rc;
 }
 
-// free up and deallocate downloads, including the given list.
+// free up and deallocate downloads
 // if dlset is not NULL, then detach the downloads from it.
 // none of the downloads can be locked.
+// always succeeds, even if it has to spin
 static int md_download_context_free_all( struct md_download_set* dlset, struct md_download_context** downloads, int num_downloads, struct md_download_config* dlconf ) {
    
    int rc = 0;
@@ -1748,20 +2123,24 @@ static int md_download_context_free_all( struct md_download_set* dlset, struct m
          rc = md_download_context_free( downloads[i], &curl );
          if( rc != 0 ) {
             
-            if( rc != -EAGAIN ) {
-               SG_error("md_download_context_free(%p) rc = %d\n", downloads[i], rc );
-               return -i;
+            if( rc == -EINVAL ) {
+               // somehow got added to a download set???
+               md_download_context_clear_set( downloads[i] );
+               rc = md_download_context_free( downloads[i], &curl );
+               
+               if( rc == 0 ) {
+                  break;
+               }
             }
-            else {
-               sched_yield();
-            }
+         
+            // let some other work get done
+            sched_yield();
          }
       }
       
       (*dlconf->curl_release)( curl, dlconf->curl_release_cls );
       
-      free( downloads[i] );
-      downloads[i] = NULL;
+      SG_safe_free( downloads[i] );
    }
    
    free( downloads );
@@ -1770,6 +2149,9 @@ static int md_download_context_free_all( struct md_download_set* dlset, struct m
 }
 
 // initialize download contexts, using a function to generate curl handles
+// return 0 on success
+// return -ENOTCONN if we can't generate a curl handle 
+// return negative on failure to initialize a download context (see md_download_context_init)
 static int md_download_context_init_all( struct md_download_context** downloads, int max_downloads, struct md_download_config* dlconf ) {
    
    int rc = 0;
@@ -1777,10 +2159,10 @@ static int md_download_context_init_all( struct md_download_context** downloads,
    md_download_curl_generator_func curl_generator = dlconf->curl_generator;
    void* curl_generator_cls = dlconf->curl_generator_cls;
    
-   md_cache_connector_func cache_func           = dlconf->cache_func;
-   void* cache_func_cls                         = dlconf->cache_func_cls;
+   md_cache_connector_func cache_func = dlconf->cache_func;
+   void* cache_func_cls = dlconf->cache_func_cls;
    
-   off_t max_len                                = dlconf->max_len;
+   off_t max_len = dlconf->max_len;
    
    // initialize downloads
    for( int i = 0; i < max_downloads; i++ ) {
@@ -1788,12 +2170,14 @@ static int md_download_context_init_all( struct md_download_context** downloads,
       // next CURL handle 
       CURL* next_curl = (*curl_generator)( curl_generator_cls );
       if( next_curl == NULL ) {
+         
          rc = -ENOTCONN;
          break;
       }
       
       rc = md_download_context_init( downloads[i], next_curl, cache_func, cache_func_cls, max_len );
       if( rc != 0 ) {
+         
          SG_error("md_download_context_init(%p) rc = %d\n", downloads[i], rc );
          
          curl_easy_cleanup( next_curl );
@@ -1806,15 +2190,15 @@ static int md_download_context_init_all( struct md_download_context** downloads,
 
 // start downloads, tracking them with the given download set.
 // return the number started on success.
-// return negative on failure.
+// return negative on the first failure to start a download (see md_download_context_start)
 static int md_download_context_start_all( struct md_downloader* dl, struct md_download_set* dlset, struct md_download_context** downloads, int max_downloads, struct md_download_config* dlconf ) {
    
    int num_running = 0;
    int rc = 0;
    
    md_download_url_generator_func url_generator = dlconf->url_generator;
-   void* url_generator_cls                      = dlconf->url_generator_cls;
-   struct md_closure* cache_closure             = dlconf->cache_closure;
+   void* url_generator_cls = dlconf->url_generator_cls;
+   struct md_closure* cache_closure = dlconf->cache_closure;
    
    // start up initial downloads 
    for( int i = 0; i < max_downloads; i++ ) {
@@ -1826,6 +2210,7 @@ static int md_download_context_start_all( struct md_downloader* dl, struct md_do
          // next URL
          next_url = (*url_generator)( downloads[i], url_generator_cls );
          if( next_url == NULL ) {
+            
             // out of URLs 
             break;
          }
@@ -1835,6 +2220,7 @@ static int md_download_context_start_all( struct md_downloader* dl, struct md_do
       md_download_set_add( dlset, downloads[i] );
       
       if( next_url != NULL ) {
+         
          // enable this URL 
          curl_easy_setopt( downloads[i]->curl, CURLOPT_URL, next_url );
       }
@@ -1843,11 +2229,10 @@ static int md_download_context_start_all( struct md_downloader* dl, struct md_do
       rc = md_download_context_start( dl, downloads[i], cache_closure, next_url );
       
       if( rc != 0 ) {
+         
          SG_error("md_download_context_start(%p, %s) rc = %d\n", downloads[i], next_url, rc );
          
-         if( next_url != NULL ) {
-            free( next_url );
-         }
+         SG_safe_free( next_url );
          
          break;
       }
@@ -1864,11 +2249,13 @@ static int md_download_context_start_all( struct md_downloader* dl, struct md_do
       return num_running;
    }
    else {
+      
       return rc;
    }
 }
 
 // set up a download config 
+// always succeeds
 void md_download_config_init( struct md_download_config* dlconf ) {
    
    memset( dlconf, 0, sizeof(struct md_download_config) );
@@ -1876,6 +2263,7 @@ void md_download_config_init( struct md_download_config* dlconf ) {
 }
 
 // set up a download config's URL generator
+// always succeeds
 void md_download_config_set_url_generator( struct md_download_config* dlconf, md_download_url_generator_func url_generator, void* url_generator_cls ) {
    
    dlconf->url_generator = url_generator;
@@ -1883,6 +2271,7 @@ void md_download_config_set_url_generator( struct md_download_config* dlconf, md
 }
 
 // set up a download config's CURL generator 
+// always succeeds
 void md_download_config_set_curl_generator( struct md_download_config* dlconf, md_download_curl_generator_func curl_generator, void* curl_generator_cls ) {
    
    dlconf->curl_generator = curl_generator;
@@ -1890,6 +2279,7 @@ void md_download_config_set_curl_generator( struct md_download_config* dlconf, m
 }
 
 // set up a download config's cache connector 
+// always succeeds
 void md_download_config_set_cache_connector( struct md_download_config* dlconf, struct md_closure* cache_closure, md_cache_connector_func cache_func, void* cache_func_cls ) {
    
    dlconf->cache_closure = cache_closure;
@@ -1898,6 +2288,7 @@ void md_download_config_set_cache_connector( struct md_download_config* dlconf, 
 }
 
 // set up a download config's download post-processor 
+// always succeeds
 void md_download_config_set_postprocessor( struct md_download_config* dlconf, md_download_postprocess_func postprocessor_func, void* postprocessor_func_cls ) {
    
    dlconf->postprocess_func = postprocessor_func;
@@ -1905,6 +2296,7 @@ void md_download_config_set_postprocessor( struct md_download_config* dlconf, md
 }
 
 // set up a download config's download canceller 
+// always succeeds
 void md_download_config_set_canceller( struct md_download_config* dlconf, md_download_postprocess_func canceller_func, void* canceller_func_cls ) {
    
    dlconf->canceller_func = canceller_func;
@@ -1912,6 +2304,7 @@ void md_download_config_set_canceller( struct md_download_config* dlconf, md_dow
 }
 
 // set flow control information 
+// always succeeds
 void md_download_config_set_limits( struct md_download_config* dlconf, int max_downloads, off_t max_len ) {
    
    dlconf->max_downloads = max_downloads;
@@ -1920,6 +2313,8 @@ void md_download_config_set_limits( struct md_download_config* dlconf, int max_d
 
 // download a set of urls, in no particular order.
 // ensure that no more than max_downloads are running at a given time.
+// return 0 on success
+// return negative on error, such as from allocation, initialization, download set initialization, download start-up, download cancellation, or download free-ing
 int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, struct md_download_config* dlconf ) {
    
    int rc = 0;
@@ -1938,6 +2333,8 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
    // allocate downloads...
    rc = md_download_context_alloc_all( &downloads, max_downloads );
    if( rc != 0 ) {
+      
+      SG_error("md_download_context_alloc_all( %p, %d ) rc = %d\n", dlconf, max_downloads, rc );
       return rc;
    }
    
@@ -1946,6 +2343,8 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
    
    // error? clean up 
    if( rc != 0 ) {
+      
+      SG_error("md_download_context_init_all( %p, %d ) rc = %d\n", dlconf, max_downloads, rc );
       md_download_context_free_all( NULL, downloads, max_downloads, dlconf );
       return rc;
    }
@@ -1953,9 +2352,15 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
    // setup download set 
    rc = md_download_set_init( &dlset );
    if( rc != 0 ) {
-      SG_error("md_download_set_init(%p) rc = %d\n", &dlset, rc );
       
-      md_download_context_free_all( NULL, downloads, max_downloads, dlconf );
+      SG_error("md_download_set_init( %p ) rc = %d\n", &dlset, rc );
+      
+      int free_rc = md_download_context_free_all( NULL, downloads, max_downloads, dlconf );
+      if( free_rc != 0 ) {
+      
+         SG_error("md_download_context_free_all( %p ) rc = %d\n", dlconf, free_rc );
+      }
+      
       return rc;
    }
    
@@ -1965,15 +2370,28 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
    // error? clean up 
    if( num_running < 0 ) {
       
-      SG_error("md_download_context_start_all rc = %d\n", num_running );
+      SG_error("md_download_context_start_all( %p, %d ) rc = %d\n", dlconf, max_downloads, num_running );
       
-      int cancel_rc = md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
-      if( cancel_rc != 0 ) {
-         
-         SG_error("md_download_context_cancel_all(%p) rc = %d\n", dlconf, cancel_rc );
+      // cancel them all
+      while( true ) {
+         int cancel_rc = md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
+         if( cancel_rc != 0 ) {
+            
+            // do our best to recover
+            SG_error("md_download_context_cancel_all( %p ) rc = %d\n", dlconf, cancel_rc );
+            sleep(1);
+         }
+         else {
+            break;
+         }
       }
       
-      md_download_context_free_all( &dlset, downloads, max_downloads, dlconf );
+      rc = md_download_context_free_all( &dlset, downloads, max_downloads, dlconf );
+      if( rc != 0 ) {
+      
+         SG_error("md_download_context_free_all( %p ) rc = %d\n", dlconf, rc );
+      }
+      
       md_download_set_free( &dlset );
       return num_running;
    }
@@ -2022,10 +2440,12 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
             // post-process
             rc = (*postprocess)( downloads[i], postprocess_cls );
             if( rc < 0 ) {
+               
                // abort 
-               SG_error("post-processor(%p) rc = %d\n", downloads[i], rc );
+               SG_error("post-processor( %p ) rc = %d\n", downloads[i], rc );
                break;
             }
+            
             if( rc == MD_DOWNLOAD_FINISH ) {
                
                // done early 
@@ -2045,10 +2465,12 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
                rc = md_download_context_start_all( dl, &dlset, &downloads[i], 1, dlconf );
                
                if( rc >= 0 ) {
+                  
                   num_running += rc;
                   rc = 0;
                }
                else {
+                  
                   // error 
                   SG_error("md_download_context_start_all(%p) rc = %d\n", downloads[i], rc );
                   break;
@@ -2078,11 +2500,18 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
    if( rc != 0 || cancel_at_end ) {
       
       // cancel everything
-      int cancel_rc = md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
-      
-      if( cancel_rc != 0 ) {
+      while( true ) {
+         int cancel_rc = md_download_context_cancel_all( dl, downloads, max_downloads, dlconf );
          
-         SG_error("md_download_context_cancel_all(%p) rc = %d\n", dlconf, cancel_rc );
+         if( cancel_rc != 0 ) {
+            
+            // do our best to recover
+            SG_error("md_download_context_cancel_all(%p) rc = %d\n", dlconf, cancel_rc );
+            sleep(1);
+         }
+         else {
+            break;
+         }
       }
    }
    
@@ -2095,6 +2524,10 @@ int md_download_all( struct md_downloader* dl, struct md_syndicate_conf* conf, s
 
 
 // download a single item, using a download config 
+// return 0 on success
+// return -ENOTCONN if we failed to generate a curl handle, or failed to initialize the download context 
+// return -ENODATA if we failed to run the download 
+// return negative result from the postprocess callback
 int md_download_single( struct md_syndicate_conf* conf, struct md_download_config* dlconf ) {
    
    int rc = 0;
@@ -2163,22 +2596,24 @@ int md_bound_response_buffer_init( struct md_bound_response_buffer* brb, off_t m
    
    memset( brb, 0, sizeof(struct md_bound_response_buffer) );
    
-   brb->max_size = max_size;
-   brb->size = 0;
-   
-   brb->rb = new (nothrow) md_response_buffer_t();
+   brb->rb = SG_safe_new( md_response_buffer_t() );
    if( brb == NULL ) {
       return -ENOMEM;
    }
    
+   brb->max_size = max_size;
+   brb->size = 0;
+   
    return 0;
 }
 
+// free a bound response buffer 
+// always succeeds
 int md_bound_response_buffer_free( struct md_bound_response_buffer* brb ) {
    
    if( brb->rb != NULL ) {
       md_response_buffer_free( brb->rb );
-      delete brb->rb;
+      SG_safe_delete( brb->rb );
    }
    
    memset( brb, 0, sizeof(struct md_bound_response_buffer) );

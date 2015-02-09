@@ -108,6 +108,7 @@ struct md_downloader {
    CURLM* curlm;        // multi-download
    
    bool running;        // if true, then this downloader is running
+   bool inited;         // if true, then this downloader is fully initialized
 };
 
 typedef char* (*md_download_url_generator_func)( struct md_download_context*, void* );
