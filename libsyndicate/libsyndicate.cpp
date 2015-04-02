@@ -418,7 +418,8 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       return -1;
    }
    
-   memset( conf, 0, sizeof( struct md_syndicate_conf ) );
+   //iychoi fixed
+   //memset( conf, 0, sizeof( struct md_syndicate_conf ) );
    
    char buf[4096];    // big enough?
    
