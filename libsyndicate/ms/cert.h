@@ -17,35 +17,22 @@
 #ifndef _MS_CLIENT_CERT_H_
 #define _MS_CLIENT_CERT_H_
 
-#include "libsyndicate/ms/core.h"
+#include "libsyndicate/libsyndicate.h"
 
 #define MS_CERT_BUNDLE_BEGIN    1
 #define MS_NUM_CERT_BUNDLES     ms::ms_gateway_cert::NUM_CERT_TYPES
 
+#define SG_MAX_CERT_LEN         10240000                // 10MB
+
 // prototypes 
 struct ms_volume;
 
-// version delta record between our Volume's cached cert bundle and the MS's
-struct ms_cert_diff_entry {
-   int gateway_type;
-   uint64_t gateway_id;
-   uint64_t cert_version;
-};
-
-typedef vector< ms_cert_diff_entry > ms_cert_diff_list;
-
-// cert bundle delta
-struct ms_cert_diff {
-   ms_cert_diff_list* old_certs;
-   ms_cert_diff_list* new_certs;
-};
-
 struct ms_gateway_cert {
-   uint64_t user_id;            // SyndicateUser ID
+   uint64_t user_id;            // Syndicate User ID
    uint64_t gateway_id;         // Gateway ID
-   int gateway_type;            // what kind of gateway
+   uint64_t gateway_type;       // what kind of gateway
    uint64_t volume_id;          // Volume ID
-   char* name;                  // account (gateway) name
+   char* name;                  // gateway name
    char* hostname;              // what host this gateway runs on
    int portnum;                 // what port this gateway listens on
    char* closure_text;          // closure information (only retained for our gateway)
@@ -64,25 +51,14 @@ extern "C" {
 // init/free
 int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gateway_id, const ms::ms_gateway_cert* ms_cert );
 void ms_client_gateway_cert_free( struct ms_gateway_cert* cert );
-
-// downloads 
-int ms_client_gateway_cert_manifest_download( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, Serialization::ManifestMsg* mmsg );
-int ms_client_gateway_cert_download( struct ms_client* client, CURL* curl, char const* url, ms::ms_gateway_cert* ms_cert );
-
-// synchronization 
-int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_version );
+void ms_client_cert_bundle_free( ms_cert_bundle* bundle );
 
 // helpers for synchronization 
-int ms_client_make_cert_diff( struct ms_volume* vol, Serialization::ManifestMsg* mmsg, ms_cert_diff* certdiff );
-int ms_client_find_expired_certs( struct ms_volume* vol, ms_cert_diff_list* expired );
-int ms_client_revoke_certs( struct ms_volume* vol, ms_cert_diff_list* certdiff );
+int ms_client_revoke_certs( struct ms_client* client, struct SG_manifest* manifest );
 
 // validation
 int ms_client_cert_has_public_key( const ms::ms_gateway_cert* ms_cert );
 
-// misc 
-void ms_client_cert_bundles( struct ms_volume* volume, ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1] );
-int ms_client_cert_urls( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, ms_cert_diff_list* new_certs, char*** cert_urls_buf );
 
 }
 #endif
