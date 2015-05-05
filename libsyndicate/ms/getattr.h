@@ -22,27 +22,6 @@
 #include "libsyndicate/ms/path.h"
 #include "libsyndicate/ms/url.h"
 
-typedef map<struct md_download_context*, int> ms_client_getattr_downloading_set;
-
-// getattr context 
-struct ms_client_getattr_context {
-   
-   struct ms_client* client;
-   
-   ms_path_t* path;
-   
-   vector<int>* to_download;                                           // queue of path indexes to download
-   int* attempts;                                                      // attempt counts for each path entry (indexed to path)
-   ms_client_getattr_downloading_set* downloading;                     // associate each download context to the ith path entry
-   
-   struct md_entry* results_buf;                                       // downloaded data for each path entry
-   
-   int listing_error;                                                  // MS-given error in processing a request
-   int num_downloaded;                                                 // how many entries successfully downloaded
-   
-   pthread_mutex_t lock;
-};
-
 extern "C" {
 
 int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result );
@@ -51,6 +30,7 @@ int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct m
 int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result );
 int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result );
 
+int ms_client_getattr_request( struct ms_path_ent* ms_ent, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce, void* cls );
 }
 
 #endif

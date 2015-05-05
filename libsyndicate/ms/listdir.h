@@ -23,8 +23,7 @@
 #include "libsyndicate/ms/url.h"
 #include "libsyndicate/ms/volume.h"
 
-typedef map<struct md_download_context*, int> ms_client_listdir_batch_set;
-typedef map<int, int> ms_client_listdir_attempt_set;
+typedef map< uint64_t, struct md_entry > ms_client_dir_listing;
 
 // listdir context
 struct ms_client_listdir_context {
@@ -38,9 +37,6 @@ struct ms_client_listdir_context {
    
    set<uint64_t>* children_ids;                 // file ids of downloaded children
    vector<struct md_entry>* children;           // downloaded children
-   
-   ms_client_listdir_batch_set* downloading;    // which batches of the index are downloading
-   ms_client_listdir_attempt_set* attempts;     // download attempts for a given batch
    
    int listing_error;
    int64_t num_children;

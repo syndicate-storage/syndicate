@@ -165,7 +165,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    }
    
    // unserialize
-   rc = ms_client_parse_reply( client, &reply, dlbuf, dlbuf_len, true );
+   rc = ms_client_parse_reply( client, &reply, dlbuf, dlbuf_len );
    free( dlbuf );
    
    if( rc != 0 ) {
@@ -306,9 +306,8 @@ int ms_client_listing_read_entry( struct ms_client* client, struct md_download_c
 
 
 // Walk down a path on the MS, filling in the given path with information.  This method iteratively calls getchild() until it 
-// reaches the end of the path, or encounters an error.  If it encounters a path-related error from the MS, *error is set to it and *error_idx is set to
-// the index of the path entry for which the error was encountered.
-// Each time an entry is successfully obtained, download_cb is called with the filled-in data.
+// reaches the end of the path, or encounters an error.
+// Downloaded entries are put into ret_listings, which will be set up and allocated by this method
 // The given path entries must contain:
 // * volume_id
 // * name
@@ -319,10 +318,14 @@ int ms_client_listing_read_entry( struct ms_client* client, struct md_download_c
 // * parent_id
 // NOTE: this method will modify path (filling in data it obtained from the MS)
 // return 0 on success, indicating no communication error with the MS (but possibly path-related errors, like security check failures or non-existence)
-int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_ent_download_cb download_cb, void* download_cls, int* error, int* error_idx ) {
+// return -ENOMEM on OOM 
+// return -EINVAL if the path is ill-structured
+// return -errno from the MS
+int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* ret_listings ) {
    
    int rc = 0;
    struct ms_client_multi_result result;
+   struct ms_client_multi_result listings;
    
    // sanity check 
    if( path->size() == 0 ) {
@@ -339,6 +342,14 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       }
    }
    
+   // set up the multi-result 
+   rc = ms_client_multi_result_init( &listings, path->size() );
+   if( rc != 0 ) {
+      
+      // OOM
+      return rc;
+   }
+   
    for( unsigned int i = 0; i < path->size(); i++ ) {
       
       // get the next child 
@@ -349,6 +360,7 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       if( rc != 0 ) {
          
          SG_error("ms_client_getchild(%" PRIX64 ".%s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
+         
          break;
       }
       
@@ -356,8 +368,7 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
          
          SG_error("MS replied %d for GETCHILD(%" PRIX64 ", %s)\n", result.reply_error, path->at(i).parent_id, path->at(i).name );
          
-         *error = result.reply_error;
-         *error_idx = i;
+         listings.reply_error = result.reply_error;
          break;
       }
       
@@ -366,6 +377,12 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
       path->at(i).version = result.ents[0].version;
       path->at(i).write_nonce = result.ents[0].write_nonce;
       path->at(i).num_children = result.ents[0].num_children;
+      path->at(i).generation = result.ents[0].generation;
+      path->at(i).capacity = result.ents[0].capacity;
+      
+      // preserve this listing
+      listings.ents[i] = result.ents[0];
+      listings.num_processed = i;
       
       // provide parent if we can 
       if( i > 0 ) {
@@ -373,20 +390,27 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_
          path->at(i).parent_id = path->at(i-1).file_id;
       }
       
-      // let the caller know 
-      if( download_cb != NULL ) {
-         
-         rc = (*download_cb)( &path->at(i), download_cls );
-         
-         if( rc != 0 ) {
-            
-            SG_error("download_cb(%" PRIX64 ", %s) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
-            break;
-         }
-      }
+      SG_safe_free( result.ents );
    }
    
    return rc;
+}
+
+
+// make the first entry required for ms_client_path_download
+// return 0 on success
+// return -ENOMEM on OOM 
+int ms_client_path_download_ent_head( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t parent_id, uint64_t file_id, char const* name, void* cls ) {
+
+   return ms_client_make_path_ent( path_ent, volume_id, parent_id, file_id, 0, 0, 0, 0, 0, name, cls );
+}
+
+// make a tail entry required for ms_client_path_download
+// return 0 on success
+// return -ENOMEM on OOM 
+int ms_client_path_download_ent_tail( struct ms_path_ent* path_ent, uint64_t volume_id, char const* name, void* cls ) {
+   
+   return ms_client_make_path_ent( path_ent, volume_id, 0, 0, 0, 0, 0, 0, 0, name, cls );
 }
 
 

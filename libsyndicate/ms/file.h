@@ -95,22 +95,22 @@ int ms_client_request_set_cls( struct ms_client_request* request, void* cls );
 
 // results 
 int ms_client_download_parse_errors( struct md_download_context* dlctx );
-int ms_client_download_interpret_errors( char const* url, int http_status, int curl_rc, int os_err );
 
 // memory management
 int ms_client_request_result_free( struct ms_client_request_result* result );
 int ms_client_request_result_free_all( struct ms_client_request_result* results, size_t num_results );
+int ms_client_multi_result_init( struct ms_client_multi_result* result, size_t num_ents );
 int ms_client_multi_result_free( struct ms_client_multi_result* result );
 
 // low-level file API 
 int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent );
 
 // low-level RPC
-int ms_client_single_rpc( struct ms_client* client, int ms_op, int ms_op_flags, struct ms_client_request* request, struct ms_client_request_result* result );
+int ms_client_single_rpc( struct ms_client* client, struct ms_client_request* request, struct ms_client_request_result* result );
 int ms_client_update_rpc( struct ms_client* client, struct md_update* up );
 
 // parsing
-int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify );
+int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len );
 int ms_client_num_expected_reply_ents( size_t num_reqs, int op );
 
 }

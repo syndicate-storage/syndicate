@@ -235,7 +235,7 @@ char* ms_client_vacuum_url( char const* ms_url, uint64_t volume_id, uint64_t fil
    
    return vacuum_path;
 }
-   
+ 
 
 // URL to a Volume, by ID
 // return the URL on success 
@@ -291,7 +291,7 @@ char* ms_client_public_key_register_url( char const* ms_url ) {
 // URL to register with the MS, using an OpenID username/password
 // return the URL on success 
 // return NULL on OOM
-char* ms_client_openid_register_url( char const* ms_url, int gateway_type, char const* gateway_name, char const* username ) {
+char* ms_client_openid_register_url( char const* ms_url, uint64_t gateway_type, char const* gateway_name, char const* username ) {
    // build the /REGISTER/ url
 
    char gateway_type_str[10];
@@ -348,10 +348,10 @@ char* ms_client_syndicate_pubkey_url( char const* ms_url ) {
 }
 
 // URL to a certificate manifest 
-// if include_gateway_id > 0, then request its cert information as well.
+// if include_gateway_id is not SG_GATEWAY_ANON, then request its cert information as well.
 // return the URL on success
 // return NULL on OOM
-char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, uint64_t include_gateway_id ) {
+char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t cert_version, uint64_t include_gateway_id ) {
    
    size_t gateway_id_len = 0;
    if( include_gateway_id > 0 ) {
@@ -363,11 +363,11 @@ char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint6
       return NULL;
    }
    
-   if( include_gateway_id > 0 ) {
-      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64 "?include_cert=%" PRIu64, ms_url, volume_id, volume_cert_version, include_gateway_id );
+   if( include_gateway_id != SG_GATEWAY_ANON ) {
+      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64 "?include_cert=%" PRIu64, ms_url, volume_id, cert_version, include_gateway_id );
    }
    else {
-      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, ms_url, volume_id, volume_cert_version );
+      sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, ms_url, volume_id, cert_version );
    }
    
    return url;
@@ -377,16 +377,16 @@ char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint6
 // get a certificate URL
 // return the URL on success 
 // return NULL on OOM
-char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version ) {
+char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t cert_version, uint64_t gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version ) {
    char type_str[5];
-   ms_client_gateway_type_str( gateway_type, type_str );
+   ms_client_gateway_type_str( SYNDICATE_UG, type_str );
    
    char* url = SG_CALLOC( char, strlen(ms_url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + 21 + 1 + strlen(type_str) + 1 + 21 + 1 + 21 + 1 );
    if( url == NULL ) {
       return NULL;
    }
    
-   sprintf( url, "%s/CERT/%" PRIu64 "/%" PRIu64 "/%s/%" PRIu64 "/%" PRIu64, ms_url, volume_id, volume_cert_version, type_str, gateway_id, gateway_cert_version );
+   sprintf( url, "%s/CERT/%" PRIu64 "/%" PRIu64 "/%s/%" PRIu64 "/%" PRIu64, ms_url, volume_id, cert_version, type_str, gateway_id, gateway_cert_version );
    
    return url;
 }

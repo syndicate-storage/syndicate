@@ -19,9 +19,12 @@
 #include "libsyndicate/ms/cert.h"
 #include "libsyndicate/ms/volume.h"
 #include "libsyndicate/ms/url.h"
+#include "libsyndicate/download.h"
 
-// state per request 
-struct ms_client_request_context {
+// state per download
+struct ms_client_request_batch {
+   
+   int request_id;
    
    struct ms_client_timing* timing;
    
@@ -36,26 +39,8 @@ struct ms_client_request_context {
    
    struct curl_httppost* forms;
    struct curl_slist* headers;
-};
-
-// private, multi-operation upload/download context 
-struct ms_client_multi_context {
    
-   struct ms_client* client;
-   
-   // result from each request (kept in the same order as the given request)
-   struct ms_client_request_result* results;
-   
-   // context per network connection
-   struct ms_client_request_context* request_contexts;
-   size_t num_request_contexts;
-   
-   queue<int>* request_queue;            // which requests above should be sent next
-   
-   map< struct md_download_context*, int >* attempts;           // map download context to retry count
-   map< struct md_download_context*, int >* downloading;        // map download context to index into request_data
-   
-   pthread_mutex_t lock;
+   char* url;
 };
 
 // convert an update_set into a protobuf
@@ -207,7 +192,7 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 
 
 // populate an ms_update with an md_entry and associated fields
-// NOTE: ths is a shallow copy of ent and affected_blocks.  The caller should NOT free them; they'll be freed internally
+// always succeeds
 int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent ) {
    memset( up, 0, sizeof(struct md_update) );
    up->op = op;
@@ -239,6 +224,24 @@ uint64_t ms_client_make_file_id() {
    return (uint64_t)md_random64();
 }
 
+
+// allocate a multi-result
+// return 0 on success 
+// return -ENOMEM on OOM 
+int ms_client_multi_result_init( struct ms_client_multi_result* result, size_t num_ents ) {
+   
+   memset( result, 0, sizeof(struct ms_client_multi_result) );
+   
+   result->ents = SG_CALLOC( struct md_entry, num_ents );
+   if( result->ents == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   result->num_ents = num_ents;
+   return 0;
+}
+
 // free a multi-result 
 int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
    
@@ -257,55 +260,6 @@ int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
    return 0;
 }
 
-// interpret error messages from a download context into an apporpriate return code to the downloader.
-// return 0 if there was no error
-// return -EAGAIN if the download should be retried 
-// return -EREMOTEIO if the HTTP status was >= 500, or if an indeterminate error occurred but errno was not set.
-// return -http_status if the HTTP status was between 400 and 499
-int ms_client_download_interpret_errors( char const* url, int http_status, int curl_rc, int os_err ) {
-   
-   int rc = 0;
-   
-   if( http_status == SG_HTTP_TRYAGAIN || curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT || curl_rc == CURLE_GOT_NOTHING ) {
-      
-      if( http_status == SG_HTTP_TRYAGAIN ) {
-         SG_error("MS says try (%s) again\n", url );
-      }
-      else {
-         SG_error("Download (%s) timed out (curl_rc = %d, errno = %d)\n", url, curl_rc, os_err );
-      }
-      
-      return -EAGAIN;
-   }
-   
-   // serious MS error?
-   if( http_status >= 500 ) {
-      SG_error("Download (%s) HTTP status %d\n", url, http_status );
-      
-      return -EREMOTEIO;
-   }
-   
-   // some other error?
-   if( http_status != 200 || curl_rc != 0 ) {
-      
-      SG_error("Download (%s) failed, HTTP status = %d, cURL rc = %d, errno = %d\n", url, http_status, curl_rc, os_err );
-      
-      if( os_err != 0 ) {
-         rc = os_err;
-      }
-      else if( http_status >= 400 && http_status <= 499 ) {
-         rc = -http_status;
-      }
-      else {
-         rc = -EREMOTEIO;
-      }
-      
-      return rc;
-   }
-   
-   return 0;
-}
-
 // handle errors from a download 
 // return 0 if there was no error
 // return -EPERM if the download was cancelled, or is not finalized
@@ -315,7 +269,6 @@ int ms_client_download_parse_errors( struct md_download_context* dlctx ) {
    
    int rc = 0;
    int http_status = 0;
-   char* final_url = NULL;
    int os_err = 0;
    int curl_rc = 0;
    
@@ -328,131 +281,17 @@ int ms_client_download_parse_errors( struct md_download_context* dlctx ) {
    http_status = md_download_context_get_http_status( dlctx );
    os_err = md_download_context_get_errno( dlctx );
    curl_rc = md_download_context_get_curl_rc( dlctx );
-   md_download_context_get_effective_url( dlctx, &final_url );
    
-   rc = ms_client_download_interpret_errors( final_url, http_status, curl_rc, os_err );
-   
-   free( final_url );
+   rc = md_download_interpret_errors( http_status, curl_rc, os_err );
    
    return rc;
 }
-
-
-// retry a multi request 
-// return 0 on success
-// return -ENODATA if we've exceeded the maximum number of retries 
-// return -ENOMEM if OOM
-static int ms_client_multi_retry( struct ms_client_multi_context* ctx, struct md_download_context* dlctx, int request_idx ) {
-   
-   int num_attempts = 0;
-   int rc = 0;
-   
-   try {
-      (*ctx->attempts)[dlctx]++;
-      num_attempts = (*ctx->attempts)[dlctx];
-   }
-   catch( bad_alloc& ba ) {
-      return -ENOMEM;
-   }
-   
-   if( num_attempts > ctx->client->conf->max_metadata_read_retry ) {
-      // don't try again
-      rc = -ENODATA;
-   }
-   else {
-      // re-enqueue 
-      try {
-         ctx->request_queue->push( request_idx );
-      }
-      catch( bad_alloc& ba ) {
-         return -ENOMEM;
-      }
-   }
-   
-   return rc;
-}
-
-
-// set up a CURL for an upload 
-// return a curl handle on success
-// return NULL if OOM
-static CURL* ms_client_multi_curl_generator( void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   
-   // set up a cURL handle to the MS 
-   // TODO: conection pool
-   CURL* curl = curl_easy_init();
-   if( curl == NULL ) {
-      return NULL;
-   }
-   
-   ms_client_init_curl_handle( ctx->client, curl, NULL );
-   
-   return curl;
-}
-
-
-// generate the url for an upload, and set up the download context accordingly
-// return NULL if OOM, or if we're out of URLs
-static char* ms_client_multi_url_generator( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   struct ms_client_request_context* rctx = NULL;
-   int request_idx = 0;
-   char* url = NULL;
-   uint64_t volume_id = ms_client_get_volume_id( ctx->client );
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   try {
-      // have more work?
-      if( ctx->request_queue->size() == 0 ) {
-         pthread_mutex_unlock( &ctx->lock );
-         return NULL;
-      }
-   
-      // which request is this?
-      request_idx = ctx->request_queue->front();
-      rctx = &(ctx->request_contexts[ request_idx ]);
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return NULL;
-   }
-   
-   // program this download context
-   curl_easy_setopt( dlctx->curl, CURLOPT_POST, 1L);
-   curl_easy_setopt( dlctx->curl, CURLOPT_HTTPPOST, rctx->forms );
-   
-   if( rctx->timing != NULL ) {
-      curl_easy_setopt( dlctx->curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
-      curl_easy_setopt( dlctx->curl, CURLOPT_WRITEHEADER, rctx->timing );      
-   }
-   
-   try {
-      // mark as downloading 
-      ctx->request_queue->pop();
-      (*ctx->downloading)[ dlctx ] = request_idx;
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return NULL;
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   
-   // make our URL (could be NULL)
-   url = ms_client_file_url( ctx->client->url, volume_id );
-   return url;
-}
-
 
 // verify that a reply listing has no duplicate entries 
 // return 0 if no duplicates
 // return -EBADMSG if there are duplicates
 // return -ENOMEM if OOM
-static int ms_client_multi_verify_no_duplicate_listing( ms::ms_reply* reply ) {
+static int ms_client_batch_verify_no_duplicate_listing( ms::ms_reply* reply ) {
       
    int rc = 0;
 
@@ -485,12 +324,12 @@ static int ms_client_multi_verify_no_duplicate_listing( ms::ms_reply* reply ) {
 // return 0 if we succeeded
 // return -EINVAL if the request context doesn't have the same number of requests as the reply
 // return -EBADMSG if we're missing an entry, or have too many
-static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struct ms_client_request_context* rctx ) {
+static int ms_client_batch_verify_matching_responses( ms::ms_reply* reply, struct ms_client_request_batch* batch ) {
    
    int rc = 0;
    
-   if( reply->errors_size() != rctx->num_ops ) {
-      SG_error("MS replied %d errors; expected %d\n", reply->errors_size(), rctx->num_ops );
+   if( reply->errors_size() != batch->num_ops ) {
+      SG_error("MS replied %d errors; expected %d\n", reply->errors_size(), batch->num_ops );
       return -EINVAL;
    }
    
@@ -499,7 +338,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
    for( int i = 0; i < reply->errors_size(); i++ ) {
       
       int ms_rc = reply->errors(i);
-      int op = rctx->ops[i];
+      int op = batch->ops[i];
       
       if( MS_CLIENT_OP_RETURNS_ENTRY( op ) && ms_rc == 0 ) {
          
@@ -536,7 +375,7 @@ static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struc
 // return -ENODATA if we're missing replies
 // return -EPERM if the MS reply error was nonzero (the error will be set in *reply_error)
 // return -ENOMEM if OOM
-static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, ms::ms_reply* reply, struct ms_client_request_context* rctx, int* reply_error ) {
+static int ms_client_parse_results( ms::ms_reply* reply, struct ms_client_request_batch* batch, struct ms_client_request_result* results, int* reply_error ) {
    
    int rc = 0;
    int num_items_processed = 0;
@@ -556,8 +395,8 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
       return -ENODATA;
    }
    
-   if( num_items_processed != rctx->num_ops ) {
-      SG_error("Partial data: Requested %d items, but %d were processed\n", rctx->num_ops, num_items_processed );
+   if( num_items_processed != batch->num_ops ) {
+      SG_error("Partial data: Requested %d items, but %d were processed\n", batch->num_ops, num_items_processed );
       
       return -ENODATA;
    }
@@ -565,20 +404,20 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
    if( reply->has_listing() ) {
       
       // verify no duplicate IDs
-      rc = ms_client_multi_verify_no_duplicate_listing( reply );
+      rc = ms_client_batch_verify_no_duplicate_listing( reply );
       if( rc != 0 ) {
          
          // invalid message
-         SG_error("ms_client_multi_verify_no_duplicate_listing rc = %d\n", rc );
+         SG_error("ms_client_batch_verify_no_duplicate_listing rc = %d\n", rc );
          return rc;
       }
       
       // verify that each request has a matching response
-      rc = ms_client_multi_verify_matching_responses( reply, rctx );
+      rc = ms_client_batch_verify_matching_responses( reply, batch );
       if( rc != 0 ) {
          
          // invalid message 
-         SG_error("ms_client_multi_verify_matching_responses rc = %d\n", rc );
+         SG_error("ms_client_batch_verify_matching_responses rc = %d\n", rc );
          return -EBADMSG;
       }
       
@@ -587,7 +426,7 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
       for( int i = 0; i < num_items_processed; i++ ) {
          
          int ms_rc = reply->errors(i);
-         int op = rctx->ops[i];
+         int op = batch->ops[i];
          
          struct md_entry* ent = NULL;
          
@@ -598,6 +437,7 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
                break;
             }
             
+            // next entry in this batch
             ent = SG_CALLOC( struct md_entry, 1 );
             if( ent == NULL ) {
                rc = -ENOMEM;
@@ -609,14 +449,13 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
                break;
             }
             
-            SG_debug("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, rctx->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
+            SG_debug("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, batch->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
             
-            // next entry
             k++;
          
             // verify the returned entry matches this request 
-            if( ent->file_id != rctx->file_ids[i] ) {
-               SG_error("Mismatched file ID at %d: %" PRIX64 " != %" PRIX64 "\n", i, ent->file_id, rctx->file_ids[i] );
+            if( ent->file_id != batch->file_ids[i] ) {
+               SG_error("Mismatched file ID at %d: %" PRIX64 " != %" PRIX64 "\n", i, ent->file_id, batch->file_ids[i] );
                
                rc = -EBADMSG;
                break;
@@ -624,15 +463,16 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
          }
          
          // bundle the entry with its return code
+         // put the result in place
          struct ms_client_request_result result;
          memset( &result, 0, sizeof(struct ms_client_request_result) );
          
-         result.file_id = rctx->file_ids[i];
+         result.file_id = batch->file_ids[i];
          result.ent = ent;
          result.rc = ms_rc;
          result.reply_error = *reply_error;
          
-         ctx->results[ rctx->result_offset + i ] = result;
+         results[ batch->result_offset + i ] = result;
          
          ent = NULL;
       }
@@ -640,138 +480,6 @@ static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, m
    
    return rc;
 }
-
-
-// post-process an upload 
-// return 0 on success
-// return -EINVAL if the download was not tracked (should never happen)
-// return -ENODATA if no data could be obtained, despite retries.
-// return -ERESTART if we got partial data
-// return -EBADMSG if the data could not be parsed or verified
-// return -ENOMEM if OOM
-static int ms_client_multi_postprocesser( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   int rc = 0;
-   int request_idx = 0;
-   char* buf = NULL;
-   off_t buf_len = 0;
-   ms::ms_reply reply;
-   struct ms_client_request_context* rctx = NULL;
-   int reply_error = 0;
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   map< struct md_download_context*, int >::iterator itr = ctx->downloading->find( dlctx );
-   if( itr == ctx->downloading->end() ) {
-      
-      // not downloading???
-      SG_error("BUG: no request for %p\n", dlctx );
-      pthread_mutex_unlock( &ctx->lock );
-      return -EINVAL;
-   }
-   
-   try {
-      request_idx = itr->second;
-      rctx = &(ctx->request_contexts[ request_idx ]);
-      
-      ctx->downloading->erase( itr );
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return -ENOMEM;
-   }
-   
-   // process download errors
-   rc = ms_client_download_parse_errors( dlctx );
-   if( rc == -EAGAIN ) {
-      
-      // try again 
-      rc = ms_client_multi_retry( ctx, dlctx, request_idx );
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return 0;
-   }
-   else if( rc != 0 ) {
-      
-      // fatal error 
-      SG_error("ms_client_download_parse_errors(%p) rc = %d\n", dlctx, rc );
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // get result
-   // get the buffer 
-   rc = md_download_context_get_buffer( dlctx, &buf, &buf_len );
-   if( rc != 0 || buf == NULL ) {
-      
-      SG_error("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
-      
-      if( rc != -ENOMEM ) {
-         rc = -EBADMSG;
-      }
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // parse and verify
-   rc = ms_client_parse_reply( ctx->client, &reply, buf, buf_len, true );
-   
-   SG_safe_free( buf );
-   
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_parse_reply rc = %d\n", rc );
-      rc = -EBADMSG;
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // extract results 
-   rc = ms_client_multi_parse_results( ctx, &reply, rctx,  &reply_error );
-   if( rc != 0 ) {
-      
-      // failed to process
-      SG_error("WARN: ms_client_multi_parse_results rc = %d\n", rc );
-      
-      if( rc == -EPERM ) {
-         // mask this--the actual reply error is contained in the results 
-         rc = 0;
-      }
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   
-   return rc;
-}
-
-
-// post-cancel an upload 
-// return 0 on success
-// return -ENOMEM on OOM
-static int ms_client_multi_canceller( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   int rc = 0;
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   try {
-      // mark as not downloading 
-      ctx->downloading->erase( dlctx );
-      ctx->attempts->erase( dlctx );
-   }
-   catch( bad_alloc& ba ) {
-      rc = -ENOMEM;
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   return rc;
-}
-
 
 // generate data to upload and HTTP forms wrapping it.
 // return 0 on success, and set *serialized_text and *serialized_text_len to the serialized buffer holding all of the updates, and set *ret_post and *ret_last to a CURL form structure 
@@ -832,14 +540,14 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
 // return 0 on success
 // return -ENOMEM on OOM
 // return negative on error (see ms_client_request_serialize)
-static int ms_client_request_context_init( struct ms_client* client, struct ms_client_request_context* rctx, ms_client_update_set* all_updates, int64_t result_offset ) {
+static int ms_client_request_batch_init( struct ms_client* client, struct ms_client_request_batch* batch, ms_client_update_set* all_updates, int64_t result_offset ) {
    
    int rc = 0;
    struct curl_httppost *post = NULL, *last = NULL;
    char* serialized_text = NULL;
    size_t serialized_text_len = 0;
    
-   memset( rctx, 0, sizeof(struct ms_client_request_context) );
+   memset( batch, 0, sizeof(struct ms_client_request_batch) );
    
    rc = ms_client_request_serialize( client, all_updates, &serialized_text, &serialized_text_len, &post, &last );
    if( rc != 0 ) {
@@ -849,33 +557,33 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
    }
    
    // record order of operations on files 
-   rctx->ops = SG_CALLOC( int, rctx->num_ops );
-   rctx->file_ids = SG_CALLOC( uint64_t, rctx->num_ops );
+   batch->ops = SG_CALLOC( int, batch->num_ops );
+   batch->file_ids = SG_CALLOC( uint64_t, batch->num_ops );
    
    // benchmark data 
-   rctx->timing = SG_CALLOC( struct ms_client_timing, 1 );
+   batch->timing = SG_CALLOC( struct ms_client_timing, 1 );
    
-   if( rctx->ops == NULL || rctx->file_ids == NULL || rctx->timing == NULL ) {
+   if( batch->ops == NULL || batch->file_ids == NULL || batch->timing == NULL ) {
       
-      SG_safe_free( rctx->ops );
-      SG_safe_free( rctx->file_ids );
-      SG_safe_free( rctx->timing );
+      SG_safe_free( batch->ops );
+      SG_safe_free( batch->file_ids );
+      SG_safe_free( batch->timing );
       
       SG_safe_free( serialized_text );
       curl_formfree( post );
       return -ENOMEM;
    }
    
-   rctx->serialized_updates = serialized_text;
-   rctx->serialized_updates_len = serialized_text_len;
-   rctx->forms = post;
-   rctx->num_ops = all_updates->size();
-   rctx->result_offset = result_offset; 
+   batch->serialized_updates = serialized_text;
+   batch->serialized_updates_len = serialized_text_len;
+   batch->forms = post;
+   batch->num_ops = all_updates->size();
+   batch->result_offset = result_offset; 
    
    int i = 0;
    for( ms_client_update_set::iterator itr = all_updates->begin(); itr != all_updates->end(); itr++ ) {
-      rctx->ops[i] = itr->second.op;
-      rctx->file_ids[i] = itr->second.ent.file_id;
+      batch->ops[i] = itr->second.op;
+      batch->file_ids[i] = itr->second.ent.file_id;
       i++;
    }
    
@@ -885,34 +593,27 @@ static int ms_client_request_context_init( struct ms_client* client, struct ms_c
 
 // free a request context 
 // always succeeds
-static int ms_client_request_context_free( struct ms_client_request_context* rctx ) {
+static int ms_client_request_batch_free( struct ms_client_request_batch* batch ) {
    
-   if( rctx->timing != NULL ) {
-      ms_client_timing_free( rctx->timing );
-      SG_safe_free( rctx->timing );
+   if( batch->timing != NULL ) {
+      ms_client_timing_free( batch->timing );
+      SG_safe_free( batch->timing );
    }
    
-   if( rctx->headers != NULL ) {
-      curl_slist_free_all( rctx->headers );
-      rctx->headers = NULL;
+   if( batch->headers != NULL ) {
+      curl_slist_free_all( batch->headers );
+      batch->headers = NULL;
    }
    
-   if( rctx->forms != NULL ) {
-      curl_formfree( rctx->forms );
-      rctx->forms = NULL;
+   if( batch->forms != NULL ) {
+      curl_formfree( batch->forms );
+      batch->forms = NULL;
    }
    
-   if( rctx->serialized_updates != NULL ) {
-      SG_safe_free( rctx->serialized_updates );
-   }
-   
-   if( rctx->ops != NULL ) {
-      SG_safe_free( rctx->ops );
-   }
-   
-   if( rctx->file_ids != NULL ) {
-      SG_safe_free( rctx->file_ids );
-   }
+   SG_safe_free( batch->serialized_updates );
+   SG_safe_free( batch->ops );
+   SG_safe_free( batch->file_ids );
+   SG_safe_free( batch->url );
    
    return 0;
 }
@@ -945,82 +646,22 @@ static int ms_client_request_to_update( struct ms_client_request* request, struc
 }
 
 
-// free a multi context 
-// always succeeds
-static int ms_client_multi_context_free( struct ms_client_multi_context* ctx ) {
-   
-   if( ctx->downloading != NULL ) {
-      
-      SG_safe_delete( ctx->downloading );
-   }
-   
-   if( ctx->attempts != NULL ) {
-      
-      SG_safe_delete( ctx->attempts );
-   }
-   
-   if( ctx->request_queue != NULL ) {
-      
-      SG_safe_delete( ctx->request_queue );
-   }
-   
-   if( ctx->request_contexts != NULL ) {
-      for( unsigned int i = 0; i < ctx->num_request_contexts; i++ ) {
-         
-         ms_client_request_context_free( &ctx->request_contexts[i] );
-      }
-      
-      SG_safe_free( ctx->request_contexts );
-   }
-   
-   pthread_mutex_destroy( &ctx->lock );
-   
-   memset( ctx, 0, sizeof(struct ms_client_multi_context) );
-   
-   return 0;
-}
-
-// set up a multi context 
-// return 0 on success
+// set up all request batches from the requests
+// return 0 on success, and set *request_batches and *num_request_batches
 // return -ENOMEM on OOM 
-static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, struct ms_client* client, struct ms_client_request* requests, struct ms_client_request_result* results, size_t num_requests ) {
+static int ms_client_request_batch_setup( struct ms_client* client, struct ms_client_request* requests, size_t num_requests, struct ms_client_request_batch** request_batches, size_t* num_request_batches ) {
    
-   ctx->downloading = new (nothrow) map< struct md_download_context*, int >();
-   ctx->attempts = new (nothrow) map< struct md_download_context*, int >();
-   ctx->request_queue = new (nothrow) queue<int>();
+   // send requests as batches
+   struct ms_client_request_batch* batches = NULL;
+   size_t num_batches = num_requests / client->max_request_batch;
    
-   // serialize all requests into batches
-   size_t num_request_contexts = num_requests / client->max_request_batch;
    if( (num_requests % client->max_request_batch) != 0 ) {
-      num_request_contexts++;
+      num_batches++;
    }
    
-   ctx->request_contexts = SG_CALLOC( struct ms_client_request_context, num_request_contexts );
-   ctx->num_request_contexts = num_request_contexts;
-   
-   int rc = pthread_mutex_init( &ctx->lock, NULL );
-   
-   if( ctx->downloading == NULL || ctx->attempts == NULL || ctx->request_queue == NULL || ctx->request_contexts == NULL || rc != 0 ) {
-   
-      SG_safe_delete( ctx->downloading );
-      SG_safe_delete( ctx->attempts );
-      SG_safe_delete( ctx->request_queue );
-      
-      SG_safe_free( ctx->request_contexts );
-      
-      if( rc == 0 ) {
-         pthread_mutex_destroy( &ctx->lock );
-      }
-      
-      return -ENOMEM;
-   }
-   
-   ctx->client = client;
-   ctx->results = results;
-   
-   
+   int rc = 0;
    int i = 0;   // index requests
-   int k = 0;   // index request_contexts
+   int k = 0;   // index request_batches
    
    while( (unsigned)i < num_requests ) {
       
@@ -1031,7 +672,7 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       
       for( int j = 0; j < client->max_request_batch && (unsigned)i < num_requests; j++ ) {
          
-         // generate our update
+         // generate our update (NOTE: shallow copy)
          struct md_update up;
          rc = ms_client_request_to_update( &requests[i], &up );
          
@@ -1057,20 +698,11 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
       }
       
       // stuff it into the next request 
-      rc = ms_client_request_context_init( client, &ctx->request_contexts[k], &updates, offset );
+      rc = ms_client_request_batch_init( client, &batches[k], &updates, offset );
       
       if( rc != 0 ) {
          
-         SG_error("ms_client_request_context_init( batch=%d ) rc = %d\n", k, rc );
-         break;
-      }
-      
-      // queue for upload 
-      try {
-         ctx->request_queue->push( k );
-      }
-      catch( bad_alloc& ba ) {
-         rc = -ENOMEM;
+         SG_error("ms_client_request_batch_init( batch=%d ) rc = %d\n", k, rc );
          break;
       }
       
@@ -1078,13 +710,201 @@ static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, st
    }
    
    if( rc != 0 ) {
+      
       // failure; clean up 
-      ms_client_multi_context_free( ctx );
+      for( int i = 0; i < k; i++ ) {
+         
+         ms_client_request_batch_free( &batches[i] );
+      }
+      
+      SG_safe_free( batches );
    }
    else {
-      SG_debug("%zu requests / %d requests per batch = %zu uploads\n", num_requests, client->max_request_batch, ctx->request_queue->size() );
+      SG_debug("%zu requests / %d requests per batch = %zu uploads\n", num_requests, client->max_request_batch, num_batches );
+      
+      *request_batches = batches;
+      *num_request_batches = k;
    }
    
+   return rc;
+}
+
+
+// begin processing a batch of requests
+// return 0 on success, and set up dlctx 
+// return -ENOMEM on OOM
+int ms_client_run_request_batch_begin( struct ms_client* client, struct ms_client_request_batch* batch, int request_id, struct md_download_loop* dlloop, struct md_download_context* dlctx ) {
+   
+   int rc = 0;
+   char* url = NULL;
+   uint64_t volume_id = ms_client_get_volume_id( client );
+   CURL* curl = NULL;
+   
+   // TODO: connection pool 
+   curl = curl_easy_init();
+   if( curl == NULL ) {
+      return -ENOMEM;
+   }
+   
+   // make our URL
+   url = ms_client_file_url( client->url, volume_id );
+   if( url == NULL ) {
+      
+      curl_easy_cleanup( curl );
+      return -ENOMEM;
+   }
+   
+   ms_client_init_curl_handle( client, curl, url );
+   
+   // program this download context
+   curl_easy_setopt( curl, CURLOPT_POST, 1L);
+   curl_easy_setopt( curl, CURLOPT_HTTPPOST, batch->forms );
+   
+   if( batch->timing != NULL ) {
+      curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
+      curl_easy_setopt( curl, CURLOPT_WRITEHEADER, batch->timing );      
+   }
+   
+   batch->url = url;
+   batch->request_id = request_id;
+   
+   // set up the download 
+   rc = md_download_context_init( dlctx, curl, MS_MAX_MSG_SIZE, batch );
+   if( rc != 0 ) {
+   
+      SG_error("md_download_context_init rc = %d\n", rc );
+      
+      curl_easy_cleanup( curl );
+      SG_safe_free( url );
+      return rc;
+   }
+   
+   // watch the download 
+   rc = md_download_loop_watch( dlloop, dlctx );
+   if( rc != 0 ) {
+      
+      SG_error("md_download_loop_watch rc = %d\n", rc );
+      
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      SG_safe_free( url );
+      
+      return rc;
+   }
+   
+   // start the download 
+   rc = md_download_context_start( &client->dl, dlctx );
+   if( rc != 0 ) {
+      
+      SG_error("md_download_context_start rc = %d\n", rc );
+      
+      md_download_context_free( dlctx, NULL );
+      curl_easy_cleanup( curl );
+      SG_safe_free( url );
+      
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+// finish a batch of requests, and free up the download handle
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EBADMSG if the data could not be parsed or verified
+// return -ENOMEM if OOM
+int ms_client_run_request_batch_end( struct ms_client* client, struct md_download_context* dlctx, struct ms_client_request_result* results, int* request_id ) {
+   
+   int rc = 0;
+   struct ms_client_request_batch* batch = NULL;
+   char* buf = NULL;
+   off_t buf_len = 0;
+   ms::ms_reply reply;
+   int reply_error = 0;
+   CURL* curl = NULL;
+   
+   // need to finalize?
+   if( !md_download_context_finalized( dlctx ) ) {
+      
+      rc = md_download_context_wait( dlctx, -1 );
+      if( rc != 0 ) {
+         
+         md_download_context_free( dlctx, &curl );
+         curl_easy_cleanup( curl );
+         
+         SG_error("md_download_context_wait( %p ) rc = %d\n", dlctx, rc );
+         return rc;
+      }
+   }
+   
+   // process download errors
+   rc = ms_client_download_parse_errors( dlctx );
+   if( rc != 0 ) {
+      
+      if( rc != -EAGAIN ) {
+         // fatal error 
+         SG_error("ms_client_download_parse_errors( %p ) rc = %d\n", dlctx, rc );
+      }
+      
+      md_download_context_free( dlctx, &curl );
+      curl_easy_cleanup( curl );
+      
+      return rc;
+   }
+   
+   // extract batch
+   batch = (struct ms_client_request_batch*)md_download_context_get_cls( dlctx );
+   *request_id = batch->request_id;
+   
+   // get the buffer 
+   rc = md_download_context_get_buffer( dlctx, &buf, &buf_len );
+   if( rc != 0 || buf == NULL ) {
+      
+      SG_error("md_download_context_get_buffer( %p ) rc = %d\n", dlctx, rc );
+      
+      if( rc != -ENOMEM ) {
+         rc = -EBADMSG;
+      }
+      
+      md_download_context_free( dlctx, &curl );
+      curl_easy_cleanup( curl );
+      
+      return rc;
+   }
+   
+   // parse and verify
+   rc = ms_client_parse_reply( client, &reply, buf, buf_len );
+   
+   SG_safe_free( buf );
+   
+   if( rc != 0 ) {
+      
+      SG_error("ms_client_parse_reply rc = %d\n", rc );
+      rc = -EBADMSG;
+      
+      md_download_context_free( dlctx, &curl );
+      curl_easy_cleanup( curl );
+      
+      return rc;
+   }
+   
+   // extract results from this batch
+   rc = ms_client_parse_results( &reply, batch, results, &reply_error );
+   if( rc != 0 ) {
+      
+      // failed to process
+      SG_warn("ms_client_parse_results rc = %d, reply error = %d\n", rc, reply_error );
+      
+      if( rc == -EPERM ) {
+         // mask this--the actual reply error is contained in the results 
+         rc = 0;
+      }
+   }
+   
+   md_download_context_free( dlctx, &curl );
+   curl_easy_cleanup( curl );
+      
    return rc;
 }
 
@@ -1102,35 +922,169 @@ int ms_client_run_requests( struct ms_client* client, struct ms_client_request* 
    }
    
    int rc = 0;
-   struct md_download_config dlconf;
-   md_download_config_init( &dlconf );
+   struct md_download_loop dlloop;
+   int* request_attempts = NULL;
+   queue<int> request_queue;
    
-   struct ms_client_multi_context ctx;
-   memset( &ctx, 0, sizeof(struct ms_client_multi_context) );
+   struct md_download_context* dlctx = NULL;
    
-   rc = ms_client_multi_context_init( &ctx, client, requests, results, num_requests );
+   struct ms_client_request_batch* batches = NULL;
+   size_t num_batches = 0;
+   
+   // set up download loop 
+   rc = md_download_loop_init( &dlloop, &client->dl, MIN( client->max_connections, (signed)(num_requests / client->max_request_batch) + 1 ) );
    if( rc != 0 ) {
       
-      SG_error("ms_client_multi_context_init rc = %d\n", rc );
       return rc;
    }
    
-   // setup downloads 
-   md_download_config_set_curl_generator( &dlconf, ms_client_multi_curl_generator, &ctx );
-   md_download_config_set_url_generator( &dlconf, ms_client_multi_url_generator, &ctx );
-   md_download_config_set_postprocessor( &dlconf, ms_client_multi_postprocesser, &ctx );
-   md_download_config_set_canceller( &dlconf, ms_client_multi_canceller, &ctx );
-   
-   md_download_config_set_limits( &dlconf, MIN( client->max_connections, (signed)(num_requests / client->max_request_batch) + 1 ), -1 );
-   
-   rc = md_download_all( &client->dl, client->conf, &dlconf );
-   
-   if( rc != 0 ) {
-      SG_error("md_download_all rc = %d\n", rc );
+   // set up attempt counts 
+   request_attempts = SG_CALLOC( int, num_requests );
+   if( request_attempts == NULL ) {
+      
+      md_download_loop_free( &dlloop );
+      return -ENOMEM;
    }
    
-   ms_client_multi_context_free( &ctx );
+   // set up batches 
+   rc = ms_client_request_batch_setup( client, requests, num_requests, &batches, &num_batches );
+   if( rc != 0 ) {
+      
+      // probably OOM 
+      md_download_loop_free( &dlloop );
+      SG_safe_free( request_attempts );
+      
+      return rc;
+   }
    
+   // queue all batches
+   for( unsigned int i = 0; i < num_batches; i++ ) {
+      
+      request_queue.push( i );
+   }
+   
+   // run the loop!
+   do {
+      
+      // batch id
+      int i = 0;
+      
+      // fill up the download loop
+      while( request_queue.size() > 0 ) {
+         
+         // next request...
+         i = request_queue.front();
+         request_queue.pop();
+         
+         // next available download slot
+         rc = md_download_loop_next( &dlloop, &dlctx );
+         if( rc != 0 ) {
+            
+            // filled the pipe?
+            if( rc == -EAGAIN ) {
+               rc = 0;
+               break;
+            }
+            
+            SG_error("md_download_loop_next rc = %d\n", rc );
+            break;
+         }
+         
+         // set up this download, and enqueue it on the client's downloader
+         rc = ms_client_run_request_batch_begin( client, batches, i, &dlloop, dlctx );
+         if( rc != 0 ) {
+            
+            SG_error("ms_client_run_request_begin( batch=%d ) rc = %d\n", i, rc );
+            break;
+         }
+      }
+      
+      // failed to start?
+      if( rc != 0 ) {
+         break;
+      }
+      
+      // run downloads 
+      rc = md_download_loop_run( &dlloop );
+      if( rc != 0 ) {
+         
+         SG_error("md_download_loop_run rc = %d\n", rc );
+         break;
+      }
+      
+      // finish up downloads 
+      while( true ) {
+         
+         // find finished download
+         rc = md_download_loop_finished( &dlloop, &dlctx );
+         if( rc != 0 ) {
+            
+            if( rc == -EAGAIN ) {
+               
+               // out of finished downloads
+               rc = 0;
+               break;
+            }
+            
+            SG_error("md_download_loop_finish rc = %d\n", rc );
+            break;
+         }
+         
+         // process finished batch.  i will index requests
+         rc = ms_client_run_request_batch_end( client, dlctx, results, &i );
+         if( rc != 0 ) {
+            
+            if( rc == -EAGAIN ) {
+               
+               // try this one again 
+               request_attempts[i]++;
+               
+               // too many attempts?
+               if( request_attempts[i] >= client->conf->max_metadata_read_retry ) {
+                  
+                  SG_error("Retried batch %d too many times\n", i );
+                  rc = -ENODATA;
+                  break;
+               }
+               else {
+                  
+                  // try again 
+                  request_queue.push( i );
+                  rc = 0;
+               }
+            }
+            else {
+               
+               // failed to finish the request batch
+               SG_error("ms_client_run_request_batch_end rc = %d\n", rc );
+               break;
+            }
+         }
+      }
+      
+      if( rc != 0 ) {
+         break;
+      }
+   
+   } while( md_download_loop_running( &dlloop ) );
+   
+   if( rc != 0 ) {
+      // stop all downloads
+      md_download_loop_abort( &dlloop );
+   }
+   
+   // clean up
+   md_download_loop_cleanup( &dlloop, NULL, NULL );
+   md_download_loop_free( &dlloop );
+   SG_safe_free( request_attempts );
+   
+   for( unsigned int i = 0; i < num_batches; i++ ) {
+      
+      ms_client_request_batch_free( &batches[i] );
+   }
+   
+   SG_safe_free( batches );
+      
    return rc;
 }
 
@@ -1306,7 +1260,6 @@ int ms_client_request_result_free_all( struct ms_client_request_result* results,
 static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_update* up, struct ms_client_request_result* result ) {
    
    int rc = 0;
-   int curl_rc = 0;
    ms_client_update_set updates;
    ms::ms_updates ms_updates;
    CURL* curl = NULL;
@@ -1315,8 +1268,6 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    char* url = NULL;
    char* serialized_text = NULL;
    size_t serialized_text_len = 0;
-   long curl_errno = 0;
-   long http_status = 0;
    char* buf = NULL;
    off_t buflen = 0;
    ms::ms_reply reply;
@@ -1362,13 +1313,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &timing );
    
    // run 
-   curl_rc = md_download_file( curl, &buf, &buflen );
-   
-   // check download status
-   curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &curl_errno );
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_status );
-   
-   rc = ms_client_download_interpret_errors( url, http_status, curl_rc, -curl_errno );
+   rc = md_download_run( curl, MS_MAX_MSG_SIZE, &buf, &buflen );
    
    curl_easy_cleanup( curl );
    curl_formfree( post );
@@ -1376,14 +1321,14 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    SG_safe_free( url );
    
    if( rc != 0 ) {
-      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+      SG_error("md_download_run rc = %d\n", rc );
       
       ms_client_timing_free( &timing );
       return rc;
    }
    
    // parse and verify
-   rc = ms_client_parse_reply( client, &reply, buf, buflen, true );
+   rc = ms_client_parse_reply( client, &reply, buf, buflen );
    
    SG_safe_free( buf );
    
@@ -1804,31 +1749,27 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 // NOTE: the MS client cannot be config-locked
 // return 0 on success
 // return negative on error
-int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify ) {
+int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* reply, char const* buf, size_t buf_len ) {
 
-   ms_client_config_rlock( client );
-   
-   int rc = md_parse< ms::ms_reply >( src, buf, buf_len );
+   int rc = md_parse< ms::ms_reply >( reply, buf, buf_len );
    if( rc != 0 ) {
-      
-      ms_client_config_unlock( client );
       
       SG_error("md_parse ms_reply failed, rc = %d\n", rc );
       
       return rc;
    }
    
-   if( verify ) {
-      // verify integrity and authenticity
-      rc = md_verify< ms::ms_reply >( client->volume->volume_public_key, src );
-      if( rc != 0 ) {
-         
-         ms_client_config_unlock( client );
-         
-         SG_error("md_verify ms_reply failed, rc = %d\n", rc );
-         
-         return rc;
-      }
+   ms_client_config_rlock( client );
+
+   // verify integrity and authenticity
+   rc = md_verify< ms::ms_reply >( client->volume->volume_public_key, reply );
+   if( rc != 0 ) {
+      
+      ms_client_config_unlock( client );
+      
+      SG_error("md_verify ms_reply failed, rc = %d\n", rc );
+      
+      return rc;
    }
    
    ms_client_config_unlock( client );

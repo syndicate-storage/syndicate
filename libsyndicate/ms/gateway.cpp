@@ -33,14 +33,14 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
       return -ENOENT;
    }
    
-   // only UGs can send messages...
-   ms_cert_bundle::iterator itr = client->volume->UG_certs->find( gateway_id );
-   if( itr == client->volume->UG_certs->end() ) {
+   // only non-anonymous gateways can write
+   ms_cert_bundle::iterator itr = client->certs->find( gateway_id );
+   if( itr == client->certs->end() ) {
       // not found here--probably means we need to reload our certs
       
       SG_warn("No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
-      sem_post( &client->uploader_sem );
+      sem_post( &client->config_sem );
       ms_client_config_unlock( client );
       return -EAGAIN;
    }
@@ -52,125 +52,54 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
    return rc;
 }
 
-
-// get a copy of the RG URLs
-// return a calloc'ed NULL-terminated list of null-terminated strings on success
-// return NULL on error
-char** ms_client_RG_urls( struct ms_client* client, char const* scheme ) {
-   ms_client_config_rlock( client );
-   
-   int i = 0;
-   char** urls = SG_CALLOC( char*, client->volume->RG_certs->size() + 1 );
-   
-   if( urls == NULL ) {
-      
-      ms_client_config_unlock( client );
-      return NULL;
-   }
-   
-   for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
-      struct ms_gateway_cert* rg_cert = itr->second;
-      
-      urls[i] = SG_CALLOC( char, strlen(scheme) + 1 + strlen(rg_cert->hostname) + 7 + 1 + strlen(SG_DATA_PREFIX) + 2 );
-      
-      if( urls[i] == NULL ) {
-         
-         // out of memory
-         SG_FREE_LIST( urls, SG_safe_free );
-         ms_client_config_unlock( client );
-         return NULL;
-      }
-      
-      sprintf( urls[i], "%s%s:%d/%s/", scheme, rg_cert->hostname, rg_cert->portnum, SG_DATA_PREFIX );
-      
-      i++;
-   }
-
-   ms_client_config_unlock( client );
-
-   return urls;
-}
-
-// get a list of RG ids
-// return a calloc'ed list of IDs on success, terminated with 0
-// return NULL on error
-uint64_t* ms_client_RG_ids( struct ms_client* client ) {
-   ms_client_config_rlock( client );
-   
-   int i = 0;
-   uint64_t* ret = SG_CALLOC( uint64_t, client->volume->RG_certs->size() + 1 );
-   
-   if( ret == NULL ) {
-      
-      ms_client_config_unlock( client );
-      return NULL;
-   }
-   
-   for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
-      struct ms_gateway_cert* rg_cert = itr->second;
-      
-      ret[i] = rg_cert->gateway_id;
-      
-      i++;
-   }
-   
-   ms_client_config_unlock( client );
-   return ret;
-}
-
-
 // get the type of gateway, given an id 
 // return the type on success 
-// return -ENOENT on error
-int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
+// return SG_INVALID_GATEWAY_ID on error
+uint64_t ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
    
    ms_client_config_rlock( client );
    
-   int ret = -ENOENT;
+   uint64_t ret = SG_INVALID_GATEWAY_ID;
    
-   if( client->volume->UG_certs->count( g_id ) != 0 ) {
-      ret = SYNDICATE_UG;
-   }
-   
-   else if( client->volume->RG_certs->count( g_id ) != 0 ) {
-      ret = SYNDICATE_RG;
-   }
-   
-   else if( client->volume->AG_certs->count( g_id ) != 0 ) {
-      ret = SYNDICATE_AG;
+   ms_cert_bundle::iterator itr = client->certs->find( g_id );
+   if( itr != client->certs->end() ) {
+      
+      ret = itr->second->gateway_type;
    }
    
    ms_client_config_unlock( client );
    return ret;
 }
+
 
 // get the name of the gateway
 // return 0 on success
-// return -ENOENT if no such gateway exists with the name 
 // return -ENOTCONN if we aren't connected to a volume
 // return -ENOMEM if we're out of memory
-int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, char** gateway_name ) {
+// return -EAGAIN if the gateway is not known to us, but could be if we reloaded the config
+int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_id, char** gateway_name ) {
    
    ms_client_config_rlock( client );
    
    int ret = 0;
    
-   if( client->volume != NULL ) {
+   uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
+   
+   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
       
-      ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
-      ms_client_cert_bundles( client->volume, cert_bundles );
+      ms_client_config_unlock( client );
+      return -EAGAIN;
+   }
+   
+   // should return a non-null cert, since we know this gateway's type
+   struct ms_gateway_cert* cert = ms_client_get_gateway_cert( client, gateway_id );
+   
+   if( cert != NULL ) {
       
-      ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
-      if( itr != cert_bundles[ gateway_type ]->end() ) {
+      *gateway_name = SG_strdup_or_null( cert->name );
+      if( *gateway_name == NULL ) {
          
-         *gateway_name = SG_strdup_or_null( itr->second->name );
-         if( *gateway_name == NULL ) {
-            ret = -ENOMEM;
-         }
-      }
-      else {
-         
-         ret = -ENOENT;
+         ret = -ENOMEM;
       }
    }
    else {
@@ -182,59 +111,42 @@ int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_type,
    return ret;
 }
 
-// is this ID an AG ID?
-// return True if so; False if not.
-bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id ) {
-   
-   ms_client_config_rlock( client );
-
-   bool ret = false;
-   
-   if( client->volume->AG_certs->count( ag_id ) != 0 ) {
-      ret = true;
-   }
-
-   ms_client_config_unlock( client );
-
-   return ret;
-}
-
-
 // get a gateway's host URL 
 // return the calloc'ed URL on success 
-// return NULL on error 
-char* ms_client_get_gateway_url( struct ms_client* client, int gateway_type, uint64_t gateway_id ) {
+// return NULL on error (i.e. gateway not known or not found)
+char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id ) {
    
    char* ret = NULL;
-   ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+   
+   ms_client_config_rlock( client );
+   
+   uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
    
    if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
+      
+      ms_client_config_unlock( client );
       return NULL;
    }
    
-   ms_client_config_rlock( client );
-   
-   ms_client_cert_bundles( client->volume, cert_bundles );
-   
-   ms_cert_bundle::iterator itr = cert_bundles[gateway_type]->find( gateway_id );
-   if( itr != cert_bundles[gateway_type]->end() ) {
+   struct ms_gateway_cert* cert = ms_client_get_gateway_cert( client, gateway_id );
+   if( cert == NULL ) {
       
-      ret = SG_CALLOC( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
-      if( ret == NULL ) {
-         
-         ms_client_config_unlock( client );
-         return NULL;
-      }
-      
-      sprintf( ret, "http://%s:%d/", itr->second->hostname, itr->second->portnum );
+      ms_client_config_unlock( client );
+      return NULL;
    }
-
-   ms_client_config_unlock( client );
-
+   
+   // found! 
+   ret = SG_CALLOC( char, strlen("http://") + strlen(cert->hostname) + 1 + 7 + 1 );
    if( ret == NULL ) {
-      SG_error("No such Gateway(type=%d) %" PRIu64 "\n", gateway_type, gateway_id );
+      
+      ms_client_config_unlock( client );
+      return NULL;
    }
-
+   
+   sprintf( ret, "http://%s:%d/", cert->hostname, cert->portnum );
+   
+   ms_client_config_unlock( client );
+   
    return ret;
 }
 
@@ -242,7 +154,7 @@ char* ms_client_get_gateway_url( struct ms_client* client, int gateway_type, uin
 // return the calloc'ed URL on success
 // return NULL on error
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
-   return ms_client_get_gateway_url( client, SYNDICATE_AG, ag_id );
+   return ms_client_get_gateway_url( client, ag_id );
 }
 
 
@@ -250,66 +162,39 @@ char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
 // return the calloc'ed URL on success
 // return NULL on error
 char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t rg_id ) {
-   return ms_client_get_gateway_url( client, SYNDICATE_RG, rg_id );
+   return ms_client_get_gateway_url( client, rg_id );
 }
 
 // get a UG's host URL 
 // return the calloc'ed URL on success
 // return NULL on error
 char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t ug_id ) {
-   return ms_client_get_gateway_url( client, SYNDICATE_UG, ug_id );
-}
-
-
-// get a gateway's certificate
-// return a reference to the certificate on success
-// return NULL otherwise.
-// ms_client must be at least read-locked
-static struct ms_gateway_cert* ms_client_get_gateway_cert( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id ) {
-   
-   struct ms_gateway_cert* cert = NULL;
-   ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
-   
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
-      return NULL;
-   }
-   
-   ms_client_cert_bundles( client->volume, cert_bundles );
-   
-   ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
-   if( itr == cert_bundles[ client->gateway_type ]->end() ) {
-      
-      return NULL;
-   }
-   
-   cert = itr->second;
-   
-   return cert;
+   return ms_client_get_gateway_url( client, ug_id );
 }
 
 // check a gateway's capabilities (as a bit mask)
 // return 0 if all the capabilites are allowed.
 // return -EINVAL on bad arguments
 // return -EPERM if at least one is not.
-// return -EAGAIN if the gateway is not known (this will start the reload process if so)
-int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps ) {
+// return -EAGAIN if the gateway is not known, and the caller should reload
+int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_id, uint64_t caps ) {
    
    struct ms_gateway_cert* cert = NULL;
    int ret = 0;
    
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
+   uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      
       return -EINVAL;
    }
    
    ms_client_config_rlock( client );
    
-   cert = ms_client_get_gateway_cert( client, gateway_type, gateway_id );
+   cert = ms_client_get_gateway_cert( client, gateway_id );
    if( cert == NULL ) {
       
       // not found--need to reload certs?
       ms_client_config_unlock( client );
-      
-      ms_client_start_config_reload( client );
       
       return -EAGAIN;
    }
@@ -324,25 +209,26 @@ int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_typ
 
 // get a gateway's user 
 // return 0 on success, and set *user_id to the user ID 
-// return -EAGAIN if the gateway is not known (this will start the reload process if so)
+// return -EAGAIN if the gateway is not known, and the caller should reload
 // return -EINVAL on bad arguments
-int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* user_id ) {
+int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_id, uint64_t* user_id ) {
    
    struct ms_gateway_cert* cert = NULL;
    
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
-      return -EINVAL;
-   }
-   
    ms_client_config_rlock( client );
    
-   cert = ms_client_get_gateway_cert( client, gateway_type, gateway_id );
+   uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      
+      ms_client_config_unlock( client );
+      return -EAGAIN;
+   }
+   
+   cert = ms_client_get_gateway_cert( client, gateway_id );
    if( cert == NULL ) {
       
       // not found--need to reload certs?
       ms_client_config_unlock( client );
-      
-      ms_client_start_config_reload( client );
       
       return -EAGAIN;
    }
@@ -357,25 +243,26 @@ int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type,
 
 // get a gateway's volume
 // return 0 on success, and set *volume_id to the volume ID 
-// return -EAGAIN if the gateway is not known (this wil start the reload process if so)
+// return -EAGAIN if the gateway is not known, and the caller should reload
 // return -EINVAL on bad arguments
-int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* volume_id ) {
+int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_id, uint64_t* volume_id ) {
    
    struct ms_gateway_cert* cert = NULL;
    
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
-      return -EINVAL;
-   }
-   
    ms_client_config_rlock( client );
    
-   cert = ms_client_get_gateway_cert( client, gateway_type, gateway_id );
+   uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      
+      ms_client_config_unlock( client );
+      return -EAGAIN;
+   }
+   
+   cert = ms_client_get_gateway_cert( client, gateway_id );
    if( cert == NULL ) {
       
       // not found--need to reload certs?
       ms_client_config_unlock( client );
-      
-      ms_client_start_config_reload( client );
       
       return -EAGAIN;
    }
@@ -401,7 +288,7 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
    
    ms_client_config_rlock( client );
    
-   cert = ms_client_get_gateway_cert( client, client->gateway_type, client->gateway_id );
+   cert = ms_client_get_gateway_cert( client, client->gateway_id );
    if( cert == NULL ) {
       
       // no certificate on file for this gateway.  It might be anonymous

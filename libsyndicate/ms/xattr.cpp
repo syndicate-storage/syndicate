@@ -23,7 +23,10 @@
 // return -ENOENT if the file doesn't exist or isn't readable.
 // return -ENOMEM if OOM
 // return -ENODATA if the replied message has no xattr field
-// return negative on download failure
+// return -EBADMSG on signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
    
    char* getxattr_url = NULL;
@@ -46,6 +49,12 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    }
    else {
       
+      // check for errors 
+      if( reply.error() != 0 ) {
+         SG_error("MS replied with error %d\n", reply.error() );
+         return reply.error();
+      }
+      
       // check for the value 
       if( !reply.has_xattr_value() ) {
          SG_error("MS did not reply a value for %s\n", xattr_name );
@@ -65,10 +74,15 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    }
 }
 
+
 // get the list of xattrs for this file.
 // return 0 on success, and populate xattr_names with a '\0'-separated list of xattr names (size stored to xattr_names_len).
 // return -ENOENT if the file doesn't exist or isn't readable
 // return -ENOMEM if OOM 
+// return -EBADMSG on signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 // return negative on download error
 int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char** xattr_names, size_t* xattr_names_len ) {
    
@@ -122,12 +136,18 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
    }
 }
 
+
 // set a file's xattr.
 // flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
 // return 0 on success
-// return -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
+// return -ENOENT if the file doesn't exist or either isn't readable or writable.
+// return -ENODATA if the semantics in flags can't be met.
 // return -ENOMEM if OOM 
-// return negative on RPC error
+// return -ENODATA if the replied message has no xattr field
+// return -EBADMSG on reply's signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, mode_t mode, int flags ) {
    
    // sanity check...can't have both XATTR_CREATE and XATTR_REPLACE
@@ -149,11 +169,17 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
    return ms_client_update_rpc( client, &up );
 }
 
+
 // remove an xattr.
 // fails if the file isn't readable or writable, or the xattr exists and it's not writable
 // succeeds even if the xattr doesn't exist (i.e. idempotent)
 // return 0 on success 
-// return negative on RPC error
+// return -ENOMEM if OOM 
+// return -ENODATA if the replied message has no xattr field
+// return -EBADMSG on reply's signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
    // generate our update 
    struct md_update up;
@@ -165,10 +191,17 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
    return ms_client_update_rpc( client, &up );
 }
 
+
 // change the owner of an xattr 
 // fails if we don't own the attribute
 // return 0 on success
-// return negative on RPC error
+// return -ENOMEM if OOM 
+// return -ENOENT if the file doesn't exist or either isn't readable or writable.
+// return -ENODATA if the replied message has no xattr field
+// return -EBADMSG on reply's signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner ) {
    // generate our update 
    struct md_update up;
@@ -181,10 +214,17 @@ int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char c
    return ms_client_update_rpc( client, &up );
 }
 
+
 // change the mode of an xattr 
 // fails if we don't own the attribute, or if it's not writable by us
 // return 0 on success
-// return negative on RPC error
+// return -ENOMEM if OOM 
+// return -ENOENT if the file doesn't exist or either isn't readable or writable.
+// return -ENODATA if the replied message has no xattr field
+// return -EBADMSG on reply's signature mismatch
+// return between -499 and -400 for HTTP 400-level error
+// return -EREMOTEIO for HTTP 500-level error 
+// return -errno on socket, connect, and recv related errors
 int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode ) {
    // generate our update 
    struct md_update up;
