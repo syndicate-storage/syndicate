@@ -22,6 +22,8 @@
 
 #define MS_OPENID_USERNAME_FIELD "openid_username"
 
+#define MS_OPENID_MAX_RESPOSNE_LEN      102400          // 100KB
+
 extern "C" {
    
 int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply, EVP_PKEY* syndicate_public_key );

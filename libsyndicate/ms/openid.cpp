@@ -17,6 +17,7 @@
 #include "libsyndicate/ms/openid.h"
 #include "libsyndicate/crypt.h"
 #include "libsyndicate/ms/file.h"
+#include "libsyndicate/download.h"
 
 // set a CURL handle's HTTP method, URL and query string
 // return 0 on success
@@ -168,7 +169,7 @@ int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_
       
       SG_error("curl_easy_perform rc = %d, err = %ld, HTTP status = %ld\n", rc, os_error, http_response );
       
-      rc = ms_client_download_interpret_errors( begin_url, http_response, rc, -os_error );
+      rc = md_download_interpret_errors( http_response, rc, -os_error );
       return rc;
    }
 
@@ -272,7 +273,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
       
       md_response_buffer_free( &header_rb );
       
-      rc = ms_client_download_interpret_errors( url, http_response, rc, -os_error );
+      rc = md_download_interpret_errors( http_response, rc, -os_error );
       
       SG_safe_free( url );
       SG_safe_free( qs );
@@ -385,7 +386,7 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
       
       md_response_buffer_free( &header_rb );
       
-      rc = ms_client_download_interpret_errors( url, http_response, rc, -os_error );
+      rc = md_download_interpret_errors( http_response, rc, -os_error );
       
       return rc;
    }
@@ -441,8 +442,6 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    // replied data
    char* bits = NULL;
    ssize_t len = 0;
-   long http_response = 0;
-   long os_error = 0;
    
    int rc = 0;
 
@@ -464,34 +463,18 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
    
    // complete the OpenID authentication
-   rc = md_download_file( curl, &bits, &len );
-   
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &os_error );
+   rc = md_download_run( curl, MS_OPENID_MAX_RESPOSNE_LEN, &bits, &len );
 
    if( rc != 0 ) {
       
-      SG_error("md_download_file('%s') rc = %d\n", return_to_url, rc );
+      SG_error("md_download_run('%s') rc = %d\n", return_to_url, rc );
       
       SG_safe_free( return_to_url );
       SG_safe_free( return_to_qs );
-      
-      rc = ms_client_download_interpret_errors( return_to_url, http_response, rc, -os_error );
       
       return rc;
    }
-
-   if( http_response != 200 ) {
-      
-      SG_error("md_download_file('%s') HTTP status = %ld\n", return_to_url, http_response );
-      
-      SG_safe_free( return_to_url );
-      SG_safe_free( return_to_qs );
-      SG_safe_free( bits );
-      
-      return -ENODATA;
-   }
-
+   
    // success!
    if( response_body != NULL ) {
       *response_body = bits;
@@ -582,8 +565,6 @@ int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, 
    // reply 
    char* tmp_response = NULL;
    off_t tmp_response_len = 0;
-   long http_response = 0;
-   long os_error = 0;
    
    memset( &upload, 0, sizeof(upload) );
    
@@ -672,18 +653,14 @@ int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, 
    
    curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
    
-   rc = md_download_file( curl, &tmp_response, &tmp_response_len );
+   rc = md_download_run( curl, MS_OPENID_MAX_RESPOSNE_LEN, &tmp_response, &tmp_response_len );
    
    curl_easy_setopt( curl, CURLOPT_HTTPHEADER, NULL );
    curl_slist_free_all( headers );
    
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &os_error );
-
    if( rc != 0 ) {
       
-      SG_error("md_download_file(%s) rc = %d\n", ms_openid_url, rc );
-      rc = ms_client_download_interpret_errors( ms_openid_url, http_response, rc, -os_error );
+      SG_error("md_download_run('%s') rc = %d\n", ms_openid_url, rc );
    }
    
    curl_easy_cleanup( curl );
