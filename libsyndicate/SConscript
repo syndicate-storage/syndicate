@@ -12,13 +12,19 @@ Import('extra_args')
 
 BASE_FILES = """
    cache.cpp
+   client.cpp
    crypt.cpp
    closure.cpp
    download.cpp
-   libsyndicate.cpp
+   gateway.cpp
+   httpd.cpp
    ini.cpp
+   libsyndicate.cpp
+   manifest.cpp
    opts.cpp
+   server.cpp
    storage.cpp
+   system.cpp
    url.cpp
    util.cpp
    workqueue.cpp
@@ -27,15 +33,9 @@ BASE_FILES = """
 MS_CLIENT_FILES = Glob("ms/*.cpp")
 SCRYPT_FILES = Glob("scrypt/*.cpp")
 
-HTTPD_FILES = """
-   httpd.cpp
-   system.cpp
-"""
-
 # build at least the base files...
 protobuf_files = "\n".join( ["#" + protobuf_out + "/" + os.path.basename(x.path) for x in protobuf_cc_files] )
-source_files_client = BASE_FILES + "\n".join( ["#" + x.path for x in SCRYPT_FILES] ) + "\n" + "\n".join( ["#" + x.path for x in MS_CLIENT_FILES] )
-source_files = source_files_client + HTTPD_FILES
+source_files = BASE_FILES + "\n".join( ["#" + x.path for x in SCRYPT_FILES] ) + "\n" + "\n".join( ["#" + x.path for x in MS_CLIENT_FILES] )
 
 # add source file search paths here
 CPPPATH = """
@@ -54,26 +54,19 @@ if extra_args.has_key("LIBJSON"):
    json_lib = extra_args["LIBJSON"]
 
 # add libraries here
-BASE_LIBS = """
+LIBS = """
    curl
    protobuf
    pthread
    crypto
    ssl
+   microhttpd
    rt
    m
    dl
    z
    %s
 """ % json_lib
-
-HTTPD_LIBS = """
-   microhttpd
-   gnutls
-"""
-
-LIBS_client = BASE_LIBS
-LIBS = LIBS_client + HTTPD_LIBS
 
 # add headers here (will be returned by SCons)
 # TODO: don't return httpd headers if we're not building it

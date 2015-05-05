@@ -18,6 +18,7 @@
 #include "libsyndicate/storage.h"
 #include "libsyndicate/opts.h"
 #include "libsyndicate/ms/ms-client.h"
+#include "libsyndicate/cache.h"
 
 #define INI_MAX_LINE 4096
 #define INI_STOP_ON_FIRST_ERROR 1
@@ -60,6 +61,14 @@ int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname ) {
    
    conf->hostname = new_hostname;
    return 0;
+}
+
+// get the hostname 
+// return a duplicate of the hostname string on success
+// return NULL on OOM, or if no host is defined
+char* md_get_hostname( struct md_syndicate_conf* conf ) {
+   
+   return SG_strdup_or_null( conf->hostname );
 }
 
 // initialize server information
@@ -156,20 +165,17 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    // get the umask
    mode_t um = md_get_umask();
    c->usermask = um;
-   
-   if( c->need_storage ) {
+
+   rc = md_init_local_storage( c );
+   if( rc != 0 ) {
       
-      rc = md_init_local_storage( c );
-      if( rc != 0 ) {
-         
-         SG_error("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
-         return rc;
-      }
-      
-      SG_debug("Store local data at %s\n", c->storage_root );
+      SG_error("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
+      return rc;
    }
    
-   if( c->need_networking && c->hostname == NULL ) {
+   SG_debug("Store local data at %s\n", c->storage_root );
+   
+   if( c->hostname == NULL ) {
       
       rc = md_init_server_info( c );
       if( rc != 0 ) {
@@ -406,7 +412,7 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
          // view reload frequency
          rc = md_conf_parse_long( value, &val );
          if( rc == 0 ) {
-            conf->view_reload_freq = val;
+            conf->config_reload_freq = val;
          }
          else {
             return -EINVAL;
@@ -604,7 +610,36 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
             return -EINVAL;
          }
       }
-
+      
+      else if( strcmp( key, SG_CONFIG_CACHE_SOFT_LIMIT ) == 0 ) {
+         rc = md_conf_parse_long( value, &val );
+         if( rc == 0 ) {
+            conf->cache_soft_limit = val;
+         }
+         else {
+            return -EINVAL;
+         }
+      }
+      
+      else if( strcmp( key, SG_CONFIG_CACHE_HARD_LIMIT ) == 0 ) {
+         rc = md_conf_parse_long( value, &val );
+         if( rc == 0 ) {
+            conf->cache_hard_limit = val;
+         }
+         else {
+            return -EINVAL;
+         }
+      }
+      
+      else if( strcmp( key, SG_CONFIG_NUM_IOWQS ) == 0 ) {
+         rc = md_conf_parse_long( value, &val );
+         if( rc == 0 ) {
+            conf->num_iowqs = val;
+         }
+         else {
+            return -EINVAL;
+         }
+      }
       else {
          SG_error( "Unrecognized key '%s'\n", key );
          return -EINVAL;
@@ -1170,9 +1205,15 @@ char* md_path_from_url( char const* url ) {
 
 
 // flatten a path.  That is, remove /./, /[/]*, etc, but don't resolve ..
+// return the flattened URL on success 
+// return NULL on OOM 
 char* md_flatten_path( char const* path ) {
+   
    size_t len = strlen(path);
    char* ret = SG_CALLOC( char, len + 1 );
+   if( ret == NULL ) {
+      return NULL;
+   }
  
    unsigned int i = 0;
    int off = 0;
@@ -1748,18 +1789,18 @@ int md_init_begin( struct md_syndicate_conf* conf,
          SG_error("Failed to disable core dumps, rc = %d\n", rc );
          return rc;
       }
-      
-      // need a Volume name
-      if( volume_name == NULL ) {
-         SG_error("%s", "ERR: missing Volume name\n");
-         return -EINVAL;
-      }
+   }
+   
+   // need a Volume name
+   if( volume_name == NULL ) {
+      SG_error("%s", "missing Volume name\n");
+      return -EINVAL;
+   }
 
-      rc = md_util_init();
-      if( rc != 0 ) {
-         SG_error("md_util_init rc = %d\n", rc );
-         return rc;
-      }
+   rc = md_util_init();
+   if( rc != 0 ) {
+      SG_error("md_util_init rc = %d\n", rc );
+      return rc;
    }
    
    // populate the config
@@ -1846,7 +1887,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    int rc = 0;
    
    // validate the config
-   rc = md_check_conf( conf );
+   rc = md_check_conf( conf, (key_password != NULL) );
    if( rc != 0 ) {
       
       SG_error("md_check_conf rc = %d\n", rc );
@@ -1926,7 +1967,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
          return -ENOTCONN;
       }  
    }
-
+   
    // verify that we bound to the right volume
    char* ms_volume_name = ms_client_get_volume_name( client );
 
@@ -1950,8 +1991,10 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    
    // FIXME: DRY this up
    ms_client_wlock( client );
+   
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
+
    conf->volume = ms_client_get_volume_id( client );
    ms_client_unlock( client );
    
@@ -2075,10 +2118,8 @@ int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md
 // default configuration
 // return 0 on success
 // return -ENOMEM on OOM
-int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
+int md_default_conf( struct md_syndicate_conf* conf, uint64_t gateway_type ) {
 
-   int rc = 0;
-   
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
@@ -2092,57 +2133,39 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
 #endif
    
    conf->num_http_threads = sysconf( _SC_NPROCESSORS_CONF );
+   conf->num_iowqs = 4 * sysconf( _SC_NPROCESSORS_CONF );       // I/O doesn't take much CPU...
    
    conf->debug_lock = false;
 
    conf->connect_timeout = 600;
-   conf->replica_connect_timeout = 60;
    
    conf->portnum = -1;
    conf->transfer_timeout = 600;
 
-   conf->owner = getuid();
+   conf->owner = 0;
    conf->usermask = 0377;
 
-   conf->view_reload_freq = 3600;  // once an hour at minimum
-   
-   conf->gateway_type = gateway_type;
+   conf->config_reload_freq = 3600;  // once an hour at minimum
    
    conf->max_metadata_read_retry = 3;
    conf->max_metadata_write_retry = 3;
    conf->max_read_retry = 3;
    conf->max_write_retry = 3;
    
-   if( gateway_type == SYNDICATE_UG ) {
-      // need both storage and networking to be set up
-      conf->need_storage = true;
-      conf->need_networking = true;
-   }
-   else if( gateway_type == SYNDICATE_RG ) {
-      // don't need either storage or networking--we expect a hostname to be given to us
-      conf->need_storage = false;
-      conf->need_networking = false;
-      
-      rc = md_set_hostname( conf, "localhost" );
-      if( rc != 0 ) {
-         return rc;
-      }
-   }
-   else if( gateway_type == SYNDICATE_AG ) {
-      // need both storage and networking to be set up
-      conf->need_storage = true;
-      conf->need_networking = true;
-   }
-
+   conf->gateway_type = gateway_type;
+   
+   conf->cache_soft_limit = MD_CACHE_DEFAULT_SOFT_LIMIT;
+   conf->cache_hard_limit = MD_CACHE_DEFAULT_HARD_LIMIT;
+   
    return 0;
 }
 
 
 // check a configuration structure to see that it has everything we need.
 // print warnings too
-int md_check_conf( struct md_syndicate_conf* conf ) {
+int md_check_conf( struct md_syndicate_conf* conf, bool have_key_password ) {
    
-   char const* warn_fmt = "WARN: missing configuration parameter: %s\n";
+   // char const* warn_fmt = "WARN: missing configuration parameter: %s\n";
    char const* err_fmt = "ERR: missing configuration parameter: %s\n";
 
    // universal configuration warnings and errors
@@ -2151,40 +2174,26 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, SG_CONFIG_MS_URL );
    }
-   if( conf->ms_username == NULL ) {
-      fprintf(stderr, warn_fmt, SG_CONFIG_MS_USERNAME );
+   if( conf->ms_username == NULL && !conf->is_client ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, SG_CONFIG_MS_USERNAME );
    }
-   if( conf->ms_password == NULL ) {
-      fprintf(stderr, warn_fmt, SG_CONFIG_MS_PASSWORD );
+   if( conf->ms_password == NULL && !conf->is_client ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, SG_CONFIG_MS_PASSWORD );
    }
-   if( conf->gateway_name == NULL ) {
-      fprintf(stderr, warn_fmt, SG_CONFIG_GATEWAY_NAME );
+   if( conf->gateway_name == NULL && !conf->is_client ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, SG_CONFIG_GATEWAY_NAME );
    }
-   if( conf->gateway_key == NULL ) {
-      fprintf(stderr, warn_fmt, SG_CONFIG_GATEWAY_PKEY_PATH );
+   if( conf->gateway_key == NULL && !conf->is_client && !have_key_password ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, SG_CONFIG_GATEWAY_PKEY_PATH );
+   }
+   if( conf->volume_name == NULL ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, SG_CONFIG_VOLUME_NAME );
    }
    
-   if( conf->gateway_type == SYNDICATE_UG ) {
-      // UG-specific warnings and errors
-      if( conf->storage_root == NULL ) {
-         rc = -EINVAL;
-         fprintf(stderr, err_fmt, SG_CONFIG_STORAGE_ROOT );
-      }
-      if( conf->logfile_path == NULL ) {
-         rc = -EINVAL;
-         fprintf(stderr, err_fmt, SG_CONFIG_LOGFILE_PATH );
-      }
-   }
-
-   else {
-      // RG/AG-specific warnings and errors
-      if( conf->server_key == NULL ) {
-         fprintf(stderr, warn_fmt, SG_CONFIG_TLS_PKEY_PATH );
-      }
-      if( conf->server_cert == NULL ) {
-         fprintf(stderr, warn_fmt, SG_CONFIG_TLS_CERT_PATH );
-      }
-   }
-
    return rc;
 }

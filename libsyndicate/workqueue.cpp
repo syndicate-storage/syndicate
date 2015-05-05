@@ -68,6 +68,11 @@ static void* md_wq_main( void* cls ) {
             wreq.promise_ret = rc;
             sem_post( &wreq.promise_sem );
          }
+         else {
+            
+            // done with this 
+            md_wreq_free( &wreq );
+         }
       }
    }
    

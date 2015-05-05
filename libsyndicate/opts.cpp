@@ -118,9 +118,10 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
 }
 
 
-// clean up the opts structure, freeing things we don't need 
+// free up mlock'ed opts
 // always succeeds
-int md_opts_cleanup( struct md_opts* opts ) {
+static int md_opts_free_mlocked( struct md_opts* opts ) {
+   
    struct mlock_buf* to_free[] = {
       &opts->user_pkey_pem,
       &opts->gateway_pkey_pem,
@@ -142,7 +143,9 @@ int md_opts_cleanup( struct md_opts* opts ) {
 // always succeeds 
 int md_opts_free( struct md_opts* opts ) {
    
-   md_opts_cleanup( opts );
+   md_opts_free_mlocked( opts );
+   
+   char EOL = 0;
    
    char* to_free[] = {
       opts->config_file,
@@ -155,15 +158,14 @@ int md_opts_free( struct md_opts* opts ) {
       opts->syndicate_pubkey_path,
       opts->hostname,
       opts->storage_root,
-      opts->first_nonopt_arg,
       opts->volume_pubkey_pem,
       opts->syndicate_pubkey_pem,
       opts->tls_pkey_path,
       opts->tls_cert_path,
-      NULL
+      &EOL
    };
    
-   for( int i = 0; to_free[i] != NULL; i++ ) {
+   for( int i = 0; to_free[i] != &EOL; i++ ) {
       SG_safe_free( to_free[i] );
    }
    
@@ -196,6 +198,7 @@ int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
 // return 0 on success
 // return -EINVAL if there are duplicate short opt definitions
 // return -ENOMEM if out of memory
+// return 1 if the caller wanted help
 int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
    
    static struct option syndicate_options[] = {
@@ -220,6 +223,7 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       {"foreground",      no_argument,         0, 'f'},
       {"cache-soft-limit",required_argument,   0, 'l'},
       {"cache-hard-limit",required_argument,   0, 'L'},
+      {"help",            no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
@@ -231,7 +235,7 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:g:m:V:G:S:K:T:C:r:RU:P:d:H:fl:L:";
+   char const* default_optstr = "c:v:u:p:g:m:V:G:S:K:T:C:r:RU:P:d:H:fl:L:h";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -354,8 +358,9 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       
       c = getopt_long(argc, argv, optstr, all_options, &opt_index);
       
-      if( c == -1 )
+      if( c == -1 ) {
          break;
+      }
       
       switch( c ) {
          case 'v': {
@@ -571,6 +576,11 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             }
             break;
          }
+         case 'h': {
+            
+            rc = 1;
+            break;
+         }
          default: {
             
             rc = -1;
@@ -654,6 +664,8 @@ int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* out_optind,
       }
    }
    
+   optind = 0;
+   
    return rc;
 }
 
@@ -672,7 +684,7 @@ Common required arguments:\n\
             Required if -U is not given.\n\
    -U, --user-pkey PATH\n\
             Path to user private key.\n\
-            Required if -p is not given.\n\
+            Required only if -p is not given.\n\
    -P, --user-pkey-pem STRING\n\
             Raw PEM-encoded user private key.\n\
             Can be used in place of -U.\n\

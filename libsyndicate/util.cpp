@@ -105,6 +105,24 @@ int64_t md_current_time_millis() {
    return (ts_sec * 1000) + (ts_nsec / 1000000);
 }
 
+// difference in time, in milliseconds
+// find t1 - t2
+int64_t md_timespec_diff_ms( struct timespec* t1, struct timespec* t2 ) {
+   
+   struct timespec dest = *t1;
+   
+   if( t2->tv_nsec > dest.tv_nsec ) {
+      
+      dest.tv_sec--;
+      dest.tv_nsec += 1000000000L;
+   }
+   
+   dest.tv_sec -= t2->tv_sec;
+   dest.tv_nsec -= t2->tv_nsec;
+   
+   return (dest.tv_sec * 1000) + (dest.tv_nsec / 1000000);
+}
+
 /*
  * Get the user's umask
  */
@@ -179,6 +197,37 @@ char* sha256_printable( unsigned char const* hash ) {
    
    return ret;
 }
+
+// make a string of data printable
+// return the printable SHA256 on success
+// return NULL on OOM 
+char* md_data_printable( unsigned char const* data, size_t len ) {
+   
+   char* ret = SG_CALLOC( char, 2 * len + 1 );
+   if( ret == NULL ) {
+      return NULL;
+   }
+   
+   char buf[3];
+   for( unsigned int i = 0; i < len; i++ ) {
+      sprintf(buf, "%02x", data[i] );
+      ret[2*i] = buf[0];
+      ret[2*i + 1] = buf[1];
+   }
+   
+   return ret;
+}
+
+
+// printdata to a string 
+void md_sprintf_data( char* str, unsigned char const* data, size_t len ) {
+   
+   for( unsigned int i = 0; i < len; i++ ) {
+      
+      sprintf( str + 2*i, "%02x", data[i] );
+   }
+}
+
 
 // make a printable sha256 from data
 // return the printable string on success
@@ -696,22 +745,9 @@ int md_base64_decode(const char* b64message, size_t b64message_len, char** buffe
   BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Do not use newlines to flush buffer
   len = BIO_read(bio, *buffer, b64message_len);
   
-  if( len < 0 || (unsigned)len != b64message_len ) {
+  if( len < 0 ) {
      
      // we're reading memory, so failure here *should* be an error
-     SG_error("BIO_read() rc = %ld\n", len );
-     
-     BIO_free_all( bio );
-     fclose( stream );
-     SG_safe_free( *buffer );
-     return -EPERM;
-  }
-  
-  if( len != decodeLen ) {
-     
-     // didn't encode everything
-     SG_error("BIO_read encoded %zu of %ld bytes\n", b64message_len, len );
-     
      BIO_free_all( bio );
      fclose( stream );
      SG_safe_free( *buffer );
@@ -779,6 +815,9 @@ int md_base64_encode(char const* message, size_t msglen, char** buffer) { //Enco
       SG_error("BIO_flush rc = %d\n", rc);
       rc = -EPERM;
    }
+   else {
+      rc = 0;
+   }
    
    BIO_free_all(bio);
    fclose(stream);
@@ -824,8 +863,8 @@ uint32_t md_random32(void) {
 }
 
 uint64_t md_random64(void) {
-   uint64_t upper = md_random32();
-   uint64_t lower = md_random32();
+   uint64_t upper = (uint64_t)md_random32();
+   uint64_t lower = (uint64_t)md_random32();
    
    return (upper << 32) | lower;
 }

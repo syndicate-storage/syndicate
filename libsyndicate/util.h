@@ -132,6 +132,7 @@ ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags );
 // time functions
 int64_t md_current_time_seconds();
 int64_t md_current_time_millis();
+int64_t md_timespec_diff_ms( struct timespec* t1, struct timespec* t2 );
 
 int md_sleep_uninterrupted( struct timespec* ts );
 
@@ -150,6 +151,9 @@ unsigned char* sha256_file( char const* path );
 unsigned char* sha256_fd( int fd );
 unsigned char* sha256_dup( unsigned char const* sha256 );
 int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 );
+
+char* md_data_printable( unsigned char const* data, size_t len );
+void md_sprintf_data( char* str, unsigned char const* data, size_t len );
 
 // parser functions
 char* md_url_encode( char const* str, size_t len );
@@ -183,10 +187,10 @@ pid_t gettid(void);
 
 
 // extra macros
-#define BLOCK_HASH_LEN sha256_len
-#define BLOCK_HASH_DATA sha256_hash_data
-#define BLOCK_HASH_FD sha256_fd
-#define BLOCK_HASH_TO_STRING sha256_printable
-#define BLOCK_HASH_DUP sha256_dup
+#define SG_BLOCK_HASH_LEN SHA256_DIGEST_LENGTH
+#define SG_BLOCK_HASH_DATA sha256_hash_data
+#define SG_BLOCK_HASH_FD sha256_fd
+#define SG_BLOCK_HASH_TO_STRING sha256_printable
+#define SG_BLOCK_HASH_DUP sha256_dup
 
 #endif

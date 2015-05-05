@@ -61,7 +61,7 @@ using namespace std;
 #include <curl/curl.h>
 
 #include "ms.pb.h"
-#include "serialization.pb.h"
+#include "sg.pb.h"
 
 #define MD_ENTRY_FILE ms::ms_entry::MS_ENTRY_TYPE_FILE
 #define MD_ENTRY_DIR  ms::ms_entry::MS_ENTRY_TYPE_DIR
@@ -154,7 +154,7 @@ struct md_upload_buf {
 // server configuration
 struct md_syndicate_conf {
    
-   // UG fields
+   // gateway fields
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
@@ -167,26 +167,23 @@ struct md_syndicate_conf {
    int max_write_retry;                               // maximum number of times to retry a write (i.e. replicating a block or manifest) before considering it failed
    int max_metadata_read_retry;                       // maximum number of times to retry a metadata read before considering it failed 
    int max_metadata_write_retry;                      // maximum number of times to retry a metadata write before considering it failed
-   int retry_delay_ms;                                // number of milliseconds to wait between retries
-   
-   // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    char* local_sd_dir;                                // directory containing local storage drivers (AG only)
-   
-   // debug
-   int debug_lock;                                    // print verbose information on locks
-
-   // common
    char* gateway_name;                                // name of this gateway
    int portnum;                                       // Syndicate-side port number
    int connect_timeout;                               // number of seconds to wait to connect for data
    int transfer_timeout;                              // how long a manifest/block transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers (if using HTTPS to talk to them)
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
-   int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
-   
+   uint64_t cache_soft_limit;                         // soft limit on the size in bytes of the cache 
+   uint64_t cache_hard_limit;                         // hard limit on the size in bytes of the cache
+   int num_iowqs;                                     // number of I/O work queues
+      
+   // debug
+   int debug_lock;                                    // print verbose information on locks
+
    // MS-related fields
    char* metadata_url;                                // MS url
    char* ms_username;                                 // MS username for this SyndicateUser
@@ -194,7 +191,7 @@ struct md_syndicate_conf {
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    uint64_t gateway;                                  // what is our gateway ID?
    uint64_t volume;                                   // what is our volume ID?
-   uint64_t view_reload_freq;                         // how often do we check for new metadata from the MS?
+   uint64_t config_reload_freq;                       // how often do we check for a new configuration from the MS?
    char* syndicate_pubkey_path;                       // location on disk where the MS's public key can be found.
 
    // security fields (loaded at runtime).
@@ -209,18 +206,16 @@ struct md_syndicate_conf {
    size_t volume_pubkey_len;
    char* syndicate_pubkey;                            // Syndicate-specific public key
    size_t syndicate_pubkey_len;
-   char* user_pkey;                                   // SyndicateUser private key 
+   char* user_pkey;                                   // Syndicate User private key 
    size_t user_pkey_len;
 
    // set at runtime
-   bool need_storage;                                 // set to true if we need to automatically setup local storage
-   bool need_networking;                              // set to true if we need to auto-discover networking settings (like our hostname)
    char* data_root;                                   // root of the path where we store local file blocks (a subdirectory of storage_root)
    mode_t usermask;                                   // umask of the user running this program
    char* hostname;                                    // what's our hostname?
    
    // misc
-   int gateway_type;                                  // type of gateway 
+   uint64_t gateway_type;                                  // type of gateway 
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
@@ -251,6 +246,9 @@ struct md_syndicate_conf {
 #define SG_CONFIG_DEBUG_LEVEL             "DEBUG_LEVEL"
 #define SG_CONFIG_LOCAL_DRIVERS_DIR       "LOCAL_DRIVERS_DIR"
 #define SG_CONFIG_TRANSFER_TIMEOUT        "TRANSFER_TIMEOUT"
+#define SG_CONFIG_CACHE_SOFT_LIMIT        "CACHE_SOFT_LIMIT"
+#define SG_CONFIG_CACHE_HARD_LIMIT        "CACHE_HARD_LIMIT"
+#define SG_CONFIG_NUM_IOWQS               "NUM_IO_WQS"
 
 // URL protocol prefix for local files
 #define SG_LOCAL_PROTO     "file://"
@@ -321,6 +319,7 @@ uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size );
 uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len );
 
 // networking 
+char* md_get_hostname( struct md_syndicate_conf* conf );
 int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname );
 
 // top-level initialization
@@ -330,8 +329,8 @@ int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md
 int md_init_client( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
 int md_shutdown(void);
-int md_default_conf( struct md_syndicate_conf* conf, int gateway_type );
-int md_check_conf( struct md_syndicate_conf* conf );
+int md_default_conf( struct md_syndicate_conf* conf, uint64_t gateway_type );
+int md_check_conf( struct md_syndicate_conf* conf, bool have_key_password );
 
 }
 
@@ -390,6 +389,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define SG_INVALID_GATEWAY_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_VOLUME_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_FILE_ID SG_INVALID_BLOCK_ID
+#define SG_INVALID_USER_ID SG_INVALID_BLOCK_ID
 
 // gateway types for md_init
 #define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY
@@ -411,5 +411,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 // limits
 #define SG_MAX_MANIFEST_LEN              100000000         // 100MB
+#define SG_MAX_BLOCK_LEN_MULTIPLER       5                 // i.e. a block download can't be more than 5x the size of a block
+                                                           // (there are some serious problems with the design of a closure that requires this, IMHO).
 
 #endif
