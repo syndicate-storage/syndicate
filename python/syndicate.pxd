@@ -113,6 +113,7 @@ cdef extern from "libsyndicate/libsyndicate.h":
    # ------------------------------------------
    # networking 
 
+   char* md_get_hostname( md_syndicate_conf* conf )
    int md_set_hostname( md_syndicate_conf* conf, const char* hostname )
 
    # ------------------------------------------
@@ -134,8 +135,6 @@ cdef extern from "libsyndicate/libsyndicate.h":
    # config
    
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
-   int ms_client_set_config_change_callback( ms_client* client, ms_client_config_change_callback clb, void* cls )
-   int ms_client_start_config_reload( ms_client* client )
    int ms_client_gateway_key_pem( ms_client* client, char** gateway_key_pem, size_t* gateway_key_len )
 
    # ------------------------------------------
@@ -146,7 +145,7 @@ cdef extern from "libsyndicate/libsyndicate.h":
    # ------------------------------------------
    # queries 
    
-   int ms_client_check_gateway_caps( ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps )
+   int ms_client_check_gateway_caps( ms_client* client, uint64_t gateway_id, uint64_t caps )
    int ms_client_get_gateway_type( ms_client* client, uint64_t g_id )
 
    # ------------------------------------------

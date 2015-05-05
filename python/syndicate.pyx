@@ -22,17 +22,8 @@ import errno
 
 syndicate_inited = False
 syndicate_ref = None
-syndicate_config_change_callback = None
 runtime_privkey_path = None 
 
-# ------------------------------------------
-cdef int py_config_change_callback_springboard( ms_client* client, void* cls ):
-   global syndicate_config_change_callback
-   
-   if syndicate_config_change_callback is not None:
-      return syndicate_config_change_callback()
-   
-   return 0
 
 # ------------------------------------------
 cpdef encrypt_data( sender_privkey_str, receiver_pubkey_str, data_str ):
@@ -507,8 +498,9 @@ cdef class Syndicate:
       '''
          Get the hostname the cert says we're supposed to listen on.
       '''
-      hostname = ms_client_get_hostname( &self.client_inst )
-      if hostname != None:
+      cdef char* hostname = NULL;
+      hostname = md_get_hostname( &self.conf_inst )
+      if hostname != NULL:
          ret = hostname[:]
          stdlib.free( hostname )
          return ret 
@@ -592,30 +584,8 @@ cdef class Syndicate:
       
       else:
          return None
-         
-      
-   cpdef set_config_change_callback( self, callback_func ):
-      '''
-         Set the callback to be called when the Volume information gets changed.
-      '''
-      global syndicate_config_change_callback
-      
-      syndicate_config_change_callback = callback_func
-      
-      ms_client_set_config_change_callback( &self.client_inst, py_config_change_callback_springboard, NULL )
-      
-      return
    
    
-   cpdef sched_reload( self ):
-      '''
-         Schedule a reload of our configuration.
-      '''
-      ms_client_start_config_reload( &self.client_inst )
-      
-      return
-   
-
    cpdef get_sd_path( self ):
       '''
          Get the location of our local storage drivers.
@@ -663,10 +633,10 @@ cdef class Syndicate:
       return ms_client_get_gateway_type( &self.client_inst, gw_id )
 
 
-   cpdef check_gateway_caps( self, gw_type, gw_id, caps ):
+   cpdef check_gateway_caps( self, gw_id, caps ):
       '''
          Check a gateway's capabilities.
          Return 0 if the capabilities (caps, a bit field) match those in the cert.
       '''
 
-      return ms_client_check_gateway_caps( &self.client_inst, gw_type, gw_id, caps )
+      return ms_client_check_gateway_caps( &self.client_inst, gw_id, caps )

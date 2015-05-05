@@ -61,18 +61,18 @@ ext_modules=[
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
     
-    Extension("volume",
-              sources=["volume.pyx"],
-              libraries=["syndicate", "syndicateUGclient"],
-              library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
-              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
-                            os.path.join(source_root, build_dir, "lib/"),
-                            os.path.join(source_root, build_dir, "protobufs"),
-                            os.path.join(source_root, build_dir, "bin/UG"),
-                            os.path.join(source_root, build_dir, "bin/UG/fs"), 
-                            "/usr/local/include/syndicate"],
-              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
-              language="c++"),
+    #Extension("volume",
+    #          sources=["volume.pyx"],
+    #          libraries=["syndicate", "syndicateUGclient"],
+    #          library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
+    #          include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
+    #                        os.path.join(source_root, build_dir, "lib/"),
+    #                        os.path.join(source_root, build_dir, "protobufs"),
+    #                        os.path.join(source_root, build_dir, "bin/UG"),
+    #                        os.path.join(source_root, build_dir, "bin/UG/fs"), 
+    #                        "/usr/local/include/syndicate"],
+    #          extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
+    #          language="c++"),
 ]
 
 # get the list of RG drivers
