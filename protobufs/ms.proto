@@ -53,7 +53,7 @@ message ms_entry {
    optional int64 capacity = 24;        // range in the children index where the children can be
 }
 
-// object update
+// file update
 message ms_update {
    enum UpdateType {
       CREATE = 1;
@@ -66,11 +66,12 @@ message ms_update {
       CHMODXATTR = 8;
       CHOWNXATTR = 9;
       VACUUM = 10;
-      UPDATE_ASYNC = 11;
-      DELETE_ASYNC = 12;
-      CREATE_ASYNC = 13;
+      VACUUMAPPEND = 11;
+      UPDATE_ASYNC = 12;
+      DELETE_ASYNC = 13;
+      CREATE_ASYNC = 14;
       
-      NUM_UPDATE_TYPES = 14;
+      NUM_UPDATE_TYPES = 15;
    }
 
    required int32 type = 1;
@@ -83,10 +84,10 @@ message ms_update {
    optional int32 xattr_mode = 8;       // used by chmodxattr, setxattr
    optional uint64 xattr_owner = 9;     // used by chownxattr, setxattr (on create)
    
-   repeated uint64 affected_blocks = 10;      // blocks affected by the write (on UPDATE)
+   repeated uint64 affected_blocks = 10;      // IDs of blocks affected by the write (on UPDATE or VACUUMAPPEND)
 }
 
-// collection of object updates
+// collection of file updates
 message ms_updates {
    required string signature = 1;
    repeated ms_update updates = 2;
@@ -105,11 +106,12 @@ message ms_listing {
    repeated ms_entry entries = 3;       // if this was a directory, then this contains its children.  Otherwise, entries[0] is the entry's data
 }
 
+
 // metadata information for the entries of a path
 message ms_reply {
    required uint64 volume_version = 1;           // version of this volume's metadata
    required uint64 cert_version = 2;             // Volume certificate bundle version
-   required string signature = 3;                // Volume signature
+   required string signature = 3;                // Volume signature (from the MS)
    required int32 error = 4;                     // error code for the overall request
    optional string errormsg = 5;                 // error message
    
@@ -178,7 +180,7 @@ message ms_gateway_cert {
    
    required uint64 version = 1;           // version of this certificate
    
-   required uint32 gateway_type = 2;      // type of gateway
+   required uint64 gateway_type = 2;      // type of gateway
    required uint64 gateway_id = 3;        // ID of this gateway
    required uint64 owner_id = 4;          // ID of user that owns this gateway
    required string name = 5;              // name of gateway
@@ -250,7 +252,7 @@ message ms_register_request {
       AUTH_PUBLIC_KEY = 1;
    }
    
-   required uint32 gateway_type = 1;                // uses ms_gateway_cert.GatewayType 
+   required uint64 gateway_type = 1;                // uses ms_gateway_cert.GatewayType 
    required string gateway_name = 2;
    required string username = 3;
    required string nonce = 4;

@@ -4,6 +4,7 @@ import os
 
 protobuf_files = """
    ms.proto
+   sg.proto
    serialization.proto
 """
 
