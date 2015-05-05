@@ -805,9 +805,9 @@ int AG_start( struct AG_state* state ) {
    // start HTTP 
    SG_debug("Starting HTTP server (%d threads)\n", state->conf->num_http_threads );
    
-   rc = md_start_HTTP( state->http, state->conf->portnum, state->conf );
+   rc = md_HTTP_start( state->http, state->conf->portnum, state->conf );
    if( rc != 0 ) {
-      SG_error("ERR: md_start_HTTP rc = %d\n", rc );
+      SG_error("ERR: md_HTTP_start rc = %d\n", rc );
       return rc;
    }
    
@@ -865,7 +865,7 @@ int AG_stop( struct AG_state* state ) {
    pthread_join( state->specfile_reload_thread, NULL );
    
    SG_debug("%s", "Shutting down HTTP server\n");
-   md_stop_HTTP( state->http );
+   md_HTTP_stop( state->http );
    
    SG_debug("%s", "Shutting down event listener\n");
    AG_event_listener_stop( state->event_listener );
@@ -899,7 +899,7 @@ int AG_state_free( struct AG_state* state ) {
    pthread_rwlock_wrlock( &state->state_lock );
    
    if( state->http != NULL ) {
-      md_free_HTTP( state->http );
+      md_HTTP_free( state->http );
       free( state->http );
       state->http = NULL;
    }
