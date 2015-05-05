@@ -1,0 +1,427 @@
+#!/usr/bin/env python 
+
+"""
+   Copyright 2014 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+# UG mounter and watchdog
+
+import sys
+import os
+import signal
+import errno 
+import time
+import subprocess
+import setproctitle
+import logging
+import shlex 
+import atexit
+
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+
+import syndicate.util.daemonize as daemonize
+import syndicate.util.watchdog as watchdog
+import syndicate.util.config as modconf
+
+log = logging.getLogger()
+
+UG_BINARY = "syndicatefs"
+
+UG_PID = 0
+UG_LOG_FD = 0
+UG_MOUNTPOINT = None 
+
+#-------------------------------
+CONFIG_OPTIONS = {
+   "config":            ("-c", 1, "Path to the daemon configuration file"),
+   "foreground":        ("-f", 0, "Run in the foreground"),
+   "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
+   "pidfile":           ("-i", 1, "Path to the desired PID file."),
+   "mountpoint":        ("-m", 1, "Mountpoint to monitor."),
+   "volume":            ("-v", 1, "Volume to monitor."),
+   "debug":             ("-d", 0, "Print/log debugging information."),
+   "UG_binary":         ("-b", 1, "Name or path to the UG binary."),
+   "UG_argv":           ("-C", 1, "Arguments to the UG binary (excluding the binary's name).")
+}
+
+#-------------------------------
+def death_handler( signum, frame ):
+   global UG_PID, UG_MOUNTPOINT, UG_BINARY
+   
+   if UG_PID > 0:
+      stop_ug( UG_PID, UG_MOUNTPOINT, UG_BINARY )
+      watchdog.stop_child( UG_PID )
+   
+   sys.exit(0)
+
+#-------------------------------
+def watchdog_PID( pid ):
+   global UG_PID
+   UG_PID = pid
+   return 0
+
+#-------------------------------
+def watchdog_need_respawn( exit_status ):
+   global UG_PID
+   
+   UG_PID = 0
+   
+   return watchdog.check_exit_status( exit_status, respawn_exit_statuses=range(1,255) )
+
+
+#-------------------------------
+def fuse_umount( mountpoint ):
+   """
+   fusermount -u <mountpoint>
+   """
+   try:
+      ret = subprocess.call(["fusermount", "-u", mountpoint])
+      return ret
+   except OSError, oe:
+      log.error("fusermount errno = %s" % -oe.errno)
+      return -oe.errno
+   
+   except Exception, e:
+      # can't find fusermount, or some other irrecoverable error 
+      log.exception( e )
+      return -errno.EAGAIN
+
+#-------------------------------
+def check_mounted( mountpoint, binary_name ):
+   """
+   Verify that nothing is mounted at mountpoint.
+   NOTE: Linux-specific; uses /proc/self/mounts
+   """
+   
+   try:
+      fd = open("/proc/self/mounts", "r")
+      mount_data = fd.read()
+      fd.close()
+   except:
+      log.error("Failed to read /proc/self/mounts")
+      return -errno.ENODATA
+   
+   # find our mountpoint....
+   mounted_filesystems = mount_data.split("\n")
+   
+   for mounted_filesystem in mounted_filesystems:
+      # line format:
+      if len(mounted_filesystem) > 0:
+         try:
+            fs_spec, fs_file, fs_vfstype, fs_mntopts, fs_freq, fs_passno = mounted_filesystem.split(" ")
+         except:
+            log.warning("Ill-formatted mount line: '%s'" % mounted_filesystem)
+            continue 
+         
+         if fs_file == mountpoint and (binary_name is not None and fs_spec == binary_name):
+            # mounted here...
+            return True
+      
+   return False
+   
+
+#-------------------------------
+def check_fuse_dev():
+   """
+   Verify that we can access the FUSE device node (/dev/fuse)
+   """
+   try:
+      return os.access( "/dev/fuse", os.R_OK | os.W_OK )
+   except OSError, oe:
+      log.error("Cannot access /dev/fuse, OS error %s" % os.errno)
+      return False
+   except Exception, e:
+      log.exception(e)
+      return False
+
+
+#-------------------------------
+def stop_ug( child_pid, mountpath, binary_name ):
+   """
+   Unmount a UG.  If it still mounted after kill_timeout seconds, 
+   then kill it and then unmount it.
+   """
+   umount_rc = 0
+   
+   if check_mounted( mountpath, binary_name ):
+      umount_rc = fuse_umount( mountpath )
+   
+   if umount_rc != 0 and check_mounted( mountpath, binary_name ):
+      # kill and then unmount 
+      
+      log.info("Stopping UG at %s" % mountpath )
+      
+      # first, ask nicely
+      try:
+         os.kill( child_pid, signal.SIGINT )
+      except OSError, oe:
+         log.exception(oe)
+         return -oe.errno
+      
+      still_running = check_mounted( mountpath, binary_name )
+      
+      for i in xrange(0,3):
+         # check to see if it dies
+         # still running?
+         still_running = False
+         try:
+            os.kill( child_pid, signal.SIGINT )
+            still_running = True
+         except OSError, oe:
+            if oe.errno != errno.ESRCH:
+               # still running; some other error 
+               log.exception(oe)
+               still_running = True
+               
+         if not still_running:
+            break
+         else:
+            still_running = check_mounted( mountpath, binary_name )
+      
+      
+      if still_running:
+         # still running (it ignored SIGINT).
+         # kill it outright
+         try:
+            os.kill( child_pid, signal.SIGKILL )
+         except OSError, oe:
+            if oe.errno != errno.ESRCH:
+               # still running; probably the wrong PID
+               log.exception(oe)
+               return -oe.errno
+            
+      
+      if umount_rc != -errno.ENOENT:
+         # try cleaning up again, now that the UG is dead
+         umount_rc = fuse_umount( mountpath )
+         
+         if umount_rc != 0:
+            log.error("Failed to unmount child %s from %s" % (child_pid, mountpath) )
+            return -errno.ENOTEMPTY
+   
+   return 0
+
+
+#-------------------------------
+def spawn_ug( config, old_exit_status ):
+   """
+   Spawn a UG.
+   """
+   
+   # immediately switch to a different process name 
+   pt = child_proc_title( config['UG_binary'], config['volume'], config['mountpoint'] )
+   setproctitle.setproctitle( pt )
+   
+   # ensure nothing is mounted on our mountpoint
+   if check_mounted( config['mountpoint'], config['UG_binary'] ):
+      umount_rc = fuse_umount( config['mountpoint'] )
+      
+      if umount_rc != 0:
+         log.error("Failed to unmount %s, rc = %s" % (config['mountpoint'], umount_rc ))
+         return umount_rc
+      
+   # make sure we can access /dev/fuse
+   if not check_fuse_dev():
+      print >> sys.stderr, "Cannot mount FUSE filesystems"
+      return 255
+   
+   # split up our command string...
+   command_str = config['command']
+   
+   command_list = shlex.split( command_str )
+   
+   binary = command_list[0]
+   required_args = ['-R', '-v', config['volume'], config['mountpoint']]
+   
+   if config['debug']:
+      required_args = ['-d2'] + required_args 
+      
+   argv = [binary] + required_args
+   
+   # exec the binary 
+   try:
+      os.execvp( binary, argv )
+   except OSError, oe:
+      log.error("Failed to exec %s, rc = %s" % (binary, oe.errno))
+      return 255
+      
+   
+
+#-------------------------------
+def validate_config( config ):
+   required = ['mountpoint', 'volume']
+   for req in required:
+      if req not in config.keys():
+         log.error("missing required configuration value: %s" % req)
+         return -1
+      
+      
+   # make mountpoint an absolute path 
+   config['mountpoint'] = os.path.abspath( config['mountpoint'] )
+   
+   if 'logdir' in config.keys():
+      if not os.path.exists( config['logdir'] ):
+         try:
+            os.makedirs( config['logdir'] )
+         except OSError, oe:
+            log.exception(oe)
+            return -1
+         
+      elif not os.isdir( config['logdir'] ):
+         log.error("Not a directory: %s" % config['logdir'] )
+         return -1
+      
+   return 0
+
+
+#-------------------------------
+def get_UG_command( config ):
+   """
+   Get the UG command to run.
+   Its either after -- in argv, or its in stdin
+   """
+   
+   if config.get('UG_argv', None) is not None:
+      return config['UG_binary'] + " " + config["UG_argv"]
+   
+   else:
+      argv_str = sys.stdin.read()
+      
+      # get rid of the binary's name
+      command_list = argv_str.split(" ")
+      argv_str = " ".join( command_list[1:] )
+      
+      return config['UG_binary'] + " " + argv_str
+   
+
+#-------------------------------
+def supervisor_proc_title( volume, mountpoint ):
+   return watchdog.attr_proc_title( "syndicate-ug", {"volume": volume, "mountpoint": mountpoint} )
+
+#-------------------------------
+def child_proc_title( binary_name, volume, mountpoint ):
+   return watchdog.attr_proc_title( binary_name, {"volume": volume, "mountpoint": mountpoint} )
+
+
+#-------------------------------
+def shutdown_logging():
+   """
+   Close the global log fd
+   """
+   
+   global UG_LOG_FD
+   
+   if UG_LOG_FD != 0:
+      os.fsync( UG_LOG_FD )
+      os.close( UG_LOG_FD )
+      UG_LOG_FD = 0
+
+
+#-------------------------------
+def setup_logging( logfile_path ):
+   """
+   redirect stdout and stderr to the file at logfile_path 
+   """
+   
+   global UG_LOG_FD
+   
+   try:
+      f = open( logfile_path, "w" )
+      fd = f.fileno()
+      
+      sys.stdout.flush()
+      sys.stderr.flush()
+      
+      os.dup2( fd, sys.stdout.fileno() )
+      os.dup2( fd, sys.stderr.fileno() )
+      
+   except:
+      return False
+   
+   UG_LOG_FD = fd
+   
+   atexit.register( shutdown_logging )
+   
+
+#-------------------------------
+if __name__ == "__main__":
+   
+   argv = sys.argv 
+   config = modconf.build_config( argv, "Syndicate UG Watchdog", "UG", CONFIG_OPTIONS, conf_validator=validate_config )
+   
+   if config is None:
+      sys.exit(1)
+      
+   if 'UG_binary' not in config.keys():
+      config['UG_binary'] = UG_BINARY
+      
+   # get the UG command 
+   command_str = get_UG_command( config )
+   if command_str is None:
+      sys.exit(1)
+      
+   # store this to our config
+   config['command'] = command_str
+   
+   # set our proc commandline
+   pt = supervisor_proc_title( config['volume'], config['mountpoint'] )
+   setproctitle.setproctitle( pt )
+   
+   # set up globals 
+   UG_MOUNTPOINT = config['mountpoint']
+   UG_BINARY = config['UG_binary']
+   
+   my_signals = [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]
+   
+   # set signal handlers
+   for sig in my_signals:
+      signal.signal( sig, death_handler )
+   
+   foreground = config['foreground']
+   
+   logfile_path = None 
+   pidfile_path = config.get('pidfile', None)
+   
+   if config.has_key('logdir'):
+      logfile_path = os.path.join( config['logdir'], "syndicate-ug.log" )
+   
+   if not foreground:
+      # become a daemon
+      log.info("Starting as a daemon")
+      
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
+                                                  stdin_cb=lambda: command_str,
+                                                  pid_cb=watchdog_PID,
+                                                  exit_cb=watchdog_need_respawn,
+                                                  parent_signals=my_signals,
+                                                  respawn_exit_statuses=range(1,255) ),
+                           logfile_path=logfile_path, pidfile_path=pidfile_path )
+   
+   else:
+      # if logfile path is given, then direct output to that instead of stdout 
+      if logfile_path is not None:
+         setup_logging( logfile_path )
+      
+      log.info("Running in the foreground")
+      
+      # run in the foreground
+      watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
+                     pid_cb=watchdog_PID,
+                     stdin_cb=lambda: command_str,
+                     exit_cb=watchdog_need_respawn,
+                     parent_signals=my_signals,
+                     respawn_exit_statuses=range(1,255) )
+      
+      
