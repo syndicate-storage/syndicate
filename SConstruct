@@ -191,40 +191,26 @@ env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )
 
 # ----------------------------------------
 # UG build
-libsyndicateUG_inc_install_dir = os.path.join( install_prefix, "include/libsyndicateUG" )
-libsyndicateUG_inc_fs_install_dir = os.path.join( install_prefix, "include/libsyndicateUG/fs" )
 
 ug_out = "build/out/bin/UG"
-ug_driver_out = "build/out/lib/UG/drivers"
-syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, libsyndicateUG_headers, libsyndicateUG_fs_headers, syndicate_watchdog  = SConscript( "UG/SConscript", variant_dir=ug_out )
-ug_drivers = SConscript( "UG/drivers/SConscript", variant_dir=ug_driver_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, syndicateUG_lib, syndicateUG_headers, syndicate_watchdog  = SConscript( "UG/SConscript", variant_dir=ug_out )
 
 ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc, syndicate_watchdog]
-ugs_lib = [libsyndicateUGclient, libsyndicateUG]
-ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, syndicate_watchdog]
+ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, syndicate_watchdog]
 
 env.Depends( syndicatefs, libsyndicate )
 env.Depends( syndicate_ipc, libsyndicate )
 env.Depends( syndicate_httpd, libsyndicate )
-env.Depends( libsyndicateUG, libsyndicate )
-env.Depends( libsyndicateUGclient, libsyndicate )
+env.Depends( syndicateUG_lib, libsyndicate )
 
 env.Alias("syndicatefs", syndicatefs)
 env.Alias("UG-httpd", syndicate_httpd)
-env.Alias("libsyndicateUG", libsyndicateUG)
-env.Alias("libsyndicateUGclient", libsyndicateUGclient)
 env.Alias("UG-ipc", syndicate_ipc)
-env.Alias("UG-drivers", ug_drivers )
+env.Alias("UG-lib", syndicateUG_lib)
 
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs_bin )
-common.install_targets( env, 'UG-drivers-install', lib_install_dir, ug_drivers )
 
-libsyndicateUG_install_library = env.Install( lib_install_dir, [libsyndicateUG, libsyndicateUGclient] )
-libsyndicateUG_install_headers = env.Install( libsyndicateUG_inc_install_dir, libsyndicateUG_headers )
-libsyndicateUG_install_fs_headers = env.Install( libsyndicateUG_inc_fs_install_dir, libsyndicateUG_fs_headers )
-
-env.Alias( "libsyndicateUG-install", [libsyndicateUG_install_library, libsyndicateUG_install_headers, libsyndicateUG_install_fs_headers] )
 env.Alias("UG", ug_aliases )
 
 # ----------------------------------------
@@ -343,7 +329,7 @@ common.install_tree( env, "syndicated-opencloud-install-pkg", pkg_install_dir, o
 
 syndicate_python_out = "build/out/python"
 python_target, python_install, python_files = SConscript("python/SConscript", variant_dir=syndicate_python_out)
-env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate, libsyndicateUG])
+env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate])
 
 env.Alias("syndicate-python", python_target)
 env.Alias("python-syndicate", "syndicate-python")
