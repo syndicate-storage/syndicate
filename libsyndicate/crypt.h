@@ -44,6 +44,11 @@
 
 #define MD_DEFAULT_CIPHER EVP_aes_256_cbc
 
+#define MD_SCRYPT_MAX_TIME 5.0
+#define MD_SCRYPT_MAX_MEM 1024000000
+
+
+
 extern "C" {
 
 int md_crypt_init();
@@ -101,6 +106,10 @@ size_t md_decrypt_symmetric_ex_plaintext_len( size_t ciphertext_len );
 // signature verifier
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE:  class T should be a protobuf, and should have a string signature field
+// return 0 on successful verification 
+// return -ENOMEM on OOM 
+// return -EINVAL if the signature length is invalid
+// return -EINVAL if the signature itself does not match
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    // get the signature
    size_t sigb64_len = protobuf->signature().size();

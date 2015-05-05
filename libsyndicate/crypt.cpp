@@ -297,6 +297,7 @@ int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len,
 // return negative if we failed to set up the crypto subsystem (if it was not initialized)
 // return -EINVAL if the message could not be decoded
 // return -ENOMEM if we ran out of memory
+// return -errno on failure to initialize the crypto subsystem, if it had not been initialized already
 int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* sigb64, size_t sigb64_len ) {
    
    // safety for external clients
@@ -304,7 +305,7 @@ int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* s
       int rc = md_crypt_init();
       if( rc != 0 ) {
          
-         SG_error("md_crypt_init() rc = %d\n", rc );
+         SG_error("md_crypt_init rc = %d\n", rc );
          return rc;
       }
    }
@@ -410,15 +411,28 @@ int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** si
 
    
 // sign a message, producing the base64 signature
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -1 on failure to sign 
+// return -errno on failure to initialize the crypto subsystem, if it had not been initialized already
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64_len ) {
+   
+   int rc = 0;
+   
    // safety for external clients
-   if( !md_crypt_check_init() )
-      md_crypt_init();
-      
+   if( !md_crypt_check_init() ) {
+      rc = md_crypt_init();
+      if( rc != 0 ) {
+         
+         SG_error("md_crypt_init rc = %d\n", rc );
+         return rc;
+      }
+   }
+   
    unsigned char* sig_bin = NULL;
    size_t sig_bin_len = 0;
    
-   int rc = md_sign_message_raw( pkey, data, len, (char**)&sig_bin, &sig_bin_len );
+   rc = md_sign_message_raw( pkey, data, len, (char**)&sig_bin, &sig_bin_len );
    if( rc != 0 ) {
       SG_error("md_sign_message_raw rc = %d\n", rc );
       return -1;
@@ -428,6 +442,7 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
    char* b64 = NULL;
    rc = md_base64_encode( (char*)sig_bin, sig_bin_len, &b64 );
    if( rc != 0 ) {
+      
       SG_error("md_base64_encode rc = %d\n", rc );
       md_openssl_error();
       free( sig_bin );
@@ -446,6 +461,8 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 
 
 // load a PEM-encoded (RSA) public key into an EVP key
+// return 0 on success
+// return -EINVAL if the public key could not be loaded
 int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
    BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
 
@@ -467,6 +484,8 @@ int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
 
 
 // load a PEM-encoded (RSA) private key into an EVP key
+// return 0 on success 
+// return -EINVAL onfailure to load the private key 
 int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
    BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
 
@@ -487,6 +506,8 @@ int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
 }
 
 // load both public and private keys from an RSA private key into EVP key structures
+// return 0 on success 
+// return -EINVAL on failure to load either key 
 int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str ) {
    BIO* buf_priv_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
    
@@ -498,7 +519,6 @@ int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, ch
       // invalid private key
       SG_error("%s", "ERR: failed to read private key\n");
       md_openssl_error();
-      
 
       return -EINVAL;
    }
@@ -535,6 +555,7 @@ int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, ch
 
 
 // get the RSA public key from the RSA private key 
+// return -EINVAL on failure to serialize the private key, or failure to load the public key from it
 int md_public_key_from_private_key( EVP_PKEY** ret_pubkey, EVP_PKEY* privkey ) {
    
    // get the public part 
@@ -566,14 +587,17 @@ int md_public_key_from_private_key( EVP_PKEY** ret_pubkey, EVP_PKEY* privkey ) {
 }
 
 // generate RSA public/private key pair
+// return 0 on success
+// return -1 on failure 
 int md_generate_key( EVP_PKEY** key ) {
 
    SG_debug("%s", "Generating public/private key...\n");
    
    EVP_PKEY_CTX *ctx;
    EVP_PKEY *pkey = NULL;
+   
    ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-   if (!ctx) {
+   if( ctx == NULL ) {
       md_openssl_error();
       return -1;
    }
@@ -606,6 +630,8 @@ int md_generate_key( EVP_PKEY** key ) {
 
 
 // dump a key to memory
+// return -EINVAL on failure to serialize the key 
+// return -ENOMEM on OOM
 long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
    BIO* mbuf = BIO_new( BIO_s_mem() );
    
@@ -622,6 +648,12 @@ long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
    long sz = BIO_get_mem_data( mbuf, &tmp );
 
    *buf = SG_CALLOC( char, sz );
+   if( *buf == NULL ) {
+      
+      BIO_free( mbuf );
+      return -ENOMEM;
+   }
+   
    memcpy( *buf, tmp, sz );
 
    BIO_free( mbuf );
@@ -632,6 +664,12 @@ long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
 
 // Seal data with a given public key, using AES256 in CBC mode.
 // Sign the encrypted data with the given public key.
+// return 0 on success 
+// return -1 on failure to use an OpenSSL method 
+// return -errno on failure to read random data
+// return -ENOMEM on OOM 
+// return -EOVERFLOW if the outputted message or any of its fields would be too long 
+// return -ERANGE if the message is greater than 2**30 bytes long
 int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
    
    // use AES256 in CBC mode
@@ -644,6 +682,11 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    
    if( iv == NULL ) {
       return -ENOMEM;
+   }
+   
+   // size check 
+   if( (uint64_t)in_data_len >= (1L << 30) ) {
+      return -ERANGE;
    }
    
    // fill the iv with random data
@@ -659,6 +702,10 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    
    // encrypted symmetric key for sealing the ciphertext
    unsigned char* ek = SG_CALLOC( unsigned char, EVP_PKEY_size( receiver_pubkey ) );
+   if( ek == NULL ) {
+      return -ENOMEM;
+   }
+   
    int32_t ek_len = 0;
    
    // set up EVP Sealing
@@ -667,7 +714,8 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
       SG_error("EVP_SealInit rc = %d\n", rc );
       md_openssl_error();
       
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -1;
    }
@@ -675,7 +723,7 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    // allocate the output buffer
    // final output format:
    //    signature_len || iv_len || ek_len || ciphertext_len || iv || ek || ciphertext || signature
-   // for now, the signature will be missing (but will be tacked on the end)
+   // for now, the signature will be missing (but will be tacked on the end), since it covers all preceding fields
    
    // allocate all but the signature for now, since we don't know yet how big it will be.
    // allocate space for its length, however!
@@ -687,7 +735,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    
    unsigned char* output_buf = SG_CALLOC( unsigned char, output_len );
    if( output_buf == NULL ) {
-      free( ek );
+      
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -ENOMEM;
    }
@@ -709,7 +759,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
       SG_error("EVP_SealUpdate rc = %d\n", rc );
       md_openssl_error();
       
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -1;
@@ -722,7 +774,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
       SG_error("EVP_SealFinal rc = %d\n", rc );
       md_openssl_error();
       
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -1;
@@ -750,7 +804,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    size_t sig_payload_len = sizeof(iv_len_n) + sizeof(ek_len_n) + sizeof(ciphertext_len_n) + iv_len + ek_len + ciphertext_len;
    if( (int32_t)(sig_payload_len) < 0 ) {
       // overflow 
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       return -EOVERFLOW;
    }
@@ -763,7 +819,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    if( rc != 0 ) {
       SG_error("md_sign_message rc = %d\n", rc );
       
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       return -1;
    }
@@ -772,7 +830,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    int32_t full_output_len = sizeof(int32_t) + sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + iv_len + ek_len + ciphertext_len + sig_len;
    if( full_output_len < 0 ) {
       // overflow
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       return -EOVERFLOW;
    }
@@ -780,7 +840,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    unsigned char* signed_output = (unsigned char*)realloc( output_buf, full_output_len );
    if( signed_output == NULL ) {
       // out of memory
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( output_buf );
       return -ENOMEM;
    }
@@ -791,7 +853,9 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
    
    if( (int32_t)(signature_offset) < 0 ) {
       // overflow 
-      free( ek );
+      memset( ek, 0, EVP_PKEY_size( receiver_pubkey ) );
+      SG_safe_free( ek );
+      
       free( signed_output );
       return -EOVERFLOW;
    }
@@ -814,6 +878,11 @@ int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in
 
 // decrypt data with a given private key, generated from md_encrypt
 // check the signature BEFORE decrypting!
+// return 0 on success 
+// return -EINVAL if the message is malformed (i.e. has nonsensical field sizes)
+// return -EOVERFLOW on numeric overflow 
+// return -1 if the signature is invalid
+// NOTE: we will reject any message that reports to be 2**30 bytes long with -ERANGE
 int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in_data, size_t in_data_len, char** plaintext, size_t* plaintext_len ) {
    int32_t iv_len = 0;
    int32_t ek_len = 0;
@@ -825,9 +894,10 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    int32_t expected_iv_len = EVP_CIPHER_iv_length( cipher );
    
    // data must have these four values
-   size_t header_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
-   if( header_len > in_data_len ) {
-      SG_error("header_len (%zu) > in_data_len (%zu)\n", header_len, in_data_len );
+   int32_t header_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
+   if( (unsigned)header_len > in_data_len ) {
+      
+      SG_error("header_len (%d) > in_data_len (%zu)\n", header_len, in_data_len );
       return -EINVAL;
    }
    
@@ -861,7 +931,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    size_t ek_offset             = iv_offset + iv_len;
    size_t ciphertext_offset     = ek_offset + ek_len;
    
-   // sanity check--too short?
+   // sanity check--too short? overflow?
    if( iv_len <= 0 || ek_len <= 0 || ciphertext_len <= 0 || signature_len <= 0 ) {
       SG_error("invalid header (iv_len = %d, ek_ken = %d, ciphertext_len = %d, signature_len = %d)\n", iv_len, ek_len, ciphertext_len, signature_len );
       return -EINVAL;
@@ -874,7 +944,12 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    if( total_len < 0 ) {
       return -EOVERFLOW;
    }
-                        
+   
+   if( total_len >= (1L << 30) ) {
+      
+      return -ERANGE;
+   }
+   
    if( total_len > (signed)in_data_len ) {
       SG_debug("total_len (%d) > in_data_len (%zu)\n", total_len, in_data_len );
       return -EINVAL;
@@ -924,6 +999,12 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    unsigned char* output_buf = SG_CALLOC( unsigned char, ciphertext_len );
    int output_buf_written = 0;
    
+   if( output_buf == NULL ) {
+      
+      EVP_CIPHER_CTX_cleanup( &ctx );
+      return -ENOMEM;
+   }
+   
    // decrypt everything
    rc = EVP_OpenUpdate( &ctx, output_buf, &output_buf_written, ciphertext, ciphertext_len );
    if( rc == 0 ) {
@@ -931,7 +1012,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
       md_openssl_error();
       
       EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
+      SG_safe_free( output_buf );
       return -1;
    }
       
@@ -944,7 +1025,9 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
       md_openssl_error();
       
       EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
+      
+      memset( output_buf, 0, ciphertext_len );
+      SG_safe_free( output_buf );
       return -1;
    }
    
@@ -972,23 +1055,38 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
 
 
 // helper function for md_encrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
+// return 0 on success 
+// return -EINVAL on failure to load either the public or private key 
+// return -errno on failure to encrypt 
+// return -errno on failure to initialize the crypto subsystem, if it had not been initialized already
 int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
+   
+   int rc = 0;
+   
    // safety for external clients
-   if( !md_crypt_check_init() )
-      md_crypt_init();
-      
+   if( !md_crypt_check_init() ) {
+      rc = md_crypt_init();
+      if( rc != 0 ) {
+         
+         SG_error("md_crypt_init rc = %d\n", rc );
+         return rc;
+      }
+   }
+   
    // load the keys
    EVP_PKEY* pkey = NULL;
    EVP_PKEY* pubkey = NULL;
    
-   int rc = md_load_pubkey( &pubkey, receiver_pubkey_pem );
+   rc = md_load_pubkey( &pubkey, receiver_pubkey_pem );
    if( rc != 0 ) {
+      
       SG_error("md_load_pubkey rc = %d\n", rc );
       return -EINVAL;
    }
    
    rc = md_load_privkey( &pkey, sender_pkey_pem );
    if( rc != 0 ) {
+      
       SG_error("md_load_privkey rc = %d\n", rc );
       
       EVP_PKEY_free( pubkey );
@@ -1004,23 +1102,36 @@ int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem
 
 
 // helper function for md_decrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
+// return 0 on success 
+// return -errno on failure to initialize the crypto subsystem, if it had not been initialized already
 int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
+   
+   int rc = 0;
+   
    // safety for external clients
-   if( !md_crypt_check_init() )
-      md_crypt_init();
-      
+   if( !md_crypt_check_init() ) {
+      rc = md_crypt_init();
+      if( rc != 0 ) {
+         
+         SG_error("md_crypt_init rc = %d\n", rc );
+         return rc;
+      }
+   }
+   
    // load the keys
    EVP_PKEY* pubkey = NULL;
    EVP_PKEY* privkey = NULL;
    
-   int rc = md_load_privkey( &privkey, receiver_privkey_pem );
+   rc = md_load_privkey( &privkey, receiver_privkey_pem );
    if( rc != 0 ) {
+      
       SG_error("md_load_privkey rc = %d\n", rc );
       return -EINVAL;
    }
    
    rc = md_load_pubkey( &pubkey, sender_pubkey_pem );
    if( rc != 0 ) {
+      
       SG_error("md_load_pubkey rc = %d\n", rc );
       
       EVP_PKEY_free( privkey );
@@ -1035,15 +1146,19 @@ int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_
 }
 
 // seal something with a password
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return non-zero on failure encrypt 
 int md_password_seal( char const* data, size_t data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
    // implementation: use scrypt
    size_t outbuf_len = data_len + 128;                  // +128 from scryptenc.h
    uint8_t* outbuf = SG_CALLOC( uint8_t, outbuf_len );
    
-   if( outbuf == NULL )
+   if( outbuf == NULL ) {
       return -ENOMEM;
+   }
    
-   int rc = scryptenc_buf( (uint8_t*)data, data_len, outbuf, (const uint8_t*)password, password_len, 1024000000, 0.0, 5.0 );  // five seconds; 100MB minimum
+   int rc = scryptenc_buf( (uint8_t*)data, data_len, outbuf, (const uint8_t*)password, password_len, MD_SCRYPT_MAX_MEM, 0.0, MD_SCRYPT_MAX_TIME );
    if( rc != 0 ) {
       SG_error("scryptenc_buf rc = %d\n", rc );
       
@@ -1058,6 +1173,9 @@ int md_password_seal( char const* data, size_t data_len, char const* password, s
 
 // unseal something with a password.
 // the returned buffer will be mlock'ed
+// return 0 on success 
+// return -errno on failure to allocate and mlock the buffer 
+// return non-zero on failure to decrypt 
 int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
    // implementation: use scrypt
    size_t outbuf_len = encrypted_data_len;
@@ -1069,7 +1187,7 @@ int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_dat
       return rc;
    }
    
-   rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, (uint8_t*)output_mlock_buf.ptr, &outbuf_len, (const uint8_t*)password, password_len, 1024000000, 0.0, 5000.0 );       // 5000 seconds, 100MB minimum
+   rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, (uint8_t*)output_mlock_buf.ptr, &outbuf_len, (const uint8_t*)password, password_len, MD_SCRYPT_MAX_MEM, 0.0, 1e10 );
    if( rc != 0 ) {
       SG_error("scryptdec_buf rc = %d\n", rc );
       
@@ -1086,11 +1204,17 @@ int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_dat
 
 // unseal something with a password.
 // the resulting buffer will NOT be mlock'ed
+// return 0 on success 
+// return -errno on failure to munlock the buffer 
+// return non-zero on failure to unseal 
 int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+   
    int rc = md_password_unseal( encrypted_data, encrypted_data_len, password, password_len, output, output_len );
    if( rc == 0 ) {
+      
       rc = munlock( output, *output_len );
       if( rc != 0 ) {
+         
          int errsv = errno;
          SG_error("munlock rc = %d\n", rc );
          return -errsv;
@@ -1100,17 +1224,21 @@ int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, c
 }
 
 // how big is the ciphertext buffer for md_encrypt_symmetric_ex?
+// return the size 
 size_t md_encrypt_symmetric_ex_ciphertext_len( size_t data_len ) {
    const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    return data_len + EVP_CIPHER_block_size( cipher );
 }
 
 // encrypt data using a symmetric key and an IV
+// return 0 on success
+// return -1 on OpenSSL initialization failure 
 int md_encrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len ) {
    
-   if( key_len != 32 )
+   if( key_len != 32 ) {
       // not 256-bit key 
       return -EINVAL;
+   }
    
    const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    int rc = 0;
@@ -1145,15 +1273,20 @@ int md_encrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned 
       c_buf = SG_CALLOC( unsigned char, md_encrypt_symmetric_ex_ciphertext_len( data_len ) );
    }
    
-   if( c_buf == NULL )
+   if( c_buf == NULL ) {
+      
+      EVP_CIPHER_CTX_cleanup( &e_ctx );
       return -ENOMEM;
+   }
    
    rc = EVP_EncryptUpdate( &e_ctx, c_buf, &c_buf_len, (unsigned char*)data, data_len );
    if( rc == 0 ) {
+      
       SG_error("EVP_EncryptUpdate rc = %d\n", rc );
       md_openssl_error();
    
-      free( c_buf );
+      memset( c_buf, 0, md_encrypt_symmetric_ex_ciphertext_len( data_len ) );
+      SG_safe_free( c_buf );
       EVP_CIPHER_CTX_cleanup( &e_ctx );
       return -1;
    }
@@ -1165,7 +1298,8 @@ int md_encrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned 
       SG_error("EVP_EncryptFinal_ex rc = %d\n", rc );
       md_openssl_error();
       
-      free( c_buf );
+      memset( c_buf, 0, md_encrypt_symmetric_ex_ciphertext_len( data_len ) );
+      SG_safe_free( c_buf );
       EVP_CIPHER_CTX_cleanup( &e_ctx );
       return -1;
    }
@@ -1192,10 +1326,16 @@ size_t md_decrypt_symmetric_ex_ciphertext_len( size_t ciphertext_len ) {
 }
 
 // decrypt data using a symmetric key and an IV
+// return 0 on success 
+// return -EINVAL for invalid key length 
+// return -1 on OpenSSL error 
+// return -ENOMEM on OOM 
 int md_decrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* ciphertext_data, size_t ciphertext_len, char** data, size_t* data_len ) {
-   if( key_len != 32 )
+   
+   if( key_len != 32 ) {
       // not a 256-bit key 
       return -EINVAL;
+   }
    
    const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    int rc = 0;
@@ -1231,15 +1371,18 @@ int md_decrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned 
       p_buf = SG_CALLOC( unsigned char, md_decrypt_symmetric_ex_ciphertext_len( ciphertext_len ) );
    }
    
-   if( p_buf == NULL )
+   if( p_buf == NULL ) {
+      
       return -ENOMEM;
+   }
    
    rc = EVP_DecryptUpdate( &d_ctx, p_buf, &p_buf_len, (unsigned char*)ciphertext_data, ciphertext_len );
    if( rc == 0 ) {
       SG_error("EVP_EncryptUpdate rc = %d\n", rc );
       md_openssl_error();
    
-      free( p_buf );
+      memset( p_buf, 0, md_decrypt_symmetric_ex_ciphertext_len( ciphertext_len ) );
+      SG_safe_free( p_buf );
       EVP_CIPHER_CTX_cleanup( &d_ctx );
       return -1;
    }
@@ -1251,7 +1394,8 @@ int md_decrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned 
       SG_error("EVP_EncryptFinal_ex rc = %d\n", rc );
       md_openssl_error();
       
-      free( p_buf );
+      memset( p_buf, 0, md_decrypt_symmetric_ex_ciphertext_len( ciphertext_len ) );
+      SG_safe_free( p_buf );
       EVP_CIPHER_CTX_cleanup( &d_ctx );
       return -1;
    }
@@ -1277,12 +1421,17 @@ size_t md_encrypt_symmetric_ciphertext_len( size_t data_len ) {
 }
 
 // encrypt data using a symmetric key.  Generate an IV and keep it with the ciphertext
+// return 0 on success 
+// return -EINVAL on invalid key length 
+// return -ENOMEM on OOM 
+// return non-zero on failure to encrypt
+// return -errno on failure to read random data
 int md_encrypt_symmetric( unsigned char const* key, size_t key_len, char* data, size_t data_len, char** ret_ciphertext, size_t* ret_ciphertext_len ) {
    
-   if( key_len != 32 )
+   if( key_len != 32 ) {
       // not a 256-bit key 
       return -EINVAL;
-   
+   }
    
    // initialization vector
    const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
@@ -1290,12 +1439,14 @@ int md_encrypt_symmetric( unsigned char const* key, size_t key_len, char* data, 
    unsigned char* iv = (unsigned char*)alloca( iv_len );
    
    if( iv == NULL ) {
+      
       return -ENOMEM;
    }
    
    // fill the iv with random data
    int rc = md_read_urandom( (char*)iv, iv_len );
    if( rc != 0 ) {
+      
       SG_error("md_read_urandom rc = %d\n", rc);
       return rc;
    }
@@ -1310,6 +1461,7 @@ int md_encrypt_symmetric( unsigned char const* key, size_t key_len, char* data, 
    rc = md_encrypt_symmetric_ex( key, key_len, iv, iv_len, data, data_len, &ciphertext, &ciphertext_len );
    
    if( rc != 0 ) {
+      
       SG_error("md_encrypt_symmetric_ex rc = %d\n", rc );
       return rc;
    }
@@ -1331,11 +1483,15 @@ size_t md_decrypt_symmetric_plaintext_len( size_t ciphertext_buffer_len ) {
 }
 
 // unseal data with a symmetric key.  the ciphertext buffer will have had to have been generated by md_encrypt_symmetric
+// return 0 on success 
+// return -EINVAL on invalid key length, or invalid buffer length 
+// return non-zero on failure to decrypt 
 int md_decrypt_symmetric( unsigned char const* key, size_t key_len, char* ciphertext_buffer, size_t ciphertext_buffer_len, char** data, size_t* data_len ) {
    
-   if( key_len != 32 )
+   if( key_len != 32 ) {
       // not a 256-bit key 
       return -EINVAL;
+   }
    
    // extract the initialization vector 
    const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
@@ -1343,9 +1499,10 @@ int md_decrypt_symmetric( unsigned char const* key, size_t key_len, char* cipher
    unsigned char* iv = (unsigned char*)ciphertext_buffer;
    
    // sanity check 
-   if( ciphertext_buffer_len <= iv_len )
+   if( ciphertext_buffer_len <= iv_len ) {
       // can't possibly be long enough
       return -EINVAL;
+   }
    
    // the actual ciphertext is at...
    char* ciphertext_data = ciphertext_buffer + iv_len;
