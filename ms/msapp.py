@@ -54,6 +54,7 @@ handlers = [
     (r'[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
     (r'[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
     (r'[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
+    (r'[/]+GATEWAYOWNER[/]+([^/]+)[/]*', MSGatewayOwnerRequestHandler),
     (r'[/]+API[/]+([^/]+)[/]*', MSJSONRPCHandler),
     (r'[/]+API[/]*', MSJSONRPCHandler),
     (r'[/]+PUBKEY[/]*', MSPubkeyHandler)
