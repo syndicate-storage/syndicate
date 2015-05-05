@@ -26,7 +26,7 @@ from MS.methods.response import *
 from MS.methods.file import *
 
 import protobufs.ms_pb2 as ms_pb2
-import protobufs.serialization_pb2 as serialization_pb2
+import protobufs.sg_pb2 as sg_pb2
 
 from storage import storage
 import storage.storagetypes as storagetypes
@@ -122,13 +122,19 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       
       # check version
       if volume_cert_version != volume.cert_version:
+         
+         # send gateway the link to the latest manifest
          hdr = "%s/CERT/%s/manifest.%s" % (MS_URL, volume_id_str, volume.cert_version)
+         
+         if include_cert_qs is not None:
+            hdr += "?include_cert=%s" % include_cert
+            
          self.response.headers['Location'] = hdr
          response_end( self, 302, "Location: %s" % hdr, "text/plain" )
          return
 
       # build the manifest
-      manifest = serialization_pb2.ManifestMsg()
+      manifest = sg_pb2.Manifest()
       
       volume.protobuf_gateway_cert_manifest( manifest, include_cert=include_cert )
       
@@ -169,16 +175,18 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
          return
          
       gateway = storage.read_gateway( gateway_name_or_id )
-      if gateway == None:
+      if gateway is None:
          logging.error("No such Gateway named %s" % (gateway_name_or_id))
          response_user_error( self, 404 )
          return
       
+      """
       for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
          if gateway_type_str == type_str and gateway.gateway_type != type_id:
             logging.error("No such %s named %s" % (gateway_type_str, gateway_name_or_id))
             response_user_error( self, 404 )
             return
+      """
       
       # request only the right version
       if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
@@ -222,18 +230,6 @@ class MSUserRequestHandler( webapp2.RequestHandler ):
       
       response_end( self, 200, user_cert_txt, "application/json" )
       return
-      
-   
-# ----------------------------------
-class MSPubkeyHandler( webapp2.RequestHandler ):
-   """
-   Serve the MS's public key
-   """
-   
-   def get( self ):
-      
-      response_end( self, 200, SYNDICATE_PUBKEY, "text/plain" )
-      return
    
    
 # ----------------------------------
@@ -262,11 +258,64 @@ class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
          response_end( self, 404, "No such user", "text/plain")
          
       user_cert_dict = user.makeCert()
-      user_cert_txt = json.dumps( user_cert_dict )
+      user_cert_txt = jsonrpc.json_stable_serialize( user_cert_dict )
+      
+      sig = api.sign_data( api.SYNDICATE_PRIVKEY, user_cert_txt );
+      jsonrpc.insert_syndicate_json( user_cert_dict, jsonrpc.VERSION, None, sig )
+      user_cert_txt = jsonrpc.json_stable_serialize( user_cert_dict )
+      
       response_end( self, 200, user_cert_txt, "application/json" )
       return
    
+
+# ----------------------------------
+class MSGatewayOwnerRequestHandler( webapp2.RequestHandler ):
+   """
+   Get the certificate of the user that owns a particular gateway.
+   GET returns a user certificate, as JSON, signed by the MS
+   """
+   
+   def get( self, gateway_id ):
+      # get the gateway
+      try:
+         gateway = storage.read_gateway( gateway_id )
+      except:
+         response_end( self, 404, "No such Gateway", "text/plain")
+         return
       
+      # get the owner
+      try:
+         user = storage.read_user( gateway.owner_id )
+      except:
+         response_end( self, 404, "No such user", "text/plain")
+         return 
+      
+      if user == None:
+         response_end( self, 404, "No such user", "text/plain")
+         
+      user_cert_dict = user.makeCert()
+      user_cert_txt = jsonrpc.json_stable_serialize( user_cert_dict )
+      
+      sig = api.sign_data( api.SYNDICATE_PRIVKEY, user_cert_txt );
+      jsonrpc.insert_syndicate_json( user_cert_dict, jsonrpc.VERSION, None, sig )
+      user_cert_txt = jsonrpc.json_stable_serialize( user_cert_dict )
+      
+      response_end( self, 200, user_cert_txt, "application/json" )
+      return
+
+
+# ----------------------------------
+class MSPubkeyHandler( webapp2.RequestHandler ):
+   """
+   Serve the MS's public key
+   """
+   
+   def get( self ):
+      
+      response_end( self, 200, SYNDICATE_PUBKEY, "text/plain" )
+      return
+   
+   
 # ----------------------------------
 class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
@@ -460,28 +509,20 @@ class MSFileHandler(webapp2.RequestHandler):
    # ensure that the posted data has all of the requisite optional fields
    # return (boolean validation check, failure status)
    post_validators = {
-      ms_pb2.ms_update.CREATE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA )) or 
-                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
-      
-      ms_pb2.ms_update.CREATE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
-      
-      ms_pb2.ms_update.UPDATE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_DATA )) or 
-                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
-      
-      ms_pb2.ms_update.UPDATE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
-      
-      ms_pb2.ms_update.DELETE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA )) or 
-                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
-      
-      ms_pb2.ms_update.DELETE_ASYNC:    lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),   # AG only
-      
+      ms_pb2.ms_update.CREATE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_METADATA), 403),
+      ms_pb2.ms_update.CREATE_ASYNC:    lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_METADATA), 403),
+      ms_pb2.ms_update.UPDATE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA ), 403),
+      ms_pb2.ms_update.UPDATE_ASYNC:    lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA ), 403),
+      ms_pb2.ms_update.DELETE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA ), 403),
+      ms_pb2.ms_update.DELETE_ASYNC:    lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA ), 403),
       ms_pb2.ms_update.CHCOORD:         lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
       ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
       ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value") and update.HasField("xattr_mode") and update.HasField("xattr_owner"), 400),
       ms_pb2.ms_update.REMOVEXATTR:     lambda gateway, update: (update.HasField("xattr_name"), 400),
       ms_pb2.ms_update.CHMODXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_mode"), 400),
       ms_pb2.ms_update.CHOWNXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_owner"), 400),
-      ms_pb2.ms_update.VACUUM:          lambda gateway, update: (True, 200)
+      ms_pb2.ms_update.VACUUM:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
+      ms_pb2.ms_update.VACUUMAPPEND:    lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403)
    }
    
    # Map update values onto handlers
@@ -498,7 +539,8 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.REMOVEXATTR:     lambda reply, gateway, volume, update: file_xattr_removexattr( reply, gateway, volume, update ),
       ms_pb2.ms_update.CHMODXATTR:      lambda reply, gateway, volume, update: file_xattr_chmodxattr( reply, gateway, volume, update ),
       ms_pb2.ms_update.CHOWNXATTR:      lambda reply, gateway, volume, update: file_xattr_chownxattr( reply, gateway, volume, update ),
-      ms_pb2.ms_update.VACUUM:          lambda reply, gateway, volume, update: file_vacuum_log_remove( reply, gateway, volume, update )
+      ms_pb2.ms_update.VACUUM:          lambda reply, gateway, volume, update: file_vacuum_log_remove( reply, gateway, volume, update ),
+      ms_pb2.ms_update.VACUUMAPPEND:    lambda reply, gateway, volume, update: file_vacuum_log_append( reply, gateway, volume, update )
    }
    
    
@@ -516,7 +558,8 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.REMOVEXATTR:     "X-Removexattr-Times",
       ms_pb2.ms_update.CHMODXATTR:      "X-Chmodxattr-Times",
       ms_pb2.ms_update.CHOWNXATTR:      "X-Chownxattr-Times",
-      ms_pb2.ms_update.VACUUM:          "X-Vacuum-Times"
+      ms_pb2.ms_update.VACUUM:          "X-Vacuum-Times",
+      ms_pb2.ms_update.VACUUMAPPEND:    "X-Vacuum-Append-Times",
    }
    
    @classmethod

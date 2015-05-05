@@ -872,7 +872,6 @@ class MSEntry( storagetypes.Object ):
 
    # publicly writable attributes, sharded or not
    write_attrs = [
-      "name",
       "version",
       "owner_id",
       "mode",
@@ -1189,11 +1188,14 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def check_call_attrs( cls, ent_attrs ):
+   def check_call_attrs( cls, ent_attrs, safe_to_ignore=[], extra_required=[] ):
 
       # verify that we have the appropriate attributes
       needed = []
-      for key_attr in cls.call_attrs:
+      for key_attr in cls.call_attrs + extra_required:
+         if key_attr in safe_to_ignore:
+            continue 
+         
          if key_attr not in ent_attrs.keys():
             needed.append( key_attr )
 
@@ -1743,31 +1745,27 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def Update( cls, user_owner_id, volume, log_affected_blocks, affected_blocks, **ent_attrs ):
+   def Update( cls, user_owner_id, volume, gateway, **ent_attrs ):
 
-      rc = MSEntry.check_call_attrs( ent_attrs )
+      # it's okay if we aren't given the parent_id or parent_name here...
+      rc = MSEntry.check_call_attrs( ent_attrs, safe_to_ignore=['parent_id', 'parent_name'] )
       if rc != 0:
          return (rc, None)
       
+      
       # Update an MSEntry.
-      # A file will be updated by at most one UG or AG, so we don't need a transaction.
+      # A file will be updated by at most one UG or AG, so we don't need a transaction.  File updates must only come from the designated coordinator.
       # A directory can be updated by anyone, but the update conflict resolution is last-write-wins.
-
+      
       write_attrs = {}
       write_attrs.update( ent_attrs )
       
       volume_id = volume.volume_id
       file_id = ent_attrs['file_id']
-      ent_name = ent_attrs['name']
       
       not_writable = MSEntry.validate_write( write_attrs.keys() )
       for nw in not_writable:
          del write_attrs[nw]
-      
-      # NOTE: root cannot be renamed 
-      if file_id == "0000000000000000" and ent_name != '/':
-         log.error("Tried to rename root to %s" % ent_name)
-         return (-errno.EINVAL, None)
 
       # get the ent
       # try from cache first
@@ -1782,6 +1780,11 @@ class MSEntry( storagetypes.Object ):
       if ent == None or ent.deleted:
          return (-errno.ENOENT, None)
 
+      # a file's coordinator must match the gateway
+      if ent.ftype == MSENTRY_TYPE_FILE and ent.coordinator_id != gateway.g_id:
+         # not the coordinator--refresh
+         return (-errno.EAGAIN, None)
+      
       # does this user have permission to write?
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
          return (-errno.EACCES, None)
@@ -1794,13 +1797,12 @@ class MSEntry( storagetypes.Object ):
       if ent_attrs['owner_id'] != ent.owner_id and user_owner_id != ent.owner_id:
          return (-errno.EACCES, None)
       
+      # if we're going to change the size, then we must include a new version 
+      if ent_attrs['size'] != ent.size and not ent_attrs.has_key('version'):
+         return (-errno.EINVAL, None)
+      
       # write the update 
       ent_fut = MSEntry.__write_msentry( ent, volume.num_shards, async=True, **write_attrs )
-      
-      # write the manifest timestamp to the Manifest log, if this is a file and this write came from a UG
-      if ent.ftype == MSENTRY_TYPE_FILE and log_affected_blocks:
-         
-         storagetypes.deferred.defer( MSEntryVacuumLog.Insert, volume_id, file_id, ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'], affected_blocks )
       
       storagetypes.wait_futures( [ent_fut] )
       
@@ -1816,7 +1818,8 @@ class MSEntry( storagetypes.Object ):
       Performs a transaction--either the chcoord happens, or the caller learns the current coordinator.
       """
       
-      rc = MSEntry.check_call_attrs( attrs )
+      # it's okay if we don't include the parent_id and parent_name, but we do need a new version
+      rc = MSEntry.check_call_attrs( attrs, safe_to_ignore=['parent_id', 'parent_name'], extra_required=['version'] )
       if rc != 0:
          return (rc, None)
       
@@ -1835,6 +1838,7 @@ class MSEntry( storagetypes.Object ):
       for nw in not_writable:
          del write_attrs[nw]
       
+      write_attrs['coordinator_id'] = gateway.g_id
 
       def chcoord_txn( file_id, current_coordinator_id, volume, gateway, **attrs ):
          volume_id = volume.volume_id
@@ -1852,7 +1856,7 @@ class MSEntry( storagetypes.Object ):
          
          # only allow the change if the requesting gateway knows the current coordinator.
          if current_coordinator_id != ent.coordinator_id:
-            return (ent.coordinator_id, ent)
+            return (0, ent)
          
          # otherwise, allow the change
          ent.coordinator_id = gateway.g_id
@@ -1901,9 +1905,49 @@ class MSEntry( storagetypes.Object ):
       storagetypes.concurrent_return( 0 )
      
      
+   @classmethod 
+   def __read_msentry_and_parent( cls, volume_id, file_id, num_shards, use_memcache=True ):
+      """
+      Read both an entry and its parent.
+      Check memcache if use_memcache is True
+      Return (entry, parent), where either/or can be None
+      """
+      
+      ent = None
+      parent = None 
+      
+      if use_memcache:
+         cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
+         ent = storagetypes.memcache.get( cache_ent_key )
+      
+      if ent is None:
+         
+         ent_fut = MSEntry.__read_msentry( volume_id, file_id, num_shards, use_memcache=False )
+         storagetypes.wait_futures( [ent_fut] )
+         
+         ent = ent_fut.get_result()
+         
+         if ent is None:
+            
+            return (None, None)
+         
+      if use_memcache:
+         cache_parent_key = MSEntry.cache_key_name( volume_id, ent.parent_id )
+         parent = storagetypes.memcache.get( cache_parent_key )
+      
+      if parent is None:
+         
+         parent_fut = yield MSEntry.__read_msentry( volume_id, ent.parent_id, num_shards, use_memcache=False )
+         storagetypes.wait_futures( [parent_fut] )
+         
+         parent = parent_fut.get_result()
+
+      return (ent, parent)
+      
+      
       
    @classmethod
-   def Rename( cls, user_owner_id, volume, src_attrs, dest_attrs ):
+   def Rename( cls, user_owner_id, gateway, volume, src_attrs, dest_attrs ):
       """
       Rename an MSEntry.
       src_attrs describes the file/directory to be renamed (src)
@@ -1947,7 +1991,7 @@ class MSEntry( storagetypes.Object ):
       ents_to_get = [src_file_id, src_parent_id, dest_parent_id]
       if dest_file_id != 0:
          ents_to_get.append( dest_file_id )
-      
+         
       # get all entries
       for fid in ents_to_get:
          cache_ent_key = MSEntry.cache_key_name( volume_id, fid )
@@ -1960,6 +2004,11 @@ class MSEntry( storagetypes.Object ):
          else:
             ents[fid] = ent
       
+      
+      if dest_file_id_int == 0:
+         # not known or not given; just look it up 
+         dest = cls.ReadByParent( volume, dest_parent_id, dest_name )
+      
       if len(futs) > 0:
          storagetypes.wait_futures( futs )
          
@@ -1970,16 +2019,37 @@ class MSEntry( storagetypes.Object ):
                
       src = ents.get( src_file_id, None )
       src_parent = ents.get( src_parent_id, None )
-      dest = ents.get( dest_file_id, None )
+      
+      if dest_file_id_int != 0:
+         # will have loaded dest via ents_to_get
+         dest = ents.get( dest_file_id, None )
+         
       dest_parent = ents.get( dest_parent_id, None )
       
-      if dest_file_id_int == 0:
-         # just in case any of the others are 0
-         dest = None
-      
       # does src exist?
-      if src == None:
+      if src is None:
          return -errno.ENOENT
+      
+      # file rename request originated from src's?
+      if src.ftype == MSENTRY_TYPE_FILE and src.coordinator_id != gateway.g_id and :
+         # not the coordinator--refresh
+         return -errno.EAGAIN
+      
+      # does dest parent exist?
+      if dest_parent is None:
+         return -errno.ENOENT
+      
+      # does src parent exist?
+      if src_parent is None:
+         return -errno.ENOENT 
+      
+      # src parent matches src?
+      if src.file_id != src_parent_id:
+         return -errno.EINVAL
+      
+      # dest parent matches dest, if dest exists?
+      if dest is not None and dest.parent_id != dest_parent.file_id:
+         return -errno.EINVAL 
       
       # src read permssion check
       if not is_readable( user_owner_id, volume.owner_id, src.owner_id, src.mode ):
@@ -2013,7 +2083,7 @@ class MSEntry( storagetypes.Object ):
       src_verify_absent = None
       
       # if dest exists, proceed to delete it.
-      if dest != None:
+      if dest is not None:
          dest_delete_fut = MSEntry.__delete_begin_async( volume, dest )
       
       # while we're at it, make sure we're not moving src to a subdirectory of itself
@@ -2035,12 +2105,13 @@ class MSEntry( storagetypes.Object ):
       
       if dest_empty_rc != 0:
          # dest is not empty, but we were about to rename over it
+         if dest is not None:
          MSEntry.__delete_undo( dest )
          return dest_empty_rc
       
       if src_absent_rc != 0:
          # src is its own parent
-         if dest != None:
+         if dest is not None:
             MSEntry.__delete_undo( dest )
          
          return src_absent_rc
@@ -2098,7 +2169,7 @@ class MSEntry( storagetypes.Object ):
       ent_cache_key_name = MSEntry.cache_key_name( ent.volume_id, ent.file_id )
       ent_key_name = MSEntry.make_key_name( ent.volume_id, ent.file_id )
       
-      # mark as deleted.  Creates will fail from now on
+      # mark as deleted.  If this is a directory, creates will fail from now on
       ent.deleted = True
       yield ent.put_async()
       
@@ -2127,6 +2198,7 @@ class MSEntry( storagetypes.Object ):
                
       # otherwise, ent is a file.  Make sure there are no outstanding writes that need to be vacuumed 
       else:
+         
          # log check---there must be no outstanding writes 
          vacuum_log_head_list = yield MSEntryVacuumLog.Peek( ent.volume_id, ent.file_id, async=True )
          
@@ -2230,46 +2302,19 @@ class MSEntry( storagetypes.Object ):
       return 0
 
    @classmethod
-   def Delete( cls, user_owner_id, volume, **ent_attrs ):
+   def Delete( cls, user_owner_id, volume, gateway, **ent_attrs ):
       
       # delete an MSEntry.
       # A file will be deleted by at most one UG
       # A directy can be deleted by anyone, and it must be empty
+      # only ent_attrs['file_id', 'volume_id', and 'name'] need to be given.
 
       volume_id = volume.volume_id
+      
       file_id = ent_attrs['file_id']
-      parent_id = ent_attrs['parent_id']
-      futs = []
       
-      # get ent, parent_ent from the cache
-      ent_cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
-      parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
-
-      ret = storagetypes.memcache.get_multi( [ent_cache_key_name, parent_cache_key_name] )
-
-      ent = ret.get( ent_cache_key_name, None )
-      parent_ent = ret.get( parent_cache_key_name, None )
-
-      # if ent is not cached, then read from the datastore
-      if ent == None:
-         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
-         futs.append( ent_fut )
-
-      # if parent_ent is not cached, then read from the datastore
-      if parent_ent is None:
-         parent_ent_fut = MSEntry.__read_msentry( volume_id, parent_id, volume.num_shards, use_memcache=False )
-         futs.append( parent_ent_fut )
+      ent, parent_ent = MSEntry.__read_msentry_and_parent( volume_id, file_id, volume.num_shards )
       
-      # wait for the datastore to get back to us...
-      if len(futs) != 0:
-         storagetypes.wait_futures( futs )
-
-      if ent is None:
-         ent = ent_fut.get_result()
-
-      if parent_ent is None:
-         parent_ent = parent_ent_fut.get_result()
-
       # sanity check
       if ent is None or parent_ent is None:
          return -errno.ENOENT
@@ -2281,6 +2326,10 @@ class MSEntry( storagetypes.Object ):
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
          return -errno.EACCES
 
+      # coordinator check for files 
+      if ent.ftype == MSENTRY_TYPE_FILE and ent.coordinator_id != gateway.g_id:
+         return -errno.EAGAIN 
+      
       # sanity check
       if parent_ent.ftype != MSENTRY_TYPE_DIR:
          return -errno.ENOTDIR

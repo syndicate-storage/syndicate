@@ -255,9 +255,12 @@ def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=T
 
    # make sure this gateway is allowed to access this Volume
    if volume.need_gateway_auth():
+      
       if gateway is not None:
+         
          valid_gateway = volume.is_gateway_in_volume( gateway )
          if not valid_gateway:
+            
             # gateway does not belong to this Volume
             logging.error("Not in this Volume")
             response_user_error( request_handler, 403 )

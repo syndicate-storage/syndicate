@@ -451,7 +451,7 @@ def file_update( reply, gateway, volume, update, async=False ):
       
       logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
       
-      rc, ent = MSEntry.Update( gateway.owner_id, volume, log_affected_blocks, affected_blocks, **attrs )
+      rc, ent = MSEntry.Update( gateway.owner_id, volume, gateway, log_affected_blocks, affected_blocks, **attrs )
       
       logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
       
@@ -520,7 +520,7 @@ def file_delete( reply, gateway, volume, update, async=False ):
    
       logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
    
-      rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
+      rc = MSEntry.Delete( gateway.owner_id, volume, gateway, **attrs )
    
       logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
       
@@ -568,7 +568,7 @@ def file_rename( reply, gateway, volume, update ):
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s)" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id']) )
    
-   rc = MSEntry.Rename( gateway.owner_id, volume, src_attrs, dest_attrs )
+   rc = MSEntry.Rename( gateway.owner_id, gateway, volume, src_attrs, dest_attrs )
    
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s) rc = %s" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id'], rc) )
@@ -927,7 +927,7 @@ def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False )
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode))
+                (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode))
       
    file_id = attrs['file_id']
    rc = 0
@@ -955,7 +955,7 @@ def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False )
          rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace, mode=xattr_mode, owner=gateway_owner_id, caller_is_admin=caller_is_admin )
       
    logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o) rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode, rc) )
+                (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode, rc) )
          
    return rc
 
@@ -1084,7 +1084,7 @@ def file_vacuum_log_check_access( gateway, msent ):
    """
    Verify that the gateway is allowed to manipulate the MSEntry's manifest log.
    """
-   return msent.coordinator_id == gateway.g_id
+   return msent.coordinator_id == gateway.g_id and gateway.check_caps( GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_WRITE_DATA )
 
 
 # ----------------------------------
@@ -1125,8 +1125,9 @@ def file_vacuum_log_peek( gateway, volume, file_id, caller_is_admin=False ):
       
    else:
       
-      # security check
+      # security check--the caller must either be an admin, or the file's coordinator
       if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+         
          logging.error("Gateway %s is not allowed to access the vacuum log of %s" % (gateway.name, file_id))
          rc = -errno.EACCES
       
@@ -1192,5 +1193,55 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
             rc = MSEntryVacuumLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
    
       logging.info("vacuum log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
+   
+   return rc
+
+
+# ----------------------------------
+def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=False ):
+   """
+   Append a vacuum record to a file.  Only a coordinator can do this
+   """
+   
+
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   rc = 0
+   
+   required_attrs =  ['volume_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   
+   attrs = file_update_get_attrs( attrs, required_attrs )
+   
+   if attrs is None:
+      logging.error("vacuum log remove: Missing one of %s" % required_attrs )
+      rc = -errno.EINVAL
+   
+   else:
+      
+      affected_blocks = update.affected_blocks[:]
+      if affected_blocks is not None and len(affected_blocks) > 0:
+      
+         logging.info("vacuume log append /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
+         
+         # entry must exist 
+         msent = MSEntry.Read( volume, attrs['file_id'] )
+         if msent is None:
+            
+            logging.error( "No entry for %s" % attrs['file_id'] )
+            rc = -errno.ENOENT 
+         
+         else:
+            
+            # security check 
+            if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+               logging.error("Gateway %s is not allowed to access vacuum log of %s" % (gateway.name, attrs['file_id']))
+               rc = -errno.EACCES
+            
+            else:
+               
+               # append!
+               storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], ent_attrs['file_id'], ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'], affected_blocks )
+               rc = 0
+
+         logging.info("vacuume log append /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ), rc )
    
    return rc

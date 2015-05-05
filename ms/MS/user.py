@@ -103,6 +103,7 @@ class SyndicateUser( storagetypes.Object ):
    
    signing_public_key = storagetypes.Text()     # PEM-encoded public key for authenticating this user, or USER_KEY_UNSET if it is not set, or USER_KEY_UNUSED if it will not be used
    signing_public_key_expiration = storagetypes.Integer( default=-1 )           # seconds since the epoch
+   encrypted_signing_private_key = storagetypes.Text()  # encrypted PEM-encoded private key for signing gateway and volume certs.  Set to USER_KEY_UNSET of not yet set and USER_KEY_UNUSED if unused.
    
    active = storagetypes.Boolean(default=False)         # is this account active?
    allow_password_auth = storagetypes.Boolean(default=True)    # allow password-based authentication? 
