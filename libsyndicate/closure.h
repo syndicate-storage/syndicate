@@ -22,7 +22,7 @@
 #include <dlfcn.h>
 #include "libjson-compat.h"
 
-#define MD_CLOSURE_TMPFILE_NAME "closure-XXXXXX"
+#define MD_CLOSURE_TMPFILE_NAME ".syndicate-closure-XXXXXX"
 
 // closure callback table...
 struct md_closure_callback_entry {
@@ -52,7 +52,6 @@ struct md_closure {
    
    struct md_closure_callback_entry* callbacks;
    
-   bool gateway_specific;       // if true, then this closure is specific to a Gateway (and can have secrets)
    bool ignore_stubs;           // if true, then we will reload a closure even if it doesn't have some methods we need
    bool on_disk;                // if true, then this closure was loaded from an already-existing file on disk.  Don't unlink it.
 };
@@ -75,7 +74,7 @@ int md_closure_init( struct md_closure* closure,
                      EVP_PKEY* pubkey, EVP_PKEY* privkey,
                      struct md_closure_callback_entry* prototype,
                      char const* closure_text, size_t closure_text_len,
-                     bool gateway_specific, bool ignore_stubs );
+                     bool ignore_stubs );
 
 int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* driver_prototype, bool ignore_stubs );
 int md_closure_reload( struct md_closure* closure, struct md_syndicate_conf* conf, EVP_PKEY* pubkey, EVP_PKEY* privkey, char const* closure_text, size_t closure_text_len );
