@@ -46,6 +46,9 @@
 #define MD_CACHE_DEFAULT_SOFT_LIMIT        50000000        // 50 MB
 #define MD_CACHE_DEFAULT_HARD_LIMIT       100000000        // 100 MB
 
+#define SG_CACHE_FLAG_DETACHED          0x1             // caller won't wait for a future to finish (so the cache should reap it)
+#define SG_CACHE_FLAG_UNSHARED          0x2             // cache can free the block data when it frees the block future--it's unshared from the caller
+
 using namespace std;
 
 // prototypes 
@@ -75,23 +78,34 @@ struct md_cache_entry_key_comp {
 
 // ongoing cache write for a file
 struct md_cache_block_future {
+   
+   // ID of this chunk
    struct md_cache_entry_key key;
    
+   // chunk of data to write
    char* block_data;
    size_t data_len;
    
+   // fd to receive writes
    int block_fd;
    
+   // asynchronous disk I/O structures
    struct aiocb aio;
    int aio_rc;
    int write_rc;
    
    sem_t sem_ongoing;
-   bool detached;       // if true, reap this future once the write finishes
+   uint64_t flags;      // cache future flags (detached, unshared, etc.)
    
    bool finalized;
 };
 
+
+// helpers to get at cache block future info 
+#define md_cache_block_future_file_id( fut ) (fut).key.file_id
+#define md_cache_block_future_file_version( fut ) (fut).key.file_version
+#define md_cache_block_future_block_id( fut ) (fut).key.block_id
+#define md_cache_block_future_block_version( fut ) (fut).key.block_version
 
 typedef list<struct md_cache_block_future*> md_cache_block_buffer_t;
 typedef md_cache_block_buffer_t md_cache_completion_buffer_t;
@@ -99,6 +113,7 @@ typedef set<struct md_cache_block_future*> md_cache_ongoing_writes_t;
 typedef list<struct md_cache_entry_key> md_cache_lru_t;
 
 struct md_syndicate_cache {
+   
    // size limits (in blocks, not bytes!)
    size_t hard_max_size;
    size_t soft_max_size;
@@ -172,7 +187,7 @@ struct md_syndicate_cache_aio_write_args {
 
 extern "C" {
 
-int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* conf, size_t soft_max_size, size_t hard_max_size );
+int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* conf, size_t soft_max_blocks, size_t hard_max_blocks );
 int md_cache_start( struct md_syndicate_cache* cache );
 int md_cache_stop( struct md_syndicate_cache* cache );
 int md_cache_destroy( struct md_syndicate_cache* cache );
@@ -181,12 +196,13 @@ int md_cache_destroy( struct md_syndicate_cache* cache );
 struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_cache* cache,
                                                           uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
                                                           char* data, size_t data_len,
-                                                          bool detached, int* rc );
+                                                          uint64_t flags, int* rc );
 
 int md_cache_block_future_wait( struct md_cache_block_future* f );
 int md_cache_block_future_free( struct md_cache_block_future* f );
 int md_cache_block_future_release_fd( struct md_cache_block_future* f );
 char* md_cache_block_future_release_data( struct md_cache_block_future* f );
+int md_cache_block_future_unshare_data( struct md_cache_block_future* f );
 
 // flushes
 int md_cache_flush_write( struct md_cache_block_future* f );
@@ -223,9 +239,6 @@ int md_cache_block_future_get_fd( struct md_cache_block_future* f );
 
 // memory management 
 int md_cache_block_future_free_all( vector<struct md_cache_block_future*>* futs, bool close_fds );
-
-// misc
-int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs, void (*func)( struct md_cache_block_future*, void* ), void* func_cls );
 
 }
 

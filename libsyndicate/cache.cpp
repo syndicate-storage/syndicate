@@ -201,7 +201,12 @@ int md_cache_block_future_clean( struct md_cache_block_future* f ) {
       f->block_fd = -1;
    }
    
-   SG_safe_free( f->block_data );
+   if( (f->flags & SG_CACHE_FLAG_UNSHARED) != 0 ) {
+      
+      // we own this data
+      SG_safe_free( f->block_data );
+   }
+   
    SG_safe_free( f->aio.aio_sigevent.sigev_value.sival_ptr );
    
    memset( &f->aio, 0, sizeof(f->aio) );
@@ -223,7 +228,7 @@ int md_cache_block_future_free( struct md_cache_block_future* f ) {
 
 // apply a function over a list of futures 
 // always succeeds
-int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs, void (*func)( struct md_cache_block_future*, void* ), void* func_cls ) {
+static int md_cache_block_future_apply_all( vector<struct md_cache_block_future*>* futs, void (*func)( struct md_cache_block_future*, void* ), void* func_cls ) {
    
    for( vector<struct md_cache_block_future*>::iterator itr = futs->begin(); itr != futs->end(); itr++ ) {
       
@@ -979,7 +984,7 @@ int md_cache_destroy( struct md_syndicate_cache* cache ) {
 int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cache_block_future* f,
                                 uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd,
                                 char* data, size_t data_len,
-                                bool detached ) {
+                                uint64_t flags ) {
    
    // set up completion args
    struct md_syndicate_cache_aio_write_args* wargs = SG_CALLOC( struct md_syndicate_cache_aio_write_args, 1 );
@@ -997,7 +1002,7 @@ int md_cache_block_future_init( struct md_syndicate_cache* cache, struct md_cach
    f->block_fd = block_fd;
    f->block_data = data;
    f->data_len = data_len;
-   f->detached = detached;
+   f->flags = flags;
    
    // fill in aio structure
    f->aio.aio_fildes = block_fd;
@@ -1100,7 +1105,7 @@ void md_cache_aio_write_completion( sigval_t sigval ) {
          write_rc = -errno;
       }
       else {
-         // rewind file handle, so other subsystems (i.e. replication) can access it 
+         // rewind file handle, so other clients can access it
          lseek( future->block_fd, 0, SEEK_SET );
       }
    }
@@ -1226,7 +1231,7 @@ void md_cache_complete_writes( struct md_syndicate_cache* cache, md_cache_lru_t*
       // finalized!
       f->finalized = true;
       
-      bool detached = f->detached;
+      bool detached = ((f->flags & SG_CACHE_FLAG_DETACHED) != 0);
       
       // wake up anyone waiting on this
       sem_post( &f->sem_ongoing );
@@ -1494,7 +1499,7 @@ void* md_cache_main_loop( void* arg ) {
 struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_cache* cache,
                                                           uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
                                                           char* data, size_t data_len,
-                                                          bool detached, int* _rc ) {
+                                                          uint64_t flags, int* _rc ) {
    
    *_rc = 0;
    
@@ -1524,7 +1529,7 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
       return NULL;
    }
    
-   md_cache_block_future_init( cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len, detached );
+   md_cache_block_future_init( cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len, flags );
    
    md_cache_pending_wlock( cache );
    
@@ -1618,8 +1623,25 @@ int md_cache_block_future_release_fd( struct md_cache_block_future* f ) {
 // the caller must free it
 char* md_cache_block_future_release_data( struct md_cache_block_future* f ) {
    char* ret = f->block_data;
+   
+   // data is no longer detached
+   f->flags &= ~(SG_CACHE_FLAG_DETACHED);
    f->block_data = NULL;
    return ret;
+}
+
+// unshare data from a cache future 
+// the cache future will free it, so the caller had better not 
+// return 0 on success
+// return -EINVAL if the future is finalized
+int md_cache_block_future_unshare_data( struct md_cache_block_future* f ) {
+   
+   if( f->finalized ) {
+      return -EINVAL;
+   }
+   
+   f->flags |= SG_CACHE_FLAG_UNSHARED;
+   return 0;
 }
 
 // promote a cached block, so it doesn't get evicted
