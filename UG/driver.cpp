@@ -34,6 +34,7 @@ MD_CLOSURE_PROTOTYPE_END
 // initialize the closure
 // if this fails due to there being no closure on file, a dummy closure will be used instead
 int driver_init( struct fs_core* core, struct md_closure** _ret ) {
+   
    // get the closure text 
    char* closure_text = NULL;
    uint64_t closure_text_len = 0;
@@ -65,23 +66,28 @@ int driver_init( struct fs_core* core, struct md_closure** _ret ) {
       }
    }
    
-   rc = md_closure_init( closure, core->conf, core->ms->gateway_pubkey, core->ms->gateway_key, UG_CLOSURE_PROTOTYPE, closure_text, closure_text_len, true, true );
+   rc = md_closure_init( closure, core->conf, core->ms->gateway_pubkey, core->ms->gateway_key, UG_CLOSURE_PROTOTYPE, closure_text, closure_text_len );
    
-   free( closure_text );
+   SG_safe_free( closure_text );
    
    if( rc != 0 ) {
+      
       if( rc != -ENOENT ) {
-         free( closure );
+         
+         SG_safe_free( closure );
          closure = NULL;
          return rc;
       }
       else {
+         
          // dummy closure, since none is given
          *_ret = closure;
          return 0;
       }
    }
    else {
+      
+      // success!
       *_ret = closure;
       return 0;
    }

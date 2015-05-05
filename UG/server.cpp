@@ -18,19 +18,16 @@
 #include "write.h"
 
 // connection initialization handler for embedded HTTP server
-void* SG_server_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
+int SG_server_HTTP_connect( struct md_HTTP_connection_data* md_con_data, void** cls ) {
    struct syndicate_connection* syncon = SG_CALLOC( struct syndicate_connection, 1 );
    syncon->state = syndicate_get_state();
-   return syncon;
-}
-
-// HTTP authentication callback (does nothing, since we verify the message signature)
-uint64_t SG_server_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+   
+   *cls = syncon;
    return 0;
 }
 
 // process the beginning of a HEAD or POST
-static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp, struct md_gateway_request_data* reqdat, struct stat* sb ) {
+static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp, struct SG_request_data* reqdat, struct stat* sb ) {
 
    char* url = md_con_data->url_path;
    struct md_HTTP* http = md_con_data->http;
@@ -51,7 +48,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    if( rc <= 0 ) {
       // handled!
       SG_debug("http_handle_redirect(%s) rc = %d\n", url, rc );
-      md_gateway_request_data_free( reqdat );
+      SG_request_data_free( reqdat );
       return 0;
    }
 
@@ -59,8 +56,8 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
       // requested object is not here.
       // will not redirect; that can lead to loops.
       SG_error("ERR: Requested object %s is not local.  Will not redirect to avoid loops.\n", reqdat->fs_path );
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      md_gateway_request_data_free( reqdat );
+      md_HTTP_create_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      SG_request_data_free( reqdat );
       return 0;
    }
 
@@ -68,16 +65,16 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    if( !(sb->st_mode & 0044) ) {
       // not volume-readable or world readable
       SG_error("ERR: Object %s is not volume-readable or world-readable (mode %o)\n", reqdat->fs_path, sb->st_mode );
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      md_gateway_request_data_free( reqdat );
+      md_HTTP_create_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      SG_request_data_free( reqdat );
       return 0;
    }
 
    // if this is a request for a directory, then bail
    if( S_ISDIR( sb->st_mode ) ) {
       SG_error("ERR: Object %s is a directory\n", reqdat->fs_path );
-      md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
-      md_gateway_request_data_free( reqdat );
+      md_HTTP_create_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
+      SG_request_data_free( reqdat );
       return 0;
    }
 
@@ -87,11 +84,9 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
 
 
 // HTTP HEAD handler
-struct md_HTTP_response* SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
+int SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp ) {
 
-   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
-
-   struct md_gateway_request_data reqdat;
+   struct SG_request_data reqdat;
    struct stat sb;
    
    int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
@@ -101,31 +96,29 @@ struct md_HTTP_response* SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_
    }
 
    // this object is local and is a file
-   md_create_HTTP_response_ram_static( resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
+   md_HTTP_create_response_ram_static( resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
    http_make_default_headers( resp, sb.st_mtime, sb.st_size, true );
 
-   md_gateway_request_data_free( &reqdat );
+   SG_request_data_free( &reqdat );
    
-   return resp;
+   return 0;
 }
 
 
 // HTTP GET handler
-struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
+int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
 
-   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
-
    // parse the url_path into its constituent components
-   struct md_gateway_request_data reqdat;
+   struct SG_request_data reqdat;
    struct stat sb;
 
    int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
    if( rc == 0 ) {
       // handled already
-      return resp;
+      return 0;
    }
 
    // not handled
@@ -137,29 +130,31 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
       
       ssize_t size = fs_entry_read_block_local( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
       if( size < 0 ) {
+         
          SG_error( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
          
          if( size == -EREMOTE ) {
             // data is not local
-            md_create_HTTP_response_ram( resp, "text/plain", 410, "Block is not local\n", strlen("Block is not local\n") );
+            md_HTTP_create_response_ram( resp, "text/plain", 410, "Block is not local\n", strlen("Block is not local\n") );
          }
          else {
-            md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
+            md_HTTP_create_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
          }
 
-         md_gateway_request_data_free( &reqdat );
+         SG_request_data_free( &reqdat );
          free( block );
-         return resp;
+         
+         return -ENODATA;
       }
       else {
          SG_debug( "served %zd bytes from %s.%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
       }
       
-      md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
+      md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
       http_make_default_headers( resp, sb.st_mtime, size, true );
 
-      md_gateway_request_data_free( &reqdat );
-      return resp;
+      SG_request_data_free( &reqdat );
+      return 0;
    }
 
    // request for a file or file manifest?
@@ -171,7 +166,7 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
          ssize_t manifest_txt_len = fs_entry_serialize_manifest( state->core, reqdat.fs_path, &manifest_txt, true );
          
          if( manifest_txt_len > 0 ) {
-            md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_txt, manifest_txt_len );
+            md_HTTP_create_response_ram_nocopy( resp, "text/plain", 200, manifest_txt, manifest_txt_len );
             http_make_default_headers( resp, sb.st_mtime, manifest_txt_len, true );
 
             SG_debug( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_txt_len );
@@ -193,32 +188,34 @@ struct md_HTTP_response* SG_server_HTTP_GET_handler( struct md_HTTP_connection_d
                char buf[100];
                snprintf(buf, 100, "md_serialize rc = %d\n", rc );
                http_io_error_resp( resp, 500, buf );
+               
+               rc = -ENODATA;
             }
             else {
-               md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_bits, manifest_len );
+               md_HTTP_create_response_ram_nocopy( resp, "text/plain", 200, manifest_bits, manifest_len );
                http_make_default_headers( resp, sb.st_mtime, manifest_len, true );
 
                SG_debug( "served error manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_len );
             }
          }
 
-         md_gateway_request_data_free( &reqdat );
+         SG_request_data_free( &reqdat );
          
-         return resp;
+         return rc;
       }
       else {
 
          // TODO: request for a file
          // redirect to its manifest for now
-         md_create_HTTP_response_ram_static( resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
-         md_gateway_request_data_free( &reqdat );
+         md_HTTP_create_response_ram_static( resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
+         SG_request_data_free( &reqdat );
 
-         return resp;
+         return -ENODATA;
       }
    }
 
    // unreachable
-   return NULL;
+   return 0;
 }
 
 
@@ -310,20 +307,17 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
 
 
 // make an HTTP response from a protobuf ack
-void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serialization::WriteMsg* ack ) {
+void syndicate_make_msg_ack( struct syndicate_connection* syncon, struct md_HTTP_response* resp, Serialization::WriteMsg* ack ) {
    string ack_str;
    char const* ack_txt = NULL;
    size_t ack_txt_len = 0;
 
-   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state *state = syncon->state;
    struct ms_client* client = state->ms;
 
    ack->set_signature( string("") );
 
    ack->SerializeToString( &ack_str );
-
-   md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
 
    // sign this message
    ack_txt = ack_str.data();
@@ -335,7 +329,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
    int rc = md_sign_message( client->gateway_key, ack_txt, ack_txt_len, &sigb64, &sigb64_len );
    if( rc != 0 ) {
       SG_error("md_sign_message rc = %d\n", rc );
-      md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+      md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
       return;
    }
 
@@ -347,7 +341,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
    ack_txt_len = ack_str.size();
 
    SG_debug( "ack message of length %zu\n", ack_txt_len );
-   md_create_HTTP_response_ram( md_con_data->resp, "application/octet-stream", 200, ack_txt, ack_txt_len );
+   md_HTTP_create_response_ram( resp, "application/octet-stream", 200, ack_txt, ack_txt_len );
 
    free( sigb64 );
 }
@@ -424,11 +418,22 @@ int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t 
 
 
 // POST finish--extract the pending message and handle it
-void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
+// return 0 if we generated a response 
+// return negative if we did not
+int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state *state = syncon->state;
-   md_response_buffer_t* rb = md_con_data->rb;
+   
+   int rc = 0;
+   char* msg_buf = NULL;
+   size_t msg_sz = 0;
+   
+   rc = md_HTTP_upload_get_buffer( md_con_data, &msg_buf, &msg_sz );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
    Serialization::WriteMsg ack;
 
    // prepare an ACK
@@ -436,11 +441,8 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    uint64_t file_id = 0;
    uint64_t coordinator_id = 0;
    int64_t file_version = -1;
-   int rc = 0;
    bool no_ack = false;
-
-   char* msg_buf = md_response_buffer_to_string( rb );
-   size_t msg_sz = md_response_buffer_size( rb );
+   
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
 
    SG_debug("received message of length %zu\n", msg_sz);
@@ -453,24 +455,22 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    if( rc != 0 ) {
       // can't handle this
       SG_error( "syndicate_parse_write_message rc = %d\n", rc );
-
-      md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
       
       if( rc == -EAGAIN ) {
          // tell the remote gateway to try again, while we refresh our UG listing with the MS
          char buf[10];
          sprintf(buf, "%d", rc);
-         md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 202, buf, strlen(buf) + 1);
+         md_HTTP_create_response_ram( resp, "text/plain", 202, buf, strlen(buf) + 1);
 
          ms_client_start_config_reload( state->ms );
       }
       else {
-         md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
       }
 
       delete msg;
       
-      return;
+      return 0;
    }
    
    fs_entry_init_write_message( &ack, state->core, Serialization::WriteMsg::ERROR );
@@ -481,10 +481,10 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errortxt( string("Missing message data") );
 
       SG_error( "%s", "extract_file_info failed\n" );
-      syndicate_make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( syncon, resp, &ack );
 
       delete msg;
-      return;
+      return 0;
    }
 
    int64_t current_version = fs_entry_get_version( state->core, fs_path );
@@ -494,10 +494,10 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errortxt( string("Could not determine version") );
 
       SG_error( "fs_entry_get_version(%s) rc = %" PRId64 "\n", fs_path, current_version);
-      syndicate_make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( syncon, resp, &ack );
 
       delete msg;
-      return;
+      return 0;
    }
 
    SG_debug( "got WriteMsg(type=%d, path=%s)\n", msg->type(), fs_path );
@@ -631,20 +631,19 @@ void SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    }
 
    if( !no_ack ) {
-      syndicate_make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( syncon, resp, &ack );
    }
    else {
-      md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 200, "OK\n", strlen("OK\n") + 1 );
+      md_HTTP_create_response_ram( resp, "text/plain", 200, "OK\n", strlen("OK\n") + 1 );
    }
 
    delete msg;
 
-   return;
+   return 0;
 }
 
 // HTTP cleanup handler, called after the data has been sent
-void SG_server_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, enum MHD_RequestTerminationCode term) {
+void SG_server_HTTP_cleanup( void *con_cls ) {
    struct syndicate_connection* syncon = (struct syndicate_connection*)con_cls;
    free( syncon );
 }
@@ -661,12 +660,11 @@ int SG_server_init( struct syndicate_state* state, struct md_HTTP* http_server )
    http_server->HTTP_GET_handler = SG_server_HTTP_GET_handler;
    http_server->HTTP_cleanup = SG_server_HTTP_cleanup;
    http_server->HTTP_HEAD_handler = SG_server_HTTP_HEAD_handler;
-   http_server->HTTP_POST_iterator = md_response_buffer_upload_iterator;
+   http_server->HTTP_upload_iterator = md_HTTP_upload_iterator_response_buffer;
    http_server->HTTP_POST_finish = SG_server_HTTP_POST_finish;
-   http_server->HTTP_authenticate = SG_server_HTTP_authenticate;
 
    SG_debug( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
-   int rc = md_start_HTTP( http_server, state->conf.portnum, &state->conf );
+   int rc = md_HTTP_start( http_server, state->conf.portnum, &state->conf );
    if( rc < 0 ) {
       SG_error( "failed to start HTTP; rc = %d\n", rc );
       return -1;
@@ -679,7 +677,7 @@ int SG_server_init( struct syndicate_state* state, struct md_HTTP* http_server )
 // shutdown
 int SG_server_shutdown( struct md_HTTP* server ) {
    SG_debug("%s", "HTTP server shutdown\n");
-   md_stop_HTTP( server );
-   md_free_HTTP( server );
+   md_HTTP_stop( server );
+   md_HTTP_free( server );
    return 0;
 }

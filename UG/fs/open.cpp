@@ -36,7 +36,7 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->transfer_timeout_ms = (core->conf->transfer_timeout) * 1000L;
    fh->dirty = false;
 
-   int gateway_type = ms_client_get_gateway_type( core->ms, ent->coordinator );
+   uint64_t gateway_type = ms_client_get_gateway_type( core->ms, ent->coordinator );
    if( gateway_type == SYNDICATE_AG ) {
       fh->is_AG = true;
    }

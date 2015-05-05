@@ -47,18 +47,13 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    
    uint64_t origin = mmsg->coordinator_id();
    
-   int gateway_type = ms_client_get_gateway_type( core->ms, origin );
-   if( gateway_type < 0 ) {
+   uint64_t gateway_type = ms_client_get_gateway_type( core->ms, origin );
+   if( gateway_type == (uint64_t)(-1) ) {
       SG_error("ms_client_get_gateway_type( %" PRIu64 " ) rc = %d\n", origin, gateway_type );
       
-      if( gateway_type == -ENOENT ) {
-         // schedule a reload of this volume...there seems to be a missing gateway 
-         ms_client_start_config_reload( core->ms );
-         return -EAGAIN;
-      }
-      else {
-         return -EINVAL;
-      }
+      // schedule a reload of this volume...there seems to be a missing gateway 
+      ms_client_start_config_reload( core->ms );
+      return -EAGAIN;
    }
    
    // verify it
@@ -159,12 +154,12 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
    modtime.tv_sec = manifest_mtime_sec;
    modtime.tv_nsec = manifest_mtime_nsec;
    
-   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
+   uint64_t gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
    
    if( !FS_ENTRY_LOCAL( core, fent ) ) {
       // check the MS-listed coordinator first, instead of asking the RGs directly
       
-      if( gateway_type < 0 ) {
+      if( gateway_type == (uint64_t)(-1) ) {
          // unknown gateway...try refreshing the Volume
          SG_error("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
          ms_client_start_config_reload( core->ms );
@@ -508,7 +503,12 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
             
             else {
                // send the MS-related header to our client
-               ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+               int hdr_rc = ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+               if( hdr_rc > 0 ) {
+                  
+                  // we're reloading
+                  rc = -EAGAIN;
+               }
             }
          }
       }

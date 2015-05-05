@@ -601,7 +601,7 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
    block_fut->curr_URL = block_url;
    
    // is this an AG? remember if so 
-   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
+   uint64_t gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
    if( gateway_type == SYNDICATE_AG ) {
       
       // from an AG
@@ -1248,10 +1248,10 @@ static int fs_entry_read_block_future_finalizer_cache_async( struct fs_core* cor
       // cache this!
       int rc = 0;
       struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
-                                                                    block_fut->result, block_fut->result_len, false, &rc );
+                                                                    block_fut->result, block_fut->result_len, 0, &rc );
       if( rc != 0 || f == NULL ) {
-         SG_error("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
-                block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+         SG_error("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       }
       else {
          // save this for later 

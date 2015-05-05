@@ -37,8 +37,8 @@ void http_io_error_resp( struct md_HTTP_response* resp, int err, char const* msg
 
 int http_make_redirect_response( struct md_HTTP_response* resp, char* new_url );
 int http_make_default_headers( struct md_HTTP_response* resp, time_t last_modified, size_t size, bool cacheable );
-int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct md_gateway_request_data* reqdat );
-int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct md_gateway_request_data* reqdat );
+int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct SG_request_data* reqdat );
+int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct SG_request_data* reqdat );
 
 int http_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                        const char *key,
@@ -46,7 +46,7 @@ int http_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                        const char *transfer_encoding, const char *data,
                        uint64_t off, size_t size);
 
-int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct md_gateway_request_data* reqdat, char* url );
+int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct SG_request_data* reqdat, char* url );
 
 }
 

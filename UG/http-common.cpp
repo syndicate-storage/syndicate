@@ -30,7 +30,7 @@ char* http_validate_url_path( struct md_HTTP* http, char* url, struct md_HTTP_re
       // bad request
       char* msg = (char*)"Cannot have '/../' in the path";
       if( resp )
-         md_create_HTTP_response_ram( resp, "text/plain", 400, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 400, msg, strlen(msg) + 1 );
       return NULL;
    }
 
@@ -47,7 +47,7 @@ void http_io_error_resp( struct md_HTTP_response* resp, int err, char const* msg
          if( msg == NULL )
             msg = MD_HTTP_404_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 404, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 404, msg, strlen(msg) + 1 );
          break;
 
       case -EPERM:
@@ -55,35 +55,35 @@ void http_io_error_resp( struct md_HTTP_response* resp, int err, char const* msg
          if( msg == NULL )
             msg = MD_HTTP_403_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 403, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 403, msg, strlen(msg) + 1 );
          break;
 
       case 413:
          if( msg == NULL )
             msg = MD_HTTP_413_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 413, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 413, msg, strlen(msg) + 1 );
          break;
 
       case -EEXIST:
          if( msg == NULL )
             msg = MD_HTTP_409_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 409, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 409, msg, strlen(msg) + 1 );
          break;
 
       case -EINVAL:
          if( msg == NULL )
             msg = MD_HTTP_400_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 400, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 400, msg, strlen(msg) + 1 );
          break;
 
       case -ENOTEMPTY:
          if( msg == NULL )
             msg = MD_HTTP_422_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 422, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 422, msg, strlen(msg) + 1 );
          break;
 
       case -ESTALE:
@@ -91,14 +91,14 @@ void http_io_error_resp( struct md_HTTP_response* resp, int err, char const* msg
          if( msg == NULL )
             msg = MD_HTTP_504_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 504, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 504, msg, strlen(msg) + 1 );
          break;
          
       default:
          if( msg == NULL )
             msg = MD_HTTP_500_MSG;
          
-         md_create_HTTP_response_ram( resp, "text/plain", 500, msg, strlen(msg) + 1 );
+         md_HTTP_create_response_ram( resp, "text/plain", 500, msg, strlen(msg) + 1 );
          break;
    }
 }
@@ -106,9 +106,9 @@ void http_io_error_resp( struct md_HTTP_response* resp, int err, char const* msg
 
 int http_make_redirect_response( struct md_HTTP_response* resp, char* new_url ) {
    // make an HTTP redirect response
-   md_create_HTTP_response_ram( resp, "text/plain", 302, "Redirect\n", strlen("Redirect\n") + 1 );
-   md_HTTP_add_header( resp, "Location", new_url );
-   md_HTTP_add_header( resp, "Cache-Control", "no-store" );
+   md_HTTP_create_response_ram( resp, "text/plain", 302, "Redirect\n", strlen("Redirect\n") + 1 );
+   md_HTTP_header_add( resp, "Location", new_url );
+   md_HTTP_header_add( resp, "Cache-Control", "no-store" );
    
    return 0;
 }
@@ -124,17 +124,17 @@ int http_make_default_headers( struct md_HTTP_response* resp, time_t last_modifi
 
    strftime( buf, 200, "%a, %d %b %Y %H:%M:%S GMT", &rawtime );
 
-   md_HTTP_add_header( resp, "Last-Modified", buf );
+   md_HTTP_header_add( resp, "Last-Modified", buf );
    
    // add content-length field
    memset( buf, 0, 200 );
    sprintf(buf, "%zu", size );
    
-   md_HTTP_add_header( resp, "Content-Length", buf );
+   md_HTTP_header_add( resp, "Content-Length", buf );
    
    // add no-cache field, if needed
    if( !cacheable ) {
-      md_HTTP_add_header( resp, "Cache-Control", "no-store" );
+      md_HTTP_header_add( resp, "Cache-Control", "no-store" );
    }
 
    return 0;
@@ -146,7 +146,7 @@ int http_make_default_headers( struct md_HTTP_response* resp, time_t last_modifi
 // return HTTP_REDIRECT_NOT_HANDLED if a new URL was not generated, but there were no errors
 // return HTTP_REDIRECT_REMOTE if the requested data is not locally hosted
 // return negative if a new URL could not be generated
-int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct md_gateway_request_data* reqdat ) {
+int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct SG_request_data* reqdat ) {
 
    memset( sb, 0, sizeof(struct stat) );
    
@@ -285,7 +285,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
 // handle redirect requests
 // return HTTP_REDIRECT_HANDLED for handled
 // return (HTTP_REDIRECT_NOT_HANDLED, HTTP_REDIRECT_REMOTE) otherwise
-int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct md_gateway_request_data* reqdat ) {
+int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct SG_request_data* reqdat ) {
    char* redirect_url = NULL;
    
    int rc = http_process_redirect( state, &redirect_url, sb, reqdat );
@@ -310,15 +310,15 @@ int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response
 // and handle redirect requests.
 // populate the given arguments and return 0 or 1 on success (0 means that no redirect occurred; 1 means a redirect occurred)
 // return negative on error
-int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct md_gateway_request_data* reqdat, char* url ) {
+int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct SG_request_data* reqdat, char* url ) {
 
-   memset( reqdat, 0, sizeof(struct md_gateway_request_data) );
+   memset( reqdat, 0, sizeof(struct SG_request_data) );
    
    char* url_path = http_validate_url_path( http_ctx, url, resp );
    if( url_path == NULL ) {
       char buf[200];
       snprintf(buf, 200, "http_GET_parse_request: http_validate_url_path returned NULL\n");
-      md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
+      md_HTTP_create_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
       SG_debug("%s", buf);
       return -400;
@@ -331,7 +331,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
    if( rc != 0 && rc != -EISDIR ) {
       char buf[200];
       snprintf(buf, 200, "http_GET_parse_request: md_HTTP_parse_url_path rc = %d\n", rc );
-      md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
+      md_HTTP_create_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
       SG_debug("%s", buf);
       return -400;
@@ -352,7 +352,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
       // nothing to do
       char buf[200];
       snprintf(buf, 200, "http_GET_parse_request: fs_path == NULL\n");
-      md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
+      md_HTTP_create_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       
       SG_debug("%s", buf);
       return -400;

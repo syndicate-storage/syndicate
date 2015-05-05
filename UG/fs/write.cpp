@@ -102,7 +102,7 @@ struct md_cache_block_future* fs_entry_flush_block_async( struct fs_core* core, 
    memcpy( prefix, processed_block, MIN( 20, processed_block_len ) );
    
    // cache the new block.  Get back the future (caller will manage it).
-   struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
+   struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, 0, &rc );
    if( f == NULL ) {
       SG_error("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
