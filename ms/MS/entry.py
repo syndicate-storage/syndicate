@@ -1937,7 +1937,7 @@ class MSEntry( storagetypes.Object ):
       
       if parent is None:
          
-         parent_fut = yield MSEntry.__read_msentry( volume_id, ent.parent_id, num_shards, use_memcache=False )
+         parent_fut = MSEntry.__read_msentry( volume_id, ent.parent_id, num_shards, use_memcache=False )
          storagetypes.wait_futures( [parent_fut] )
          
          parent = parent_fut.get_result()
@@ -2030,8 +2030,8 @@ class MSEntry( storagetypes.Object ):
       if src is None:
          return -errno.ENOENT
       
-      # file rename request originated from src's?
-      if src.ftype == MSENTRY_TYPE_FILE and src.coordinator_id != gateway.g_id and :
+      # file rename request originated from src's coordinator
+      if src.ftype == MSENTRY_TYPE_FILE and src.coordinator_id != gateway.g_id:
          # not the coordinator--refresh
          return -errno.EAGAIN
       
@@ -2106,7 +2106,8 @@ class MSEntry( storagetypes.Object ):
       if dest_empty_rc != 0:
          # dest is not empty, but we were about to rename over it
          if dest is not None:
-         MSEntry.__delete_undo( dest )
+            MSEntry.__delete_undo( dest )
+            
          return dest_empty_rc
       
       if src_absent_rc != 0:
