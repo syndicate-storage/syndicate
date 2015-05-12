@@ -167,7 +167,8 @@ typedef char* (*SG_closure_get_name_func)( void );
 extern "C" {
 
 // lifecycle
-int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool anonymous, int argc, char** argv );
+int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool anonymous_client, int argc, char** argv );
+int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts );
 int SG_gateway_main( struct SG_gateway* gateway );
 int SG_gateway_signal_main( struct SG_gateway* gateway );
 int SG_gateway_shutdown( struct SG_gateway* gateway );

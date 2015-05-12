@@ -495,15 +495,14 @@ int SG_gateway_reload_certs( struct SG_gateway* gateway, uint64_t cert_version )
 }
 
 
-// initialize and start the gateway 
-// return -ENOMEM of OOM
+// initialize and start the gateway, using a parsed options structure 
+// return 0 on success
+// return -ENOMEM on OOM 
 // return -ENOENT if a file was not found 
-// return negative if libsyndicate fails to initialize
-// return 1 if the user wanted help
-int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool anonymous, int argc, char** argv ) {
+// return negative if libsyndicate fails to initialize 
+int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    
    int rc = 0;
-   struct md_opts opts;
    struct ms_client* ms = SG_CALLOC( struct ms_client, 1 );
    struct md_syndicate_conf* conf = SG_CALLOC( struct md_syndicate_conf, 1 );
    struct md_syndicate_cache* cache = SG_CALLOC( struct md_syndicate_cache, 1 );
@@ -515,7 +514,6 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool ano
    
    sem_t config_sem;
    
-   bool opts_inited = false;
    bool md_inited = false;
    bool ms_inited = false;
    bool config_inited = false;
@@ -527,7 +525,7 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool ano
    uint64_t block_size = 0;
    uint64_t cert_version = 0;
    
-   int first_arg_optind = 0;
+   int first_arg_optind = -1;
    
    if( ms == NULL || conf == NULL || cache == NULL || http == NULL || dl == NULL ) {
       
@@ -536,34 +534,23 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool ano
    }
    
    // load config
-   md_default_conf( conf, gateway_type );
-   memset( &opts, 0, sizeof(struct md_opts));
-   
-   // get options
-   rc = md_opts_parse( &opts, argc, argv, &first_arg_optind, NULL, NULL );
-   if( rc != 0 ) {
-      
-      goto SG_gateway_init_error;
-   }
-   
-   // advance!
-   opts_inited = true;
+   md_default_conf( conf, opts->gateway_type );
    
    // set debug level
-   md_set_debug_level( opts.debug_level );
+   md_set_debug_level( opts->debug_level );
    
    // read the config file, if given
-   if( opts.config_file != NULL ) {
+   if( opts->config_file != NULL ) {
       
-      rc = md_read_conf( opts.config_file, conf );
+      rc = md_read_conf( opts->config_file, conf );
       if( rc != 0 ) {
-         SG_error("md_read_conf('%s'), rc = %d\n", opts.config_file, rc );
+         SG_error("md_read_conf('%s'), rc = %d\n", opts->config_file, rc );
          
          goto SG_gateway_init_error;
       }
    }
    
-   rc = SG_config_merge_opts( conf, &opts );
+   rc = SG_config_merge_opts( conf, opts );
    if( rc != 0 ) {
       
       SG_error("SG_config_merge_opts rc = %d\n", rc );
@@ -582,12 +569,12 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool ano
    }
    
    // initialize library
-   if( !anonymous ) {
+   if( !opts->client ) {
       
       // initialize peer
       SG_debug("%s", "Not anonymous; initializing as peer\n");
       
-      rc = md_init( conf, ms, &opts );
+      rc = md_init( conf, ms, opts );
       if( rc != 0 ) {
          
          goto SG_gateway_init_error;
@@ -598,15 +585,12 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool ano
       // initialize client
       SG_debug("%s", "Anonymous; initializing as client\n");
       
-      rc = md_init_client( conf, ms, &opts );
+      rc = md_init_client( conf, ms, opts );
       if( rc != 0 ) {
          
          goto SG_gateway_init_error;
       }
    }
-   
-   md_opts_free( &opts );
-   opts_inited = false;
    
    // advance!
    md_inited = true;
@@ -844,8 +828,48 @@ SG_gateway_init_error:
       md_shutdown();
    }
    
-   if( opts_inited ) {
-      md_opts_free( &opts );
+   return rc;
+}
+
+
+// initialize and start the gateway, parsing argc and argv in the process.
+// forwards on to SG_gateway_init_opts from the parsed options.
+// return 0 on success
+// return -ENOMEM of OOM
+// return -ENOENT if a file was not found 
+// return negative if libsyndicate fails to initialize
+// return 1 if the user wanted help
+int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, bool anonymous_client, int argc, char** argv ) {
+   
+   int rc = 0;
+   struct md_opts opts;
+   int first_arg_optind = 0;
+   
+   memset( &opts, 0, sizeof(struct md_opts));
+   
+   // get options
+   rc = md_opts_parse( &opts, argc, argv, &first_arg_optind, NULL, NULL );
+   if( rc != 0 ) {
+      
+      if( rc < 0 ) {
+            
+         SG_error( "md_opts_parse rc = %d\n", rc );
+      }
+      
+      return rc;
+   }
+   
+   opts.gateway_type = gateway_type;
+   opts.client = anonymous_client;
+   
+   // initialize the gateway 
+   rc = SG_gateway_init_opts( gateway, &opts );
+   
+   md_opts_free( &opts );
+   
+   if( rc == 0 ) {
+      
+      gateway->first_arg_optind = first_arg_optind;
    }
       
    return rc;
