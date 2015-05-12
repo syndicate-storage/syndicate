@@ -24,11 +24,6 @@
 char* md_url_local_block_url( char const* data_root, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* md_url_public_block_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 
-// URLs to block data in other gateways
-char* md_url_UG_block_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* md_url_AG_block_url( struct ms_client* ms, uint64_t AG_id, char const* fs_path, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
-char* md_url_RG_block_url( struct ms_client* ms, uint64_t RG_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
-
 // generate a URL to a block
 int md_url_make_block_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url );
 
@@ -38,11 +33,6 @@ char* md_url_public_file_url( char const* base_url, uint64_t volume_id, char con
 
 // URLs to manifest data in this gateway
 char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts );
-
-// URLs to manifests in other gateways
-char* md_url_UG_manifest_url( struct ms_client* ms, uint64_t ug_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts );
-char* md_url_RG_manifest_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t file_version, struct timespec* ts );
-char* md_url_AG_manifest_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t file_version, struct timespec* ts );
 
 // generate a URL to a manifest
 int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url );

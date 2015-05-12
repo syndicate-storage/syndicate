@@ -105,66 +105,6 @@ char* md_url_public_block_url( char const* base_url, uint64_t volume_id, char co
    return md_url_block_url( base_url, volume_id, fs_path, file_id, file_version, block_id, block_version, false );
 }
 
-
-// generate a publicly-resolvable URL to a block in a UG
-// return the URL on success
-// return NULL on OOM, or if the UG is not known
-char* md_url_UG_block_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   
-   // http:// URL to a remotely-hosted block
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_gateway_url( ms, UG_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   char* ret = md_url_block_url( base_url, volume_id, fs_path, file_id, file_version, block_id, block_version, false );
-   SG_safe_free( base_url );
-   return ret;
-}
-
-
-// generaate a publicly-resolvable URL to a block in an AG
-// return the URL on success
-// return NULL on OOM, or if the AG is not known
-char* md_url_AG_block_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_gateway_url( ms, ag_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   char* ret = md_url_block_url( base_url, volume_id, fs_path, file_id, version, block_id, block_version, false );
-   
-   SG_safe_free( base_url );
-   return ret;
-}
-
-// generate a publicly-resolvable URL to a block in an RG
-// return the URL on success
-// return NULL on OOM, or if the RG is not known
-char* md_url_RG_block_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_gateway_url( ms, rg_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
-   if( url == NULL ) {
-      SG_safe_free( base_url );
-      return NULL;
-   }
-   
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SG_DATA_PREFIX, volume_id, file_id, version, block_id, block_version );
-   
-   free( base_url );
-   return url;
-}
-
-
 // generate a publicly-routable block URL, based on what gateway hosts it.
 // return 0 on success
 // return -ENOENT if the gateway is currently unknown, or we're OOM
@@ -271,65 +211,6 @@ char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char
    }
    
    sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SG_DATA_PREFIX, volume_id, fs_path, file_id, version, (long)ts->tv_sec, (long)ts->tv_nsec );
-   return ret;
-}
-
-// generate a URL to a UG's manifest
-// return the URL on success
-// return NULL on OOM, or if the UG is not known
-char* md_url_UG_manifest_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   
-   char* base_url = ms_client_get_UG_content_url( ms, UG_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* ret = md_url_public_manifest_url( base_url, volume_id, fs_path, file_id, version, ts );
-   SG_safe_free( base_url );
-   
-   return ret;
-}
-
-// generate a URL to an RG's manifest
-// return the URL on success
-// return NULL on OOM, or if the RG is not known
-char* md_url_RG_manifest_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
-   
-   char* base_url = ms_client_get_RG_content_url( ms, rg_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 25 + 1 + 25 + 1 + 25 + 25 + 1 + strlen("manifest") + 25 + 1 + 25 );
-   if( url == NULL ) {
-      return NULL;
-   }
-   
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SG_DATA_PREFIX, volume_id, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
-   
-   SG_safe_free( base_url );
-   return url;
-}
-
-// generate a URL to an AG's manifest
-// return the URL on success
-// return NULL on OOM, or if the AG is not known 
-char* md_url_AG_manifest_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
-   
-   char* base_url = ms_client_get_AG_content_url( ms, ag_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* ret = md_url_public_manifest_url( base_url, volume_id, fs_path, file_id, file_version, ts );
-   
-   SG_safe_free( base_url );
    return ret;
 }
 
