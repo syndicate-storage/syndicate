@@ -18,7 +18,22 @@
 #include "libsyndicate/ms/cert.h"
 #include "libsyndicate/ms/volume.h"
 
-// verify that a message came from a UG with the given ID (needed by libsyndicate python wrapper)
+// sign an outbound message from us (needed by libsyndicate python wrapper)
+// return 0 on success 
+// return -ENOMEM on OOM
+int ms_client_sign_gateway_message( struct ms_client* client, char const* data, size_t len, char** sigb64, size_t* sigb64_len ) {
+    
+    int rc = 0;
+    ms_client_config_rlock( client );
+    
+    rc = md_sign_message( client->gateway_key, data, len, sigb64, sigb64_len );
+    
+    ms_client_config_unlock( client );
+    
+    return rc;
+}
+
+// verify that a message came from a peer with the given ID (needed by libsyndicate python wrapper)
 // return 0 on success
 // return -ENOENT if the volume_id does not match our volume_id
 // return -EAGAIN if no certificate could be found for this gateway
@@ -71,6 +86,45 @@ uint64_t ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
    return ret;
 }
 
+
+// get the ID of the gateway we're attached to 
+// return the id on success
+// return SG_INVALID_GATEWAY_ID if we're not attached  
+uint64_t ms_client_get_gateway_id( struct ms_client* client ) {
+    
+    uint64_t ret = 0;
+    
+    ms_client_config_rlock( client );
+    
+    ret = client->gateway_id;
+    if( ret == 0 ) {
+        ret = SG_INVALID_GATEWAY_ID;
+    }
+    
+    ms_client_config_unlock( client );
+    
+    return ret;
+}
+
+
+// get the ID of the user running this gateway we're attached to 
+// return the user id on success
+// return SG_INVALID_USER_ID if we're not attached  
+uint64_t ms_client_get_owner_id( struct ms_client* client ) {
+    
+    uint64_t ret = 0;
+    
+    ms_client_config_rlock( client );
+    
+    ret = client->owner_id;
+    if( ret == 0 ) {
+        ret = SG_INVALID_USER_ID;
+    }
+    
+    ms_client_config_unlock( client );
+    
+    return ret;
+}
 
 // get the name of the gateway
 // return 0 on success
@@ -148,28 +202,6 @@ char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id )
    ms_client_config_unlock( client );
    
    return ret;
-}
-
-// get an AG's host URL 
-// return the calloc'ed URL on success
-// return NULL on error
-char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
-   return ms_client_get_gateway_url( client, ag_id );
-}
-
-
-// get an RG's host URL 
-// return the calloc'ed URL on success
-// return NULL on error
-char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t rg_id ) {
-   return ms_client_get_gateway_url( client, rg_id );
-}
-
-// get a UG's host URL 
-// return the calloc'ed URL on success
-// return NULL on error
-char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t ug_id ) {
-   return ms_client_get_gateway_url( client, ug_id );
 }
 
 // check a gateway's capabilities (as a bit mask)

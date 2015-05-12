@@ -22,11 +22,14 @@
 
 extern "C" {
 
-// peer verification
+// peer signatures and verification 
+int ms_client_sign_gateway_message( struct ms_client* client, char const* data, size_t len, char** sigb64, size_t* sigb64_len );
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 // get information about a specific gateway
 uint64_t ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id );
+uint64_t ms_client_get_gateway_id( struct ms_client* client );
+uint64_t ms_client_get_owner_id( struct ms_client* client );
 int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_id, uint64_t* user_id );
 int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_id, uint64_t* volume_id );
 int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_id, char** gateway_name );
@@ -35,9 +38,6 @@ int ms_client_gateway_key_pem( struct ms_client* client, char** buf, size_t* len
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
 
 char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id );
-char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_id );
-char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t gateway_id );
-char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t gateway_id );
 
 }
 
