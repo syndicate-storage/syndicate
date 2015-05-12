@@ -59,6 +59,10 @@ struct md_opts {
    
    uint64_t cache_soft_limit;
    uint64_t cache_hard_limit;
+   
+   // NOTE: not set by md_opts_parse
+   uint64_t gateway_type;
+   bool client;
 };
 
 extern "C" {
