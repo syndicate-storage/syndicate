@@ -54,8 +54,12 @@ BUILD_LIBSYNDICATE_DIRS  := $(BUILD_LIBSYNDICATE)/ms \
 BUILD_UG          := $(BUILD)/UG
 BUILD_UG_TOOLS    := $(BUILD_UG)/tools
 BUILD_UG_GATEWAYS := $(BUILD_UG)/gateways
+BUILD_UG_LIBS     := $(BUILD_UG)/libs
 BUILD_UG_INCLUDEDIR := $(BUILD_INCLUDEDIR)/syndicate-ug
-BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) $(BUILD_UG_GATEWAYS) $(BUILD_UG_INCLUDEDIR)
+BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) \
+	                  $(BUILD_UG_GATEWAYS) \
+							$(BUILD_UG_LIBS) \
+							$(BUILD_UG_INCLUDEDIR) \
 
 # compiler
 CPPFLAGS := -Wall -g -fPIC -fstack-protector -fstack-protector-all -pthread

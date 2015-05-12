@@ -9,8 +9,9 @@ INC		:= $(INC) -I$(BUILD_LIBSYNDICATE_INCLUDEDIR)
 
 TOOLS	:= tools/
 GATEWAYS := gateways/
+LIBS := libs/
 
-all: $(TOOLS) $(GATEWAYS) $(OBJ)
+all: $(TOOLS) $(GATEWAYS) $(LIBS) $(OBJ)
 
 tools: $(OBJ)
 	$(MAKE) -C $(TOOLS)
@@ -18,9 +19,8 @@ tools: $(OBJ)
 gateways: $(OBJ)
 	$(MAKE) -C $(GATEWAYS)
 
-install: tools gateways
-	$(MAKE) -C $(TOOLS) install
-	$(MAKE) -C $(GATEWAYS) install
+libs: $(OBJ)
+	$(MAKE) -C $(LIBS)
 
 $(BUILD_UG)/%.o : %.c 
 	@mkdir -p $(shell dirname $@)
