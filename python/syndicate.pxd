@@ -1,6 +1,6 @@
 
 """
-   Copyright 2014 The Trustees of Princeton University
+   Copyright 2015 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -55,30 +55,57 @@ cdef extern from "libsyndicate/util.h":
    cdef struct mlock_buf:
       void* ptr
       size_t len
-      
+
 # ------------------------------------------   
 cdef extern from "libsyndicate/opts.h":
    cdef struct md_opts:
+      
       char* config_file
       char* username
-      mlock_buf password
       char* volume_name
       char* ms_url
       char* gateway_name
       char* volume_pubkey_path
       char* gateway_pkey_path
-      mlock_buf gateway_pkey_decryption_password
-      char* volume_pubkey_pem
-      mlock_buf gateway_pkey_pem
       char* syndicate_pubkey_path
-      char* syndicate_pubkey_pem
+      char* hostname
+      char* storage_root
+      char* first_nonopt_arg
+      
+      mlock_buf password
       mlock_buf user_pkey_pem
+      mlock_buf gateway_pkey_pem
+      mlock_buf gateway_pkey_decryption_password
+      
+      char* volume_pubkey_pem
+      char* syndicate_pubkey_pem
       char* tls_pkey_path
       char* tls_cert_path
-      char* storage_root
-      bool flush_replicas
-      size_t cache_soft_limit
-      size_t cache_hard_limit
+
+      bool read_stdin
+      int debug_level 
+      bool foreground 
+      
+      uint64_t cache_soft_limit
+      uint64_t cache_hard_limit
+
+      uint64_t gateway_type 
+      bool client
+
+# ------------------------------------------   
+cdef extern from "libsyndicate/gateway.h":
+
+   cdef struct SG_gateway:
+      pass 
+
+   int SG_gateway_init( SG_gateway* gateway, uint64_t gateway_type, bool anonymous_client, int argc, char** argv )
+   int SG_gateway_init_opts( SG_gateway* gateway, md_opts* opts )
+   int SG_gateway_shutdown( SG_gateway* gateway )
+
+   int SG_gateway_id( SG_gateway* gateway )
+   int SG_gateway_user_id( SG_gateway* gateway )
+   ms_client* SG_gateway_ms( SG_gateway* gateway )
+   md_syndicate_conf* SG_gateway_conf( SG_gateway* gateway )
 
 # ------------------------------------------
 cdef extern from "libsyndicate/libsyndicate.h":
@@ -96,12 +123,10 @@ cdef extern from "libsyndicate/libsyndicate.h":
    cdef int SG_CAP_READ_METADATA
    cdef int SG_CAP_WRITE_METADATA
    cdef int SG_CAP_COORDINATE
-
    
-   ctypedef int (*ms_client_config_change_callback)( ms_client* client, void* cls )
-
    # ------------------------------------------
    # init and shutdown
+   
    int md_default_conf( md_syndicate_conf* conf, int gateway_type )
 
    int md_free_conf( md_syndicate_conf* conf )
@@ -118,11 +143,11 @@ cdef extern from "libsyndicate/libsyndicate.h":
 
    # ------------------------------------------
    # crypto
-   
 
    int md_crypt_init()
    int md_crypt_shutdown()
    int md_sign_message( EVP_PKEY* pkey, const char* data, size_t len, char** sigb64, size_t* sigb64len )
+   int ms_client_sign_gateway_message( ms_client* client, const char* data, size_t len, char** sigb64, size_t* sigb64_len )
    int ms_client_verify_gateway_message( ms_client* client, uint64_t volume_id, uint64_t gateway_id, const char* msg, size_t msg_len, char* sigb64, size_t sigb64_len )
    int md_encrypt_pem( const char* sender_privkey_pem, const char* receiver_pubkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
    int md_decrypt_pem( const char* sender_pubkey_pem, const char* receiver_privkey_pepm, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
@@ -146,7 +171,9 @@ cdef extern from "libsyndicate/libsyndicate.h":
    # queries 
    
    int ms_client_check_gateway_caps( ms_client* client, uint64_t gateway_id, uint64_t caps )
-   int ms_client_get_gateway_type( ms_client* client, uint64_t g_id )
+   uint64_t ms_client_get_gateway_type( ms_client* client, uint64_t g_id )
+   uint64_t ms_client_get_gateway_id( ms_client* client )
+   uint64_t ms_client_get_owner_id( ms_client* client )
 
    # ------------------------------------------
    # OpenID RPC
