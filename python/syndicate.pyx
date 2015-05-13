@@ -16,6 +16,7 @@
 
 from syndicate cimport *
 cimport libc.stdlib as stdlib
+from cpython.string cimport PyString_AsString
 
 import types
 import errno
@@ -451,7 +452,7 @@ cdef class Syndicate:
       syn_opts.gateway_type = int_or_zero( opts.get("gateway_type") )
       syn_opts.client = bool_or_false( opts.get("client") )
 
-      return md_opts
+      return syn_opts
       
       
    def __init__( self, gateway_type=None, anonymous_client=None, args=None, opts=None ):
@@ -488,8 +489,17 @@ cdef class Syndicate:
          if gateway_type is None or anonymous_client is None or args is None:
             raise SyndicateException("Missing gateway_type, anonymous_client, and/or args")
          
+         c_args = <char**>stdlib.malloc( (len(args) + 1) * sizeof(char*) )
+         if c_args == NULL:
+            raise MemoryError()
+         
+         for i in xrange(0,len(args)):
+            c_args[i] = PyString_AsString( args[i] )
+         
          method = "SG_gateway_init"
-         rc = SG_gateway_init( &self.gateway_inst, gateway_type, anonymous_client, len(args), args )
+         rc = SG_gateway_init( &self.gateway_inst, gateway_type, anonymous_client, len(args), c_args )
+
+         stdlib.free( c_args )
 
       if rc != 0:
          raise SyndicateException( "%s rc = %d" % (method, rc) )
