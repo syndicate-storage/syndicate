@@ -49,7 +49,7 @@ typedef struct _UG_handle {
 typedef fskit_dir_entry UG_dirent_t;
 
 // NULL-terminated directory listing
-typedef fskit_dir_entry** UG_dir_listing_t;
+typedef md_entry** UG_dir_listing_t;
 
 
 // macro to try to perform an operation on the MS that can be done either locally (e.g. if we're the coordinator, or the inode is a directory), or remotely
@@ -129,7 +129,7 @@ UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, i
 UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* rc );
 int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t* fi );
 int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t *fi );
-off_t UG_seek(UG_handle_t* fi, off_t pos, int whence );
+off_t UG_seek( UG_handle_t* fi, off_t pos, int whence );
 int UG_close( struct UG_state* state, UG_handle_t *fi );
 int UG_fsync( struct UG_state* state, UG_handle_t *fi );
 int UG_ftruncate( struct UG_state* state, off_t offset, UG_handle_t *fi );

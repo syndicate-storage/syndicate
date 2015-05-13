@@ -678,17 +678,90 @@ UG_handle_t* UG_opendir( struct UG_state* state, char const* path, int* rc ) {
 }
 
 // readdir(3)
-int UG_readdir( struct UG_state* state, UG_dir_listing_t* listing, size_t num_children, UG_handle_t *fi ) {
+int UG_readdir( struct UG_state* state, UG_dir_listing_t* ret_listing, size_t num_children, UG_handle_t *fi ) {
 
    size_t num_read = 0;
+   size_t num_md_read = 0;
    int rc = 0;
+   struct fskit_dir_entry** listing = NULL;
+   UG_dir_listing_t md_listing = NULL;
    
-   *listing = fskit_readdir( UG_state_fs( state ), fi->dh, fi->offset, num_children, &num_read, &rc );
+   // TODO: add fskit getter for this 
+   struct fskit_entry* dent = fi->dh->dent;
+   char const* path = fi->fh->path;
    
-   if( *listing != NULL ) {
+   fskit_entry_rlock( dent );
+   
+   listing = fskit_readdir( UG_state_fs( state ), fi->dh, fi->offset, num_children, &num_read, &rc );
+   
+   if( listing != NULL ) {
       
-      fi->offset += num_read;
+      // convert to list of md_entry 
+      md_listing = SG_CALLOC( struct md_entry*, num_read + 1 );
+      if( md_listing == NULL ) {
+         
+         fskit_entry_unlock( dent );
+         
+         SG_safe_free( md_listing );
+         fskit_dir_entry_free_list( listing );
+         
+         return -ENOMEM;
+      }
+      
+      for( unsigned int i = 0; i < num_read; i++ ) {
+       
+         md_listing[i] = SG_CALLOC( struct md_entry, 1 );
+         if( md_listing[i] == NULL ) {
+            
+            fskit_entry_unlock( dent );
+            
+            UG_free_dir_listing( md_listing );
+            fskit_dir_entry_free_list( listing );
+            
+            return -ENOMEM;
+         }
+      }
+      
+      for( unsigned int i = 0; i < num_read; i++ ) {
+         
+         // convert child to md_entry 
+         struct UG_inode* inode = NULL;
+         struct fskit_entry* child = fskit_dir_find_by_name( dent, listing[i]->name );
+         if( child == NULL ) {
+            
+            // shouldn't happen....
+            SG_warn("Child '%s' not found in '%s\n", listing[i]->name, path );
+            continue;
+         }
+         
+         fskit_entry_rlock( child );
+         
+         inode = (struct UG_inode*)fskit_entry_get_user_data( child );
+         
+         if( inode != NULL ) {
+            
+            rc = UG_inode_export( md_listing[i], inode, 0, NULL );
+         }
+         
+         fskit_entry_unlock( child );
+         
+         if( rc != 0 ) {
+            
+            // OOM?
+            break;
+         }
+         
+         num_md_read ++;
+      }
+      
+      fskit_entry_unlock( dent );
+      
+      fskit_dir_entry_free_list( listing );
+      fi->offset += num_md_read;
    }
+   
+   *ret_listing = md_listing;
+   
    return rc;
 }
 
@@ -731,7 +804,14 @@ int UG_closedir( struct UG_state* state, UG_handle_t *fi ) {
 // free a dir listing 
 // always succeeds
 void UG_free_dir_listing( UG_dir_listing_t listing ) {
-   fskit_dir_entry_free_list( listing );
+   
+   for( int i = 0; listing[i] != NULL; i++ ) {
+      
+      md_entry_free( listing[i] );
+      SG_safe_free( listing[i] );
+   }
+   
+   SG_safe_free( listing );
 }
 
 
