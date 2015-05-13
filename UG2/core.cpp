@@ -34,6 +34,9 @@ struct UG_state {
    pthread_rwlock_t lock;             // lock governing access to this structure
    
    int detach_rh;                       // route handle to the unlink()/rmdir() route
+   
+   bool running_thread;                        // if true, we've set up and started a thread to run the main loop ourselves 
+   pthread_t thread;                    // the main loop thread
 };
 
 // create a duplicate listing of the replica gateway IDs 
@@ -212,7 +215,45 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
 }
 
 
-// run the gateway!
+// main loop wrapper for pthreads
+void* UG_main_pthread( void* arg ) {
+   
+   struct UG_state* state = (struct UG_state*)arg;
+   
+   int rc = UG_main( state );
+   if( rc != 0 ) {
+      
+      SG_error("UG_main rc = %d\n", rc );
+   }
+   
+   return NULL;
+}
+
+// run the UG in a separate thread.
+// returns as soon as we start the new thread.
+// return 0 on success
+// return -EINVAL if we already started the UG
+// return -ENOMEM on OOM 
+// return -errno on failure to fork
+int UG_start( struct UG_state* state ) {
+   
+   if( state->running_thread ) {
+      return -EINVAL;
+   }
+   
+   state->thread = md_start_thread( UG_main_pthread, state, false );
+   if( (int)state->thread == -1 ) {
+      
+      return -EPERM;
+   }
+   
+   state->running_thread = true;
+   return 0;
+}
+
+// run the gateway in this thread.  return when the gateway shuts down.
+// return 0 on success
+// return -errno on failure to initialize, or due to runtime error
 int UG_main( struct UG_state* state ) {
    
    int rc = 0;
@@ -228,6 +269,15 @@ int UG_main( struct UG_state* state ) {
 int UG_shutdown( struct UG_state* state ) {
    
    int rc = 0;
+   
+   // are we running our own thread?  stop it if so.
+   if( state->running_thread ) {
+      
+      SG_gateway_signal_main( UG_state_gateway( state ) );
+      
+      pthread_join( state->thread, NULL );
+      state->running_thread = false;
+   }
    
    // disconnect the filesystem
    UG_fs_uninstall_methods( &state->fs );

@@ -37,6 +37,7 @@ int UG_state_unlock( struct UG_state* state );
 
 // core init and shutdown 
 struct UG_state* UG_init( int argc, char** argv, bool client );
+int UG_start( struct UG_state* state );
 int UG_main( struct UG_state* state );
 int UG_shutdown( struct UG_state* state );
 
