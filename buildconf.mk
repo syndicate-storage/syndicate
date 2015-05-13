@@ -43,23 +43,27 @@ BUILD_MS_DIRS           := $(BUILD_MS)/common \
 BUILD_LIBSYNDICATE       := $(BUILD_LIBDIR)
 BUILD_LIBSYNDICATE_INCLUDEDIR := $(BUILD_INCLUDEDIR)/libsyndicate
 BUILD_LIBSYNDICATE_DIRS  := $(BUILD_LIBSYNDICATE)/ms \
-	                         $(BUILD_LIBSYNDICATE)/scrypt \
-									 $(BUILD_LIBSYNDICATE)/drivers \
+                            $(BUILD_LIBSYNDICATE)/scrypt \
+                            $(BUILD_LIBSYNDICATE)/drivers \
                             $(BUILD_LIBSYNDICATE_INCLUDEDIR) \
-									 $(BUILD_LIBSYNDICATE_INCLUDEDIR)/ms \
-									 $(BUILD_LIBSYNDICATE_INCLUDEDIR)/scrypt \
-									 $(BUILD_LIBSYNDICATE_INCLUDEDIR)/drivers
+                            $(BUILD_LIBSYNDICATE_INCLUDEDIR)/ms \
+                            $(BUILD_LIBSYNDICATE_INCLUDEDIR)/scrypt \
+                            $(BUILD_LIBSYNDICATE_INCLUDEDIR)/drivers
 
 # user gateway 
 BUILD_UG          := $(BUILD)/UG
 BUILD_UG_TOOLS    := $(BUILD_UG)/tools
 BUILD_UG_GATEWAYS := $(BUILD_UG)/gateways
-BUILD_UG_LIBS     := $(BUILD_UG)/libs
+BUILD_UG_LIBS     := $(BUILD_LIBDIR)
 BUILD_UG_INCLUDEDIR := $(BUILD_INCLUDEDIR)/syndicate-ug
 BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) \
-	                  $(BUILD_UG_GATEWAYS) \
-							$(BUILD_UG_LIBS) \
-							$(BUILD_UG_INCLUDEDIR) \
+                     $(BUILD_UG_GATEWAYS) \
+                     $(BUILD_UG_LIBS) \
+                     $(BUILD_UG_INCLUDEDIR) \
+
+# python extension
+BUILD_PYTHON_SYNDICATE := $(BUILD)/python/
+BUILD_PYTHON_SYNDICATE_DIRS := $(BUILD_PYTHON_SYNDICATE)
 
 # compiler
 CPPFLAGS := -Wall -g -fPIC -fstack-protector -fstack-protector-all -pthread
@@ -72,7 +76,8 @@ LIBINC   := -L$(BUILD_LIBSYNDICATE)
 BUILD_DIRS   := $(BUILD_PROTOBUFS_DIRS) \
                 $(BUILD_MS_DIRS) \
                 $(BUILD_LIBSYNDICATE_DIRS) \
-                $(BUILD_UG_DIRS)
+                $(BUILD_UG_DIRS) \
+                $(BUILD_PYTHON_SYNDICATE_DIRS)
 
 # misc
 ifeq ($(DISTRO),DEBIAN)
