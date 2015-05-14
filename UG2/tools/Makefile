@@ -19,9 +19,6 @@ all: $(TOOLS)
 $(BUILD_UG_TOOLS)/syndicate-% : $(BUILD_UG_TOOLS)/syndicate-%.o
 	$(CPP) -o $@ $(INC) $(LIBINC) $(LIB) $(OBJ) $(UG_COMMON_OBJ)
 
-install: $(TOOLS)
-	cp -a $(TOOLS) $(BINDIR)
-
 $(BUILD_UG_TOOLS)/%.o : %.c
 	$(CPP) -o $@ $(INC) -c $< $(DEFS)
 
@@ -30,6 +27,6 @@ $(BUILD_UG_TOOLS)/%.o : %.cpp
 
 .PHONY: clean
 clean:
-	/bin/rm -rf $(BUILD_UG)/*
+	rm -f $(OBJ) $(TOOLS)
 
 print-%: ; @echo $*=$($*)

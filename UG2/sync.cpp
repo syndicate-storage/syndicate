@@ -183,6 +183,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    
    int64_t file_version = 0;
    off_t file_size = 0;
+   struct timespec old_manifest_modtime;
    
    if( dirty_blocks == NULL || new_dirty_blocks == NULL ) {
       
@@ -202,7 +203,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    fskit_entry_wlock( fent );
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   file_version = UG_inode_file_version( *inode );
+   file_version = UG_inode_file_version( inode );
    file_size = fskit_entry_get_size( fent );
    
    // get dirty blocks 
@@ -218,7 +219,8 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    }
    
    // make a replica context, snapshotting this inode's dirty blocks
-   rc = UG_replica_context_init( &rctx, ug, path, inode, UG_inode_manifest( *inode ), &inode->old_manifest_modtime, UG_inode_dirty_blocks( *inode ) );
+   old_manifest_modtime = UG_inode_old_manifest_modtime( inode );
+   rc = UG_replica_context_init( &rctx, ug, path, inode, UG_inode_manifest( inode ), &old_manifest_modtime, UG_inode_dirty_blocks( inode ) );
  
    // success?
    if( rc != 0 ) {
@@ -235,7 +237,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    }
    
    // make a vacuum context, snapshotting this inode's garbage 
-   rc = UG_vacuum_context_init( vctx, ug, path, inode, UG_inode_replaced_blocks( *inode ) );
+   rc = UG_vacuum_context_init( vctx, ug, path, inode, UG_inode_replaced_blocks( inode ) );
    
    // success?
    if( rc != 0 ) {
@@ -290,7 +292,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    UG_inode_clear_replaced_blocks( inode );
    
    // all manifest blocks are now clean--subsequent manifest refreshes can overwrite them
-   SG_manifest_set_blocks_dirty( UG_inode_manifest( *inode ), false );
+   SG_manifest_set_blocks_dirty( UG_inode_manifest( inode ), false );
    
    // reference this inode--make sure it doesn't get deleted till we're done
    fskit_entry_ref_entry( fent );
@@ -315,7 +317,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    if( rc != 0 ) {
       
       // failed to replicate (i.e. only partially replicated)
-      SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+      SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
       
       // preserve dirty but uncommitted, non-overwritten blocks 
       UG_write_dirty_blocks_merge( gateway, inode, file_version, file_size, block_size, rctx.blocks, false );
@@ -324,7 +326,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
       rc = UG_vacuum_context_restore( vctx, inode );
       if( rc != 0 ) {
          
-         SG_error("UG_vacuum_context_restore( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+         SG_error("UG_vacuum_context_restore( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
          
          // not only did we partially replicate, we don't remember which blocks we need to try again!
          // the only real solution (long-run) is to start up a new coordinator for this file and have it vacuum it
@@ -340,8 +342,10 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
    else {
       
       // success!  this manifest is the last successfully-vacuumed manifest
-      inode->old_manifest_modtime.tv_sec = rctx.inode_data.manifest_mtime_sec;
-      inode->old_manifest_modtime.tv_nsec = rctx.inode_data.manifest_mtime_nsec;
+      old_manifest_modtime.tv_sec = rctx.inode_data.manifest_mtime_sec;
+      old_manifest_modtime.tv_nsec = rctx.inode_data.manifest_mtime_nsec;
+      
+      UG_inode_set_old_manifest_modtime( inode, &old_manifest_modtime );
       
       while( true ) {
             
@@ -350,7 +354,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
          rc = UG_vacuumer_enqueue( UG_state_vacuumer( ug ), vctx );
          if( rc != 0 ) {
             
-            SG_error("UG_vacuumer_enqueue( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+            SG_error("UG_vacuumer_enqueue( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
             
             continue;
          }

@@ -609,7 +609,7 @@ int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, u
 int UG_dirty_block_evict_and_free( struct md_syndicate_cache* cache, struct UG_inode* inode, struct UG_dirty_block* block ) {
    
    // evict, if needed
-   md_cache_evict_block( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ) );
+   md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ) );
    
    // free up
    UG_dirty_block_free( block );

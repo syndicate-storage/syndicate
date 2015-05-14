@@ -35,7 +35,7 @@ int UG_read_setup_block_buffer( struct UG_inode* inode, uint64_t block_id, char*
    struct SG_manifest_block* block_info = NULL;
    
    // look up this block's info from the manifest 
-   block_info = SG_manifest_block_lookup( &inode->manifest, block_id );
+   block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), block_id );
    if( block_info == NULL ) {
       
       return -EINVAL;
@@ -177,7 +177,7 @@ int UG_read_aligned_setup( struct UG_inode* inode, char* buf, size_t buf_len, of
    for( uint64_t block_id = start_block_id; block_id <= end_block_id; block_id++ ) {
       
       struct UG_dirty_block dirty_block;
-      struct SG_manifest_block* block_info = SG_manifest_block_lookup( &inode->manifest, block_id );
+      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), block_id );
       
       if( block_info == NULL ) {
          
@@ -192,7 +192,7 @@ int UG_read_aligned_setup( struct UG_inode* inode, char* buf, size_t buf_len, of
       if( rc != 0 ) {
          
          SG_error("UG_dirty_block_init_nocopy( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
-                  UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), block_id, block_info->block_version, rc );
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_id, block_info->block_version, rc );
          
          break;
       }
@@ -530,10 +530,10 @@ int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG
       uint64_t block_id = itr->first;
       
       // present in the dirty block set?
-      if( inode->dirty_blocks->find( block_id ) != inode->dirty_blocks->end() ) {
+      if( UG_inode_dirty_blocks( inode )->find( block_id ) != UG_inode_dirty_blocks( inode )->end() ) {
          
          // copy it over!
-         SG_chunk_copy( &(*blocks)[ block_id ].buf, &(*inode->dirty_blocks)[ block_id ].buf );
+         SG_chunk_copy( &(*blocks)[ block_id ].buf, &(*UG_inode_dirty_blocks( inode ))[ block_id ].buf );
       }
       
       else if( absent != NULL ) {
@@ -571,7 +571,7 @@ int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struc
    
    struct SG_manifest blocks_not_dirty;
    
-   rc = SG_manifest_init( &blocks_not_dirty, UG_inode_volume_id( *inode ), UG_inode_coordinator_id( *inode ), UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   rc = SG_manifest_init( &blocks_not_dirty, UG_inode_volume_id( inode ), UG_inode_coordinator_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( rc != 0 ) {
       
       return rc;
@@ -581,7 +581,7 @@ int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struc
    rc = UG_read_dirty_blocks( gateway, inode, blocks, &blocks_not_dirty );
    if( rc != 0 ) {
       
-      SG_error("UG_read_dirty_blocks( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+      SG_error("UG_read_dirty_blocks( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
       
       SG_manifest_free( &blocks_not_dirty );
       return rc;
@@ -601,7 +601,7 @@ int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struc
    
    if( rc != 0 ) {
       
-      SG_error("UG_read_cached_blocks( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+      SG_error("UG_read_cached_blocks( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
    }
    
    return rc;
@@ -648,7 +648,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
    uint64_t min_block_id = (uint64_t)(-1);
    
    // convert *blocks to a manifest, for tracking purposes 
-   rc = SG_manifest_init( &blocks_to_download, UG_inode_volume_id( *inode ), UG_inode_coordinator_id( *inode ), UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   rc = SG_manifest_init( &blocks_to_download, UG_inode_volume_id( inode ), UG_inode_coordinator_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( rc != 0 ) {
       
       // OOM 
@@ -674,7 +674,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
    if( rc != 0 ) {
       
       SG_error("UG_read_blocks_local( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), min_block_id, max_block_id, rc );
+               UG_inode_file_id( inode ), UG_inode_file_version( inode ), min_block_id, max_block_id, rc );
       
       SG_manifest_free( &blocks_to_download );
       return rc;
@@ -688,7 +688,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
       if( rc != 0 ) {
          
          SG_error("UG_read_blocks_remote( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
-                  UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), min_block_id, max_block_id, rc );
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), min_block_id, max_block_id, rc );
       }
    }
    
@@ -735,10 +735,10 @@ int UG_read( struct fskit_core* core, struct fskit_route_metadata* route_metadat
    
    fskit_entry_rlock( fent );
    
-   file_id = UG_inode_file_id( *inode );
-   file_version = UG_inode_file_version( *inode );
-   coordinator_id = UG_inode_coordinator_id( *inode );
-   write_nonce = UG_inode_write_nonce( *inode );
+   file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+   coordinator_id = UG_inode_coordinator_id( inode );
+   write_nonce = UG_inode_write_nonce( inode );
    
    if( rc != 0 ) {
       
@@ -820,7 +820,7 @@ int UG_read( struct fskit_core* core, struct fskit_route_metadata* route_metadat
    fskit_entry_wlock( fent );
    
    // cache last read block, but only if no writes occurred
-   if( file_version == UG_inode_file_version( *inode ) && write_nonce == UG_inode_write_nonce( *inode ) ) {
+   if( file_version == UG_inode_file_version( inode ) && write_nonce == UG_inode_write_nonce( inode ) ) {
       
       
       last_block_id = (buf_len + offset) / block_size;

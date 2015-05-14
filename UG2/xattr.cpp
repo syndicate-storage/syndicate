@@ -179,7 +179,7 @@ static ssize_t UG_xattr_get_cached_blocks( struct fskit_core* core, struct fskit
    char* cached_file_path = NULL;
    ssize_t rc = 0;
    
-   char* cached_file_url = md_url_local_file_url( conf->data_root, volume_id, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   char* cached_file_url = md_url_local_file_url( conf->data_root, volume_id, UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( cached_file_url == NULL ) {
       
       return -ENOMEM;
@@ -205,7 +205,7 @@ static ssize_t UG_xattr_get_cached_blocks( struct fskit_core* core, struct fskit
    else if( rc == -ENOENT ) {
       
       // no cached data--all 0's
-      SG_debug("No data cached for %" PRIX64 ".%" PRId64 "\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+      SG_debug("No data cached for %" PRIX64 ".%" PRId64 "\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
       
       memset( buf, '0', buf_len );
       buf[buf_len - 1] = '\0';
@@ -234,7 +234,7 @@ static ssize_t UG_xattr_get_cached_file_path( struct fskit_core* core, struct fs
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
-   char* cached_file_url = md_url_local_file_url( conf->data_root, volume_id, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   char* cached_file_url = md_url_local_file_url( conf->data_root, volume_id, UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( cached_file_url == NULL ) {
       
       return -ENOMEM;
@@ -285,7 +285,7 @@ static ssize_t UG_xattr_get_coordinator( struct fskit_core* core, struct fskit_e
    struct ms_client* ms = SG_gateway_ms( gateway );
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   rc = ms_client_get_gateway_name( ms, UG_inode_coordinator_id( *inode ), &gateway_name );
+   rc = ms_client_get_gateway_name( ms, UG_inode_coordinator_id( inode ), &gateway_name );
    
    if( rc != 0 || gateway_name == NULL ) {
       
@@ -328,7 +328,7 @@ static ssize_t UG_xattr_get_read_ttl( struct fskit_core* core, struct fskit_entr
    
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   uint32_t read_ttl = UG_inode_max_read_freshness( *inode );
+   uint32_t read_ttl = UG_inode_max_read_freshness( inode );
    
    // how many bytes needed?
    ssize_t len = 2;
@@ -359,7 +359,7 @@ static ssize_t UG_xattr_get_write_ttl( struct fskit_core* core, struct fskit_ent
    
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   uint32_t write_ttl = UG_inode_max_write_freshness( *inode );
+   uint32_t write_ttl = UG_inode_max_write_freshness( inode );
    
    // how many bytes needed?
    ssize_t len = 2;
@@ -749,7 +749,7 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
       if( rc < 0 ) {
          
          if( rc != -EEXIST ) {
-            SG_error("ms_client_setxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( *inode ), name, rc );
+            SG_error("ms_client_setxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( inode ), name, rc );
          }
          else {
             
@@ -763,7 +763,7 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
          rc = fskit_fsetxattr( fs, fent, name, proposed_value, proposed_value_len, 0 );
          if( rc < 0 ) {
             
-            SG_error("fskit_fsetxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( *inode ), name, rc );
+            SG_error("fskit_fsetxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( inode ), name, rc );
          }
          
          *value = SG_CALLOC( char, proposed_value_len );
@@ -790,10 +790,10 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
       if( try_get ) {
          
          // failed to set.  try to get the attribute instead...
-         vallen = UG_download_xattr( gateway, volume_id, UG_inode_file_id( *inode ), name, &val );
+         vallen = UG_download_xattr( gateway, volume_id, UG_inode_file_id( inode ), name, &val );
          if( vallen < 0 ) {
             
-            SG_error("UG_download_xattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( *inode ), name, (int)vallen);
+            SG_error("UG_download_xattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, (int)vallen);
             return vallen;
          }
          
@@ -802,7 +802,7 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
          if( rc < 0 ) {
             
             // not strictly an error, since we can go get it later
-            SG_warn("fskit_fsetxattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( *inode ), name, rc );
+            SG_warn("fskit_fsetxattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, rc );
             rc = 0;
          }
          
@@ -886,7 +886,7 @@ ssize_t UG_listxattr( struct SG_gateway* gateway, char const* path, char *list, 
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   file_id = UG_inode_file_id( *inode );
+   file_id = UG_inode_file_id( inode );
    
    // don't allow this entry to get deleted...
    fskit_entry_unlock( fent );

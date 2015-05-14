@@ -30,8 +30,11 @@ $(BUILD_UG)/%.o : %.cpp
 	@mkdir -p $(shell dirname $@)
 	$(CPP) -o $@ $(INC) -c $< $(DEFS)
 
-.PHONY: clean
+.PHONY: clean 
 clean:
-	/bin/rm -rf $(BUILD_UG)/*
+	$(MAKE) -C $(TOOLS) clean
+	$(MAKE) -C $(GATEWAYS) clean
+	$(MAKE) -C $(LIBS) clean
+	rm -f $(OBJ)
 
 print-%: ; @echo $*=$($*)

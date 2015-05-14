@@ -42,75 +42,7 @@ struct UG_block_gateway_pair {
 };
 
 // UG-specific inode information, for fskit
-struct UG_inode {
-   
-   struct SG_manifest manifest;         // manifest of this file's blocks (includes coordinator_id and file_version)
-   
-   int64_t ms_write_nonce;      // last-known write nonce from the MS
-   int64_t ms_xattr_nonce;      // last-known xattr nonce from the MS
-   int64_t generation;          // last-known generation number of this file
-   
-   int64_t write_nonce;         // uncommited write nonce (initialized to ms_write_nonce; used to indicate dirty data)
-   int64_t xattr_nonce;         // uncommitted xattr nonce
-   
-   struct timespec refresh_time;                // time of last refresh from the ms
-   struct timespec manifest_refresh_time;       // time of last manifest refresh
-   struct timespec children_refresh_time;       // if this is a directory, this is the time the children were last reloaded
-   uint32_t max_read_freshness;         // how long since last refresh, in millis, this inode is to be considered fresh for reading
-   uint32_t max_write_freshness;        // how long since last refresh, in millis, this inode is to be considered fresh for writing
-   
-   bool read_stale;     // if true, this file must be revalidated before the next read
-   bool write_stale;    // if true, this file must be revalidated before the next write
-   bool dirty;          // if true, then we need to flush data on fsync()
-   
-   int64_t ms_num_children;     // the number of children the MS says this inode has
-   int64_t ms_capacity;         // maximum index number of a child in the MS
-   
-   bool vacuuming;              // if true, then we're currently vacuuming this file
-   bool vacuumed;               // if true, then we've already tried to vacuum this file upon discovery (false means we should try again)
-   
-   UG_dirty_block_map_t* dirty_blocks;  // set of modified blocks that must be replicated, either on the next fsync() or last close()
-   
-   struct timespec old_manifest_modtime;// timestamp of the last-replicated manifest (used for vacuuming)
-   struct SG_manifest replaced_blocks;  // set of blocks replaced by writes (contains only metadata; used for vacuuming)
-   
-   UG_inode_fsync_queue_t* sync_queue;  // queue of fsync requests on this inode
-   
-   struct fskit_entry* entry;           // the fskit entry that owns this inode 
-   
-   bool renaming;                       // if true, then this inode is in the process of getting renamed.  Concurrent renames will fail with EBUSY
-   bool deleting;                       // if true, then this inode is in the process of being deleted.  Concurrent opens and stats will fail
-};
-
-#define UG_inode_volume_id( inode ) (inode).manifest.volume_id 
-#define UG_inode_coordinator_id( inode ) (inode).manifest.coordinator_id 
-#define UG_inode_file_id( inode ) (inode).manifest.file_id 
-#define UG_inode_file_version( inode ) (inode).manifest.file_version
-#define UG_inode_write_nonce( inode ) (inode).write_nonce
-#define UG_inode_xattr_nonce( inode ) (inode).xattr_nonce
-#define UG_inode_manifest( inode ) &(inode).manifest
-#define UG_inode_replaced_blocks( inode ) &(inode).replaced_blocks
-#define UG_inode_dirty_blocks( inode ) (inode).dirty_blocks
-#define UG_inode_old_manifest_modtime( inode ) (inode).old_manifest_modtime
-#define UG_inode_fskit_entry( inode ) (inode).entry
-#define UG_inode_is_read_stale( inode, now ) ((inode).read_stale || md_timespec_diff_ms( now, &(inode).refresh_time ) > (inode).max_read_freshness)
-#define UG_inode_renaming( inode ) (inode).renaming
-#define UG_inode_deleting( inode ) (inode).deleting
-#define UG_inode_ms_num_children( inode ) (inode).ms_num_children
-#define UG_inode_ms_capacity( inode ) (inode).ms_capacity
-#define UG_inode_max_read_freshness( inode ) (inode).max_read_freshness
-#define UG_inode_max_write_freshness( inode ) (inode).max_write_freshness
-#define UG_inode_generation( inode ) (inode).generation
-#define UG_inode_refresh_time( inode ) (inode).refresh_time
-#define UG_inode_manifest_refresh_time( inode ) (inode).manifest_refresh_time
-#define UG_inode_sync_queue_len( inode ) (inode)->sync_queue->size()
-
-#define UG_inode_set_write_nonce( inode, wn ) (inode)->write_nonce = wn
-#define UG_inode_set_manifest_refresh_time( inode, ts ) (inode)->manifest_refresh_time = *(ts)
-#define UG_inode_set_old_manifest_modtime( inode, ts ) (inode)->old_manifest_modtime = *(ts)
-#define UG_inode_set_max_read_freshness( inode, rf ) (inode)->max_read_freshness = (rf)
-#define UG_inode_set_max_write_freshness( inode, wf ) (inode)->max_write_freshness = (wf)
-#define UG_inode_set_read_stale( inode, val ) (inode)->read_stale = (val)
+struct UG_inode;
 
 // UG-specific file handle information, for fskit 
 struct UG_file_handle {
@@ -192,5 +124,41 @@ int UG_inode_sync_queue_push( struct UG_inode* inode, struct UG_sync_context* sy
 struct UG_sync_context* UG_inode_sync_queue_pop( struct UG_inode* inode );
 int UG_inode_clear_replaced_blocks( struct UG_inode* inode );
 UG_dirty_block_map_t* UG_inode_replace_dirty_blocks( struct UG_inode* inode, UG_dirty_block_map_t* new_dirty_blocks );
+
+// getters 
+struct UG_inode* UG_inode_alloc( int count );
+uint64_t UG_inode_volume_id( struct UG_inode* inode );
+uint64_t UG_inode_coordinator_id( struct UG_inode* inode );
+uint64_t UG_inode_file_id( struct UG_inode* inode );
+int64_t UG_inode_file_version( struct UG_inode* inode );
+int64_t UG_inode_write_nonce( struct UG_inode* inode );
+int64_t UG_inode_xattr_nonce( struct UG_inode* inode );
+struct SG_manifest* UG_inode_manifest( struct UG_inode* inode );
+struct SG_manifest* UG_inode_replaced_blocks( struct UG_inode* inode );
+UG_dirty_block_map_t* UG_inode_dirty_blocks( struct UG_inode* inode );
+struct timespec UG_inode_old_manifest_modtime( struct UG_inode* inode );
+struct fskit_entry* UG_inode_fskit_entry( struct UG_inode* inode );
+bool UG_inode_is_read_stale( struct UG_inode* inode, struct timespec* now );
+bool UG_inode_renaming( struct UG_inode* inode );
+bool UG_inode_deleting( struct UG_inode* inode );
+int64_t UG_inode_ms_num_children( struct UG_inode* inode );
+int64_t UG_inode_ms_capacity( struct UG_inode* inode );
+uint32_t UG_inode_max_read_freshness( struct UG_inode* inode );
+uint32_t UG_inode_max_write_freshness( struct UG_inode* inode );
+int64_t UG_inode_generation( struct UG_inode* inode );
+struct timespec UG_inode_refresh_time( struct UG_inode* inode );
+struct timespec UG_inode_manifest_refresh_time( struct UG_inode* inode );
+size_t UG_inode_sync_queue_len( struct UG_inode* inode );
+
+// setters
+void UG_inode_set_write_nonce( struct UG_inode* inode, int64_t wn );
+void UG_inode_set_refresh_time( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_manifest_refresh_time( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_max_read_freshness( struct UG_inode* inode, uint32_t rf );
+void UG_inode_set_max_write_freshness( struct UG_inode* inode, uint32_t wf );
+void UG_inode_set_read_stale( struct UG_inode* inode, bool val );
+void UG_inode_set_deleting( struct UG_inode* inode, bool val );
+void UG_inode_set_dirty( struct UG_inode* inode, bool val );
 
 #endif

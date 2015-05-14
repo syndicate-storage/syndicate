@@ -17,6 +17,47 @@
 #include "inode.h"
 #include "block.h"
 
+// UG-specific inode information, for fskit
+struct UG_inode {
+   
+   struct SG_manifest manifest;         // manifest of this file's blocks (includes coordinator_id and file_version)
+   
+   int64_t ms_write_nonce;      // last-known write nonce from the MS
+   int64_t ms_xattr_nonce;      // last-known xattr nonce from the MS
+   int64_t generation;          // last-known generation number of this file
+   
+   int64_t write_nonce;         // uncommited write nonce (initialized to ms_write_nonce; used to indicate dirty data)
+   int64_t xattr_nonce;         // uncommitted xattr nonce
+   
+   struct timespec refresh_time;                // time of last refresh from the ms
+   struct timespec manifest_refresh_time;       // time of last manifest refresh
+   struct timespec children_refresh_time;       // if this is a directory, this is the time the children were last reloaded
+   uint32_t max_read_freshness;         // how long since last refresh, in millis, this inode is to be considered fresh for reading
+   uint32_t max_write_freshness;        // how long since last refresh, in millis, this inode is to be considered fresh for writing
+   
+   bool read_stale;     // if true, this file must be revalidated before the next read
+   bool write_stale;    // if true, this file must be revalidated before the next write
+   bool dirty;          // if true, then we need to flush data on fsync()
+   
+   int64_t ms_num_children;     // the number of children the MS says this inode has
+   int64_t ms_capacity;         // maximum index number of a child in the MS
+   
+   bool vacuuming;              // if true, then we're currently vacuuming this file
+   bool vacuumed;               // if true, then we've already tried to vacuum this file upon discovery (false means we should try again)
+   
+   UG_dirty_block_map_t* dirty_blocks;  // set of modified blocks that must be replicated, either on the next fsync() or last close()
+   
+   struct timespec old_manifest_modtime;// timestamp of the last-replicated manifest (used for vacuuming)
+   struct SG_manifest replaced_blocks;  // set of blocks replaced by writes (contains only metadata; used for vacuuming)
+   
+   UG_inode_fsync_queue_t* sync_queue;  // queue of fsync requests on this inode
+   
+   struct fskit_entry* entry;           // the fskit entry that owns this inode 
+   
+   bool renaming;                       // if true, then this inode is in the process of getting renamed.  Concurrent renames will fail with EBUSY
+   bool deleting;                       // if true, then this inode is in the process of being deleted.  Concurrent opens and stats will fail
+};
+
 // initialize common inode data 
 // type should be MD_ENTRY_FILE or MD_ENTRY_DIR
 // return 0 on success 
@@ -318,7 +359,7 @@ int UG_inode_export_match_size( struct UG_inode* dest, struct md_entry* src ) {
    fskit_entry_fstat( dest->entry, &sb );
    
    // size matches?
-   if( fskit_entry_get_size( UG_inode_fskit_entry( *dest ) ) != src->size ) {
+   if( fskit_entry_get_size( UG_inode_fskit_entry( dest ) ) != src->size ) {
       
       return 0;
    }
@@ -335,7 +376,7 @@ int UG_inode_export_match_size( struct UG_inode* dest, struct md_entry* src ) {
 int UG_inode_export_match_version( struct UG_inode* dest, struct md_entry* src ) {
    
    // version matches?
-   if( SG_manifest_get_file_version( &dest->manifest ) != src->version ) {
+   if( UG_inode_file_version( dest ) != src->version ) {
       
       return 0;
    }
@@ -490,7 +531,7 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
    bool replace;        // set to true if we will replace blocks in the manifest; false if not (i.e. depends on whether the "new_manifest" is actually newer)
    
    // i.e. if our manifest is newer than the "new" manifest, then don't replace blocks on conflict
-   replace = !UG_inode_manifest_is_newer_than( UG_inode_manifest( *inode ), SG_manifest_get_modtime_sec( new_manifest ), SG_manifest_get_modtime_nsec( new_manifest ) );
+   replace = !UG_inode_manifest_is_newer_than( UG_inode_manifest( inode ), SG_manifest_get_modtime_sec( new_manifest ), SG_manifest_get_modtime_nsec( new_manifest ) );
    
    // add all blocks in new_manifest
    for( SG_manifest_block_iterator itr = SG_manifest_block_iterator_begin( new_manifest ); itr != SG_manifest_block_iterator_end( new_manifest ); itr++ ) {
@@ -504,7 +545,7 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       
       struct SG_manifest_block* replaced_block = NULL;
       
-      struct SG_manifest_block* existing_block = SG_manifest_block_lookup( UG_inode_manifest( *inode ), block_id );
+      struct SG_manifest_block* existing_block = SG_manifest_block_lookup( UG_inode_manifest( inode ), block_id );
       int64_t existing_block_version = 0;
       
       if( existing_block == NULL ) {
@@ -531,18 +572,18 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       // merge into current manifest, replacing the old one *if* the new_manifest is actually newer (makes this method commutative, associative)
       // that is, only overwrite a block if the block is not dirty, and if the new_manifest has a newer modification time (this in turn is guaranteed
       // to be monotonically increasing since there is at most one coordinator).
-      rc = SG_manifest_put_block( UG_inode_manifest( *inode ), new_block, replace );
+      rc = SG_manifest_put_block( UG_inode_manifest( inode ), new_block, replace );
       if( rc != 0 ) {
          
          break;
       }
       
       // clear cached block (idempotent)
-      md_cache_evict_block( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), block_id, existing_block_version );
+      md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_id, existing_block_version );
       
       // clear dirty block (idempotent)
-      dirty_block_itr = UG_inode_dirty_blocks( *inode )->find( block_id );
-      if( dirty_block_itr != UG_inode_dirty_blocks( *inode )->end() ) {
+      dirty_block_itr = UG_inode_dirty_blocks( inode )->find( block_id );
+      if( dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
          
          dirty_block = &dirty_block_itr->second;
          UG_dirty_block_evict_and_free( cache, inode, dirty_block );
@@ -553,10 +594,10 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       // clear invalidated garbage, if there is any (idempotent)
       if( have_dirty_block ) {
          
-         replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( *inode ), block_id );
+         replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), block_id );
          if( replaced_block != NULL ) {
             
-            SG_manifest_delete_block( UG_inode_replaced_blocks( *inode ), block_id );
+            SG_manifest_delete_block( UG_inode_replaced_blocks( inode ), block_id );
          }
       }
    }
@@ -609,11 +650,11 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
       if( !do_preserve && !UG_dirty_block_is_flushing( itr->second ) && UG_dirty_block_fd( itr->second ) < 0 ) {
          
          // flush out of RAM
-         rc = UG_dirty_block_flush_async( gateway, fs_path, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), &itr->second );
+         rc = UG_dirty_block_flush_async( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), &itr->second );
          if( rc != 0 ) {
             
             SG_error("UG_dirty_block_flush_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
             
             worst_rc = rc;
             break;
@@ -631,7 +672,7 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
          if( rc != 0 ) {
             
             SG_error("UG_dirty_block_flush_finish( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
             
             worst_rc = rc;
          }
@@ -643,14 +684,14 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
 
 
 // extract the modified dirty blocks from the inode 
-// return 0 on success, and fill in *modified. the *inode will no longer have modified dirty blocks
+// return 0 on success, and fill in *modified. the inode will no longer have modified dirty blocks
 // return -ENOMEM on OOM 
 // NOTE: inode->entry must be write-locked
 int UG_inode_dirty_blocks_extract_modified( struct UG_inode* inode, UG_dirty_block_map_t* modified ) {
    
    if( modified != NULL ) {
       
-      for( UG_dirty_block_map_t::iterator itr = UG_inode_dirty_blocks( *inode )->begin(); itr != UG_inode_dirty_blocks( *inode )->end(); itr++ ) {
+      for( UG_dirty_block_map_t::iterator itr = UG_inode_dirty_blocks( inode )->begin(); itr != UG_inode_dirty_blocks( inode )->end(); itr++ ) {
          
          // dirty?
          if( !UG_dirty_block_dirty( itr->second ) ) {
@@ -672,7 +713,7 @@ int UG_inode_dirty_blocks_extract_modified( struct UG_inode* inode, UG_dirty_blo
    // and remove from the inode 
    for( UG_dirty_block_map_t::iterator itr = modified->begin(); itr != modified->end(); itr++ ) {
       
-      UG_inode_dirty_blocks( *inode )->erase( itr->first );
+      UG_inode_dirty_blocks( inode )->erase( itr->first );
    }
    
    return 0;
@@ -692,7 +733,7 @@ int UG_inode_dirty_blocks_return( struct UG_inode* inode, UG_dirty_block_map_t* 
       
       try { 
          
-         (*inode->dirty_blocks)[ itr->first ] = itr->second;
+         (*UG_inode_dirty_blocks( inode ))[ itr->first ] = itr->second;
       }
       catch( bad_alloc& ba ) {
          
@@ -717,7 +758,7 @@ int UG_inode_replaced_blocks_clear( struct UG_inode* inode, UG_dirty_block_map_t
    // clear out replaced block info--we're vacuuming them now.
    for( UG_dirty_block_map_t::iterator itr = dirty_blocks->begin(); itr != dirty_blocks->end(); itr++ ) {
       
-      SG_manifest_delete_block( UG_inode_replaced_blocks( *inode ), itr->first );
+      SG_manifest_delete_block( UG_inode_replaced_blocks( inode ), itr->first );
    }
    
    return 0;
@@ -745,8 +786,8 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
    UG_dirty_block_map_t::iterator old_dirty_block_itr;
    
    // already cached?
-   old_dirty_block_itr = UG_inode_dirty_blocks( *inode )->find( UG_dirty_block_id( *dirty_block ) );
-   if( old_dirty_block_itr != UG_inode_dirty_blocks( *inode )->end() ) {
+   old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( *dirty_block ) );
+   if( old_dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
       
       old_dirty_block = &old_dirty_block_itr->second;
       
@@ -764,7 +805,7 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
    // cache 
    try {
       
-      (*inode->dirty_blocks)[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
+      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
    }
    catch( bad_alloc& ba ) {
       
@@ -799,8 +840,8 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    struct UG_dirty_block* old_dirty_block = NULL;
    
    // what blocks are being replaced?
-   struct SG_manifest_block* old_block_info_ref = SG_manifest_block_lookup( UG_inode_manifest( *inode ), UG_dirty_block_id( *dirty_block ) );
-   struct SG_manifest_block* old_replaced_block_info = SG_manifest_block_lookup( UG_inode_replaced_blocks( *inode ), UG_dirty_block_id( *dirty_block ) );
+   struct SG_manifest_block* old_block_info_ref = SG_manifest_block_lookup( UG_inode_manifest( inode ), UG_dirty_block_id( *dirty_block ) );
+   struct SG_manifest_block* old_replaced_block_info = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), UG_dirty_block_id( *dirty_block ) );
    
    // store a copy, so we can put it back on failure 
    if( old_block_info_ref != NULL ) {
@@ -814,18 +855,18 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    }
    
    // find the old dirty block
-   UG_dirty_block_map_t::iterator old_dirty_block_itr = UG_inode_dirty_blocks( *inode )->find( UG_dirty_block_id( *dirty_block ) );
-   if( old_dirty_block_itr != UG_inode_dirty_blocks( *inode )->end() ) {
+   UG_dirty_block_map_t::iterator old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( *dirty_block ) );
+   if( old_dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
       
       old_dirty_block = &old_dirty_block_itr->second;
    }
    
    // update the manifest 
-   rc = SG_manifest_put_block( UG_inode_manifest( *inode ), UG_dirty_block_info( *dirty_block ), true );
+   rc = SG_manifest_put_block( UG_inode_manifest( inode ), UG_dirty_block_info( *dirty_block ), true );
    if( rc != 0 ) {
       
       SG_error("SG_manifest_put_block( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_dirty_block_id( *dirty_block ), UG_dirty_block_version( *dirty_block ), rc );
+               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *dirty_block ), UG_dirty_block_version( *dirty_block ), rc );
       
       
       if( old_block_info_ref != NULL ) {
@@ -839,7 +880,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    // insert the new dirty block 
    try {
       
-      (*inode->dirty_blocks)[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
+      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
    }
    catch( bad_alloc& ba ) {
       
@@ -847,7 +888,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
       
       // put the old block data back 
       // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
-      SG_manifest_put_block_nocopy( UG_inode_manifest( *inode ), &old_block_info, true );
+      SG_manifest_put_block_nocopy( UG_inode_manifest( inode ), &old_block_info, true );
       
       goto UG_inode_block_commit_out;
    }
@@ -857,20 +898,20 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
       if( old_replaced_block_info == NULL ) {
          
          // this block is to be replaced, but we'll need to garbage-collect the old version 
-         rc = SG_manifest_put_block_nocopy( UG_inode_replaced_blocks( *inode ), &old_block_info, true );
+         rc = SG_manifest_put_block_nocopy( UG_inode_replaced_blocks( inode ), &old_block_info, true );
          if( rc != 0 ) {
             
             SG_error("SG_manifest_put_block( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-                     UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), old_block_info.block_id, old_block_info.block_version, rc );
+                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), old_block_info.block_id, old_block_info.block_version, rc );
             
             // put the old block data back 
             // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
-            SG_manifest_put_block_nocopy( UG_inode_manifest( *inode ), &old_block_info, true );
+            SG_manifest_put_block_nocopy( UG_inode_manifest( inode ), &old_block_info, true );
             
             // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
             if( old_dirty_block != NULL ) {
                
-               (*inode->dirty_blocks)[ UG_dirty_block_id( *dirty_block ) ] = *old_dirty_block;
+               (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
             }
             
             goto UG_inode_block_commit_out;
@@ -879,7 +920,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    }
    
    // this block is dirty--keep it in the face of future manifest refreshes, until we replicate
-   SG_manifest_set_block_dirty( UG_inode_manifest( *inode ), UG_dirty_block_id( *dirty_block ), true );
+   SG_manifest_set_block_dirty( UG_inode_manifest( inode ), UG_dirty_block_id( *dirty_block ), true );
    
 UG_inode_block_commit_out:
    
@@ -973,12 +1014,12 @@ int UG_inode_truncate_find_removed( struct SG_gateway* gateway, struct UG_inode*
       drop_block_id ++;
    }
    
-   uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( *inode ) );
+   uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( inode ) );
       
    // copy over blocks to removed
    for( uint64_t dead_block_id = drop_block_id; dead_block_id <= max_block_id; dead_block_id++ ) {
       
-      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( *inode ), dead_block_id );
+      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), dead_block_id );
       if( block_info == NULL ) {
          
          // write hole 
@@ -1017,16 +1058,16 @@ int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t
       drop_block_id ++;
    }
    
-   uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( *inode ) );
+   uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( inode ) );
    
-   int64_t old_version = UG_inode_file_version( *inode );
+   int64_t old_version = UG_inode_file_version( inode );
    
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
    
    // go through the manifest and drop locally-cached blocks
    for( uint64_t dead_block_id = drop_block_id; dead_block_id <= max_block_id; dead_block_id++ ) {
       
-      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( *inode ), dead_block_id );
+      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), dead_block_id );
       if( block_info == NULL ) {
          
          // write hole 
@@ -1034,33 +1075,33 @@ int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t
       }
       
       // clear dirty block
-      UG_dirty_block_map_t::iterator dirty_block_itr = UG_inode_dirty_blocks( *inode )->find( drop_block_id );
-      if( dirty_block_itr != UG_inode_dirty_blocks( *inode )->end() ) {
+      UG_dirty_block_map_t::iterator dirty_block_itr = UG_inode_dirty_blocks( inode )->find( drop_block_id );
+      if( dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
          
          struct UG_dirty_block* dirty_block = &dirty_block_itr->second;
          
          UG_dirty_block_evict_and_free( cache, inode, dirty_block );
-         UG_inode_dirty_blocks( *inode )->erase( dirty_block_itr );
+         UG_inode_dirty_blocks( inode )->erase( dirty_block_itr );
       }
       
       // clear cached block 
-      md_cache_evict_block( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), dead_block_id, SG_manifest_block_version( block_info ) );
+      md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), dead_block_id, SG_manifest_block_version( block_info ) );
    }
    
    if( new_version != 0 ) {
          
       // next version 
-      SG_manifest_set_file_version( UG_inode_manifest( *inode ), new_version );
+      SG_manifest_set_file_version( UG_inode_manifest( inode ), new_version );
       
       // reversion 
-      md_cache_reversion_file( cache, UG_inode_file_id( *inode ), old_version, new_version );
+      md_cache_reversion_file( cache, UG_inode_file_id( inode ), old_version, new_version );
    }
    
    // drop extra manifest blocks 
-   SG_manifest_truncate( UG_inode_manifest( *inode ), (new_size / block_size) );
+   SG_manifest_truncate( UG_inode_manifest( inode ), (new_size / block_size) );
    
    // set new size 
-   SG_manifest_set_size( UG_inode_manifest( *inode ), new_size );
+   SG_manifest_set_size( UG_inode_manifest( inode ), new_size );
    
    return 0;
 }
@@ -1119,7 +1160,7 @@ static struct fskit_entry* UG_inode_resolve_path_and_parent( struct fskit_core* 
 
 
 // export an fskit_entry inode from the filesystem
-// return 0 on success, and fill in *inode_data and *renaming from the inode
+// return 0 on success, and fill in inode_data and *renaming from the inode
 // return -ENOMEM on OOM 
 int UG_inode_export_fs( struct fskit_core* fs, char const* fs_path, struct md_entry* inode_data ) {
    
@@ -1191,4 +1232,134 @@ UG_dirty_block_map_t* UG_inode_replace_dirty_blocks( struct UG_inode* inode, UG_
    UG_dirty_block_map_t* ret = inode->dirty_blocks;
    inode->dirty_blocks = new_dirty_blocks;
    return ret;
+}
+
+// getters
+struct UG_inode* UG_inode_alloc( int count ) {
+   return SG_CALLOC( struct UG_inode, count );
+}
+
+uint64_t UG_inode_volume_id( struct UG_inode* inode ) {
+   return SG_manifest_get_volume_id( &inode->manifest );
+}
+
+uint64_t UG_inode_coordinator_id( struct UG_inode* inode ) {
+   return SG_manifest_get_coordinator( &inode->manifest );
+}
+
+uint64_t UG_inode_file_id( struct UG_inode* inode ) {
+   return SG_manifest_get_file_id( &inode->manifest );
+}
+
+int64_t UG_inode_file_version( struct UG_inode* inode ) {
+   return SG_manifest_get_file_version( &inode->manifest );
+}
+
+int64_t UG_inode_write_nonce( struct UG_inode* inode ) {
+   return inode->write_nonce;
+}
+
+int64_t UG_inode_xattr_nonce( struct UG_inode* inode ) {
+   return inode->xattr_nonce;
+}
+
+struct SG_manifest* UG_inode_manifest( struct UG_inode* inode ) {
+   return &inode->manifest;
+}
+
+struct SG_manifest* UG_inode_replaced_blocks( struct UG_inode* inode ) {
+   return &inode->replaced_blocks;
+}
+
+UG_dirty_block_map_t* UG_inode_dirty_blocks( struct UG_inode* inode ) {
+   return inode->dirty_blocks;
+}
+
+struct timespec UG_inode_old_manifest_modtime( struct UG_inode* inode ) {
+   return inode->old_manifest_modtime;
+}
+  
+struct fskit_entry* UG_inode_fskit_entry( struct UG_inode* inode ) {
+   return inode->entry;
+}
+
+bool UG_inode_is_read_stale( struct UG_inode* inode, struct timespec* now ) {
+   return (inode->read_stale || md_timespec_diff_ms( now, &inode->refresh_time ) > inode->max_read_freshness);
+}
+
+bool UG_inode_renaming( struct UG_inode* inode ) {
+   return inode->renaming;
+}
+
+bool UG_inode_deleting( struct UG_inode* inode ) {
+   return inode->deleting;
+}
+
+int64_t UG_inode_ms_num_children( struct UG_inode* inode ) {
+   return inode->ms_num_children;
+}
+
+int64_t UG_inode_ms_capacity( struct UG_inode* inode ) {
+   return inode->ms_capacity;
+}
+   
+uint32_t UG_inode_max_read_freshness( struct UG_inode* inode ) {
+   return inode->max_read_freshness;
+}
+   
+uint32_t UG_inode_max_write_freshness( struct UG_inode* inode ) {
+   return inode->max_write_freshness;
+}
+
+int64_t UG_inode_generation( struct UG_inode* inode ) {
+   return inode->generation;
+}
+
+struct timespec UG_inode_refresh_time( struct UG_inode* inode ) {
+   return inode->refresh_time;
+}
+   
+struct timespec UG_inode_manifest_refresh_time( struct UG_inode* inode ) {
+   return inode->manifest_refresh_time;
+}
+
+size_t UG_inode_sync_queue_len( struct UG_inode* inode ) {
+   return inode->sync_queue->size();
+}
+
+// setters 
+void UG_inode_set_write_nonce( struct UG_inode* inode, int64_t wn ) {
+   inode->write_nonce = wn;
+}
+
+void UG_inode_set_refresh_time( struct UG_inode* inode, struct timespec* ts ) {
+   inode->refresh_time = *ts;
+}
+
+void UG_inode_set_manifest_refresh_time( struct UG_inode* inode, struct timespec* ts ) {
+   inode->manifest_refresh_time = *ts;
+}
+
+void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts ) {
+   inode->old_manifest_modtime = *ts;
+}
+
+void UG_inode_set_max_read_freshness( struct UG_inode* inode, uint32_t rf ) {
+   inode->max_read_freshness = rf;
+}
+
+void UG_inode_set_max_write_freshness( struct UG_inode* inode, uint32_t wf ) {
+   inode->max_write_freshness = wf;
+}
+
+void UG_inode_set_read_stale( struct UG_inode* inode, bool val ) {
+   inode->read_stale = val;
+}
+
+void UG_inode_set_deleting( struct UG_inode* inode, bool val ) {
+   inode->deleting = val;
+}
+
+void UG_inode_set_dirty( struct UG_inode* inode, bool val ) {
+   inode->dirty = val;
 }

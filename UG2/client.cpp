@@ -34,16 +34,16 @@ static int UG_update_propagate( struct UG_inode* inode, int64_t* write_nonce, ui
    }
    if( owner_id != NULL ) {
       
-      fskit_entry_set_owner( inode->entry, *owner_id );
-      SG_manifest_set_owner_id( UG_inode_manifest( *inode ), *owner_id );
+      fskit_entry_set_owner( UG_inode_fskit_entry( inode ), *owner_id );
+      SG_manifest_set_owner_id( UG_inode_manifest( inode ), *owner_id );
    }
    if( mode != NULL ) {
       
-      fskit_entry_set_mode( inode->entry, *mode );
+      fskit_entry_set_mode( UG_inode_fskit_entry( inode ), *mode );
    }
    if( mtime != NULL ) {
       
-      fskit_entry_set_mtime( inode->entry, mtime );
+      fskit_entry_set_mtime( UG_inode_fskit_entry( inode ), mtime );
    }
    
    return 0;
@@ -84,7 +84,7 @@ static int UG_update_local( struct UG_state* state, char const* path, uint64_t* 
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   write_nonce = UG_inode_write_nonce( *inode );
+   write_nonce = UG_inode_write_nonce( inode );
    
    rc = UG_inode_export_fs( fs, path, &inode_data );
    if( rc != 0 ) {
@@ -129,7 +129,7 @@ static int UG_update_local( struct UG_state* state, char const* path, uint64_t* 
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
    // propagate information back to the inode, if the write nonce hasn't changed
-   if( write_nonce == UG_inode_write_nonce( *inode ) ) {
+   if( write_nonce == UG_inode_write_nonce( inode ) ) {
       
       UG_update_propagate( inode, NULL, owner_id, mode, mtime );
    }
@@ -177,8 +177,8 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
 
    // get write nonce, so we can optimistically propogate the metadata back into the inode (i.e. if it doesn't change before/after the update)
-   write_nonce = UG_inode_write_nonce( *inode );
-   coordinator_id = UG_inode_coordinator_id( *inode );
+   write_nonce = UG_inode_write_nonce( inode );
+   coordinator_id = UG_inode_coordinator_id( inode );
    
    fskit_entry_unlock( fent );
    
@@ -224,7 +224,7 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
 
-   if( write_nonce == UG_inode_write_nonce( *inode ) ) {
+   if( write_nonce == UG_inode_write_nonce( inode ) ) {
       
       UG_update_propagate( inode, NULL, owner_id, mode, mtime );
    }
@@ -269,7 +269,7 @@ static int UG_update( struct UG_state* state, char const* path, uint64_t* owner_
    fskit_entry_rlock( fent );
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   coordinator_id = UG_inode_coordinator_id( *inode );
+   coordinator_id = UG_inode_coordinator_id( inode );
    
    fskit_entry_unlock( fent );
    

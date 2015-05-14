@@ -72,7 +72,7 @@ static int UG_fs_export( struct md_entry* dest, struct fskit_entry* src, uint64_
    fskit_entry_get_ctime( src, &dest->ctime_sec, &dest->ctime_nsec );
    fskit_entry_get_mtime( src, &dest->mtime_sec, &dest->mtime_nsec );
    
-   SG_manifest_get_modtime( UG_inode_manifest( *inode ), &dest->manifest_mtime_sec, &dest->manifest_mtime_nsec );
+   SG_manifest_get_modtime( UG_inode_manifest( inode ), &dest->manifest_mtime_sec, &dest->manifest_mtime_nsec );
    
    dest->owner = fskit_entry_get_owner( src );
    dest->mode = fskit_entry_get_mode( src );
@@ -157,7 +157,7 @@ static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_meta
    fskit_entry_set_file_id( fent, file_id );
    
    // success!  create the inode data 
-   inode = SG_CALLOC( struct UG_inode, 1 );
+   inode = UG_inode_alloc( 1 );
    if( inode == NULL ) {
       
       return -ENOMEM;
@@ -298,7 +298,7 @@ static int UG_fs_open( struct fskit_core* fs, struct fskit_route_metadata* route
       
       inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
       
-      if( UG_inode_deleting( *inode ) ) {
+      if( UG_inode_deleting( inode ) ) {
          
          rc = -ENOENT;
       }
@@ -355,7 +355,7 @@ static int UG_fs_stat( struct fskit_core* fs, struct fskit_route_metadata* route
    // check deleting...
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   if( UG_inode_deleting( *inode ) ) {
+   if( UG_inode_deleting( inode ) ) {
       
       rc = -ENOENT;
    }
@@ -388,7 +388,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    struct UG_replica_context rctx;
    struct UG_vacuum_context vctx;
    
-   struct timespec old_manifest_timestamp = UG_inode_old_manifest_modtime( *inode );
+   struct timespec old_manifest_timestamp = UG_inode_old_manifest_modtime( inode );
    struct timespec new_manifest_timestamp;
    
    int64_t new_manifest_timestamp_sec = 0;
@@ -402,13 +402,13 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    }
    
    // if deleting, deny further I/O 
-   if( UG_inode_deleting( *inode ) ) {
+   if( UG_inode_deleting( inode ) ) {
       
       return -ENOENT;
    }
    
    // can't truncate a directory 
-   if( fskit_entry_get_type( inode->entry ) == FSKIT_ENTRY_TYPE_DIR ) {
+   if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_DIR ) {
       
       return -EISDIR;
    }
@@ -419,14 +419,14 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return rc;
    }
    
-   rc = SG_manifest_init( &removed, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   rc = SG_manifest_init( &removed, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( rc != 0 ) {
       
       md_entry_free( &inode_data );
       return rc;
    }
    
-   rc = SG_manifest_dup( &new_manifest, UG_inode_manifest( *inode ) );
+   rc = SG_manifest_dup( &new_manifest, UG_inode_manifest( inode ) );
    if( rc != 0 ) {
       
       // OOM
@@ -519,7 +519,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    UG_inode_truncate( gateway, inode, new_size, inode_data.version );
    
    // preserve the timestamp from the replicated manifest, so they match on the RG and locally
-   SG_manifest_set_modtime( UG_inode_manifest( *inode ), new_manifest_timestamp_sec, new_manifest_timestamp_nsec );
+   SG_manifest_set_modtime( UG_inode_manifest( inode ), new_manifest_timestamp_sec, new_manifest_timestamp_nsec );
    
    // garbate-collect 
    while( 1 ) {
@@ -557,19 +557,19 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
    int32_t manifest_mtime_nsec = 0;
    
    // if deleting, deny further I/O 
-   if( UG_inode_deleting( *inode ) ) {
+   if( UG_inode_deleting( inode ) ) {
       
       return -ENOENT;
    }
    
-   if( fskit_entry_get_type( inode->entry ) != FSKIT_ENTRY_TYPE_DIR ) {
+   if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) != FSKIT_ENTRY_TYPE_DIR ) {
       
       return -EISDIR;
    }
    
-   SG_manifest_get_modtime( UG_inode_manifest( *inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
+   SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
-   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
+   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
    if( rc != 0 ) {
       
       // OOM
@@ -587,7 +587,7 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
    
    SG_request_data_free( &reqdat );
    
-   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( *inode ), &req, NULL, &reply );
+   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( inode ), &req, NULL, &reply );
    if( rc != 0 ) {
       
       // network error 
@@ -606,7 +606,7 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
    UG_inode_truncate( gateway, inode, new_size, 0 );
    
    // reload inode on next access
-   inode->read_stale = true;
+   UG_inode_set_read_stale( inode, true );
    
    return rc;
 }
@@ -626,7 +626,7 @@ static int UG_fs_trunc( struct fskit_core* fs, struct fskit_route_metadata* rout
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    char* path = fskit_route_metadata_path( route_metadata );
    
-   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( *inode ),
+   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
                          UG_fs_trunc_local( gateway, path, inode, new_size ),
                          UG_fs_trunc_remote( gateway, path, inode, new_size ), &rc );
    
@@ -650,34 +650,34 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    
    struct UG_vacuum_context vctx;
    
-   if( UG_inode_deleting( *inode ) ) {
+   if( UG_inode_deleting( inode ) ) {
       
       return -ENOENT;
    }
    
    // deny subsequent I/O operations 
-   inode->deleting = true;
+   UG_inode_set_deleting( inode, true );
    
    // export...
    rc = UG_inode_export( &inode_data, inode, 0, NULL );
    if( rc != 0 ) {
       
-      inode->deleting = false;
+      UG_inode_set_deleting( inode, false );
       return rc;
    }
    
    // if this is a file, and we're the coordinator, vacuum it 
-   if( UG_inode_coordinator_id( *inode ) == SG_gateway_id( gateway ) && fskit_entry_get_file_id( inode->entry ) == FSKIT_ENTRY_TYPE_FILE ) {
+   if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && fskit_entry_get_file_id( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_FILE ) {
          
       memset( &vctx, 0, sizeof(struct UG_vacuum_context) );
       
-      rc = UG_vacuum_context_init( &vctx, ug, fs_path, inode, UG_inode_replaced_blocks( *inode ) );
+      rc = UG_vacuum_context_init( &vctx, ug, fs_path, inode, UG_inode_replaced_blocks( inode ) );
       if( rc != 0 ) {
          
          SG_error("UG_vacuum_context_init('%s') rc = %d\n", fs_path, rc );
          
          md_entry_free( &inode_data );
-         inode->deleting = false;
+         UG_inode_set_deleting( inode, false );
          return rc;
       }
       
@@ -704,15 +704,15 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    
    if( rc != 0 ) {
       
-      inode->deleting = false;
+      UG_inode_set_deleting( inode, false );
       SG_error("ms_client_delete('%s') rc = %d\n", fs_path, rc );
       return rc;
    }
    
    // blow away local cached state, if this is a file 
-   if( fskit_entry_get_file_id( inode->entry ) == FSKIT_ENTRY_TYPE_FILE ) {
+   if( fskit_entry_get_file_id( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_FILE ) {
       
-      md_cache_evict_file( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+      md_cache_evict_file( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    }
    
    return rc;
@@ -736,9 +736,9 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
    int64_t manifest_mtime_sec = 0;
    int32_t manifest_mtime_nsec = 0;
    
-   SG_manifest_get_modtime( UG_inode_manifest( *inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
+   SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
-   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
+   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
    if( rc != 0 ) {
       
       // OOM
@@ -757,7 +757,7 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
    
    SG_request_data_free( &reqdat );
    
-   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( *inode ), &req, NULL, &reply );
+   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( inode ), &req, NULL, &reply );
    if( rc != 0 ) {
       
       // network error 
@@ -773,7 +773,7 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
    }
    
    // blow away local cached state 
-   md_cache_evict_file( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ) );
+   md_cache_evict_file( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    
    return rc;
 }
@@ -794,7 +794,7 @@ static int UG_fs_detach( struct fskit_core* fs, struct fskit_route_metadata* rou
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
    char* path = fskit_route_metadata_path( route_metadata );
    
-   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( *inode ),
+   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
                          UG_fs_detach_local( gateway, fskit_route_metadata_path( route_metadata ), inode ),
                          UG_fs_detach_remote( gateway, fskit_route_metadata_path( route_metadata ), inode ), &rc );
    
@@ -904,14 +904,14 @@ static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* 
    int32_t manifest_mtime_nsec = 0;
    
    // if this is a directory, then this is a "local" rename--i.e. we have the ability to ask the MS directly, since the MS is the coordinator of all directories.
-   if( fskit_entry_get_type( inode->entry ) == FSKIT_ENTRY_TYPE_DIR ) {
+   if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_DIR ) {
       
       return UG_fs_rename_local( gateway, old_parent, fs_path, inode, new_parent, new_path, new_inode );
    }
    
-   SG_manifest_get_modtime( UG_inode_manifest( *inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
+   SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
-   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
+   rc = SG_request_data_init_manifest( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), manifest_mtime_sec, manifest_mtime_nsec, &reqdat );
    if( rc != 0 ) {
       
       // OOM
@@ -929,7 +929,7 @@ static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* 
    
    SG_request_data_free( &reqdat );
    
-   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( *inode ), &req, NULL, &reply );
+   rc = SG_client_request_send( gateway, UG_inode_coordinator_id( inode ), &req, NULL, &reply );
    if( rc != 0 ) {
       
       // network error 
@@ -966,7 +966,7 @@ static int UG_fs_rename( struct fskit_core* fs, struct fskit_route_metadata* rou
       new_inode = (struct UG_inode*)fskit_entry_get_user_data( dest );
    }
    
-   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( *inode ),
+   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
                          UG_fs_rename_remote( gateway, fskit_route_metadata_parent( route_metadata ), path, inode, fskit_route_metadata_new_parent( route_metadata ), new_path, new_inode ),
                          UG_fs_rename_local( gateway, fskit_route_metadata_parent( route_metadata ), path, inode, fskit_route_metadata_new_parent( route_metadata ), new_path, new_inode ),
                          &rc );

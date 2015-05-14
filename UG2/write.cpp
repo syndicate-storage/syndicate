@@ -25,7 +25,7 @@
 // NOTE: inode->entry must be write-locked!
 int UG_write_timestamp_update( struct UG_inode* inode, struct timespec* ts ) {
    
-   fskit_entry_set_mtime( inode->entry, ts );
+   fskit_entry_set_mtime( UG_inode_fskit_entry( inode ), ts );
    return 0;
 }
 
@@ -35,7 +35,7 @@ int UG_write_timestamp_update( struct UG_inode* inode, struct timespec* ts ) {
 // NOTE: inode->entry must be write-locked!
 int UG_write_nonce_update( struct UG_inode* inode ) {
    
-   inode->write_nonce = md_random64();
+   UG_inode_set_write_nonce( inode, md_random64() );
    
    return 0;
 }
@@ -57,7 +57,7 @@ static int UG_write_read_unaligned_blocks( struct SG_gateway* gateway, char cons
    rc = UG_read_unaligned_setup( gateway, fs_path, inode, buf_len, offset, &unaligned_blocks );
    if( rc != 0 ) {
 
-      SG_error("UG_read_unaligned_setup( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), fs_path, rc );
+      SG_error("UG_read_unaligned_setup( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), fs_path, rc );
       return rc;
    }
    
@@ -65,7 +65,7 @@ static int UG_write_read_unaligned_blocks( struct SG_gateway* gateway, char cons
    rc = UG_read_blocks( gateway, fs_path, inode, &unaligned_blocks );
    if( rc != 0 ) {
    
-      SG_error("UG_read_blocks( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), fs_path, rc );
+      SG_error("UG_read_blocks( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), fs_path, rc );
       
       UG_dirty_block_map_free( &unaligned_blocks );
       
@@ -189,7 +189,7 @@ static int UG_write_aligned_setup( struct UG_inode* inode, char* buf, size_t buf
       struct SG_manifest_block write_hole;
       struct SG_chunk write_hole_block;
       
-      struct SG_manifest_block* block_info = SG_manifest_block_lookup( &inode->manifest, aligned_block_id );
+      struct SG_manifest_block* block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), aligned_block_id );
       
       if( block_info == NULL ) {
          
@@ -212,7 +212,7 @@ static int UG_write_aligned_setup( struct UG_inode* inode, char* buf, size_t buf
       if( rc != 0 ) {
          
          SG_error("UG_dirty_block_init_ram_nocopy( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                  UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), block_info->block_id, block_info->block_version, rc );
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_info->block_id, block_info->block_version, rc );
          
          break;
       }
@@ -269,7 +269,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
       }
       
       // skip truncated 
-      if( old_file_version != UG_inode_file_version( *inode ) ) {
+      if( old_file_version != UG_inode_file_version( inode ) ) {
          
          if( block_id * block_size >= (unsigned)old_size ) {
             
@@ -285,7 +285,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
       }
       
       // skip if we shouldn't overwrite 
-      if( !overwrite && UG_inode_dirty_blocks( *inode )->find( block_id ) != UG_inode_dirty_blocks( *inode )->end() ) {
+      if( !overwrite && UG_inode_dirty_blocks( inode )->find( block_id ) != UG_inode_dirty_blocks( inode )->end() ) {
       
          tmp_itr = itr;
          itr++;
@@ -324,7 +324,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
          
          // failed 
          SG_error("UG_inode_dirty_block_commit( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ), rc );
+               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ), rc );
          
          break;
       }
@@ -377,7 +377,7 @@ int UG_write( struct fskit_core* core, struct fskit_route_metadata* route_metada
    rc = UG_consistency_manifest_ensure_fresh( gateway, fskit_route_metadata_path( route_metadata ) );
    if( rc != 0 ) {
       
-      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", UG_inode_file_id( *inode ), fskit_route_metadata_path( route_metadata ), rc );
+      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", UG_inode_file_id( inode ), fskit_route_metadata_path( route_metadata ), rc );
       return rc;
    }
    
@@ -423,7 +423,7 @@ int UG_write( struct fskit_core* core, struct fskit_route_metadata* route_metada
       
       // merge written blocks into the inode 
       // NOTE: moves contents of write_blocks into the inode, or frees them
-      rc = UG_write_dirty_blocks_merge( gateway, inode, UG_inode_file_version( *inode ), fskit_entry_get_size( fent ), block_size, &write_blocks, true );
+      rc = UG_write_dirty_blocks_merge( gateway, inode, UG_inode_file_version( inode ), fskit_entry_get_size( fent ), block_size, &write_blocks, true );
       if( rc != 0 ) {
          
          SG_error("UG_write_dirty_blocks_merge( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
@@ -461,13 +461,13 @@ int UG_write( struct fskit_core* core, struct fskit_route_metadata* route_metada
    UG_write_timestamp_update( inode, &ts );
    UG_write_nonce_update( inode );
    
-   if( UG_inode_coordinator_id( *inode ) == gateway_id ) {
+   if( UG_inode_coordinator_id( inode ) == gateway_id ) {
       
       // we're the coordinator--advance the manifest's modtime 
-      SG_manifest_set_modtime( UG_inode_manifest( *inode ), ts.tv_sec, ts.tv_nsec );
+      SG_manifest_set_modtime( UG_inode_manifest( inode ), ts.tv_sec, ts.tv_nsec );
    }
    
-   inode->dirty = true;
+   UG_inode_set_dirty( inode, true );
    
    return rc;
 }
@@ -486,8 +486,9 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
    
    // clone manifest--we'll patch it and then move it into place as an atomic operation 
    struct SG_manifest new_manifest;
+   struct timespec old_manifest_modtime;
    
-   rc = SG_manifest_dup( &new_manifest, UG_inode_manifest( *inode ) );
+   rc = SG_manifest_dup( &new_manifest, UG_inode_manifest( inode ) );
    if( rc != 0 ) {
       
       // OOM
@@ -498,7 +499,7 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
    if( rc != 0 ) {
       
       if( rc != -ENOMEM ) {
-         SG_error("SG_manifest_patch( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+         SG_error("SG_manifest_patch( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
       }
       
       SG_manifest_free( &new_manifest );
@@ -506,12 +507,13 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
    }
    
    // try to replicate the patch manifest
-   rc = UG_replica_context_init( &rctx, ug, reqdat->fs_path, inode, &new_manifest, &inode->old_manifest_modtime, NULL );
+   old_manifest_modtime = UG_inode_old_manifest_modtime( inode );
+   rc = UG_replica_context_init( &rctx, ug, reqdat->fs_path, inode, &new_manifest, &old_manifest_modtime, NULL );
    if( rc != 0 ) {
       
       // failed!
       if( rc != -ENOMEM ) {
-         SG_error("UG_replica_context_init( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), rc );
+         SG_error("UG_replica_context_init( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
       }
       
       SG_manifest_free( &new_manifest );
@@ -530,27 +532,27 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
       uint64_t block_id = SG_manifest_block_iterator_id( itr );
       
       // did this patch touch a cached block?
-      dirty_block_itr = UG_inode_dirty_blocks( *inode )->find( block_id );
-      if( dirty_block_itr != UG_inode_dirty_blocks( *inode )->end() ) {
+      dirty_block_itr = UG_inode_dirty_blocks( inode )->find( block_id );
+      if( dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
          
          dirty_block = &dirty_block_itr->second;
          
          // did this dirty block displace a replicated block?
-         replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( *inode ), block_id );
+         replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), block_id );
          if( replaced_block != NULL ) {
             
             if( SG_manifest_block_version( replaced_block ) == UG_dirty_block_version( *dirty_block ) ) {
                
                // this dirty block displaced a replicated block, but now this dirty block has been remotely overwritten.
                // blow it away.
-               SG_manifest_delete_block( UG_inode_replaced_blocks( *inode ), block_id );
+               SG_manifest_delete_block( UG_inode_replaced_blocks( inode ), block_id );
             }
          }
          
          // blow away this dirty block 
          UG_dirty_block_evict_and_free( cache, inode, dirty_block );
          
-         UG_inode_dirty_blocks( *inode )->erase( dirty_block_itr );
+         UG_inode_dirty_blocks( inode )->erase( dirty_block_itr );
       }
    }
    

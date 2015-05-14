@@ -51,7 +51,7 @@ static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
    // only if local 
-   if( UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) ) {
+   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
       
       fskit_entry_unlock( fent );
       return -ENOENT;
@@ -133,14 +133,14 @@ static int UG_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_d
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   if( UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) ) {
+   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
       
       fskit_entry_unlock( fent );
       return -ESTALE;
    }
    
    // copy the manifest
-   rc = SG_manifest_dup( manifest, UG_inode_manifest( *inode ) );
+   rc = SG_manifest_dup( manifest, UG_inode_manifest( inode ) );
    
    fskit_entry_unlock( fent );
    
@@ -176,7 +176,7 @@ static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
    // must be local 
-   if( UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) ) {
+   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
       
       fskit_entry_unlock( fent );
       return -ESTALE;
@@ -227,7 +227,7 @@ static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* req
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   if( UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) ) {
+   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
       
       fskit_entry_unlock( fent );
       return -ESTALE;
@@ -248,9 +248,9 @@ static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* req
       }
       
       entity_info->volume_id = volume_id;
-      entity_info->coordinator_id = UG_inode_coordinator_id( *inode );
+      entity_info->coordinator_id = UG_inode_coordinator_id( inode );
       entity_info->file_id = sb.st_ino;
-      entity_info->file_version = UG_inode_file_version( *inode );
+      entity_info->file_version = UG_inode_file_version( inode );
    }
    
    fskit_entry_unlock( fent );

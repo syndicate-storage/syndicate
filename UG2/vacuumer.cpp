@@ -108,7 +108,7 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
    else {
       
       // vacuum all of this inode's blocks
-      rc = SG_manifest_dup( &vctx->old_blocks, UG_inode_replaced_blocks( *inode ) );
+      rc = SG_manifest_dup( &vctx->old_blocks, UG_inode_replaced_blocks( inode ) );
       if( rc != 0 ) {
          
          md_entry_free( &vctx->inode_data );
@@ -136,7 +136,7 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
    }
    
    // get the old manifest timestamp
-   vctx->old_manifest_timestamp = UG_inode_old_manifest_modtime( *inode );
+   vctx->old_manifest_timestamp = UG_inode_old_manifest_modtime( inode );
    
    vctx->have_old_manifest_timestamp = true;
    vctx->have_old_blocks = true;
@@ -174,7 +174,7 @@ int UG_vacuum_context_restore( struct UG_vacuum_context* vctx, struct UG_inode* 
    int rc = 0;
    
    // put back replaced blocks 
-   rc = SG_manifest_patch_nocopy( UG_inode_replaced_blocks( *inode ), &vctx->old_blocks, false );
+   rc = SG_manifest_patch_nocopy( UG_inode_replaced_blocks( inode ), &vctx->old_blocks, false );
    SG_manifest_clear_nofree( &vctx->old_blocks );
    
    if( rc != 0 ) {

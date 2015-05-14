@@ -96,23 +96,23 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   manifest_refresh_mtime = UG_inode_manifest_refresh_time( *inode );
-   file_id = UG_inode_file_id( *inode );
-   file_version = UG_inode_file_version( *inode );
-   coordinator_id = UG_inode_coordinator_id( *inode );
+   manifest_refresh_mtime = UG_inode_manifest_refresh_time( inode );
+   file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+   coordinator_id = UG_inode_coordinator_id( inode );
    file_size = fskit_entry_get_size( fent );
-   max_read_freshness = UG_inode_max_read_freshness( *inode );
+   max_read_freshness = UG_inode_max_read_freshness( inode );
    
-   SG_manifest_get_modtime( UG_inode_manifest( *inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
+   SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
    // are we the coordinator?
-   if( SG_gateway_id( gateway ) == SG_manifest_get_coordinator( UG_inode_manifest( *inode ) ) ) {
+   if( SG_gateway_id( gateway ) == SG_manifest_get_coordinator( UG_inode_manifest( inode ) ) ) {
       
       local_coordinator = true;
    }
    
    // if we're the coordinator and we didn't explicitly mark the manifest as stale, then it's fresh
-   if( !SG_manifest_is_stale( UG_inode_manifest( *inode ) ) && local_coordinator ) {
+   if( !SG_manifest_is_stale( UG_inode_manifest( inode ) ) && local_coordinator ) {
       
       // we're the coordinator--we already have the freshest version 
       fskit_entry_unlock( fent );
@@ -132,7 +132,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    }
    
    // is the manifest stale?
-   if( !SG_manifest_is_stale( UG_inode_manifest( *inode ) ) && md_timespec_diff_ms( &now, &manifest_refresh_mtime ) <= max_read_freshness ) {
+   if( !SG_manifest_is_stale( UG_inode_manifest( inode ) ) && md_timespec_diff_ms( &now, &manifest_refresh_mtime ) <= max_read_freshness ) {
       
       // still fresh
       fskit_entry_unlock( fent );
@@ -204,7 +204,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
          }
          
          // restore modtime 
-         SG_manifest_set_modtime( UG_inode_manifest( *inode ), SG_manifest_get_modtime_sec( &new_manifest ), SG_manifest_get_modtime_nsec( &new_manifest ) );
+         SG_manifest_set_modtime( UG_inode_manifest( inode ), SG_manifest_get_modtime_sec( &new_manifest ), SG_manifest_get_modtime_nsec( &new_manifest ) );
       }
          
       // update refresh time 
@@ -342,7 +342,7 @@ static int UG_consistency_fskit_entry_init( struct fskit_core* fs, struct fskit_
    }
    
    // build the inode
-   inode = SG_CALLOC( struct UG_inode, 1 );
+   inode = UG_inode_alloc( 1 );
    if( inode == NULL ) {
       
       fskit_entry_destroy( fs, fent, false );
@@ -452,7 +452,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
    
    // blow away the inode and all its cached data
    // (NOTE: don't care if this fails--it'll get reaped eventually)
-   md_cache_evict_file( cache, fskit_entry_get_file_id( fent ), UG_inode_file_version( *inode ) );
+   md_cache_evict_file( cache, fskit_entry_get_file_id( fent ), UG_inode_file_version( inode ) );
    
    UG_inode_free( inode );
    inode = NULL;
@@ -491,6 +491,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
+   
+   struct timespec refresh_time;
    
    // types don't match?
    if( !UG_inode_export_match_type( inode, inode_data ) ) {
@@ -540,7 +542,7 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       // if this is a file, it's manifest is stale--we'll want to reload the block information as well
       if( fskit_entry_get_type( new_fent ) == FSKIT_ENTRY_TYPE_FILE ) {
          
-         SG_manifest_set_stale( UG_inode_manifest( *inode ), true );
+         SG_manifest_set_stale( UG_inode_manifest( inode ), true );
       }
       
       // replaced!
@@ -553,15 +555,15 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       
       // reversion--both metadata, and cached data 
       // NOTE: don't really care if cache reversioning fails--it'll get reaped eventually
-      md_cache_reversion_file( cache, inode_data->file_id, UG_inode_file_version( *inode ), inode_data->version );
-      SG_manifest_set_file_version( &inode->manifest, inode_data->version );
+      md_cache_reversion_file( cache, inode_data->file_id, UG_inode_file_version( inode ), inode_data->version );
+      SG_manifest_set_file_version( UG_inode_manifest( inode ), inode_data->version );
    }
    
    // file sizes don't match?
    if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && !UG_inode_export_match_size( inode, inode_data ) ) {
       
       // need to expand/truncate inode
-      off_t size = fskit_entry_get_size( UG_inode_fskit_entry( *inode ) );
+      off_t size = fskit_entry_get_size( UG_inode_fskit_entry( inode ) );
       off_t new_size = inode_data->size;
       
       if( size > new_size ) {
@@ -569,20 +571,20 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
          // shrunk
          uint64_t max_block_id = (new_size / block_size);
          
-         for( SG_manifest_block_iterator itr = SG_manifest_block_iterator_begin( UG_inode_manifest( *inode ) ); itr != SG_manifest_block_iterator_end( UG_inode_manifest( *inode ) ); itr++ ) {
+         for( SG_manifest_block_iterator itr = SG_manifest_block_iterator_begin( UG_inode_manifest( inode ) ); itr != SG_manifest_block_iterator_end( UG_inode_manifest( inode ) ); itr++ ) {
             
             if( SG_manifest_block_iterator_id( itr ) <= max_block_id ) {
                continue;
             }
             
             // NOTE: don't really care if these fail; they'll get reaped eventually 
-            md_cache_evict_block_async( cache, UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), SG_manifest_block_iterator_id( itr ), (SG_manifest_block_iterator_block( itr ))->block_version );
+            md_cache_evict_block_async( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), SG_manifest_block_iterator_id( itr ), (SG_manifest_block_iterator_block( itr ))->block_version );
          }
          
-         SG_manifest_truncate( UG_inode_manifest( *inode ), max_block_id );
+         SG_manifest_truncate( UG_inode_manifest( inode ), max_block_id );
       }
       
-      SG_manifest_set_size( UG_inode_manifest( *inode ), new_size );
+      SG_manifest_set_size( UG_inode_manifest( inode ), new_size );
    }
    
    // names don't match?
@@ -598,14 +600,14 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    }
    
    // manifest timestamps don't match, and we don't coordinate this file?
-   if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) &&
-      (inode_data->manifest_mtime_sec != SG_manifest_get_modtime_sec( UG_inode_manifest( *inode ) ) || inode_data->manifest_mtime_nsec != SG_manifest_get_modtime_nsec( UG_inode_manifest( *inode ) ) ) ) {
+   if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) &&
+      (inode_data->manifest_mtime_sec != SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) ) || inode_data->manifest_mtime_nsec != SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) ) ) ) {
       
-      SG_manifest_set_stale( UG_inode_manifest( *inode ), true );
+      SG_manifest_set_stale( UG_inode_manifest( inode ), true );
    }
    
    // xattr nonces don't match?
-   if( inode_data->xattr_nonce != UG_inode_xattr_nonce( *inode ) ) {
+   if( inode_data->xattr_nonce != UG_inode_xattr_nonce( inode ) ) {
       
       // clear them out 
       fskit_fremovexattr_all( fs, fent );
@@ -618,13 +620,15 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       
       // reloaded!
       // no longer stale
-      inode->read_stale = false;
-      clock_gettime( CLOCK_REALTIME, &inode->refresh_time );
+      UG_inode_set_read_stale( inode, false );
+      
+      clock_gettime( CLOCK_REALTIME, &refresh_time );
+      UG_inode_set_refresh_time( inode, &refresh_time );
       
       // only update the manifest refresh time if we're NOT the coordinator
-      if( UG_inode_coordinator_id( *inode ) != SG_gateway_id( gateway ) ) { 
+      if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) { 
          
-         SG_manifest_set_modtime( UG_inode_manifest( *inode ), inode_data->manifest_mtime_sec, inode_data->manifest_mtime_nsec );
+         SG_manifest_set_modtime( UG_inode_manifest( inode ), inode_data->manifest_mtime_sec, inode_data->manifest_mtime_nsec );
       }
    }
    
@@ -844,11 +848,11 @@ static int UG_consistency_path_local_stale( struct SG_gateway* gateway, char con
       struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( cur );
       
       // is this inode stale?  skip if not
-      if( !UG_inode_is_read_stale( *inode, refresh_begin ) ) {
+      if( !UG_inode_is_read_stale( inode, refresh_begin ) ) {
          continue;
       }
       
-      rc = ms_client_getattr_request( &path_ent, UG_inode_volume_id( *inode ), UG_inode_file_id( *inode ), UG_inode_file_version( *inode ), UG_inode_write_nonce( *inode ), NULL );
+      rc = ms_client_getattr_request( &path_ent, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ), NULL );
       if( rc != 0 ) {
          
          // OOM 
@@ -1051,7 +1055,7 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
       SG_safe_free( deepest_ent_name );
       
       deepest_ent_parent_id = deepest_ent_file_id;
-      deepest_ent_file_id = UG_inode_file_id( *inode );
+      deepest_ent_file_id = UG_inode_file_id( inode );
       deepest_ent_name = name;
       
       depth++;
@@ -1426,8 +1430,8 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( dent );
    
-   dir_refresh_time = UG_inode_refresh_time( *inode );
-   max_read_freshness = UG_inode_max_read_freshness( *inode );
+   dir_refresh_time = UG_inode_refresh_time( inode );
+   max_read_freshness = UG_inode_max_read_freshness( inode );
    
    // is the inode's directory listing still fresh?
    if( md_timespec_diff_ms( &now, &dir_refresh_time ) <= max_read_freshness ) {
@@ -1439,9 +1443,9 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    
    // stale--redownload
    file_id = fskit_entry_get_file_id( dent );
-   num_children = UG_inode_ms_num_children( *inode );
-   least_unknown_generation = UG_inode_generation( *inode );
-   capacity = UG_inode_ms_capacity( *inode );
+   num_children = UG_inode_ms_num_children( inode );
+   least_unknown_generation = UG_inode_generation( inode );
+   capacity = UG_inode_ms_capacity( inode );
    
    // reference dent--it must stick around 
    fskit_entry_ref_entry( dent );
