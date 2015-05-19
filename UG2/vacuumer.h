@@ -64,6 +64,8 @@ struct UG_vacuumer {
    struct SG_gateway* gateway;                  // parent gateway
 };
 
+extern "C" {
+   
 // set up a vacuumer 
 int UG_vacuumer_init( struct UG_vacuumer* vacuumer, struct SG_gateway* gateway );
 
@@ -90,5 +92,7 @@ int UG_vacuumer_enqueue( struct UG_vacuumer* vacuumer, struct UG_vacuum_context*
 
 // synchronously vacuum
 int UG_vacuum_run( struct UG_vacuumer* vacuumer, struct UG_vacuum_context* vctx );
+
+}
 
 #endif
