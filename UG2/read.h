@@ -25,6 +25,8 @@
 #include "inode.h"
 #include "core.h"
 
+extern "C" {
+   
 // set up a request for a block
 int UG_read_setup_block_buffer( struct UG_inode* inode, uint64_t block_id, char* buf, uint64_t buf_len, UG_dirty_block_map_t* blocks );
 
@@ -44,7 +46,8 @@ int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struc
 int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, UG_dirty_block_map_t* blocks );
 
 // read callback to fskit 
-int UG_read( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data );
+int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data );
 
+}
 
 #endif 

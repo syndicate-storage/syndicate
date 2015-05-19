@@ -281,10 +281,10 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
    // sanity check--every block in blocks must be allocated
    for( UG_dirty_block_map_t::iterator block_itr = blocks->begin(); block_itr != blocks->end(); block_itr++ ) {
       
-      if( UG_dirty_block_buf( block_itr->second ).data == NULL ) {
+      if( UG_dirty_block_buf( &block_itr->second )->data == NULL ) {
          return -EINVAL;
       }
-      if( (unsigned)UG_dirty_block_buf( block_itr->second ).len < block_size ) {
+      if( (unsigned)UG_dirty_block_buf( &block_itr->second )->len < block_size ) {
          return -EINVAL;
       }
    }
@@ -541,7 +541,7 @@ int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG
          // absent.  note it.
          struct SG_manifest_block absent_block_info;
          
-         rc = SG_manifest_block_dup( &absent_block_info, UG_dirty_block_info( itr->second ) );
+         rc = SG_manifest_block_dup( &absent_block_info, UG_dirty_block_info( &itr->second ) );
          if( rc != 0 ) {
             
             // OOM 
@@ -657,7 +657,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
    
    for( UG_dirty_block_map_t::iterator itr = blocks->begin(); itr != blocks->end(); itr++ ) {
       
-      rc = SG_manifest_put_block( &blocks_to_download, UG_dirty_block_info( itr->second ), true );
+      rc = SG_manifest_put_block( &blocks_to_download, UG_dirty_block_info( &itr->second ), true );
       if( rc != 0 ) {
          
          SG_manifest_free( &blocks_to_download );
@@ -702,7 +702,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
 // return 0 on success
 // return -errno on failure 
 // fent should not be locked
-int UG_read( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data ) {
+int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data ) {
    
    int rc = 0;
    
@@ -831,7 +831,7 @@ int UG_read( struct fskit_core* core, struct fskit_route_metadata* route_metadat
          last_block_read = &last_block_read_itr->second;
          
          // remember to evict this block when we close 
-         UG_file_handle_evict_add_hint( fh, last_block_id, UG_dirty_block_version( *last_block_read ) );
+         UG_file_handle_evict_add_hint( fh, last_block_id, UG_dirty_block_version( last_block_read ) );
          
          // cache this block
          rc = UG_inode_dirty_block_cache( inode, last_block_read );
