@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+# AUTO-GENERATED FILE
+
 ADMIN_PUBLIC_KEY = """@MS_APP_ADMIN_PUBLIC_KEY@""".strip()
 ADMIN_EMAIL = "@MS_APP_ADMIN_EMAIL@".strip()
 ADMIN_OPENID_URL = "@MS_APP_ADMIN_OPENID_URL@".strip()
