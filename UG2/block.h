@@ -51,19 +51,11 @@ struct UG_dirty_block {
    bool mmaped;
 };
 
-#define UG_dirty_block_id( blk ) (blk).info.block_id
-#define UG_dirty_block_version( blk ) (blk).info.block_version
-#define UG_dirty_block_buf( blk ) (blk).buf
-#define UG_dirty_block_fd( blk ) (blk).block_fd
-#define UG_dirty_block_info( blk ) &(blk).info
-#define UG_dirty_block_unshared( blk ) (blk).unshared
-#define UG_dirty_block_dirty( blk ) (blk).dirty
-#define UG_dirty_block_is_flushing( blk ) ((blk).block_fut != NULL)
-#define UG_dirty_block_mmaped( blk ) (blk).mmaped
-
 // map block ID to dirty block to define a set of modified blocks across an inode's handles
 typedef map< uint64_t, struct UG_dirty_block > UG_dirty_block_map_t;
 
+extern "C" {
+   
 // init dirty block 
 int UG_dirty_block_init_ram( struct UG_dirty_block* dirty_block, struct SG_manifest_block* info, char const* buf, size_t buflen );
 int UG_dirty_block_init_ram_nocopy( struct UG_dirty_block* dirty_block, struct SG_manifest_block* info, char* buf, size_t buflen );
@@ -99,5 +91,19 @@ int UG_dirty_block_munmap( struct UG_dirty_block* dirty_block );
 
 // alignment 
 int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, uint64_t* aligned_start_id, uint64_t* aligned_end_id, off_t* aligned_start_offset );
+
+// getters 
+uint64_t UG_dirty_block_id( struct UG_dirty_block* blk );
+int64_t UG_dirty_block_version( struct UG_dirty_block* blk );
+struct SG_chunk* UG_dirty_block_buf( struct UG_dirty_block* blk );
+int UG_dirty_block_fd( struct UG_dirty_block* blk );
+struct SG_manifest_block* UG_dirty_block_info( struct UG_dirty_block* blk );
+bool UG_dirty_block_unshared( struct UG_dirty_block* blk );
+bool UG_dirty_block_dirty( struct UG_dirty_block* blk );
+bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk );
+bool UG_dirty_block_mmaped( struct UG_dirty_block* blk );
+
+}
+
 
 #endif 

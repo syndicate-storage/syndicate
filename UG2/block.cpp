@@ -199,7 +199,7 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
    }
    
    // zero-copy initialize a request
-   SG_request_data_init_block( gateway, fs_path, file_id, file_version, UG_dirty_block_id( *dirty_block ), UG_dirty_block_version( *dirty_block ), &reqdat );
+   SG_request_data_init_block( gateway, fs_path, file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), &reqdat );
    
    rc = SG_gateway_cached_block_get( gateway, &reqdat, &dirty_block->buf );
    
@@ -209,7 +209,7 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
          
          // some other error 
          SG_error( "SG_gateway_cached_block_get( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                   file_id, file_version, UG_dirty_block_id( *dirty_block ), UG_dirty_block_version( *dirty_block ), rc );
+                   file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
       }
       
       if( free_on_failure ) {
@@ -378,6 +378,7 @@ int UG_dirty_block_set_dirty( struct UG_dirty_block* dirty_block, bool dirty ) {
 // return -EINVAL if the block was already flushed, or is mmaped
 // return -errno on cache failure
 // NOTE: be careful not to free dirty_block until the future (*ret_block_fut) has been finalized!
+// NOTE: not thread-safe--don't try flushing the same block twice
 int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct UG_dirty_block* dirty_block ) {
    
    int rc = 0;
@@ -455,7 +456,7 @@ int UG_dirty_block_flush_finish_ex( struct UG_dirty_block* dirty_block, bool fre
    if( rc != 0 ) {
       
       SG_error("md_cache_flush_write( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-               md_cache_block_future_file_id( *block_fut ), md_cache_block_future_file_version( *block_fut ), md_cache_block_future_block_id( *block_fut ), md_cache_block_future_block_version( *block_fut ), rc );
+               md_cache_block_future_file_id( block_fut ), md_cache_block_future_file_version( block_fut ), md_cache_block_future_block_id( block_fut ), md_cache_block_future_block_version( block_fut ), rc );
       
       return rc;
    }
@@ -465,7 +466,7 @@ int UG_dirty_block_flush_finish_ex( struct UG_dirty_block* dirty_block, bool fre
    if( block_fd < 0 ) {
       
       SG_error("md_cache_block_future_release_fd( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-               md_cache_block_future_file_id( *block_fut ), md_cache_block_future_file_version( *block_fut ), md_cache_block_future_block_id( *block_fut ), md_cache_block_future_block_version( *block_fut ), block_fd );
+               md_cache_block_future_file_id( block_fut ), md_cache_block_future_file_version( block_fut ), md_cache_block_future_block_id( block_fut ), md_cache_block_future_block_version( block_fut ), block_fd );
       
       return block_fd;
    }
@@ -609,9 +610,47 @@ int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, u
 int UG_dirty_block_evict_and_free( struct md_syndicate_cache* cache, struct UG_inode* inode, struct UG_dirty_block* block ) {
    
    // evict, if needed
-   md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ) );
+   md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ) );
    
    // free up
    UG_dirty_block_free( block );
    return 0;
+}
+
+
+// getters
+uint64_t UG_dirty_block_id( struct UG_dirty_block* blk ) {
+   return blk->info.block_id;
+}
+
+int64_t UG_dirty_block_version( struct UG_dirty_block* blk ) {
+   return blk->info.block_version;
+}
+
+struct SG_chunk* UG_dirty_block_buf( struct UG_dirty_block* blk ) {
+   return &blk->buf;
+}
+
+int UG_dirty_block_fd( struct UG_dirty_block* blk ) {
+   return blk->block_fd;
+}
+
+struct SG_manifest_block* UG_dirty_block_info( struct UG_dirty_block* blk ) {
+   return &blk->info;
+}
+
+bool UG_dirty_block_unshared( struct UG_dirty_block* blk ) {
+   return blk->unshared;
+}
+
+bool UG_dirty_block_dirty( struct UG_dirty_block* blk ) {
+   return blk->dirty;
+}
+
+bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk ) {
+   return (blk->block_fut) != NULL;
+}
+
+bool UG_dirty_block_mmaped( struct UG_dirty_block* blk ) {
+   return blk->mmaped;
 }
