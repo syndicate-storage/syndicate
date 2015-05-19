@@ -18,6 +18,29 @@
 #include "libsyndicate/url.h"
 #include "libsyndicate/storage.h"
 
+struct md_cache_block_future {
+   
+   // ID of this chunk
+   struct md_cache_entry_key key;
+   
+   // chunk of data to write
+   char* block_data;
+   size_t data_len;
+   
+   // fd to receive writes
+   int block_fd;
+   
+   // asynchronous disk I/O structures
+   struct aiocb aio;
+   int aio_rc;
+   int write_rc;
+   
+   sem_t sem_ongoing;
+   uint64_t flags;      // cache future flags (detached, unshared, etc.)
+   
+   bool finalized;
+};
+
 // compare two cache records
 // they're ordered by file id, then version, then block id, then block version
 bool md_cache_entry_key_comp_func( const struct md_cache_entry_key& c1, const struct md_cache_entry_key& c2 ) {
@@ -1606,6 +1629,26 @@ int md_cache_block_future_get_write_error( struct md_cache_block_future* f ) {
 // get the block future's file descriptor 
 int md_cache_block_future_get_fd( struct md_cache_block_future* f ) {
    return f->block_fd;
+}
+
+// get block future file ID
+uint64_t md_cache_block_future_file_id( struct md_cache_block_future* fut ) {
+   return fut->key.file_id;
+}
+
+// get block future file version 
+int64_t md_cache_block_future_file_version( struct md_cache_block_future* fut ) {
+   return fut->key.file_version;
+}
+
+// get block future block id
+uint64_t md_cache_block_future_block_id( struct md_cache_block_future* fut ) {
+   return fut->key.block_id;
+}
+
+// get block future block version
+int64_t md_cache_block_future_block_version( struct md_cache_block_future* fut ) {
+   return fut->key.block_version;
 }
 
 // extract the block file descriptor from a future, making it so the cache is no longer responsible for it.

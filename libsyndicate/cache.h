@@ -77,35 +77,7 @@ struct md_cache_entry_key_comp {
 };
 
 // ongoing cache write for a file
-struct md_cache_block_future {
-   
-   // ID of this chunk
-   struct md_cache_entry_key key;
-   
-   // chunk of data to write
-   char* block_data;
-   size_t data_len;
-   
-   // fd to receive writes
-   int block_fd;
-   
-   // asynchronous disk I/O structures
-   struct aiocb aio;
-   int aio_rc;
-   int write_rc;
-   
-   sem_t sem_ongoing;
-   uint64_t flags;      // cache future flags (detached, unshared, etc.)
-   
-   bool finalized;
-};
-
-
-// helpers to get at cache block future info 
-#define md_cache_block_future_file_id( fut ) (fut).key.file_id
-#define md_cache_block_future_file_version( fut ) (fut).key.file_version
-#define md_cache_block_future_block_id( fut ) (fut).key.block_id
-#define md_cache_block_future_block_version( fut ) (fut).key.block_version
+struct md_cache_block_future;
 
 typedef list<struct md_cache_block_future*> md_cache_block_buffer_t;
 typedef md_cache_block_buffer_t md_cache_completion_buffer_t;
@@ -236,6 +208,10 @@ int md_cache_block_future_get_write_error( struct md_cache_block_future* f );
 
 // getters 
 int md_cache_block_future_get_fd( struct md_cache_block_future* f );
+uint64_t md_cache_block_future_file_id( struct md_cache_block_future* fut );
+int64_t md_cache_block_future_file_version( struct md_cache_block_future* fut );
+uint64_t md_cache_block_future_block_id( struct md_cache_block_future* fut );
+int64_t md_cache_block_future_block_version( struct md_cache_block_future* fut );
 
 // memory management 
 int md_cache_block_future_free_all( vector<struct md_cache_block_future*>* futs, bool close_fds );
