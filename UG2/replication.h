@@ -53,12 +53,16 @@ struct UG_replica_context {
    bool sent_ms_update;                 // if true, then we've sent the new inode metadata to the MS
 };
 
+extern "C" {
+   
 // context setup/teardown
 int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* ug, char const* fs_path, struct UG_inode* inode, struct SG_manifest* manifest, struct timespec* old_manifest_timestamp, UG_dirty_block_map_t* flushed_blocks );
 int UG_replica_context_free( struct UG_replica_context* rctx );
 
 // send a manifest and a of dirty blocks to a given gateway
 int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx );
+
+}
 
 // setters 
 UG_dirty_block_map_t* UG_replica_context_release_blocks( struct UG_replica_context* rctx );
