@@ -43,7 +43,7 @@ int UG_write_nonce_update( struct UG_inode* inode ) {
 
 // allocate and download the unaligned blocks of the write.
 // merge the relevant portions of buf into them.
-// *dirty_blocks must NOT contain the affected blocks--they will be allocated and put in place by this method.
+// dirty_blocks must NOT contain the affected blocks--they will be allocated and put in place by this method.
 // return 0 on success 
 // return -EINVAL if we don't have block info in the inode's block manifest for the unaligned blocks
 // return -errno on failure 
@@ -124,13 +124,13 @@ static int UG_write_unaligned_merge_data( char* buf, size_t buf_len, off_t offse
       dirty_block = &dirty_block_itr->second;
       
       // sanity check...
-      if( UG_dirty_block_buf( *dirty_block ).data == NULL ) {
+      if( UG_dirty_block_buf( dirty_block )->data == NULL ) {
          
          // not allocated
          return -EINVAL;
       }
       
-      memcpy( UG_dirty_block_buf( *dirty_block ).data + block_size - first_aligned_block_offset, buf, block_size - first_aligned_block_offset );
+      memcpy( UG_dirty_block_buf( dirty_block )->data + block_size - first_aligned_block_offset, buf, block_size - first_aligned_block_offset );
    }
    
    if( last_aligned_block != first_aligned_block && last_aligned_block > 0 ) {
@@ -146,7 +146,7 @@ static int UG_write_unaligned_merge_data( char* buf, size_t buf_len, off_t offse
       dirty_block = &dirty_block_itr->second;
       
       // sanity check...
-      if( UG_dirty_block_buf( *dirty_block ).data == NULL ) {
+      if( UG_dirty_block_buf( dirty_block )->data == NULL ) {
          
          // not allocated
          return -EINVAL;
@@ -155,14 +155,14 @@ static int UG_write_unaligned_merge_data( char* buf, size_t buf_len, off_t offse
       // where does the last block touched by buf begin in buf?
       off_t last_block_off = first_aligned_block_offset + (block_size * (last_aligned_block - first_aligned_block));
       
-      memcpy( UG_dirty_block_buf( *dirty_block ).data, buf + last_block_off, buf_len - last_block_off );
+      memcpy( UG_dirty_block_buf( dirty_block )->data, buf + last_block_off, buf_len - last_block_off );
    }
    
    return 0;
 }
 
 // set up writes to aligned blocks, constructing dirty blocks from offsets in buf (i.e. zero-copy write)
-// *dirty_blocks must NOT contain any of the blocks over which this write applies
+// dirty_blocks must NOT contain any of the blocks over which this write applies
 // return 0 on success
 // return -ENOMEM on OOM 
 // NOTE: inode->entry must be read-locked at least
@@ -256,7 +256,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
       struct UG_dirty_block* block = &itr->second;
       
       // skip non-dirty 
-      if( !UG_dirty_block_dirty( *block ) ) {
+      if( !UG_dirty_block_dirty( block ) ) {
          
          UG_dirty_block_free( block );
          
@@ -296,7 +296,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
       }
       
       // if flushed to disk, then mmap it
-      if( UG_dirty_block_buf( itr->second ).data == NULL && UG_dirty_block_fd( itr->second ) > 0 ) {
+      if( UG_dirty_block_buf( &itr->second )->data == NULL && UG_dirty_block_fd( &itr->second ) > 0 ) {
          
          rc = UG_dirty_block_mmap( &itr->second );
          if( rc != 0 ) {
@@ -307,7 +307,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
       }
       
       // make sure the block has a private copy of its RAM buffer, if it has one at all
-      else if( !UG_dirty_block_mmaped( itr->second ) && !UG_dirty_block_unshared( itr->second ) && UG_dirty_block_buf( itr->second ).data != NULL ) {
+      else if( !UG_dirty_block_mmaped( &itr->second ) && !UG_dirty_block_unshared( &itr->second ) && UG_dirty_block_buf( &itr->second )->data != NULL ) {
          
          // make sure this dirty block has its own copy of the RAM buffer
          rc = UG_dirty_block_buf_unshare( &itr->second );
@@ -324,7 +324,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
          
          // failed 
          SG_error("UG_inode_dirty_block_commit( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *block ), UG_dirty_block_version( *block ), rc );
+               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
          
          break;
       }
@@ -348,7 +348,7 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
 // return -ENOMEM on OOM
 // return -errno on failure to read unaligned blocks or flush data to cache
 // NOTE: fent should not be locked
-int UG_write( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data ) {
+int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data ) {
    
    int rc = 0;
    struct UG_file_handle* fh = (struct UG_file_handle*)handle_data;
@@ -541,7 +541,7 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
          replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), block_id );
          if( replaced_block != NULL ) {
             
-            if( SG_manifest_block_version( replaced_block ) == UG_dirty_block_version( *dirty_block ) ) {
+            if( SG_manifest_block_version( replaced_block ) == UG_dirty_block_version( dirty_block ) ) {
                
                // this dirty block displaced a replicated block, but now this dirty block has been remotely overwritten.
                // blow it away.
