@@ -57,6 +57,8 @@ struct UG_file_handle {
 };
 
 
+extern "C" {
+   
 // initialization
 int UG_inode_init( struct UG_inode* inode, struct fskit_entry* entry, uint64_t volume_id, uint64_t coordinator_id, int64_t file_version );
 int UG_inode_init_from_protobuf( struct UG_inode* inode, struct fskit_entry* entry, ms::ms_entry* msent, SG_messages::Manifest* mmsg );
@@ -160,5 +162,7 @@ void UG_inode_set_max_write_freshness( struct UG_inode* inode, uint32_t wf );
 void UG_inode_set_read_stale( struct UG_inode* inode, bool val );
 void UG_inode_set_deleting( struct UG_inode* inode, bool val );
 void UG_inode_set_dirty( struct UG_inode* inode, bool val );
+
+}
 
 #endif

@@ -612,7 +612,7 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -errno on failure to flush 
-// NOTE: inode->entry should be write-locked--this method is not reentrant or thread-safe
+// NOTE: inode->entry should be write-locked--this method is neither reentrant nor thread-safe
 // if this method fails, it can be safely tried again.
 int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, uint64_t* preserve, size_t preserve_len ) {
    
@@ -631,13 +631,13 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
             if( itr->first == preserve[i] ) {
                
                // don't flush this one, but make sure it's unshared 
-               if( !UG_dirty_block_unshared( itr->second ) && UG_dirty_block_buf( itr->second ).data != NULL ) {
+               if( !UG_dirty_block_unshared( &itr->second ) && UG_dirty_block_buf( &itr->second )->data != NULL ) {
                   
                   rc = UG_dirty_block_buf_unshare( &itr->second );
                   if( rc != 0 ) {
                      
                      // probably OOM 
-                     SG_error("UG_dirty_block_buf_unshare( %" PRIu64 ".%" PRId64 " ) rc = %d\n", UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     SG_error("UG_dirty_block_buf_unshare( %" PRIu64 ".%" PRId64 " ) rc = %d\n", UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
                      return rc;
                   }
                   
@@ -647,14 +647,14 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
          }
       }
       
-      if( !do_preserve && !UG_dirty_block_is_flushing( itr->second ) && UG_dirty_block_fd( itr->second ) < 0 ) {
+      if( !do_preserve && !UG_dirty_block_is_flushing( &itr->second ) && UG_dirty_block_fd( &itr->second ) < 0 ) {
          
          // flush out of RAM
          rc = UG_dirty_block_flush_async( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), &itr->second );
          if( rc != 0 ) {
             
             SG_error("UG_dirty_block_flush_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
             
             worst_rc = rc;
             break;
@@ -666,13 +666,13 @@ int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path,
    // try them all even if we error
    for( UG_dirty_block_map_t::iterator itr = inode->dirty_blocks->begin(); itr != inode->dirty_blocks->end(); itr++ ) {
       
-      if( UG_dirty_block_is_flushing( itr->second ) ) {
+      if( UG_dirty_block_is_flushing( &itr->second ) ) {
          
          rc = UG_dirty_block_flush_finish( &itr->second );
          if( rc != 0 ) {
             
             SG_error("UG_dirty_block_flush_finish( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
             
             worst_rc = rc;
          }
@@ -694,7 +694,7 @@ int UG_inode_dirty_blocks_extract_modified( struct UG_inode* inode, UG_dirty_blo
       for( UG_dirty_block_map_t::iterator itr = UG_inode_dirty_blocks( inode )->begin(); itr != UG_inode_dirty_blocks( inode )->end(); itr++ ) {
          
          // dirty?
-         if( !UG_dirty_block_dirty( itr->second ) ) {
+         if( !UG_dirty_block_dirty( &itr->second ) ) {
             
             itr++;
             continue;
@@ -777,7 +777,7 @@ int UG_inode_replaced_blocks_clear( struct UG_inode* inode, UG_dirty_block_map_t
 int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* dirty_block ) {
    
    // dirty? invalid 
-   if( UG_dirty_block_dirty( *dirty_block ) ) {
+   if( UG_dirty_block_dirty( dirty_block ) ) {
       
       return -EINVAL;
    }
@@ -786,13 +786,13 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
    UG_dirty_block_map_t::iterator old_dirty_block_itr;
    
    // already cached?
-   old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( *dirty_block ) );
+   old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( dirty_block ) );
    if( old_dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
       
       old_dirty_block = &old_dirty_block_itr->second;
       
       // there's a block here. is it the same one?
-      if( UG_dirty_block_version( *dirty_block ) == UG_dirty_block_version( *old_dirty_block ) ) {
+      if( UG_dirty_block_version( dirty_block ) == UG_dirty_block_version( old_dirty_block ) ) {
          
          return 0;
       }
@@ -805,7 +805,7 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
    // cache 
    try {
       
-      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
+      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
    }
    catch( bad_alloc& ba ) {
       
@@ -829,7 +829,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    int rc = 0;
    
    // not dirty? do nothing 
-   if( !UG_dirty_block_dirty( *dirty_block ) ) {
+   if( !UG_dirty_block_dirty( dirty_block ) ) {
       
       return -EINVAL;
    }
@@ -840,8 +840,8 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    struct UG_dirty_block* old_dirty_block = NULL;
    
    // what blocks are being replaced?
-   struct SG_manifest_block* old_block_info_ref = SG_manifest_block_lookup( UG_inode_manifest( inode ), UG_dirty_block_id( *dirty_block ) );
-   struct SG_manifest_block* old_replaced_block_info = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), UG_dirty_block_id( *dirty_block ) );
+   struct SG_manifest_block* old_block_info_ref = SG_manifest_block_lookup( UG_inode_manifest( inode ), UG_dirty_block_id( dirty_block ) );
+   struct SG_manifest_block* old_replaced_block_info = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), UG_dirty_block_id( dirty_block ) );
    
    // store a copy, so we can put it back on failure 
    if( old_block_info_ref != NULL ) {
@@ -855,18 +855,18 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    }
    
    // find the old dirty block
-   UG_dirty_block_map_t::iterator old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( *dirty_block ) );
+   UG_dirty_block_map_t::iterator old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( dirty_block ) );
    if( old_dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
       
       old_dirty_block = &old_dirty_block_itr->second;
    }
    
    // update the manifest 
-   rc = SG_manifest_put_block( UG_inode_manifest( inode ), UG_dirty_block_info( *dirty_block ), true );
+   rc = SG_manifest_put_block( UG_inode_manifest( inode ), UG_dirty_block_info( dirty_block ), true );
    if( rc != 0 ) {
       
       SG_error("SG_manifest_put_block( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( *dirty_block ), UG_dirty_block_version( *dirty_block ), rc );
+               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
       
       
       if( old_block_info_ref != NULL ) {
@@ -880,7 +880,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    // insert the new dirty block 
    try {
       
-      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
+      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
    }
    catch( bad_alloc& ba ) {
       
@@ -911,7 +911,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
             // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
             if( old_dirty_block != NULL ) {
                
-               (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( *dirty_block ) ] = *dirty_block;
+               (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
             }
             
             goto UG_inode_block_commit_out;
@@ -920,7 +920,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
    }
    
    // this block is dirty--keep it in the face of future manifest refreshes, until we replicate
-   SG_manifest_set_block_dirty( UG_inode_manifest( inode ), UG_dirty_block_id( *dirty_block ), true );
+   SG_manifest_set_block_dirty( UG_inode_manifest( inode ), UG_dirty_block_id( dirty_block ), true );
    
 UG_inode_block_commit_out:
    
@@ -966,7 +966,7 @@ int UG_file_handle_evict_blocks( struct UG_file_handle* fh ) {
          struct UG_dirty_block* dirty_block = &block_itr->second;
          
          // clear, if the version matches and it's not dirty 
-         if( UG_dirty_block_version( *dirty_block ) == itr->second && !UG_dirty_block_dirty( *dirty_block ) ) {
+         if( UG_dirty_block_version( dirty_block ) == itr->second && !UG_dirty_block_dirty( dirty_block ) ) {
             
             // evict 
             fh->inode_ref->dirty_blocks->erase( block_itr );
