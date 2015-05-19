@@ -1,5 +1,5 @@
 include ../buildconf.mk
-include app.mk
+include ../MS.mk
 
 MS_FILES		:=
 MS_FILES_IN	:= 
