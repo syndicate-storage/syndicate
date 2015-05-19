@@ -86,6 +86,8 @@ cdef extern from "libsyndicate/libsyndicate.h":
       uint64_t parent_id  # // id of this file's parent directory
       char* parent_name   # // name of this file's parent directory
 
+   cdef int MD_ENTRY_FILE 
+   cdef int MD_ENTRY_DIR
 
 # ------------------------------------------
 cdef extern from "libsyndicate/util.h":
@@ -95,7 +97,7 @@ cdef extern from "libsyndicate/util.h":
       size_t len
 
 # ------------------------------------------   
-cdef extern from "core.h":
+cdef extern from "syndicate-ug/core.h":
    
    cdef struct UG_state:
       pass
@@ -107,29 +109,19 @@ cdef extern from "core.h":
    
 
 # ------------------------------------------   
-cdef extern from "inode.h"
+cdef extern from "syndicate-ug/inode.h":
 
    cdef struct UG_inode:
       pass
-
-# ------------------------------------------   
-cdef extern from "fskit/entry.h":
-   
-   cdef struct fskit_dir_entry:
-      pass
       
 # ------------------------------------------
-cdef extern from "client.h":
+cdef extern from "syndicate-ug/client.h":
    cdef struct _UG_handle:
       pass
 
-   cdef struct fskit_dir_entry:
-      pass
-
    ctypedef _UG_handle UG_handle_t
-   ctypedef fskit_dir_entry UG_dirent_t
    
-   ctypedef fs_dir_entry** UG_dir_listing_t
+   ctypedef md_entry** UG_dir_listing_t
 
    int UG_stat( UG_state* state, const char* path, stat *statbuf )
    int UG_mkdir( UG_state* state, const char* path, mode_t mode )
@@ -164,3 +156,7 @@ cdef extern from "client.h":
    int UG_getxattr( UG_state* state, const char* path, const char* name, char *value, size_t size )
    int UG_listxattr( UG_state* state, const char* path, char *list, size_t size )
    int UG_removexattr( UG_state* state, const char* path, const char* name )
+   int UG_chownxattr( UG_state* state, const char* path, const char* name, uint64_t new_owner )
+   int UG_chmodxattr( UG_state* state, const char* path, const char* name, mode_t mode )
+   int UG_getsetxattr( UG_state* state, const char* path, const char* name, const char* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode )
+

@@ -48,7 +48,30 @@ cdef class VolumeHandle:
 VolumeEntry = collections.namedtuple( "VolumeEntry", ["type", "name", "file_id", "ctime", "mtime", "manifest_mtime", "write_nonce", "xattr_nonce", "version",
                                                       "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size", "generation", "capacity", "num_children"] )
 
-VolumeStat = collections.namedtuple( "VolumeStat", ["st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"] )
+cdef md_entry_to_VolumeEntry( md_entry* ent ):
+   py_name = None 
+   if ent.name != NULL:
+      py_name = ent.name[:]
+
+   ve = VolumeEntry( type = ent.type,
+                     name = py_name,
+                     ctime = (ent.ctime_sec, ent.ctime_nsec),
+                     mtime = (ent.mtime_sec, ent.mtime_nsec),
+                     manifest_mtime = (ent.manifest_mtime_sec, ent.manifest_mtime_nsec),
+                     write_nonce = ent.write_nonce,
+                     xattr_nonce = ent.xattr_nonce,
+                     version = ent.version,
+                     max_read_freshness = ent.max_read_freshness,
+                     max_write_freshness = ent.max_write_freshness,
+                     owner = ent.owner,
+                     coordinator = ent.coordinator,
+                     volume = ent.volume,
+                     mode = ent.mode,
+                     generation = ent.generation,
+                     capacity = ent.capacity,
+                     num_children = ent.num_children )
+
+   return ve
 
 # ------------------------------------------
 cdef class Volume:
@@ -56,8 +79,8 @@ cdef class Volume:
       Python wrapper around a Volume
    """
 
-   VOLUME_ENTRY_TYPE_FILE = FTYPE_FILE
-   VOLUME_ENTRY_TYPE_DIR = FTYPE_DIR
+   VOLUME_ENTRY_TYPE_FILE = MD_ENTRY_FILE
+   VOLUME_ENTRY_TYPE_DIR = MD_ENTRY_DIR
    
    cdef UG_state* state_inst
    
@@ -81,7 +104,7 @@ cdef class Volume:
       if argv == NULL:
          raise MemoryError()
       
-      self.state_inst = UG_state_init( len(args), argv, is_client )
+      self.state_inst = UG_init( len(args), argv, is_client )
 
       if self.state_inst == NULL:      
          raise VolumeException("Failed to initialize UG")
@@ -98,7 +121,7 @@ cdef class Volume:
 
       cdef UG_handle_t* ret = UG_create( self.state_inst, c_path, c_mode, &rc )
       if ret == NULL:
-         raise Exception("syndicate_create rc = %d" % rc)
+         raise VolumeException("UG_create rc = %d" % rc)
 
       py_ret = VolumeHandle()
       py_ret.Init( ret )
@@ -112,7 +135,7 @@ cdef class Volume:
 
       cdef UG_handle_t* ret = UG_open( self.state_inst, c_path, c_flags, &rc )
       if ret == NULL or rc != 0:
-         raise Exception("syndicate_open rc = %d" % rc)
+         raise VolumeException("UG_open rc = %d" % rc)
    
       py_ret = VolumeHandle()
       py_ret.Init( ret )
@@ -133,7 +156,7 @@ cdef class Volume:
       
       if c_read < 0:
          stdlib.free( c_buf )
-         raise Exception("syndicate_read rc = %d" % c_read)
+         raise VolumeException("UG_read rc = %d" % c_read)
       
       # NOTE: this can cause a MemoryError if the buffer is really big
       try:
@@ -155,7 +178,7 @@ cdef class Volume:
       cdef ssize_t c_write = UG_write( self.state_inst, c_buf, c_size, c_handle )
 
       if c_write < 0:
-         raise Exception("syndicate_write rc = %d" % c_write)
+         raise VolumeException("UG_write rc = %d" % c_write)
 
       return c_write
 
@@ -176,25 +199,16 @@ cdef class Volume:
       cpdef uintptr_t tmp = handle.Get()
       cdef UG_handle_t* c_handle = <UG_handle_t*>tmp
       
-      cdef int close_rc = 0
-      cdef int rc = UG_flush( self.state_inst, c_handle )
-      
-      if rc != 0:
-         close_rc = UG_close( self.state_inst, c_handle )
-         if close_rc != 0:
-            return close_rc
-
-      else:
-         rc = UG_close( self.state_inst, c_handle )
+      rc = UG_close( self.state_inst, c_handle )
 
       return rc
 
    # ------------------------------------------
-   cpdef fsync( self, handle, datasync=1 ):
+   cpdef fsync( self, handle ):
       cpdef uintptr_t tmp = handle.Get()
       cdef UG_handle_t* c_handle = <UG_handle_t*>tmp
 
-      cdef int rc = UG_fsync( self.state_inst, datasync, c_handle )
+      cdef int rc = UG_fsync( self.state_inst, c_handle )
       
       return rc
 
@@ -203,21 +217,19 @@ cdef class Volume:
       cdef char* c_path = path
       cdef stat statbuf
       
-      cdef int rc = UG_getattr( self.state_inst, path, &statbuf )
+      cdef int rc = UG_stat( self.state_inst, path, &statbuf )
 
       if rc == 0:
-         py_stat = VolumeStat(st_mode = statbuf.st_mode,
-                              st_ino = statbuf.st_ino,
-                              st_dev = statbuf.st_dev,
-                              st_nlink = statbuf.st_nlink,
-                              st_uid = statbuf.st_uid,
-                              st_gid = statbuf.st_gid,
-                              st_size = statbuf.st_size,
-                              st_atime = statbuf.st_atime,
-                              st_mtime = statbuf.st_mtime,
-                              st_ctime = statbuf.st_ctime )
-
-
+         py_stat = os.stat_result( statbuf.st_mode,
+                                   statbuf.st_ino,
+                                   statbuf.st_dev,
+                                   statbuf.st_nlink,
+                                   statbuf.st_uid,
+                                   statbuf.st_gid,
+                                   statbuf.st_size,
+                                   statbuf.st_atime,
+                                   statbuf.st_mtime,
+                                   statbuf.st_ctime )
          return py_stat
 
       else:
@@ -254,48 +266,31 @@ cdef class Volume:
 
       cdef UG_handle_t* ret = UG_opendir( self.state_inst, c_path, &rc )
       if ret == NULL or rc != 0:
-         raise Exception("syndicate_opendir rc = %d" % rc)
+         raise VolumeException("UG_opendir rc = %d" % rc)
    
       py_ret = VolumeHandle()
       py_ret.Init( ret )
       return py_ret
 
    # ------------------------------------------
-   cpdef readdir( self, handle ):
+   cpdef readdir( self, handle, count ):
       cpdef uintptr_t tmp = handle.Get()
       cdef UG_handle_t* c_handle = <UG_handle_t*>tmp
 
       cdef UG_dir_listing_t c_dirs = NULL
 
-      cdef int rc = UG_readdir( self.state_inst, &c_dirs, c_handle )
+      cdef int rc = UG_readdir( self.state_inst, &c_dirs, count, c_handle )
       if rc != 0:
-         raise Exception("syndicate_readdir rc = %s" % rc)
+         raise VolumeException("UG_readdir rc = %s" % rc)
 
       # get number of entries
-      cdef char* name = NULL
       py_dirs = []
       i = 0
       while c_dirs[i] != NULL:
-         name = fs_dir_entry_name( c_dirs[i] )
-         py_name = name[:]
-         dir_ent = VolumeEntry( type = fs_dir_entry_type( c_dirs[i] ),
-                                name = py_name,
-                                file_id = fs_dir_entry_file_id( c_dirs[i] ),
-                                ctime = (fs_dir_entry_ctime_sec( c_dirs[i] ), fs_dir_entry_ctime_nsec( c_dirs[i] )),
-                                mtime = (fs_dir_entry_mtime_sec( c_dirs[i] ), fs_dir_entry_mtime_nsec( c_dirs[i] )),
-                                manifest_mtime = (fs_dir_entry_manifest_mtime_sec( c_dirs[i] ), fs_dir_entry_manifest_mtime_nsec( c_dirs[i] )),
-                                write_nonce = fs_dir_entry_write_nonce( c_dirs[i] ),
-                                xattr_nonce = fs_dir_entry_xattr_nonce( c_dirs[i] ),
-                                version = fs_dir_entry_version( c_dirs[i] ),
-                                max_read_freshness = fs_dir_entry_max_read_freshness( c_dirs[i] ),
-                                max_write_freshness = fs_dir_entry_max_write_freshness( c_dirs[i] ),
-                                owner = fs_dir_entry_owner( c_dirs[i] ),
-                                coordinator = fs_dir_entry_coordinator( c_dirs[i] ),
-                                volume = fs_dir_entry_volume( c_dirs[i] ),
-                                mode = fs_dir_entry_mode( c_dirs[i] ),
-                                size = fs_dir_entry_size( c_dirs[i] ) )
 
-         py_dirs.append( dir_ent )
+         ve = md_entry_to_VolumeEntry( c_dirs[i] )
+         py_dirs.append( ve )
+         
          i += 1
 
       UG_free_dir_listing( c_dirs )
@@ -309,3 +304,128 @@ cdef class Volume:
       cdef int rc = UG_closedir( self.state_inst, c_handle )
       return rc
       
+   # ------------------------------------------
+   cpdef setxattr( self, path, name, value, flags ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+      cdef char* c_value = value
+      cdef size_t c_value_len = len(value)
+      cdef int c_flags = flags
+      
+      rc = UG_setxattr( self.state_inst, c_path, c_name, c_value, c_value_len, c_flags )
+      if rc < 0:
+         raise VolumeException( "UG_setxattr rc = %s" % rc )
+
+      return rc
+
+   # ------------------------------------------
+   cpdef getxattr( self, path, name, size ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+      cdef size_t c_size = size
+      cdef char* c_value = NULL
+
+      if size > 0:
+         c_value = <char*>stdlib.malloc( sizeof(char) * size )
+         if c_value == NULL:
+            raise MemoryError()
+
+      rc = UG_getxattr( self.state_inst, c_path, c_name, c_value, c_size )
+      if rc < 0:
+         if c_value != NULL:
+            stdlib.free( c_value )
+
+         raise VolumeException( "UG_getxattr rc = %s" % rc )
+
+      ret_value = c_value[:size]
+      stdlib.free( c_value )
+      return ret_value
+
+   # ------------------------------------------
+   cpdef listxattr( self, path, size ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_list = NULL
+      cdef size_t c_size = 0
+
+      if size > 0:
+         c_list = <char*>stdlib.malloc( sizeof(char) * size )
+         if c_list == NULL:
+            raise MemoryError()
+      
+      rc = UG_listxattr( self.state_inst, c_path, c_list, c_size )
+      if rc < 0:
+         if c_list != NULL:
+            stdlib.free( c_list )
+         
+         raise VolumeException( "UG_listxattr rc = %s" % rc )
+      
+      ret_list = c_list[:size]
+      stdlib.free( c_list )
+      return ret_list
+   
+   # ------------------------------------------
+   cpdef removexattr( self, path, name ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+
+      rc = UG_removexattr( self.state_inst, c_path, c_name )
+      if rc < 0:
+         raise VolumeException( "UG_removexattr rc = %s" % rc )
+
+      return rc
+   
+   # ------------------------------------------
+   cpdef chownxattr( self, path, name, new_owner ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+      cdef uint64_t c_new_owner = new_owner 
+
+      rc = UG_chownxattr( self.state_inst, c_path, c_name, c_new_owner )
+      if rc < 0:
+         raise VolumeException( "UG_chownxattr rc = %s" % rc )
+
+      return rc
+   
+   # ------------------------------------------
+   cpdef chmodxattr( self, path, name, mode ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+      cdef mode_t c_mode = mode 
+      
+      rc = UG_chmodxattr( self.state_inst, c_path, c_name, c_mode )
+      if rc < 0:
+         raise VolumeException( "UG_chmodxattr rc = %s" % rc )
+
+      return rc
+
+   # ------------------------------------------
+   cpdef getsetxattr( self, path, name, new_value, mode ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      cdef char* c_name = name
+      cdef char* c_new_value = new_value 
+      cdef size_t c_new_value_len = len(new_value)
+      cdef char* c_value = NULL
+      cdef size_t c_value_len = 0
+      cdef mode_t c_mode = 0
+
+      rc = UG_getsetxattr( self.state_inst, c_path, c_name, c_new_value, c_new_value_len, &c_value, &c_value_len, mode )
+      if rc < 0:
+         raise VolumeException( "UG_getsetxattr rc = %s" % rc )
+
+      if c_value != NULL:
+         ret_value = c_value[:]
+         stdlib.free( c_value )
+         return ret_value 
+      
+      else:
+         return None
+      
+      
+   

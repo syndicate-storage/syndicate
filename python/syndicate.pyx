@@ -1,5 +1,5 @@
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2015 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -408,7 +408,7 @@ cdef class Syndicate:
       syndicate_inited = False
       syndicate_ref = None
       
-   cdef md_opts opts_to_syndicate( self, opts ):
+   cdef md_opts opts_to_syndicate( cls, opts ):
       '''
       Convert a dictionary of options into a struct md_opts.
       '''
