@@ -61,18 +61,22 @@ struct UG_xattr_namespace_handler {
    UG_xattr_delete_handler_t del;
 };
 
+extern "C" {
+
 // extended attributes
-ssize_t UG_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume );
-int UG_setxattr( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume );
-int UG_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode );
-ssize_t UG_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume );
-int UG_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume );
+ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume );
+int UG_xattr_setxattr( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume );
+int UG_xattr_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode );
+ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume );
+int UG_xattr_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume );
 
 // not POSIX-y
-int UG_chownxattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t new_user );
-int UG_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode );
+int UG_xattr_chownxattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t new_user );
+int UG_xattr_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode );
 
-int UG_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value );
-int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode );
+int UG_xattr_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value );
+int UG_xattr_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode );
+
+}
 
 #endif

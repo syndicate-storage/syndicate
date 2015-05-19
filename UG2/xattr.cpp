@@ -457,7 +457,7 @@ static int UG_xattr_set_write_ttl( struct fskit_core* core, struct fskit_entry* 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
 // return other -errno on socket- and recv-related errors
-int UG_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value ) {
+int UG_xattr_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value ) {
    
    char* val = NULL;
    size_t val_len = 0;
@@ -503,7 +503,7 @@ int UG_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t fil
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
 // return other -errno on socket- and recv-related errors
 // NOTE: fent must be write-locked
-ssize_t UG_fgetxattr_ex( struct SG_gateway* gateway, char const* path, struct fskit_entry* fent, char const *name, char *value, size_t size, uint64_t user, uint64_t volume, bool do_unlock ) {
+ssize_t UG_xattr_fgetxattr_ex( struct SG_gateway* gateway, char const* path, struct fskit_entry* fent, char const *name, char *value, size_t size, uint64_t user, uint64_t volume, bool do_unlock ) {
    
    int rc = 0;
    uint64_t file_id = 0;
@@ -538,10 +538,10 @@ ssize_t UG_fgetxattr_ex( struct SG_gateway* gateway, char const* path, struct fs
    }
    
    // check on the MS
-   value_buf_len = UG_download_xattr( gateway, volume, file_id, name, &value_buf );
+   value_buf_len = UG_xattr_download_xattr( gateway, volume, file_id, name, &value_buf );
    if( value_buf_len < 0 ) {
       
-      SG_error("UG_download_xattr('%s'.'%s') rc = %d\n", path, name, (int)value_buf_len );
+      SG_error("UG_xattr_download_xattr('%s'.'%s') rc = %d\n", path, name, (int)value_buf_len );
       
       if( do_unlock ) {
          fskit_entry_unref( fs, path, fent );
@@ -590,7 +590,7 @@ ssize_t UG_fgetxattr_ex( struct SG_gateway* gateway, char const* path, struct fs
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-ssize_t UG_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
+ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
@@ -611,7 +611,7 @@ ssize_t UG_getxattr( struct SG_gateway* gateway, char const* path, char const *n
    }
    
    // get the xattr, and cache it locally if need be
-   rc = UG_fgetxattr_ex( gateway, path, fent, name, value, size, user, volume, true );
+   rc = UG_xattr_fgetxattr_ex( gateway, path, fent, name, value, size, user, volume, true );
    
    fskit_entry_unlock( fent );
    
@@ -630,7 +630,7 @@ ssize_t UG_getxattr( struct SG_gateway* gateway, char const* path, char const *n
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
+int UG_xattr_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
    
    int rc = 0;
    struct fskit_entry* fent = NULL;
@@ -696,8 +696,8 @@ int UG_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *na
 
 
 // setxattr(2), with default xattr mode 
-int UG_setxattr( struct SG_gateway* gateway, char const* path, char const* name, char const* value, size_t size, int flags, uint64_t user, uint64_t volume ) {
-   return UG_setxattr_ex( gateway, path, name, value, size, flags, user, volume, 0744 );
+int UG_xattr_setxattr( struct SG_gateway* gateway, char const* path, char const* name, char const* value, size_t size, int flags, uint64_t user, uint64_t volume ) {
+   return UG_xattr_setxattr_ex( gateway, path, name, value, size, flags, user, volume, 0744 );
 }
 
 
@@ -712,7 +712,7 @@ int UG_setxattr( struct SG_gateway* gateway, char const* path, char const* name,
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
 // NOTE: fent must be write-locked
-int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode ) {
+int UG_xattr_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode ) {
    
    int rc = 0;
    char* val = NULL;
@@ -790,10 +790,10 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
       if( try_get ) {
          
          // failed to set.  try to get the attribute instead...
-         vallen = UG_download_xattr( gateway, volume_id, UG_inode_file_id( inode ), name, &val );
+         vallen = UG_xattr_download_xattr( gateway, volume_id, UG_inode_file_id( inode ), name, &val );
          if( vallen < 0 ) {
             
-            SG_error("UG_download_xattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, (int)vallen);
+            SG_error("UG_xattr_download_xattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, (int)vallen);
             return vallen;
          }
          
@@ -852,7 +852,7 @@ int UG_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, c
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-ssize_t UG_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume ) {
+ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    
@@ -939,7 +939,7 @@ ssize_t UG_listxattr( struct SG_gateway* gateway, char const* path, char *list, 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume ) {
+int UG_xattr_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    
@@ -1019,7 +1019,7 @@ int UG_removexattr( struct SG_gateway* gateway, char const* path, char const *na
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_chownxattr( struct SG_gateway* gateway, char const* path, char const* name, uint64_t new_user ) {
+int UG_xattr_chownxattr( struct SG_gateway* gateway, char const* path, char const* name, uint64_t new_user ) {
    
    int rc = 0;
    
@@ -1086,7 +1086,7 @@ int UG_chownxattr( struct SG_gateway* gateway, char const* path, char const* nam
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode ) {
+int UG_xattr_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode ) {
    
    
    int rc = 0;
