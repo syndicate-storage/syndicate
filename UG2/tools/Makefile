@@ -1,6 +1,5 @@
 include ../../buildconf.mk
 
-INC	   := $(INC) -I ../
 LIB   	:= -lsyndicate -lfskit
 C_SRCS	:= $(wildcard *.c)
 CXSRCS	:= $(wildcard *.cpp)
@@ -17,12 +16,15 @@ TOOLS		:= $(BUILD_UG_TOOLS)/syndicate-ls
 all: $(TOOLS)
 
 $(BUILD_UG_TOOLS)/syndicate-% : $(BUILD_UG_TOOLS)/syndicate-%.o
+	@mkdir -p $(shell dirname "$@")
 	$(CPP) -o $@ $(INC) $(LIBINC) $(LIB) $(OBJ) $(UG_COMMON_OBJ)
 
 $(BUILD_UG_TOOLS)/%.o : %.c
+	@mkdir -p $(shell dirname "$@")
 	$(CPP) -o $@ $(INC) -c $< $(DEFS)
 
 $(BUILD_UG_TOOLS)/%.o : %.cpp
+	@mkdir -p $(shell dirname "$@")
 	$(CPP) -o $@ $(INC) -c $< $(DEFS)
 
 .PHONY: clean
