@@ -1009,14 +1009,14 @@ int UG_fs_install_methods( struct fskit_core* core ) {
       return rh;
    }
    
-   rh = fskit_route_read( core, FSKIT_ROUTE_ANY, UG_read, FSKIT_CONCURRENT );
+   rh = fskit_route_read( core, FSKIT_ROUTE_ANY, UG_read_impl, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
       SG_error("fskit_route_read(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
       return rh;
    }
    
-   rh = fskit_route_write( core, FSKIT_ROUTE_ANY, UG_write, FSKIT_CONCURRENT );
+   rh = fskit_route_write( core, FSKIT_ROUTE_ANY, UG_write_impl, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
       SG_error("fskit_route_write(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
@@ -1037,7 +1037,7 @@ int UG_fs_install_methods( struct fskit_core* core ) {
       return rh;
    }
    
-   rh = fskit_route_sync( core, FSKIT_ROUTE_ANY, UG_fsync, FSKIT_CONCURRENT );
+   rh = fskit_route_sync( core, FSKIT_ROUTE_ANY, UG_sync_fsync, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
       SG_error("fskit_route_sync(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
