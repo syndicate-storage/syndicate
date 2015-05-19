@@ -28,6 +28,8 @@ struct UG_vacuumer;
 // global UG state
 struct UG_state;
 
+extern "C" {
+   
 int UG_state_list_replica_gateway_ids( struct UG_state* state, uint64_t** replica_gateway_ids, size_t* num_replica_gateway_ids );
 int UG_state_reload_replica_gateway_ids( struct UG_state* state );
 
@@ -47,5 +49,7 @@ struct fskit_core* UG_state_fs( struct UG_state* state );
 struct UG_vacuumer* UG_state_vacuumer( struct UG_state* state );
 uint64_t UG_state_owner_id( struct UG_state* state );
 uint64_t UG_state_volume_id( struct UG_state* state );
+
+}
 
 #endif 
