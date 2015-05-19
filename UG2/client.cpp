@@ -646,7 +646,7 @@ int UG_fsync( struct UG_state* state, UG_handle_t *fi ) {
       return -EBADF;
    }
    
-   return UG_fsync_ex( UG_state_fs( state ), fskit_file_handle_get_path( fi->fh ), fskit_file_handle_get_entry( fi->fh ) );
+   return UG_sync_fsync_ex( UG_state_fs( state ), fskit_file_handle_get_path( fi->fh ), fskit_file_handle_get_entry( fi->fh ) );
 }
 
 // opendir(3)
@@ -893,4 +893,62 @@ int UG_fstat( struct UG_state* state, struct stat *statbuf, UG_handle_t *fi ) {
    }
    
    return fskit_fstat( UG_state_fs( state ), fskit_file_handle_get_path( fi->fh ), fskit_file_handle_get_entry( fi->fh ), statbuf );
+}
+
+// setxattr(2)
+// forward to xattr
+int UG_setxattr( struct UG_state* state, char const* path, char const* name, char const* value, size_t size, int flags ) {
+   return UG_xattr_setxattr( UG_state_gateway( state ), path, name, value, size, flags, UG_state_owner_id( state ), UG_state_volume_id( state ) );
+}
+
+
+// getxattr(2)
+// forward to xattr
+int UG_getxattr( struct UG_state* state, char const* path, char const* name, char *value, size_t size ) {
+   return UG_xattr_getxattr( UG_state_gateway( state ), path, name, value, size, UG_state_owner_id( state ), UG_state_volume_id( state ) );
+}
+
+
+// listxattr(2)
+// forward to xattr 
+int UG_listxattr( struct UG_state* state, char const* path, char *list, size_t size ) {
+   return UG_xattr_listxattr( UG_state_gateway( state ), path, list, size, UG_state_owner_id( state ), UG_state_volume_id( state ) );
+}
+
+
+// removexattr(2)
+// forward to xattr 
+int UG_removexattr( struct UG_state* state, char const* path, char const* name ) {
+   return UG_xattr_removexattr( UG_state_gateway( state ), path, name, UG_state_owner_id( state ), UG_state_volume_id( state ) );
+}
+
+// chownxattr 
+// forward to xattr 
+int UG_chownxattr( struct UG_state* state, char const* path, char const* name, uint64_t new_owner ) {
+   return UG_xattr_chownxattr( UG_state_gateway( state ), path, name, new_owner );
+}
+
+// chmodxattr 
+// forward to xattr 
+int UG_chmodxattr( struct UG_state* state, char const* path, char const* name, mode_t mode ) {
+   return UG_xattr_chmodxattr( UG_state_gateway( state ), path, name, mode );
+}
+
+// get-or-set xattr 
+// forward to xattr 
+int UG_getsetxattr( struct UG_state* state, char const* path, char const* name, char const* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode ) {
+   
+   int rc = 0;
+   struct fskit_entry* fent = NULL;
+   
+   fent = fskit_entry_resolve_path( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), true, &rc );
+   if( fent == NULL ) {
+      return rc;
+   }
+   
+   rc = UG_xattr_get_or_set_xattr( UG_state_gateway( state ), fent, name, new_value, new_value_len, value, value_len, mode );
+   
+   fskit_entry_unlock( fent );
+   
+   return rc;
 }

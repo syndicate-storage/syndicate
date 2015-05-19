@@ -36,22 +36,6 @@
 #define UG_TYPE_FILE FSKIT_ENTRY_TYPE_FILE
 #define UG_TYPE_DIR FSKIT_ENTRY_TYPE_DIR
    
-// file handle wrapper 
-typedef struct _UG_handle {
-   int type;
-   off_t offset;
-   union {
-      struct fskit_file_handle* fh;
-      struct fskit_dir_handle* dh;
-   };
-} UG_handle_t;
-
-typedef fskit_dir_entry UG_dirent_t;
-
-// NULL-terminated directory listing
-typedef md_entry** UG_dir_listing_t;
-
-
 // macro to try to perform an operation on the MS that can be done either locally (e.g. if we're the coordinator, or the inode is a directory), or remotely
 // If the remote operation fails due to the remote gateway being unavailable, try to become the coordinator.  If we succeed, run the operation locally.
 // Put the return value in *rc.
@@ -114,6 +98,19 @@ typedef md_entry** UG_dir_listing_t;
    
 extern "C" {
 
+// file handle wrapper 
+typedef struct _UG_handle {
+   int type;
+   off_t offset;
+   union {
+      struct fskit_file_handle* fh;
+      struct fskit_dir_handle* dh;
+   };
+} UG_handle_t;
+
+// NULL-terminated directory listing
+typedef struct md_entry** UG_dir_listing_t;
+
 int UG_stat( struct UG_state* state, char const* path, struct stat *statbuf );
 int UG_mkdir( struct UG_state* state, char const* path, mode_t mode );
 int UG_unlink( struct UG_state* state, char const* path );
@@ -147,6 +144,9 @@ int UG_setxattr( struct UG_state* state, char const* path, char const* name, cha
 int UG_getxattr( struct UG_state* state, char const* path, char const* name, char *value, size_t size );
 int UG_listxattr( struct UG_state* state, char const* path, char *list, size_t size );
 int UG_removexattr( struct UG_state* state, char const* path, char const* name );
+int UG_chownxattr( struct UG_state* state, char const* path, char const* name, uint64_t new_owner );
+int UG_chmodxattr( struct UG_state* state, char const* path, char const* name, mode_t mode );
+int UG_getsetxattr( struct UG_state* state, char const* path, char const* name, char const* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode );
 
 }
 
