@@ -23,7 +23,7 @@ int usage( char const* progname ) {
 }
 
 // print a single entry 
-int print_entry( UG_dirent_t* dirent ) {
+int print_entry( struct md_entry* dirent ) {
    
    printf("%d %16" PRIX64 " %s\n", dirent->type, dirent->file_id, dirent->name );
    return 0;
@@ -76,9 +76,9 @@ int main( int argc, char** argv ) {
    if( S_ISREG( sb.st_mode ) ) {
       
       // regular file
-      UG_dirent_t dirent;
+      struct md_entry dirent;
       
-      memset( &dirent, 0, sizeof(UG_dirent_t) );
+      memset( &dirent, 0, sizeof(struct md_entry) );
       
       dirent.type = UG_TYPE_FILE;
       dirent.file_id = sb.st_ino;

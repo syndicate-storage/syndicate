@@ -17,8 +17,8 @@
 #ifndef _SYNDICATE_LS_H_
 #define _SYNDICATE_LS_H_
 
-#include "client.h"
-#include "core.h"
+#include <syndicate-ug/client.h>
+#include <syndicate-ug/core.h>
 
 #define LS_MAX_DIRENTS  65536
 
