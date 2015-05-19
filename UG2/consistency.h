@@ -29,6 +29,8 @@
 #include <libsyndicate/ms/getattr.h>
 #include <libsyndicate/ms/listdir.h>
 
+extern "C" {
+   
 // get the manifest from one of a list of gateways
 int UG_consistency_manifest_download( struct SG_gateway* gateway, struct SG_request_data* reqdat, uint64_t* gateway_ids, size_t num_gateway_ids, struct SG_manifest* manifest );
 
@@ -40,5 +42,7 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
 
 // reload an inode's manifest
 int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const* fs_path );
+
+}
 
 #endif
