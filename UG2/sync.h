@@ -31,6 +31,8 @@ struct UG_sync_context {
    sem_t sem;                           // ensure all calls to sync(2) happen in order
 };
 
+extern "C" {
+   
 // sync blocks to cache   
 int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, UG_dirty_block_map_t* dirty_blocks );
 int UG_sync_blocks_flush_finish( uint64_t file_id, int64_t file_version, UG_dirty_block_map_t* dirty_blocks );
@@ -40,7 +42,9 @@ int UG_sync_context_init( struct UG_sync_context* sctx, struct UG_replica_contex
 int UG_sync_context_free( struct UG_sync_context* sctx );
 
 // fskit sync
-int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* fent );
-int UG_fsync( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent );
+int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* fent );
+int UG_sync_fsync( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent );
+
+}
 
 #endif

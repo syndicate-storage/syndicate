@@ -35,13 +35,13 @@ int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path,
    
    for( UG_dirty_block_map_t::iterator itr = dirty_blocks->begin(); itr != dirty_blocks->end(); itr++ ) {
       
-      if( !UG_dirty_block_dirty( itr->second ) ) {
+      if( !UG_dirty_block_dirty( &itr->second ) ) {
          
          // no need to flush 
          continue;
       }
       
-      if( UG_dirty_block_fd( itr->second ) >= 0 || UG_dirty_block_is_flushing( itr->second ) ) {
+      if( UG_dirty_block_fd( &itr->second ) >= 0 || UG_dirty_block_is_flushing( &itr->second ) ) {
          
          // already flushed or flushing
          continue;
@@ -52,7 +52,7 @@ int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path,
       if( rc != 0 ) {
 
          SG_error("UG_dirty_block_flush_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                  file_id, file_version, UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                  file_id, file_version, UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
          
          break;
       }
@@ -75,7 +75,7 @@ int UG_sync_blocks_flush_finish( uint64_t file_id, int64_t file_version, UG_dirt
    // finish writing each block 
    for( UG_dirty_block_map_t::iterator itr = dirty_blocks->begin(); itr != dirty_blocks->end(); itr++ ) {
       
-      if( !UG_dirty_block_is_flushing( itr->second ) ) {
+      if( !UG_dirty_block_is_flushing( &itr->second ) ) {
          
          // not flushing 
          continue;
@@ -89,7 +89,7 @@ int UG_sync_blocks_flush_finish( uint64_t file_id, int64_t file_version, UG_dirt
          if( rc != -EINVAL ) {
             
             SG_error("UG_dirty_block_flush_finish( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
-                     file_id, file_version, UG_dirty_block_id( itr->second ), UG_dirty_block_version( itr->second ), rc );
+                     file_id, file_version, UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
             
             worst_rc = rc;
          }
@@ -162,7 +162,7 @@ static int UG_sync_dirty_blocks_return( struct UG_inode* inode, UG_dirty_block_m
 // fsync an inode.
 // flush all dirty blocks to cache, and replicate both the dirty blocks and the manifest to each RG.
 // fent must not be locked
-int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* fent ) {
+int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* fent ) {
    
    int rc = 0;
    UG_dirty_block_map_t* dirty_blocks = SG_safe_new( UG_dirty_block_map_t() );
@@ -381,7 +381,7 @@ int UG_fsync_ex( struct fskit_core* core, char const* path, struct fskit_entry* 
 }
 
 // fskit fsync
-int UG_fsync( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent ) {
+int UG_sync_fsync( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent ) {
    
-   return UG_fsync_ex( core, route_metadata->path, fent );
+   return UG_sync_fsync_ex( core, route_metadata->path, fent );
 }
