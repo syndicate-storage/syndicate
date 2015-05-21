@@ -45,9 +45,9 @@ if "/etc/syndicate" not in sys.path:
    
 import syndicatelib_config.config as CONFIG 
 
-import syndicate.client.bin.syntool as syntool
-import syndicate.client.common.msconfig as msconfig
-import syndicate.client.common.api as api
+import syndicate.ms.syntool as syntool
+import syndicate.ms.msconfig as msconfig
+import syndicate.ms.api as api
 import syndicate.util.storage as syndicate_storage_api
 import syndicate.util.crypto as syndicate_crypto
 import syndicate.util.provisioning as syndicate_provisioning

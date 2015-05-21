@@ -30,9 +30,9 @@ log = logging.getLogger()
 log.setLevel( logging.INFO )
 
 import syndicate
-import syndicate.client.bin.syntool as syntool
-import syndicate.client.common.api as api
-import syndicate.client.common.msconfig as msconfig
+import syndicate.ms.syntool as syntool
+import syndicate.ms.api as api
+import syndicate.ms.msconfig as msconfig
 
 import syndicate.syndicate as c_syndicate
 
