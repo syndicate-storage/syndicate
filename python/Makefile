@@ -16,24 +16,31 @@ PYTHON_BUILD := $(patsubst $(PYTHON_SYNDICATE_ROOT)/%,$(PYTHON_SYNDICATE_PACKAGE
 
 CYTHON_BUILD := $(patsubst %,$(BUILD_PYTHON_SYNDICATE)/%,$(PYTHON_SYNDICATE_CYTHON_FILES))
 
+MS_FILES := $(wildcard $(BUILD_MS)/common/*.py)
+MS_FILES_BUILD := $(patsubst $(BUILD_MS)/common/%.py,$(PYTHON_SYNDICATE_PACKAGE)/ms/%.py,$(MS_FILES))
+
 .PHONY: all
-all: $(PYTHON_BUILD) $(BUILD_PYTHON_SYNDICATE)/setup.py $(CYTHON_BUILD)
+all: $(PYTHON_BUILD) $(BUILD_PYTHON_SYNDICATE)/setup.py $(CYTHON_BUILD) $(MS_FILES_BUILD)
 	cd $(BUILD_PYTHON_SYNDICATE) && $(SETUP) build 
 
 $(BUILD_PYTHON_SYNDICATE)/setup.py: setup.py 
-	@cp $< $@
+	@cp "$<" "$@"
 
 $(PYTHON_SYNDICATE_PACKAGE)/%.py: $(PYTHON_SYNDICATE_ROOT)/%.py
-	@mkdir -p $(shell dirname $@)
-	@cat $< > $@
+	@mkdir -p $(shell dirname "$@")
+	@cat "$<" > "$@"
+
+$(PYTHON_SYNDICATE_PACKAGE)/ms/%.py: $(BUILD_MS)/common/%.py
+	@mkdir -p $(shell dirname "$@")
+	@cat "$<" > "$@"
 
 $(BUILD_PYTHON_SYNDICATE)/%.pyx: %.pyx
-	@mkdir -p $(shell dirname $@)
-	@cat $< > $@
+	@mkdir -p $(shell dirname "$@")
+	@cat "$<" > "$@"
 
 $(BUILD_PYTHON_SYNDICATE)/%.pxd: %.pxd
-	@mkdir -p $(shell dirname $@)
-	@cat $< > $@
+	@mkdir -p $(shell dirname "$@")
+	@cat "$<" > "$@"
 
 .PHONY: install 
 install: $(BUILD_PYTHON_SYNDICATE)/setup.py $(PYTHON_BUILD) $(CYTHON_BUILD)
