@@ -18,63 +18,39 @@
 
 """
 Front-end API
+NOTE: this gets copied to both the MS and the Syndicate Python package
 """
 
+in_client = True
+log = None
+SYNDICATE_PRIVKEY = None
 
-from msconfig import *
-
-in_client = False
-
+# detect whether or not we are in a client program or the MS
 try:
-   # in the MS
-   import storage.storage as storage
+   import admin_info 
+   in_client = False
 except ImportError, e:
-   # in syntool
-   if not in_client:
-      in_client = True
-      import log as Log
-      log = Log.get_logger()
-      
-   
-   log.warning("Using storage stub")
-   from storage_stub import StorageStub as storage
-   
-try:
+   in_client = True 
+
+if not in_client:
    # in the MS
+   from msconfig import *
+   import storage.storage as storage
    from MS.volume import Volume, VolumeAccessRequest
    from MS.user import SyndicateUser
    from MS.gateway import Gateway
-except ImportError, e:
-   # in syntool
-   if not in_client:
-      in_client = True
-      import log as Log
-      log = Log.get_logger()
-      
-   log.warning("Using object stubs")
-   from object_stub import *
-
-try:
-   # in the MS
    from MS.auth import *
-except ImportError, e:   
-   # in syntool
-   if not in_client:
-      in_client = True
-      import log as Log
-      log = Log.get_logger()
-      
-   log.warning("Using authentication stub")
-   from auth_stub import *
-
-try:
-   # in the MS
    from admin_info import SYNDICATE_PRIVKEY
-except ImportError, e:
-   # in syntool
-   SYNDICATE_PRIVKEY = "Syndicate's private key is only available to the MS!"
-   in_client = True
    
+else:
+   # in syntool 
+   import log as Log
+   log = Log.get_logger()
+   import syndicate.ms.msconfig as msconfig
+   from storage_stub import StorageStub as storage
+   from object_stub import *
+   from auth_stub import *
+   SYNDICATE_PRIVKEY = "Syndicate's private key is only available to the MS!"
    
 # ----------------------------------
 from Crypto.Hash import SHA256 as HashAlg
