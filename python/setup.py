@@ -91,20 +91,20 @@ setup(name='syndicate',
                   'syndicate.rg',
                   'syndicate.rg.drivers',
                   'syndicate.rg.drivers.s3',
-                  'syndicate.rg.drivers.disk']
-      package_dir = dict({
-                         'syndicate.ms': os.path.join(ext_source_root, build_dir, 'ms'),
-                         'syndicate.protobufs': os.path.join(ext_source_root, build_dir, '../protobufs/python'),
-                         'syndicate.util': os.path.join(ext_source_root, build_dir, 'syndicate/util'),
-                         'syndicate.observer': os.path.join(ext_source_root, build_dir, 'syndicate/observer'),
-                         'syndicate.observer.storage': os.path.join(ext_source_root, build_dir, 'syndicate/observer/storage'),
-                         'syndicate.rg': os.path.join(ext_source_root, build_dir, 'syndicate/rg'),
-                         'syndicate.rg.drivers': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers'),
-                         'syndicate.rg.drivers.s3': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/s3'),
-                         'syndicate.rg.drivers.disk': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/disk'),
-                         'syndicate.ag': os.path.join(ext_source_root, build_dir, 'syndicate/ag'),
-                         'syndicate.ag.datasets': os.path.join(ext_source_root, build_dir, 'syndicate/ag/datasets'),
-                         'syndicate.ag.curation': os.path.join(ext_source_root, build_dir, 'syndicate/ag/curation')
-                        )}.items()
+                  'syndicate.rg.drivers.disk'],
+      package_dir = {
+                  'syndicate.ms': os.path.join(ext_source_root, build_dir, 'syndicate/ms'),
+                  'syndicate.protobufs': os.path.join(ext_source_root, build_dir, '../protobufs/python'),
+                  'syndicate.util': os.path.join(ext_source_root, build_dir, 'syndicate/util'),
+                  'syndicate.observer': os.path.join(ext_source_root, build_dir, 'syndicate/observer'),
+                  'syndicate.observer.storage': os.path.join(ext_source_root, build_dir, 'syndicate/observer/storage'),
+                  'syndicate.rg': os.path.join(ext_source_root, build_dir, 'syndicate/rg'),
+                  'syndicate.rg.drivers': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers'),
+                  'syndicate.rg.drivers.s3': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/s3'),
+                  'syndicate.rg.drivers.disk': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/disk'),
+                  'syndicate.ag': os.path.join(ext_source_root, build_dir, 'syndicate/ag'),
+                  'syndicate.ag.datasets': os.path.join(ext_source_root, build_dir, 'syndicate/ag/datasets'),
+                  'syndicate.ag.curation': os.path.join(ext_source_root, build_dir, 'syndicate/ag/curation')
+      },
       cmdclass = {"build_ext": build_ext},
       zip_safe=False)
