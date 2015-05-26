@@ -25,7 +25,7 @@ import base64
 import stat
 import random
 
-import conf 
+import syndicate.ms.conf as conf
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.log as Log
 import syndicate.ms.msconfig as msconfig
