@@ -250,6 +250,7 @@ class CreateAPIGuard:
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.object_cls.key_attrs
+      inner.mutable = True
       return inner
       
 
@@ -352,6 +353,7 @@ class UpdateAPIGuard:
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.target_object_cls.key_attrs
+      inner.mutable = True
       return inner
    
    
@@ -401,6 +403,7 @@ class DeleteAPIGuard:
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.target_object_cls.key_attrs
+      inner.mutable = True
       return inner
          
    
@@ -524,6 +527,7 @@ class BindAPIGuard:
          return result
       
       inner.__name__ = func.__name__
+      inner.mutable = True
       return inner
 
 # ----------------------------------
@@ -551,6 +555,7 @@ class Authenticate:
       inner.object_id_attrs = getattr( func, "object_id_attrs", None )
       inner.target_object_name = getattr( func, "target_object_name", None )
       inner.source_object_name = getattr( func, "source_object_name", None )
+      inner.mutable = getattr( func, "mutable", False )
       inner.is_public = True
       inner.auth_methods = self.auth_methods
       inner.need_authentication = self.need_authentication
