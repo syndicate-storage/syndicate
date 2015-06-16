@@ -29,7 +29,7 @@ import base64
 # ----------------------------------
 def response_read_gateway_basic_auth( headers ):
    """
-   Given a dict of HTTP headers, extract the gateway's type, id, and session secret.
+   Given a dict of HTTP headers, extract the gateway's type, id, and signature over both the URL and Authorization header
    """
    
    basic_auth = headers.get("Authorization")
@@ -195,9 +195,9 @@ def response_load_gateway( request_handler, vol ):
    """
    
    # get the gateway's credentials
-   gateway_type_str, g_id, password = response_read_gateway_basic_auth( request_handler.request.headers )
+   gateway_type_str, g_id, signature_b64 = response_read_gateway_basic_auth( request_handler.request.headers )
 
-   if (gateway_type_str == None or g_id == None or password == None) and vol.need_gateway_auth():
+   if (gateway_type_str is None or g_id is None or signature_b64 is None) and vol.need_gateway_auth():
       response_user_error( request_handler, 401 )
       return (None, 401, None)
 
@@ -210,7 +210,7 @@ def response_load_gateway( request_handler, vol ):
          return (None, status, None)
 
       # make sure this gateway is legit
-      valid_gateway = gateway.authenticate_session( password )
+      valid_gateway = gateway.authenticate_session( signature_b64 )
 
       if not valid_gateway and vol.need_gateway_auth():
          # invalid credentials
@@ -225,7 +225,7 @@ def response_load_gateway( request_handler, vol ):
    
 
 # ----------------------------------
-def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=True ):
+def response_begin( request_handler, volume_name_or_id ):
    """
    Begin a response to a calling gateway, given the request handler and either the volume name or ID.
    Load up the calling gateway and the volume it's trying to access, and return both along with 
@@ -250,7 +250,7 @@ def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=T
    # try to authenticate the gateway
    gateway, status, gateway_read_time = response_load_gateway( request_handler, volume )
 
-   if fail_if_no_auth_header and (status != 200 or gateway == None):
+   if (status != 200 or gateway == None):
       return (None, None, None)
 
    # make sure this gateway is allowed to access this Volume

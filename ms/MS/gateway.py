@@ -86,11 +86,6 @@ class Gateway( storagetypes.Object ):
    
    caps = storagetypes.Integer(default=0)                # capabilities
    
-   session_password_hash = storagetypes.Text()
-   session_password_salt = storagetypes.Text()
-   session_timeout = storagetypes.Integer(default=-1, indexed=False)
-   session_expires = storagetypes.Integer(default=-1)     # -1 means "never expires"
-   
    cert_expires = storagetypes.Integer(default=-1)       # -1 means "never expires"
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
@@ -119,8 +114,6 @@ class Gateway( storagetypes.Object ):
       "g_id",
       "gateway_type",
       "volume_id",
-      "session_timeout",
-      "session_expires",
       "cert_version",
       "cert_expires",
       "caps",
@@ -137,18 +130,14 @@ class Gateway( storagetypes.Object ):
       "closure",
       "host",
       "port",
-      "cert_expires",
-      "session_expires",
-      "session_timeout"
+      "cert_expires"
    ]
    
    write_attrs_api_required = write_attrs
    
    
-   # TODO: session expires in 3600 seconds
    # TODO: cert expires in 86400 seconds
    default_values = {
-      "session_expires": (lambda cls, attrs: -1),
       "cert_version": (lambda cls, attrs: 1),
       "cert_expires": (lambda cls, attrs: -1),
       "caps": (lambda cls, attrs: 0),
@@ -160,7 +149,6 @@ class Gateway( storagetypes.Object ):
    ]
    
    validators = {
-      "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
       "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) )
    }
@@ -200,73 +188,7 @@ class Gateway( storagetypes.Object ):
    
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
-
-   def authenticate_session( self, password ):
-      """
-      Verify that the session password is correct
-      """
-      pw_hash = Gateway.generate_password_hash( password, self.session_password_salt )
-      return pw_hash == self.session_password_hash
-
-      
-   @classmethod
-   def generate_password_hash( cls, pw, salt ):
-      '''
-      Given a password and salt, generate the hash to store.
-      '''
-      h = HashAlg.new()
-      h.update( salt )
-      h.update( pw )
-
-      pw_hash = h.hexdigest()
-
-      return unicode(pw_hash)
-
-
-   @classmethod
-   def generate_password( cls, length ):
-      '''
-      Create a random password of a given length
-      '''
-      password = "".join( [random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for i in xrange(length)] )
-      return password
-
-
-   @classmethod
-   def generate_session_password( cls ):
-      '''
-      Generate a session password
-      '''
-      return cls.generate_password( GATEWAY_SESSION_PASSWORD_LENGTH )
-
-
-   @classmethod
-   def generate_session_secrets( cls ):
-      """
-      Generate a password, password hash, and salt for this gateway
-      """
-      password = cls.generate_session_password()
-      salt = cls.generate_password( GATEWAY_SESSION_SALT_LENGTH )
-      pw_hash = Gateway.generate_password_hash( password, salt )
-
-      return ( password, pw_hash, salt )  
    
-
-   def regenerate_session_password( self ):
-      """
-      Regenerate a session password.  The caller should put() 
-      the gateway after this call to save the hash and salt.
-      """
-      password, pw_hash, salt = Gateway.generate_session_secrets()
-      if self.session_timeout > 0:
-         self.session_expires = now + self.session_timeout
-      else:
-         self.session_expires = -1
-
-      self.session_password_hash = pw_hash
-      self.session_password_salt = salt
-      return password
-
 
    def load_pubkey( self, pubkey_str, in_base64=True ):
       """
@@ -349,6 +271,22 @@ class Gateway( storagetypes.Object ):
       msg.signature = sig
 
       return ret
+   
+   
+   @classmethod
+   def authenticate_read( self, g_type, g_id, url, signature_b64 ):
+      """
+      Verify that the signature over the constructed string "${g_type}_${g_id}:${url}"
+      was signed by this gateway's private key.
+      """
+      sig = base64.b64decode( signature_b64 )
+      
+      data = "%s_%s:%s" % (g_type, g_id, url)
+      
+      ret = self.auth_verify( self.gateway_public_key, data, sig )
+      
+      return ret
+   
    
    @classmethod
    def Create( cls, user, volume, **kwargs ):
