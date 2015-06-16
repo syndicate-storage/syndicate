@@ -24,7 +24,7 @@
 // return -ENOMEM if OOM
 // return -ENODATA if the replied message has no xattr field
 // return -EBADMSG on signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO on HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
@@ -45,7 +45,6 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    
    if( rc != 0 ) {
       SG_error("ms_client_read(getxattr %s) rc = %d\n", xattr_name, rc );
-      return rc;
    }
    else {
       
@@ -80,7 +79,7 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
 // return -ENOENT if the file doesn't exist or isn't readable
 // return -ENOMEM if OOM 
 // return -EBADMSG on signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO on an HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 // return negative on download error
@@ -145,7 +144,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
 // return -ENOMEM if OOM 
 // return -ENODATA if the replied message has no xattr field
 // return -EBADMSG on reply's signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO on HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, mode_t mode, int flags ) {
@@ -177,7 +176,7 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
 // return -ENOMEM if OOM 
 // return -ENODATA if the replied message has no xattr field
 // return -EBADMSG on reply's signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO on HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
@@ -199,7 +198,7 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
 // return -ENOENT if the file doesn't exist or either isn't readable or writable.
 // return -ENODATA if the replied message has no xattr field
 // return -EBADMSG on reply's signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO for HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner ) {
@@ -222,7 +221,7 @@ int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char c
 // return -ENOENT if the file doesn't exist or either isn't readable or writable.
 // return -ENODATA if the replied message has no xattr field
 // return -EBADMSG on reply's signature mismatch
-// return between -499 and -400 for HTTP 400-level error
+// return -EPROTO for HTTP 400-level error
 // return -EREMOTEIO for HTTP 500-level error 
 // return -errno on socket, connect, and recv related errors
 int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode ) {

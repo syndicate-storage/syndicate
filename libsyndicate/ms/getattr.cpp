@@ -22,17 +22,20 @@
 struct ms_client_get_metadata_context {
    
    char* url;
+   char* auth_header
    int request_id;
 }; 
 
-static void ms_client_get_metadata_context_init( struct ms_client_get_metadata_context* dlstate, char* url, int request_id ) {
+static void ms_client_get_metadata_context_init( struct ms_client_get_metadata_context* dlstate, char* url, char* auth_header, int request_id ) {
    
    dlstate->url = url;
+   dlstate->auth_header = auth_header;
    dlstate->request_id = request_id;
 }
 
 static void ms_client_get_metadata_context_free( struct ms_client_get_metadata_context* dlstate ) {
    
+   SG_safe_free( dlstate->auth_header );
    SG_safe_free( dlstate->url );
    SG_safe_free( dlstate );
 }
@@ -44,6 +47,7 @@ static void ms_client_get_metadata_context_free( struct ms_client_get_metadata_c
 // return -errno on failure to set up and start the download
 static int ms_client_get_metadata_begin( struct ms_client* client, struct ms_path_ent* path_ent, int request_id, bool do_getchild, struct md_download_loop* dlloop, struct md_download_context* dlctx ) {
    
+   char* auth_header = NULL;
    char* url = NULL;
    CURL* curl = NULL;
    struct ms_client_get_metadata_context* dlstate = NULL;
@@ -73,7 +77,17 @@ static int ms_client_get_metadata_begin( struct ms_client* client, struct ms_pat
       return -ENOMEM;
    }
    
-   ms_client_init_curl_handle( client, curl, url );
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      SG_safe_free( url );
+      curl_easy_cleanup( curl );
+      return -ENOMEM;
+   }
+   
+   ms_client_init_curl_handle( client, curl, url, auth_header );
    
    // set up download state 
    dlstate = SG_CALLOC( struct ms_client_get_metadata_context, 1 );
@@ -82,10 +96,11 @@ static int ms_client_get_metadata_begin( struct ms_client* client, struct ms_pat
       // OOM 
       curl_easy_cleanup( curl );
       SG_safe_free( url );
+      SG_safe_free( auth_header );
       return -ENOMEM;
    }
    
-   ms_client_get_metadata_context_init( dlstate, url, request_id );
+   ms_client_get_metadata_context_init( dlstate, url, auth_header, request_id );
    
    // set up the download context 
    rc = md_download_context_init( dlctx, curl, MS_MAX_MSG_SIZE, dlstate );
@@ -165,18 +180,25 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
    
    // get the entry from the result
    rc = ms_client_listing_read_entry( client, dlctx, &ent, &listing_error );
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_listing_read_entry( %p ) rc = %d, listing_error = %d\n", dlctx, rc, listing_error);
-      
-      return rc;
-   }
    
    // done with the download 
    // TODO connection pool
    md_download_context_free( dlctx, &curl );
    ms_client_get_metadata_context_free( dlstate );
    curl_easy_cleanup( curl );
+   
+   if( rc != 0 ) {
+      
+      SG_error("ms_client_listing_read_entry( %p ) rc = %d, listing_error = %d\n", dlctx, rc, listing_error);
+      
+      if( rc == -ENODATA ) {
+         
+         // failed because there was an MS-given error 
+         rc = listing_error;
+      }
+      
+      return rc;
+   }
    
    // what's the listing status?
    if( listing_error == MS_LISTING_NONE ) {
@@ -194,8 +216,8 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
    else if( listing_error == MS_LISTING_NEW ) {
       
       // got data! store it to the results buffer
-      result_ents[ ent_idx ] = ent;
-      result_ents[ ent_idx ].error = MS_LISTING_NEW;
+      result_ents[ent_idx] = ent;
+      result_ents[ent_idx].error = MS_LISTING_NEW;
    }
    else {
       
@@ -214,8 +236,10 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
 // return partial results, even in error.
 // NOTE: for GETATTR, path[i].file_id, .volume_id, .version, and .write_nonce must be defined for each entry
 // NOTE: for GETCHILD, path[i].parent_id, .volume_id, and .name must be defined for each entry
-// return 0 on success 
-// return -ENOMEM on OOM 
+// return 0 on success, or if there are no path entries to download
+// return -EINVAL if the path of entries to fetch data for (see above) is not well-formed
+// return -ENOMEM on OOM
+// return -ENODATA if we retried the maximum number of times to fetch an entry, but failed to do so
 static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result, bool do_getchild ) {
    
    int rc = 0;
@@ -225,6 +249,11 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
    int* attempts = NULL;
    int num_processed = 0;
    int request_id = 0;
+   struct md_download_context* dlctx = NULL;
+   
+   if( path->size() == 0 ) {
+      return 0;
+   }
    
    if( !do_getchild ) {
       
@@ -282,8 +311,6 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
       
       // start as many downloads as we can 
       while( request_ids.size() > 0 ) {
-         
-         struct md_download_context* dlctx = NULL;
          
          // next download 
          rc = md_download_loop_next( &dlloop, &dlctx );
@@ -380,10 +407,11 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
    
    if( rc != 0 ) {
       
+      SG_error("Abort download loop %p, rc = %d\n", &dlloop, rc );
+      
       md_download_loop_abort( &dlloop );
       
       int i = 0;
-      struct md_download_context* dlctx = NULL;
       
       // free all ms_client_get_metadata_context
       for( dlctx = md_download_loop_next_initialized( &dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( &dlloop, &i ) ) {
@@ -491,5 +519,6 @@ int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, st
 // always succeeds
 int ms_client_getattr_request( struct ms_path_ent* ms_ent, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce, void* cls ) {
    
+   memset( ms_ent, 0, sizeof(struct ms_path_ent) );
    return ms_client_make_path_ent( ms_ent, volume_id, 0, file_id, file_version, write_nonce, 0, 0, 0, NULL, cls );
 }

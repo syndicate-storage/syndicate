@@ -378,15 +378,13 @@ char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint6
 // return the URL on success 
 // return NULL on OOM
 char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t cert_version, uint64_t gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version ) {
-   char type_str[5];
-   ms_client_gateway_type_str( SYNDICATE_UG, type_str );
    
-   char* url = SG_CALLOC( char, strlen(ms_url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + 21 + 1 + strlen(type_str) + 1 + 21 + 1 + 21 + 1 );
+   char* url = SG_CALLOC( char, strlen(ms_url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
    if( url == NULL ) {
       return NULL;
    }
    
-   sprintf( url, "%s/CERT/%" PRIu64 "/%" PRIu64 "/%s/%" PRIu64 "/%" PRIu64, ms_url, volume_id, cert_version, type_str, gateway_id, gateway_cert_version );
+   sprintf( url, "%s/CERT/%" PRIu64 "/%" PRIu64 "/%" PRIu64 "/%" PRIu64, ms_url, volume_id, cert_version, gateway_id, gateway_cert_version );
    
    return url;
 }

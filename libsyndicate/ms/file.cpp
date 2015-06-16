@@ -41,6 +41,7 @@ struct ms_client_request_batch {
    struct curl_slist* headers;
    
    char* url;
+   char* auth_header;
 };
 
 // convert an update_set into a protobuf
@@ -614,6 +615,7 @@ static int ms_client_request_batch_free( struct ms_client_request_batch* batch )
    SG_safe_free( batch->ops );
    SG_safe_free( batch->file_ids );
    SG_safe_free( batch->url );
+   SG_safe_free( batch->auth_header );
    
    return 0;
 }
@@ -737,6 +739,7 @@ int ms_client_run_request_batch_begin( struct ms_client* client, struct ms_clien
    
    int rc = 0;
    char* url = NULL;
+   char* auth_header = NULL;
    uint64_t volume_id = ms_client_get_volume_id( client );
    CURL* curl = NULL;
    
@@ -754,7 +757,18 @@ int ms_client_run_request_batch_begin( struct ms_client* client, struct ms_clien
       return -ENOMEM;
    }
    
-   ms_client_init_curl_handle( client, curl, url );
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      curl_easy_cleanup( curl );
+      SG_safe_free( url );
+      return -ENOMEM;
+   }
+   
+   
+   ms_client_init_curl_handle( client, curl, url, auth_header );
    
    // program this download context
    curl_easy_setopt( curl, CURLOPT_POST, 1L);
@@ -765,7 +779,9 @@ int ms_client_run_request_batch_begin( struct ms_client* client, struct ms_clien
       curl_easy_setopt( curl, CURLOPT_WRITEHEADER, batch->timing );      
    }
    
+   // finish setting up this batch...
    batch->url = url;
+   batch->auth_header = auth_header;
    batch->request_id = request_id;
    
    // set up the download 
@@ -1266,6 +1282,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    struct curl_httppost *post = NULL, *last = NULL;
    struct ms_client_timing timing;
    char* url = NULL;
+   char* auth_header = NULL;
    char* serialized_text = NULL;
    size_t serialized_text_len = 0;
    char* buf = NULL;
@@ -1304,8 +1321,20 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
       curl_formfree( post );
       return -ENOMEM;
    }
+   
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      curl_easy_cleanup( curl );
+      SG_safe_free( serialized_text );
+      curl_formfree( post );
+      SG_safe_free( url );
+      return -ENOMEM;
+   }
                              
-   ms_client_init_curl_handle( client, curl, url );
+   ms_client_init_curl_handle( client, curl, url, auth_header );
    
    curl_easy_setopt( curl, CURLOPT_POST, 1L);
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, post );
@@ -1319,6 +1348,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    curl_formfree( post );
    SG_safe_free( serialized_text );
    SG_safe_free( url );
+   SG_safe_free( auth_header );
    
    if( rc != 0 ) {
       SG_error("md_download_run rc = %d\n", rc );

@@ -23,16 +23,18 @@ struct ms_client_get_dir_download_state {
    
    int64_t batch_id;
    char* url;
+   char* auth_header;
 };
 
 
 // init a download state
 // takes ownership of url 
 // always succeeds 
-static void ms_client_get_dir_download_state_init( struct ms_client_get_dir_download_state* dlstate, int64_t batch_id, char* url ) {
+static void ms_client_get_dir_download_state_init( struct ms_client_get_dir_download_state* dlstate, int64_t batch_id, char* url, char* auth_header ) {
    
    dlstate->batch_id = batch_id;
    dlstate->url = url;
+   dlstate->auth_header;
    return;
 }
 
@@ -41,6 +43,7 @@ static void ms_client_get_dir_download_state_init( struct ms_client_get_dir_down
 static void ms_client_get_dir_download_state_free( struct ms_client_get_dir_download_state* dlstate ) {
    
    SG_safe_free( dlstate->url );
+   SG_safe_free( dlstate->auth_header );
    SG_safe_free( dlstate );
    return;
 }
@@ -95,12 +98,26 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
       return -ENOMEM;
    }
    
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      curl_easy_cleanup( curl );
+      SG_safe_free( url );
+      SG_safe_free( dlstate );
+      return -ENOMEM;
+   }
+   
+   ms_client_init_curl_handle( client, curl, url, auth_header );
+   
    // set up download 
    rc = md_download_context_init( dlctx, curl, MS_MAX_MSG_SIZE, dlstate );
    if( rc != 0 ) {
       
       SG_safe_free( dlstate );
       SG_safe_free( url );
+      SG_safe_free( auth_header );
       curl_easy_cleanup( curl );
       return rc;
    }
@@ -115,12 +132,13 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
       
       SG_safe_free( dlstate );
       SG_safe_free( url );
+      SG_safe_free( auth_header );
       curl_easy_cleanup( curl );
       return rc;
    }
    
    // set up download state
-   ms_client_get_dir_download_state_init( dlstate, batch_id, url );
+   ms_client_get_dir_download_state_init( dlstate, batch_id, url, auth_header );
    
    // start download 
    rc = md_download_context_start( &client->dl, dlctx );
@@ -407,6 +425,20 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
    if( rc != 0 && rc != MD_DOWNLOAD_FINISH ) {
       
       md_download_loop_abort( &dlloop );
+      
+      int i = 0;
+      
+      // free all ms_client_get_dir_download_state
+      for( dlctx = md_download_loop_next_initialized( &dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( &dlloop, &i ) ) {
+         
+         if( dlctx == NULL ) {
+            break;
+         }
+         
+         struct ms_client_get_dir_download_state* dlstate = (struct ms_client_get_dir_download_state*)md_download_context_get_cls( dlctx );
+         
+         ms_client_get_dir_download_state_free( dlstate );
+      }
    }
    
    md_download_loop_cleanup( &dlloop, NULL, NULL );

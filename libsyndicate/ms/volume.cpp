@@ -45,7 +45,11 @@ void ms_volume_free( struct ms_volume* vol ) {
 // on success, populate the given ms_volume structure with the metadata
 // return 0 on success
 // return -EINVAL if we failed to unserialize 
-// return -errno if we failed to download data, or failed to initialize the volume
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO if the HTTP error was between 400 and 499
+// return -errno if we failed to initialize the volume
 int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
    
    ms::ms_volume_metadata volume_md;
@@ -90,6 +94,10 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
 // return -EINVAL if there is no volume to reload in the client
 // return -ENOMEM if OOM 
 // return -EBADMSG if we can't parse the message, or if we get invalid versions
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO if the HTTP error was between 400 and 499
 // client must NOT be locked.
 int ms_client_reload_volume( struct ms_client* client, uint64_t* ret_new_cert_version ) {
    
