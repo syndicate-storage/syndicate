@@ -47,9 +47,9 @@ else:
    import log as Log
    log = Log.get_logger()
    import syndicate.ms.msconfig as msconfig
-   from storage_stub import StorageStub as storage
-   from object_stub import *
-   from auth_stub import *
+   from syndicate.ms.storage_stub import StorageStub as storage
+   from syndicate.ms.object_stub import *
+   from syndicate.ms.auth_stub import *
    SYNDICATE_PRIVKEY = "Syndicate's private key is only available to the MS!"
    
 # ----------------------------------
@@ -751,7 +751,7 @@ def remove_volume_access( email, volume_name_or_id, **caller_user_dict ):
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
-def request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, message ):
+def request_volume_access( email, volume_name_or_id, allowed_gateways, caps, message ):
    """
    Request permission to create Gateways for a Volume.  The Volume owner 
    will be able to read the request, and decide whether or not to allow 
@@ -774,9 +774,9 @@ def request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, 
          You can pass them as a string, and they will be parsed 
          into the appropriate bit vector.
       
-      ug_caps (str or int)
-         Default capability bits for User Gateways when they are 
-         added to this Volume.  By default, User Gateways are 
+      caps (str or int)
+         Default capability bits for Gateways when they are 
+         added to this Volume.  By default, Gateways are 
          given read-only access to data and metadata.
          
          Valid capability bits are:
@@ -811,7 +811,7 @@ def request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, 
       FIXME: users are limited in the number of outstanding requests they may have
       FIXME: requests expire after a time if they are not acted upon.
    """   
-   return storage.request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, message )
+   return storage.request_volume_access( email, volume_name_or_id, allowed_gateways, caps, message )
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
@@ -882,7 +882,7 @@ def list_user_access_requests( email ):
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_source=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
-def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict ):
+def set_volume_access( email, volume_name_or_id, allowed_gateways, caps, **caller_user_dict ):
    """
    Set the types of Gateways a user may create in a Volume, and if User Gateways 
    are allowed, set what access capabilities they will have.
@@ -904,9 +904,9 @@ def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **ca
          You can pass them as a string, and they will be parsed 
          into the appropriate bit vector.
          
-      ug_caps (str or int):
-         Default capability bits for User Gateways when they are 
-         added to this Volume.  By default, User Gateways are 
+      caps (str or int):
+         Default capability bits for Gateways when they are 
+         added to this Volume.  By default, Gateways are 
          given read-only access to data and metadata.
          
          Valid capability bits are:
@@ -942,7 +942,7 @@ def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **ca
       This method is idempotent.
    """
       
-   return storage.set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict )
+   return storage.set_volume_access( email, volume_name_or_id, allowed_gateways, caps, **caller_user_dict )
 
 
 # ----------------------------------
@@ -1088,15 +1088,6 @@ def update_gateway( g_name_or_id, **attrs ):
          closure from a directory, pass the path to the
          directory containing the closure's files.
       
-      session_timeout=int:
-         The longest the gateway will wait to renew its certificate
-         with the MS (in seconds).  It will renew its certificate
-         more frequently when it suspects it has become stale.
-         
-      session_expires=int:
-         Date when this gateway's current session with the Volume expires,
-         in seconds since the epoch.
-   
    Returns:
       On success, this method returns True.
       Raises an exception on error.
