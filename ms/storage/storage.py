@@ -17,7 +17,8 @@
 """
 
 """
-This is the high-level storage API.
+This is the high-level storage API.  It executes storage-related operations (i.e. CRUD, listing, and binding/unbinding)
+over collections of objects.  The public API wraps these methods.
 """
 
 import storagetypes
@@ -119,7 +120,7 @@ def list_user_access_requests( email, **q_opts ):
    return VolumeAccessRequest.ListUserAccessRequests( user.owner_id, **q_opts )
 
 # ----------------------------------
-def request_volume_access( email, volume_name_or_id, gateway_types, ug_caps, message ):
+def request_volume_access( email, volume_name_or_id, gateway_types, caps, message ):
    user, volume = _read_user_and_volume( email, volume_name_or_id )
    
    # defensive checks...
@@ -128,7 +129,7 @@ def request_volume_access( email, volume_name_or_id, gateway_types, ug_caps, mes
    if volume == None or volume.deleted:
       raise Exception("No such volume '%s'" % volume_name_or_id )
    
-   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, volume.name, gateway_types, ug_caps, message )
+   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, volume.name, gateway_types, caps, message )
 
 # ----------------------------------
 def remove_volume_access( email, volume_name_or_id, **caller_user_dict ):
@@ -180,7 +181,7 @@ def list_volume_access( volume_name_or_id, **q_opts ):
    return VolumeAccessRequest.ListVolumeAccess( volume.volume_id, **q_opts )
 
 # ----------------------------------
-def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict ):
+def set_volume_access( email, volume_name_or_id, allowed_gateways, caps, **caller_user_dict ):
    caller_user = _check_authenticated( caller_user_dict )
    
    user, volume = _read_user_and_volume( email, volume_name_or_id )
@@ -196,7 +197,7 @@ def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **ca
    if not caller_user.is_admin and volume.owner_id != caller_user.owner_id:
       raise Exception("User '%s' cannot set access rights to Volume '%s'" % (caller_user.email, volume.name))
    
-   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, allowed_gateways=allowed_gateways, gateway_caps=ug_caps )
+   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, allowed_gateways=allowed_gateways, gateway_caps=caps )
 
 # ----------------------------------
 def list_volume_user_ids( volume_name_or_id, **q_opts ):
