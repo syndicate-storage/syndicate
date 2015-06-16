@@ -51,7 +51,7 @@ handlers = [
     (r'[/]+REGISTER[/]*', MSPublicKeyRegisterRequestHandler),
     (r'[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
     (r'[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
-    (r'[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
+    (r'[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
     (r'[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
     (r'[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
     (r'[/]+GATEWAYOWNER[/]+([^/]+)[/]*', MSGatewayOwnerRequestHandler),
