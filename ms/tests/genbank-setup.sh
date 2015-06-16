@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # internal use by Jude.  Don't rely on this for anything.
-
-BIN=../../build/out/bin/ms
+BIN=../../build/out/bin
 SYNCONF=$HOME/.syndicate.local
 
 USER_ID="jcnelson@cs.princeton.edu"
@@ -13,6 +12,23 @@ GATEWAY_PASS="poop"
 syntool() {
    $BIN/syntool.py -c $SYNCONF/syndicate.conf -P $PASS $@
 }
+
+if [ ! -d $SYNCONF ]; then 
+   mkdir $SYNCONF
+   mkdir -p $SYNCONF/user_keys/signing/
+   cp user_test_key.pem $SYNCONF/user_keys/signing/$USER_ID.pkey
+
+   echo "[syndicate]
+url=http://localhost:8080
+user_id=$USER_ID
+gateway=gateway_keys/
+volume=volume_keys/
+user=user_keys/" > $SYNCONF/syndicate.conf
+
+   mkdir -p $SYNCONF/gateway_keys
+   mkdir -p $SYNCONF/volume_keys
+   mkdir -p $SYNCONF/user_keys
+fi
 
 syntool delete_gateway AG-genbank-demo || exit 1
 syntool delete_gateway UG-genbank-demo || exit 1
