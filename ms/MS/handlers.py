@@ -30,6 +30,7 @@ import protobufs.sg_pb2 as sg_pb2
 
 from storage import storage
 import storage.storagetypes as storagetypes
+import storage.generaluuid as generaluuid
 
 import common.api as api
 from entry import MSEntry, MSEntryXAttr
@@ -150,7 +151,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
    Certificate bundle request handler.
    """
    
-   def get( self, volume_id_str, volume_cert_version_str, gateway_type_str, gateway_name_or_id, gateway_cert_version_str ):
+   def get( self, volume_id_str, volume_cert_version_str, gateway_name_or_id, gateway_cert_version_str ):
       volume_cert_version = 0
       gateway_cert_version = 0
       
@@ -168,29 +169,16 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       if status != 200 or volume == None:
          return
       
-      # get the gateway
-      if gateway_type_str not in ["UG", "RG", "AG"]:
-         logging.error("Invalid gateway type '%s'" % gateway_type_str )
-         response_user_error( self, 401 )
-         return
-         
       gateway = storage.read_gateway( gateway_name_or_id )
       if gateway is None:
          logging.error("No such Gateway named %s" % (gateway_name_or_id))
          response_user_error( self, 404 )
          return
       
-      """
-      for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
-         if gateway_type_str == type_str and gateway.gateway_type != type_id:
-            logging.error("No such %s named %s" % (gateway_type_str, gateway_name_or_id))
-            response_user_error( self, 404 )
-            return
-      """
-      
       # request only the right version
       if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
-         hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_name_or_id, gateway.cert_version)
+         # hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_name_or_id, gateway.cert_version)
+         hdr = "%s/CERT/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_name_or_id, gateway.cert_version)
          self.response.headers['Location'] = hdr
          response_end( self, 302, "Location: %s" % hdr, "text/plain" )
          return
@@ -747,7 +735,7 @@ class MSFileHandler(webapp2.RequestHandler):
       timing_headers.update( response_timing )
       
       for h, v in timing_headers.items():
-         log.debug( "%s: %s" % (h, v) )
+         log.info( "%s: %s" % (h, v) )
          
       response_end( self, status, reply_str, "application/octet-stream", timing_headers )
       
@@ -783,11 +771,27 @@ class MSJSONRPCHandler(GAEOpenIDRequestHandler):
          
       server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api_call_verifier )
       
+      caller_uuids = server.get_call_uuids( json_text )
+      if caller_uuids is None:
+         # invalid request 
+         server.error(None, jsonrpc.SERVER_ERROR_INVALID_REQUEST, response=self.response )
+         return 
+      
+      # verify that none of these UUIDs exist 
+      stored_uuids = generaluuid.get_uuids( caller_uuids, "jsonrpc" )
+      for stored_uuid in stored_uuids:
+         if stored_uuid is not None:
+            server.error(stored_uuid, jsonrpc.SERVER_ERROR_INVALID_REQUEST, response=self.response )
+            return 
+      
       # NOTE: This writes the response
-      result = server.handle( json_text, response=self.response, username=username )
-   
-      # TODO: save the UUID of this request, to prevent replays
-      uuids = server.get_result_uuids( result )
+      result, mutable = server.handle( json_text, response=self.response, username=username )
+      
+      # prevent mutable replays: save caller UUIDs
+      if mutable:
+         generaluuid.put_uuids( caller_uuids, "jsonrpc" )
+         
+      return
    
    
    def handle( self, action ):
