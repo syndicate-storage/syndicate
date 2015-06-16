@@ -123,11 +123,7 @@ static int ms_client_unseal_and_load_keys( ms::ms_registration_metadata* registr
 int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem, char const* key_password ) {
 
    int rc = 0;
-   char gateway_type_str[5];
    char gateway_id_str[50];
-   
-   char const* new_session_password = NULL;
-   char* new_userpass = NULL;
    
    EVP_PKEY* new_pkey = NULL;
    EVP_PKEY* new_pubkey = NULL;
@@ -146,15 +142,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    if( registration_md->resolve_page_size() < 0 ) {
       
       SG_error("Invalid MS page size %d\n", registration_md->resolve_page_size() );
-      
-      rc = -EBADMSG;
-      goto ms_client_load_registration_metadata_error;
-   }
-   
-   // session expiry time
-   if( registration_md->session_expires() > 0 && registration_md->session_expires() < md_current_time_seconds() ) {
-      
-      SG_error("Session expired at %" PRId64 "\n", registration_md->session_expires() );
       
       rc = -EBADMSG;
       goto ms_client_load_registration_metadata_error;
@@ -191,23 +178,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    SG_info("Registered as Gateway %s (%" PRIu64 ")\n", cert->name, cert->gateway_id );
    
    ms_client_wlock( client );
-   
-   // new session password
-   new_session_password = registration_md->session_password().c_str();
-   
-   // new userpass
-   // userpass format: ${gateway_type}_${gateway_id}:${session_password}
-   sprintf(gateway_id_str, "%" PRIu64, cert->gateway_id );
-   ms_client_gateway_type_str( client->gateway_type, gateway_type_str );
-
-   new_userpass = SG_CALLOC( char, strlen(gateway_id_str) + 1 + strlen(gateway_type_str) + 1 + strlen(new_session_password) + 1 );
-   if( new_userpass == NULL ) {
-      
-      rc = -ENOMEM;
-      goto ms_client_load_registration_metadata_error;
-   }
-   
-   sprintf( new_userpass, "%s_%s:%s", gateway_type_str, gateway_id_str, new_session_password );
 
    // get keys with password, if needed
    if( key_password != NULL ) {
@@ -254,11 +224,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       goto ms_client_load_registration_metadata_error;
    }
    
-   // clear old fields
-   if( client->userpass != NULL ) {
-      SG_safe_free( client->userpass );
-   }
-   
    if( new_pkey != NULL && client->gateway_key != NULL ) {
       
       EVP_PKEY_free( client->gateway_key );
@@ -289,8 +254,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    client->owner_id = cert->user_id;
    client->gateway_id = cert->gateway_id;
    client->portnum = cert->portnum;
-   client->userpass = new_userpass;
-   client->session_expires = registration_md->session_expires();
    client->page_size = registration_md->resolve_page_size();
    client->volume = volume;
    client->cert_version = vol_md->cert_version();
@@ -347,7 +310,6 @@ ms_client_load_registration_metadata_error:
    }
    
    SG_safe_free( new_pkey_pem );
-   SG_safe_free( new_userpass );
    
    if( cert != NULL ) {
       ms_client_gateway_cert_free( cert );
@@ -361,6 +323,10 @@ ms_client_load_registration_metadata_error:
 // get the Syndicate public key from the MS
 // return 0 on success 
 // return -ENOMEM if out of memory 
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO if the HTTP error was between 400 and 499
 // return negative on download error
 static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client, char** syndicate_public_key_pem ) {
    
@@ -589,11 +555,6 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
 
    ms_client_wlock( client );
    
-   if( client->userpass != NULL ) {
-      SG_safe_free( client->userpass );
-   }
-   
-   client->session_expires = -1;
    client->gateway_type = client->conf->gateway_type;
    client->owner_id = SG_USER_ANON;
    client->gateway_id = SG_GATEWAY_ANON;
