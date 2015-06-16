@@ -230,7 +230,7 @@ def _getchild( owner_id, volume, parent_id, name ):
       # child count if directory 
       num_children = 0
       if file_data.ftype == MSENTRY_TYPE_DIR:
-         num_children = MSEntry.GetNumChildren( volume, file_data.file_id )
+         num_children = MSEntryIndex.GetNumChildren( volume.volume_id, file_data.file_id, volume.num_shards )
          
       # full ent 
       ent_pb = reply.listing.entries.add()
