@@ -494,12 +494,13 @@ class SessionMiddleware(object):
         return self.app(environ, my_start_response)
 
 
+"""
 class DjangoSessionMiddleware(object):
-    """Django middleware that adds session support.  You must specify the
-    session configuration parameters by modifying the call to ``SessionMiddleware``
-    in ``DjangoSessionMiddleware.__init__()`` since Django cannot call an
-    initialization method with parameters.
-    """
+    #Django middleware that adds session support.  You must specify the
+    #session configuration parameters by modifying the call to ``SessionMiddleware``
+    #in ``DjangoSessionMiddleware.__init__()`` since Django cannot call an
+    #initialization method with parameters.
+    
     def __init__(self):
 
         fake_app = lambda environ, start_response: start_response
@@ -521,7 +522,7 @@ class DjangoSessionMiddleware(object):
             logging.info("Varying")
             patch_vary_headers(response, ('Cookie',))
         return response
-
+"""
 
 def delete_expired_sessions():
     """Deletes expired sessions from the datastore.
