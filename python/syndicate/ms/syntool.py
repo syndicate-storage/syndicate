@@ -75,7 +75,7 @@ def download_syndicate_public_key( config ):
    pubkey_req = requests.get( url )
    
    if pubkey_req.status_code != 200:
-      raise Exception("Failed to get public key from %s, HTTP status %s" % (url, pubkey_req.status) )
+      raise Exception("Failed to get public key from %s, HTTP status %s" % (url, pubkey_req.status_code) )
    
    assert hasattr(pubkey_req, "content"), "Invalid response; no content given!"
    
@@ -587,7 +587,7 @@ def do_setup( config, all_params ):
 def make_conf( user_id, syndicate_host, **defaults ):
    config = {}
    conf.fill_defaults( config )
-   extend_paths( config, CONFIG_DIR )
+   conf.extend_key_paths( config, CONFIG_DIR )
    
    config['user_id'] = user_id
    config['syndicate_host'] = syndicate_host

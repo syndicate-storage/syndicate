@@ -176,8 +176,8 @@ def validate_args( method_name, args, kw ):
 
 
 # -------------------
-def extend_paths( config, base_dir ):
-   # extend all paths
+def extend_key_paths( config, base_dir ):
+   # extend all key paths in a config: prepend base_dir to them
    for (_, keydir) in KEY_DIR_NAMES.items():
       path = config.get( keydir, None )
       if path == None:
@@ -195,7 +195,7 @@ def load_config( config_path, config_str, opts ):
    ret = modconf.load_config( config_str, opts, "syndicate", CONFIG_OPTIONS )
          
    conf_dir = os.path.dirname( config_path )
-   extend_paths( ret, conf_dir )
+   extend_key_paths( ret, conf_dir )
    
    if ret['debug']:
       Log.set_log_level( "DEBUG" )
@@ -213,7 +213,7 @@ def fill_defaults( config ):
    
    config.update( CONFIG_DEFAULTS )
    
-   extend_paths( config, CONFIG_DIR )
+   extend_key_paths( config, CONFIG_DIR )
    
    modconf.defaults( config )
    
