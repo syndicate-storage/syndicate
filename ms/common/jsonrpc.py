@@ -16,6 +16,12 @@
    limitations under the License.
 """
 
+"""
+JSON RPC client and server.
+We carry our own implementation because we require each request and response to 
+be signed by the sender.
+"""
+
 # Modified from https://code.google.com/p/app-engine-starter/source/browse/trunk/lib/jsonrpc.py
 # added support for positional and keyword arguments, and message signing and verifying
 
@@ -39,13 +45,20 @@ except:
 from msconfig import JSON_SYNDICATE_CALLING_CONVENTION_FLAG
 
 VERSION = '2.0'
+SERVER_ERROR_PARSE_ERROR        = -32700
+SERVER_ERROR_INVALID_REQUEST    = -32600
+SERVER_ERROR_METHOD_NOT_FOUND   = -32601
+SERVER_ERROR_INVALID_PARAMS     = -32602
+SERVER_ERROR_INTERNAL_ERROR     = -32603 
+SERVER_ERROR_SIGNATURE_ERROR    = -32400
+
 ERROR_MESSAGE = {
-    -32700: 'Parse error',
-    -32600: 'Invalid Request',
-    -32601: 'Method not found',
-    -32602: 'Invalid params',
-    -32603: 'Internal error',
-    -32400: 'Signature verification error'              # unofficial, Syndicate-specific
+    SERVER_ERROR_PARSE_ERROR: 'Parse error',
+    SERVER_ERROR_INVALID_REQUEST: 'Invalid Request',
+    SERVER_ERROR_INVALID_REQUEST: 'Method not found',
+    SERVER_ERROR_INVALID_PARAMS: 'Invalid params',
+    SERVER_ERROR_INTERNAL_ERROR: 'Internal error',
+    SERVER_ERROR_SIGNATURE_ERROR: 'Signature verification error'              # unofficial, Syndicate-specific
 }
 
 # ----------------------------------
@@ -136,11 +149,26 @@ class Server(object):
         self.signer = signer
         self.verifier = verifier
 
-    def error(self, id, code, data=None):
+    def error(self, id, code, data=None, response=None):
+        # generate and write back an error response 
+        # return (result, None), as result() would.
         error_value = {'code': code, 'message': ERROR_MESSAGE.get(code, 'Server error'), 'data': data}
         return self.result({'jsonrpc': VERSION, 'error': error_value, 'id': id})
 
-    def result(self, result, method=None):
+    def result(self, result, method=None, response=None):
+       
+        # generate and return our response, as well as a hint 
+        # as to whether or not the method (if given) mutated 
+        # state (i.e. so the caller will know whether or not to 
+        # store the UUID of the request)
+        
+        mutable = None 
+        if method is not None and hasattr(method, "mutable"):
+           mutable = method.mutable 
+           
+        if response is not None:
+           self.response = response 
+           
         # sign a single result.
         # if it's a list of results, then each element is already signed.
         if not isinstance(result, list):
@@ -161,16 +189,17 @@ class Server(object):
             insert_syndicate_json( result, self.api_version, None, result_sig )
          
         if self.response is None:
-            return result
+            return (result, mutable)
         else:
             if hasattr(self.response, 'headers'):
                 self.response.headers['Content-Type'] = 'application/json'
             if hasattr(self.response, 'write'):
                 self.response.write(json.dumps(result))
         
-        return result
+        return (result, mutable)
      
     # get the list of RPC UUIDs from a result
+    @classmethod
     def get_result_uuids( self, result ):
        if isinstance(result, list):
           ret = []
@@ -186,14 +215,53 @@ class Server(object):
           return None
        
 
+    # get the list of caller UUIDs from given data 
+    # return None if we're missing a UUID (in which case, the call is invalid)
+    @classmethod
+    def get_call_uuids( cls, json_text ):
+       
+       data = None
+       uuids = []
+       
+       if not data:
+         try:
+            data = json.loads(json_text)
+         except ValueError, e:
+            return None
+             
+       # batch calls
+       if isinstance(data, list):
+
+         for d in data:
+            if 'id' in d:
+               uuids.append( d['id'] )
+            else:
+               return None 
+         
+         return uuids
+
+       if 'id' in data:
+         return [data['id']]
+       else:
+         return None
+    
+    
+    # handle one or more responses
     def handle(self, json_text, response=None, data=None, **verifier_kw):
+       
+        # return the result of the response, encoded as a json string 
+        # if response is not None, write the response to it (i.e. response is 
+        # the response object from the request handler).
+        # return (json text, mutable), where mutable is a hint as to whether or not 
+        # the called method (if invoked) mutated state.
+        
         self.response = response
 
         if not data:
             try:
                 data = json.loads(json_text)
             except ValueError, e:
-                return self.error(None, -32700)
+                return self.error(None, SERVER_ERROR_PARSE_ERROR)
              
         # batch calls
         if isinstance(data, list):
@@ -206,29 +274,29 @@ class Server(object):
         if 'id' in data:
             id = data['id']
         else:
-            id = None
+            return self.error(None, SERVER_ERROR_INVALID_REQUEST)
             
         # early check--we'll need to get the signature
         syndicate_data = extract_syndicate_json( data, self.api_version )
         if syndicate_data == None:
-           return self.error(id, -32600)
+           return self.error(id, SERVER_ERROR_INVALID_REQUEST)
         
         """
         # verify that we have a signature
         if self.verifier:
           if not syndicate_data.has_key( 'signature' ):
             log.error("No signature field")
-            return self.error(id, -32400)
+            return self.error(id, SERVER_ERROR_SIGNATURE_ERROR)
         """
         
         # get the rest of the fields...
         if data.get('jsonrpc') != '2.0':
-            return self.error(id, -32600)
+            return self.error(id, SERVER_ERROR_INVALID_REQUEST)
 
         if 'method' in data:
             method = data['method']
         else:
-            return self.error(id, -32600)
+            return self.error(id, SERVER_ERROR_INVALID_REQUEST)
 
         syndicate_calling_convention = False
         syndicate_method_args = []
@@ -251,11 +319,11 @@ class Server(object):
             params = {}
         
         if method.startswith('_'):
-            return self.error(id, -32601)
+            return self.error(id, SERVER_ERROR_METHOD_NOT_FOUND)
         try:
             method = getattr(self.obj, method)
         except AttributeError:
-            return self.error(id, -32601)
+            return self.error(id, SERVER_ERROR_METHOD_NOT_FOUND)
         
         method_args = []
         method_kw = {}
@@ -279,7 +347,7 @@ class Server(object):
                   invalid_params = True
 
             if invalid_params:
-               return self.error(id, -32602)
+               return self.error(id, SERVER_ERROR_INVALID_PARAMS)
             else:
                if named_params:
                   method_kw = params
@@ -295,7 +363,7 @@ class Server(object):
             
            
            if invalid_params:
-              return self.error(id, -32602)
+              return self.error(id, SERVER_ERROR_INVALID_PARAMS)
            else:
               method_kw = syndicate_method_kw
               method_args = syndicate_method_args
@@ -314,14 +382,14 @@ class Server(object):
             valid = self.verifier( method, method_args, method_kw, data_text, syndicate_data, data, **verifier_kw )
             if not valid:
                log.error("Verifier failed")
-               return self.error(id, -32400)
+               return self.error(id, SERVER_ERROR_SIGNATURE_ERROR)
             
         try:
             result = method( *method_args, **method_kw )
         except Exception, e:
             log.error(sys.exc_info())
             traceback.print_exc()
-            return self.error(id, -32603, e.message)
+            return self.error(id, SERVER_ERROR_INTERNAL_ERROR, e.message)
 
         if id is not None:
             return self.result({'result': result, 'id': id, 'jsonrpc': VERSION}, method)
