@@ -67,7 +67,8 @@ int ms_client_gateway_type_str( uint64_t gateway_type, char* gateway_type_str ) 
 
 
 // set up secure CURL handle 
-int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url ) {
+// NOTE: the caller must set the CURLOPT_USERPWD field
+int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url, char const* auth_header ) {
    
    md_init_curl_handle( client->conf, curl, url, client->conf->connect_timeout);
    curl_easy_setopt( curl, CURLOPT_USE_SSL, 1L );
@@ -79,9 +80,12 @@ int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const
    curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl, CURLOPT_MAXREDIRS, 10L );
    curl_easy_setopt( curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-   curl_easy_setopt( curl, CURLOPT_USERPWD, client->userpass );
    
    curl_easy_setopt( curl, CURLOPT_TIMEOUT, client->ms_transfer_timeout );
+   
+   if( auth_header != NULL ) {
+      curl_easy_setopt( curl, CURLOPT_USERPWD, auth_header );
+   }
    
    return 0;
 }
@@ -196,7 +200,6 @@ int ms_client_init( struct ms_client* client, uint64_t gateway_type, struct md_s
       md_strrstrip( client->url, "/" );
    }
    
-   client->userpass = NULL;
    client->conf = conf;
    
    // cert bundle 
@@ -338,7 +341,6 @@ int ms_client_destroy( struct ms_client* client ) {
    pthread_rwlock_destroy( &client->config_lock );
    
    // clean up our state
-   SG_safe_free( client->userpass );
    SG_safe_free( client->url );
    
    if( client->gateway_key ) {
@@ -379,19 +381,85 @@ int ms_client_destroy( struct ms_client* client ) {
    return 0;
 }
 
+
+// generate an authentication header, e.g. for the CURLOPT_USERPWD field.
+// format: "${g_type}_${g_id}:${signature}"
+// signature input: "${g_type}_${g_id}:${url}"
+// return 0 on success, and allocate *auth_header as a null-terminated string 
+// return -EPERM on signature generation error
+// return -ENOMEM on OOM 
+int ms_client_auth_header( struct ms_client* client, char const* url, char** auth_header ) {
+   
+   int rc = 0;
+   
+   char* message = NULL;
+   size_t message_len = 0;
+   
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+   
+   char* ret = NULL;
+   size_t ret_len = 0;
+   
+   ms_client_rlock( client );
+   
+   uint64_t gateway_type = client->gateway_type;
+   uint64_t gateway_id = client->gateway_id;
+   
+   ms_client_unlock( client );
+   
+   message_len = 50 + 1 + 50 + 1 + strlen(url) + 2;
+   message = SG_CALLOC( char, message_len );
+   if( message == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   snprintf( message, message_len - 1, "%" PRIu64 "_%" PRIu64 ":%s", gateway_type, gateway_id, url );
+   
+   rc = md_sign_message( client->gateway_key, message, strlen( message ), &sigb64, &sigb64_len );
+   SG_safe_free( message );
+   
+   if( rc != 0 ) {
+      
+      if( rc != -ENOMEM ) {
+         
+         SG_error("md_sign_message rc = %d\n", rc );
+         return -EPERM;
+      }
+      else {
+         return rc;
+      }
+   }
+   
+   ret_len = 50 + 1 + 50 + 1 + sigb64_len + 2;
+   ret = SG_CALLOC( char, ret_len );
+   if( ret == NULL ) {
+      
+      SG_safe_free( sigb64 );
+      return -ENOMEM;
+   }
+   
+   snprintf( ret, ret_len - 1, "%" PRIu64 "_%" PRIu64 ":%s", gateway_type, gateway_id, sigb64 );
+   
+   *auth_header = ret;
+   return 0;
+}
+
 // synchronously download metadata from the MS.  logs benchmark data.
 // return 0 on success
 // return -ENOMEM if out of memory
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
+// return -EPROTO if the HTTP error was between 400 and 499
 // return other -errno on socket- and recv-related errors
 int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen ) {
    
    int rc = 0;
    CURL* curl = NULL;
    struct ms_client_timing timing;
+   char* auth_header = NULL;
    
    memset( &timing, 0, sizeof(struct ms_client_timing) );
    
@@ -401,7 +469,16 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
       return -ENOMEM;
    }
    
-   ms_client_init_curl_handle( client, curl, url );
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      curl_easy_cleanup( curl );
+      return -ENOMEM;
+   }
+   
+   ms_client_init_curl_handle( client, curl, url, auth_header );
    
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &timing );
@@ -410,10 +487,15 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
    rc = md_download_run( curl, MS_MAX_MSG_SIZE, buf, buflen );
    
    curl_easy_cleanup( curl );
+   SG_safe_free( auth_header );
    
    if( rc != 0 ) {
       
       SG_error("md_download_run('%s') rc = %d\n", url, rc );
+      
+      if( rc >= -400 && rc <= -499 ) {
+         rc = -EPROTO;
+      }
    }
    else {
       ms_client_timing_log( &timing );
@@ -701,8 +783,8 @@ ms_cert_bundle* ms_client_reload_certs( struct ms_client* client, ms_cert_bundle
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO if the HTTP error was between 400 and 499
 // return -EBADMSG if the signature didn't match
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
 // return other -errno on socket- and recv-related errors
 // NOTE: does *NOT* check the error code in reply
 int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* reply ) {

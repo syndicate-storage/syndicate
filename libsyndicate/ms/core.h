@@ -106,12 +106,6 @@ struct ms_client {
    uint64_t cert_version;       // version of the certificate bundle
    
    pthread_rwlock_t config_lock;          // lock governing the above
-
-   //////////////////////////////////////////////////////////////////
-   // session information
-   int64_t session_expires;                 // when the session password expires
-   char* session_password;                  // session password (used as HTTP Authentication: header)
-   char* userpass;                          // combined HTTP username:password string.  Username is the gateway ID; password is the session password
    
    //////////////////////////////////////////////////////////////////
    // identity and authentication
@@ -157,8 +151,8 @@ int ms_client_config_unlock2( struct ms_client* client, char const* from_str, in
 #define ms_client_config_unlock( fent ) ms_client_config_unlock2( fent, __FILE__, __LINE__ )
 
 // low-level network I/O
-int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url );
-
+int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url, char const* auth_header );
+int ms_client_auth_header( struct ms_client* client, char const* url, char** auth_header );
 int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen );
 int ms_client_need_reload( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 int ms_client_is_async_operation( int oper );
