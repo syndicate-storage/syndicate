@@ -24,6 +24,11 @@ import sys
 import StringIO
 import traceback
 import argparse
+import logging 
+
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+
+log = logging.getLogger()
 
 #-------------------------
 def load_config( config_str, opts, config_header, config_options ):
