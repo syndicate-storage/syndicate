@@ -686,6 +686,7 @@ class MSEntryIndex( storagetypes.Object ):
             # (can happen if another process creates an entry while we're compactifying)
             new_parent_max_cutoff = cls.GetNumChildren( volume_id, parent_id, num_shards )
             if new_parent_max_cutoff is None:
+               
                # directory doesn't exist anymore...nothing to compactify 
                logging.info("Index node /%s/%s does not exist" % (volume_id, parent_id) )
                return 0
@@ -927,7 +928,7 @@ class MSEntryIndex( storagetypes.Object ):
             logging.error("Failed to free index node /%s/%s (%s,%s)" % (volume_id, parent_id, file_id, dir_index))
             storagetypes.concurrent_return( -errno.EAGAIN )
          
-         cls.__compactify_on_delete( volume_id, parent_id, dir_index, num_shards, retry=retry, compactify_continuation=compactify_continuation )
+         cls.__compactify_on_delete( volume_id, parent_id, file_id, dir_index, num_shards, retry=retry, compactify_continuation=compactify_continuation )
          
          storagetypes.concurrent_return( 0 )
          
