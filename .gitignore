@@ -8,3 +8,5 @@ AG/datasets/*.stats
 build/out/*
 .sconsign.*
 RG/drivers/*/*secret*
+*.swp
+*.swo

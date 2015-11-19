@@ -142,7 +142,7 @@ int md_crypt_init() {
    if( urandom_fd < 0 ) {
       
       int errsv = -errno;
-      SG_error("open(/dev/urandom) rc = %d\n", errsv);
+      SG_error("open('/dev/urandom') rc = %d\n", errsv);
       return errsv;
    }
    
@@ -164,6 +164,7 @@ int md_crypt_shutdown() {
    
    // shut down OpenSSL
    ERR_free_strings();
+   CRYPTO_cleanup_all_ex_data();
    
    SG_debug("%s\n", "crypto thread shutdown" );
    md_openssl_thread_cleanup();
@@ -386,8 +387,8 @@ int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** si
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;
    }
-
-   // allocate the signature
+   
+   // allocate the signature, but leave some room just in case
    unsigned char* sig_bin = SG_CALLOC( unsigned char, sig_bin_len );
    if( sig_bin == NULL ) {
       EVP_MD_CTX_destroy( mdctx );
@@ -463,8 +464,8 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 // load a PEM-encoded (RSA) public key into an EVP key
 // return 0 on success
 // return -EINVAL if the public key could not be loaded
-int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
+int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str, size_t pubkey_len ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, pubkey_len );
 
    EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
 
@@ -472,7 +473,7 @@ int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
 
    if( public_key == NULL ) {
       // invalid public key
-      SG_error("%s", "ERR: failed to read public key\n");
+      SG_error("%s", "failed to read public key\n");
       md_openssl_error();
       return -EINVAL;
    }
@@ -486,8 +487,8 @@ int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
 // load a PEM-encoded (RSA) private key into an EVP key
 // return 0 on success 
 // return -EINVAL onfailure to load the private key 
-int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
+int md_load_privkey( EVP_PKEY** key, char const* privkey_str, size_t privkey_len ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, privkey_len );
 
    EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
 
@@ -495,7 +496,7 @@ int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
 
    if( privkey == NULL ) {
       // invalid private key
-      SG_error("%s", "ERR: failed to read private key\n");
+      SG_error("%s", "failed to read private key\n");
       md_openssl_error();
       return -EINVAL;
    }
@@ -509,7 +510,7 @@ int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
 // return 0 on success 
 // return -EINVAL on failure to load either key 
 int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str ) {
-   BIO* buf_priv_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
+   BIO* buf_priv_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) + 1 );
    
    EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_priv_io, NULL, NULL, NULL );
    
@@ -533,7 +534,7 @@ int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, ch
    }
    
    // load it 
-   BIO* buf_pub_io = BIO_new_mem_buf( (void*)pubkey_pem, sz );
+   BIO* buf_pub_io = BIO_new_mem_buf( (void*)pubkey_pem, sz + 1 );
    EVP_PKEY* pubkey = PEM_read_bio_PUBKEY( buf_pub_io, NULL, NULL, NULL );
    
    BIO_free_all( buf_pub_io );
@@ -568,7 +569,7 @@ int md_public_key_from_private_key( EVP_PKEY** ret_pubkey, EVP_PKEY* privkey ) {
    }
    
    // load it 
-   BIO* buf_pub_io = BIO_new_mem_buf( (void*)pubkey_pem, sz );
+   BIO* buf_pub_io = BIO_new_mem_buf( (void*)pubkey_pem, sz + 1 );
    EVP_PKEY* pubkey = PEM_read_bio_PUBKEY( buf_pub_io, NULL, NULL, NULL );
    
    BIO_free_all( buf_pub_io );
@@ -629,7 +630,7 @@ int md_generate_key( EVP_PKEY** key ) {
 }
 
 
-// dump a key to memory
+// dump a key to memory as a PEM-encoded string
 // return -EINVAL on failure to serialize the key 
 // return -ENOMEM on OOM
 long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
@@ -1077,14 +1078,14 @@ int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem
    EVP_PKEY* pkey = NULL;
    EVP_PKEY* pubkey = NULL;
    
-   rc = md_load_pubkey( &pubkey, receiver_pubkey_pem );
+   rc = md_load_pubkey( &pubkey, receiver_pubkey_pem, strlen(receiver_pubkey_pem) );
    if( rc != 0 ) {
       
       SG_error("md_load_pubkey rc = %d\n", rc );
       return -EINVAL;
    }
    
-   rc = md_load_privkey( &pkey, sender_pkey_pem );
+   rc = md_load_privkey( &pkey, sender_pkey_pem, strlen(sender_pkey_pem) );
    if( rc != 0 ) {
       
       SG_error("md_load_privkey rc = %d\n", rc );
@@ -1122,14 +1123,14 @@ int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_
    EVP_PKEY* pubkey = NULL;
    EVP_PKEY* privkey = NULL;
    
-   rc = md_load_privkey( &privkey, receiver_privkey_pem );
+   rc = md_load_privkey( &privkey, receiver_privkey_pem, strlen(receiver_privkey_pem) );
    if( rc != 0 ) {
       
       SG_error("md_load_privkey rc = %d\n", rc );
       return -EINVAL;
    }
    
-   rc = md_load_pubkey( &pubkey, sender_pubkey_pem );
+   rc = md_load_pubkey( &pubkey, sender_pubkey_pem, strlen(sender_pubkey_pem) );
    if( rc != 0 ) {
       
       SG_error("md_load_pubkey rc = %d\n", rc );
@@ -1142,84 +1143,6 @@ int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_
    
    EVP_PKEY_free( privkey );
    EVP_PKEY_free( pubkey );
-   return rc;
-}
-
-// seal something with a password
-// return 0 on success 
-// return -ENOMEM on OOM 
-// return non-zero on failure encrypt 
-int md_password_seal( char const* data, size_t data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
-   // implementation: use scrypt
-   size_t outbuf_len = data_len + 128;                  // +128 from scryptenc.h
-   uint8_t* outbuf = SG_CALLOC( uint8_t, outbuf_len );
-   
-   if( outbuf == NULL ) {
-      return -ENOMEM;
-   }
-   
-   int rc = scryptenc_buf( (uint8_t*)data, data_len, outbuf, (const uint8_t*)password, password_len, MD_SCRYPT_MAX_MEM, 0.0, MD_SCRYPT_MAX_TIME );
-   if( rc != 0 ) {
-      SG_error("scryptenc_buf rc = %d\n", rc );
-      
-      free( outbuf );
-      return rc;
-   }
-   
-   *output = (char*)outbuf;
-   *output_len = outbuf_len;
-   return 0;
-}
-
-// unseal something with a password.
-// the returned buffer will be mlock'ed
-// return 0 on success 
-// return -errno on failure to allocate and mlock the buffer 
-// return non-zero on failure to decrypt 
-int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
-   // implementation: use scrypt
-   size_t outbuf_len = encrypted_data_len;
-   
-   struct mlock_buf output_mlock_buf;
-   int rc = mlock_calloc( &output_mlock_buf, outbuf_len );
-   if( rc != 0 ) {
-      SG_error("mlock_calloc rc = %d\n", rc );
-      return rc;
-   }
-   
-   rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, (uint8_t*)output_mlock_buf.ptr, &outbuf_len, (const uint8_t*)password, password_len, MD_SCRYPT_MAX_MEM, 0.0, 1e10 );
-   if( rc != 0 ) {
-      SG_error("scryptdec_buf rc = %d\n", rc );
-      
-      mlock_free( &output_mlock_buf );
-      return rc;
-   }
-   
-   *output = (char*)output_mlock_buf.ptr;
-   *output_len = outbuf_len;
-   
-   return 0;
-}
-
-
-// unseal something with a password.
-// the resulting buffer will NOT be mlock'ed
-// return 0 on success 
-// return -errno on failure to munlock the buffer 
-// return non-zero on failure to unseal 
-int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
-   
-   int rc = md_password_unseal( encrypted_data, encrypted_data_len, password, password_len, output, output_len );
-   if( rc == 0 ) {
-      
-      rc = munlock( output, *output_len );
-      if( rc != 0 ) {
-         
-         int errsv = errno;
-         SG_error("munlock rc = %d\n", rc );
-         return -errsv;
-      }
-   }
    return rc;
 }
 

@@ -43,9 +43,7 @@ cdef extern from "libsyndicate/ms/ms-client.h":
       pass
 
    cdef struct md_syndicate_conf
-
-   int ms_client_init( ms_client* client, int gateway_type, md_syndicate_conf* conf )
-   int ms_client_destroy( ms_client* client )
+   
    char* ms_client_get_hostname( ms_client* client )
    int ms_client_get_portnum( ms_client* client )
 
@@ -59,38 +57,19 @@ cdef extern from "libsyndicate/util.h":
 # ------------------------------------------   
 cdef extern from "libsyndicate/opts.h":
    cdef struct md_opts:
-      
-      char* config_file
-      char* username
-      char* volume_name
-      char* ms_url
-      char* gateway_name
-      char* volume_pubkey_path
-      char* gateway_pkey_path
-      char* syndicate_pubkey_path
-      char* hostname
-      char* storage_root
-      char* first_nonopt_arg
-      
-      mlock_buf password
-      mlock_buf user_pkey_pem
-      mlock_buf gateway_pkey_pem
-      mlock_buf gateway_pkey_decryption_password
-      
-      char* volume_pubkey_pem
-      char* syndicate_pubkey_pem
-      char* tls_pkey_path
-      char* tls_cert_path
+      pass
 
-      bool read_stdin
-      int debug_level 
-      bool foreground 
-      
-      uint64_t cache_soft_limit
-      uint64_t cache_hard_limit
+   md_opts* md_opts_new( int count )
+   void md_opts_set_client( md_opts* opts, bool client )
+   void md_opts_set_ignore_driver( md_opts* opts, bool ignore_driver )
+   void md_opts_set_gateway_type( md_opts* opts, uint64_t type )
 
-      uint64_t gateway_type 
-      bool client
+   void md_opts_set_config_file( md_opts* opts, char* config_filepath )
+   void md_opts_set_username( md_opts* opts, char* username )
+   void md_opts_set_volume_name( md_opts* opts, char* volume_name )
+   void md_opts_set_gateway_name( md_opts* opts, char* gateway_name )
+   void md_opts_set_ms_url( md_opts* opts, char* ms_url )
+   void md_opts_set_foreground( md_opts* opts, bool foreground )
 
 # ------------------------------------------   
 cdef extern from "libsyndicate/gateway.h":
@@ -98,7 +77,7 @@ cdef extern from "libsyndicate/gateway.h":
    cdef struct SG_gateway:
       pass 
 
-   int SG_gateway_init( SG_gateway* gateway, uint64_t gateway_type, bool anonymous_client, int argc, char** argv )
+   int SG_gateway_init( SG_gateway* gateway, uint64_t gateway_type, int argc, char** argv, md_opts* overrides )
    int SG_gateway_init_opts( SG_gateway* gateway, md_opts* opts )
    int SG_gateway_shutdown( SG_gateway* gateway )
 
@@ -113,10 +92,6 @@ cdef extern from "libsyndicate/libsyndicate.h":
    cdef struct md_syndicate_conf:
       char* local_sd_dir
       pass
-
-   cdef int SYNDICATE_UG
-   cdef int SYNDICATE_RG
-   cdef int SYNDICATE_AG
 
    cdef int SG_CAP_READ_DATA
    cdef int SG_CAP_WRITE_DATA
@@ -151,15 +126,13 @@ cdef extern from "libsyndicate/libsyndicate.h":
    int ms_client_verify_gateway_message( ms_client* client, uint64_t volume_id, uint64_t gateway_id, const char* msg, size_t msg_len, char* sigb64, size_t sigb64_len )
    int md_encrypt_pem( const char* sender_privkey_pem, const char* receiver_pubkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
    int md_decrypt_pem( const char* sender_pubkey_pem, const char* receiver_privkey_pepm, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
-   int md_password_seal( const char* data, size_t data_len, const char* password, size_t password_len, char** output, size_t* output_len )
-   int md_password_unseal( const char* encrypted_data, size_t encrypted_data_len, const char* password, size_t password_len, char** output, size_t* output_len )
    int md_encrypt_symmetric( const unsigned char* key, size_t key_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len )
    int md_decrypt_symmetric( const unsigned char* key, size_t key_len, char* ciphertext_data, size_t ciphertext_len, char** data, size_t* data_len )
    
    # ------------------------------------------
    # config
    
-   int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
+   int ms_client_gateway_get_driver_text( ms_client* client, char** driver_text, uint64_t* driver_text_len )
    int ms_client_gateway_key_pem( ms_client* client, char** gateway_key_pem, size_t* gateway_key_len )
 
    # ------------------------------------------
@@ -175,10 +148,18 @@ cdef extern from "libsyndicate/libsyndicate.h":
    uint64_t ms_client_get_gateway_id( ms_client* client )
    uint64_t ms_client_get_owner_id( ms_client* client )
 
-   # ------------------------------------------
-   # OpenID RPC
-   
-   int ms_client_openid_rpc( const char* ms_openid_url, const char* username, const char* password, const char* request_type, const char* request_buf, size_t request_len, char** response_buf, size_t* response_len )
-   int ms_client_openid_auth_rpc( const char* ms_openid_url, const char* username, const char* password,
-                                  const char* request_type, const char* request_buf, size_t request_len, char** response_buf, size_t* response_len,
-                                  char* syndicate_pubkey_pem )
+  
+# ------------------------------------------
+cdef class Syndicate:
+    
+   cdef SG_gateway gateway_inst
+
+   cdef md_opts* opts_to_syndicate( cls, opts )
+ 
+   cpdef sign_message( self, data )
+   cpdef verify_gateway_message( self, gateway_id, volume_id, message_bits, sigb64 )
+
+   cpdef get_driver_text( self )
+   cpdef get_gateway_private_key_pem( self )
+   cpdef get_gateway_type( self, gw_id )
+   cpdef check_gateway_caps( self, gw_id, caps )

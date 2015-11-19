@@ -35,7 +35,8 @@ int UG_write_timestamp_update( struct UG_inode* inode, struct timespec* ts ) {
 // NOTE: inode->entry must be write-locked!
 int UG_write_nonce_update( struct UG_inode* inode ) {
    
-   UG_inode_set_write_nonce( inode, md_random64() );
+   int64_t write_nonce = UG_inode_write_nonce( inode );
+   UG_inode_set_write_nonce( inode, write_nonce + 1 );
    
    return 0;
 }
@@ -172,6 +173,9 @@ static int UG_write_aligned_setup( struct UG_inode* inode, char* buf, size_t buf
    
    uint64_t first_aligned_block = 0;
    uint64_t last_aligned_block = 0;
+   uint64_t file_id = UG_inode_file_id( inode );
+   int64_t file_version = UG_inode_file_version( inode );
+   
    off_t first_aligned_block_offset = 0;  // offset into buf where the first aligned block starts
    
    UG_dirty_block_aligned( offset, buf_len, block_size, &first_aligned_block, &last_aligned_block, &first_aligned_block_offset );
@@ -212,7 +216,7 @@ static int UG_write_aligned_setup( struct UG_inode* inode, char* buf, size_t buf
       if( rc != 0 ) {
          
          SG_error("UG_dirty_block_init_ram_nocopy( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_info->block_id, block_info->block_version, rc );
+                  file_id, file_version, block_info->block_id, block_info->block_version, rc );
          
          break;
       }
@@ -234,80 +238,82 @@ static int UG_write_aligned_setup( struct UG_inode* inode, char* buf, size_t buf
 
 
 // merge dirty blocks back into an inode, i.e. on write, or on failure to replicate.
-// make sure each block we put in either has an unshared RAM buffer, or is mmaped from disk.
-// coalesce while we do it--free up blocks that really do not have to be replicated.
+// this flushes each block to disk, and updates its hash in the inode's manifest.
+// coalesce while we do it--free up blocks that do not have to be replicated.
 // (i.e. file was reversioned --> drop all blocks beyond the size; block was overwritten --> drop old block).
-// if there is a record of a block being replicated before (i.e. it already exists in the manifest), then put the overwritten block info
-// from the inode's manifest into the inode's replaced_blocks listing, so we can vacuum it.
+// preserve vacuum information for every block we overwrite (NOTE: blocks will only be overwritten on conflict if overwrite is true)
 // if overwrite is false, then free dirty_blocks that are already present in the inode.
 // return 0 on success--all blocks in new_dirty_blocks will be either freed, or re-inserted into inode.
 // return -ENOMEM on OOM
 // NOTE: inode->entry must be write-locked 
+// NOTE: this modifies new_dirty_blocks by removing successfully-merged dirty blocks.  new_dirty_blocks will contain all *unmerged* dirty blocks on return.
 int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* inode, int64_t old_file_version, off_t old_size, uint64_t block_size, UG_dirty_block_map_t* new_dirty_blocks, bool overwrite ) {
    
    UG_dirty_block_map_t::iterator tmp_itr;
    int rc = 0;
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
-   
-   // merge blocks into the inode
+
+   // flush all blocks that we intend to merge
    for( UG_dirty_block_map_t::iterator itr = new_dirty_blocks->begin(); itr != new_dirty_blocks->end(); ) {
       
       uint64_t block_id = itr->first;
       struct UG_dirty_block* block = &itr->second;
-      
-      // skip non-dirty 
+
+      // sanity check 
       if( !UG_dirty_block_dirty( block ) ) {
          
-         UG_dirty_block_free( block );
+         SG_error("FATAL BUG: dirty block %" PRIX64 "[%" PRIu64 ".%" PRId64 "] is not dirty\n", UG_inode_file_id( inode ), block_id, UG_dirty_block_version(block) );
+         exit(1); 
+      }
+      
+      // sanity check: block must be in RAM 
+      if( !UG_dirty_block_in_RAM( block ) ) {
+
+         SG_errur("FATAL BUG: Not in RAM: %" PRIX64 "[%" PRId64 "]\n", UG_inode_file_id( inode ), block_id );
+         exit(1);
+      }
+
+      // if already flushing, then simply skip 
+      if( UG_dirty_block_is_flushing( block ) ) {
          
-         tmp_itr = itr;
+         SG_debug("Already flushing: %" PRIX64 "[%" PRId64 "]\n", UG_inode_file_id( inode ), block_id );
+
          itr++;
-         
-         new_dirty_blocks->erase( tmp_itr );
-         
          continue;
       }
       
-      // skip truncated 
+      // don't include if the file was truncated before we could merge dirty data 
       if( old_file_version != UG_inode_file_version( inode ) ) {
          
          if( block_id * block_size >= (unsigned)old_size ) {
             
-            UG_dirty_block_evict_and_free( cache, inode, block );
+            UG_dirty_block_free( block );
             
             tmp_itr = itr;
             itr++;
             
             new_dirty_blocks->erase( tmp_itr );
             
+            SG_debug("Skip truncated: %" PRIX64 "[%" PRId64 "]\n", UG_inode_file_id( inode ), block_id ); 
             continue;
          }
       }
       
-      // skip if we shouldn't overwrite 
+      // don't include if we shouldn't overwrite on conflict 
       if( !overwrite && UG_inode_dirty_blocks( inode )->find( block_id ) != UG_inode_dirty_blocks( inode )->end() ) {
       
          tmp_itr = itr;
          itr++;
          
+         UG_dirty_block_free( block );
          new_dirty_blocks->erase( tmp_itr );
          
+         SG_debug("Won't overwrite: %" PRIX64 "[%" PRId64 "]\n", UG_inode_file_id( inode ), block_id ); 
          continue;
       }
-      
-      // if flushed to disk, then mmap it
-      if( UG_dirty_block_buf( &itr->second )->data == NULL && UG_dirty_block_fd( &itr->second ) > 0 ) {
-         
-         rc = UG_dirty_block_mmap( &itr->second );
-         if( rc != 0 ) {
-            
-            // OOM
-            return rc;
-         }
-      }
-      
+
       // make sure the block has a private copy of its RAM buffer, if it has one at all
-      else if( !UG_dirty_block_mmaped( &itr->second ) && !UG_dirty_block_unshared( &itr->second ) && UG_dirty_block_buf( &itr->second )->data != NULL ) {
+      if( !UG_dirty_block_mmaped( block ) && !UG_dirty_block_unshared( block ) ) {
          
          // make sure this dirty block has its own copy of the RAM buffer
          rc = UG_dirty_block_buf_unshare( &itr->second );
@@ -317,18 +323,57 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
             return rc;
          }
       }
+
+      // serialize and send to disk 
+      rc = UG_dirty_block_flush_async( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), block );
+      if( rc != 0 ) {
+          
+         SG_error("UG_dirty_block_flush_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+            
+         return rc;
+      }
       
-      // insert this dirty block 
+      // insert this dirty block into the manifest, and retain info from the old version of this block so we can garbage-collect it later 
+      // this propagates the new block hash to the inode manifest.
       rc = UG_inode_dirty_block_commit( gateway, inode, block );
       if( rc != 0 ) {
          
          // failed 
          SG_error("UG_inode_dirty_block_commit( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
          
-         break;
+         return rc;
       }
-      
+   }
+
+   // finish flushing all blocks
+   // (NOTE: the act of flushing will update the block's information, but we need to keep it coherent with the manifest's information) 
+   for( UG_dirty_block_map_t::iterator itr = new_dirty_blocks->begin(); itr != new_dirty_blocks->end(); ) {
+
+      uint64_t block_id = itr->first;
+      struct UG_dirty_block* block = &itr->second;
+
+      if( !UG_dirty_block_is_flushing( block ) ) {
+
+         // already processed 
+         tmp_itr = itr;
+         itr++;
+
+         new_dirty_blocks->erase( tmp_itr )
+         continue;
+      }
+
+      // finish flushing (NOTE: regenerates block hash)
+      rc = UG_dirty_block_flush_finish( block );
+      if( rc != 0 ) {
+         
+         SG_error("UG_dirty_block_flush_finish( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
+                  UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+        
+         return rc; 
+      }
+
       // next dirty block 
       tmp_itr = itr;
       itr++;
@@ -340,7 +385,6 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
 }
 
 
-
 // fskit callback for write.
 // write data, locally.  Buffer data to RAM if possible, and flush to the disk cache if we need to.
 // refresh the manifest before writing.
@@ -349,22 +393,23 @@ int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* in
 // return -errno on failure to read unaligned blocks or flush data to cache
 // NOTE: fent should not be locked
 int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, char* buf, size_t buf_len, off_t offset, void* handle_data ) {
-   
+  
    int rc = 0;
    struct UG_file_handle* fh = (struct UG_file_handle*)handle_data;
-   struct UG_inode* inode = fh->inode_ref;
+   struct UG_inode* inode = NULL;
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( core );
    
    UG_dirty_block_map_t write_blocks;                   // all the blocks we'll write.
    
    uint64_t gateway_id = SG_gateway_id( gateway );
-   
    struct ms_client* ms = SG_gateway_ms( gateway );
-   
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
    
    struct timespec ts;
-   
+  
+   // ID of the first block written 
+   uint64_t first_block_id = (offset) / block_size;
+
    // ID of the last block written 
    uint64_t last_block_id = (offset + buf_len) / block_size;
    
@@ -374,59 +419,131 @@ int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_m
    }
    
    // make sure the manifest is fresh
-   rc = UG_consistency_manifest_ensure_fresh( gateway, fskit_route_metadata_path( route_metadata ) );
+   rc = UG_consistency_manifest_ensure_fresh( gateway, fskit_route_metadata_get_path( route_metadata ) );
    if( rc != 0 ) {
       
-      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", UG_inode_file_id( inode ), fskit_route_metadata_path( route_metadata ), rc );
+      fskit_entry_rlock( fent );
+      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", fskit_entry_get_file_id( fent ), fskit_route_metadata_get_path( route_metadata ), rc );
+      fskit_entry_unlock( fent );
+
       return rc;
    }
    
-   fskit_entry_rlock( fent );
+   fskit_entry_wlock( fent );
+   
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   int64_t file_version = UG_inode_file_version( inode );
+   uint64_t coordinator_id = UG_inode_coordinator_id( inode );
    
    // get unaligned blocks 
-   rc = UG_write_read_unaligned_blocks( gateway, fskit_route_metadata_path( route_metadata ), inode, buf_len, offset, &write_blocks );
-   
-   fskit_entry_unlock( fent );
+   rc = UG_write_read_unaligned_blocks( gateway, fskit_route_metadata_get_path( route_metadata ), inode, buf_len, offset, &write_blocks );
    
    if( rc != 0 ) {
       
-      SG_error("UG_write_read_unaligned_blocks( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+      fskit_entry_unlock( fent );
+      
+      SG_error("UG_write_read_unaligned_blocks( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
       
       return rc;
    }
-   
+
    // merge data into unaligned blocks 
    rc = UG_write_unaligned_merge_data( buf, buf_len, offset, block_size, &write_blocks );
    if( rc != 0 ) {
+       
+      fskit_entry_unlock( fent );
       
       // bug 
-      SG_error("BUG: UG_write_unaligned_merge_data( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+      SG_error("BUG: UG_write_unaligned_merge_data( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
       
       UG_dirty_block_map_free( &write_blocks );
-      
       return -EINVAL;
    }
    
    // direct buf to aligned block writes
    rc = UG_write_aligned_setup( inode, buf, buf_len, offset, block_size, &write_blocks );
    if( rc != 0 ) {
+       
+      fskit_entry_unlock( fent );
       
-      SG_error("UG_write_aligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+      SG_error("UG_write_aligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
       
       UG_dirty_block_map_free( &write_blocks );
-      
       return rc;
    }
-   
-   // put written blocks
+  
+   SG_debug("%s: write blocks %" PRIu64 " through %" PRIu64 "\n", fskit_route_metadata_get_path( route_metadata ), write_blocks.begin()->first, write_blocks.rbegin()->first );
+
+   // mark all modified blocks as dirty...
+   for( UG_dirty_block_map_t::iterator itr = write_blocks.begin(); itr != write_blocks.end(); itr++ ) {
+      UG_dirty_block_set_dirty( &itr->second, true );
+   }
+
+   // don't flush the last block; keep it in RAM, so a subsequent write does not need to fetch it from disk.
+   // Instead, recalculate the hash of the last block.
+   // the other blocks' hashes will be re-calculated as a result of flushing them to disk (via UG_write_dirty_blocks_merge)
+   UG_dirty_block_map_t::iterator itr = write_blocks.find( last_block_id );
+   if( itr != write_blocks.end() && UG_dirty_block_in_RAM( &itr->second ) ) {
+      
+      struct UG_dirty_block* last_dirty_block = &itr->second;
+      struct SG_chunk serialized;
+      struct SG_request_data reqdat;
+
+      // synthesize a block request
+      rc = SG_request_data_init( gateway, fskit_route_metadata_get_path( route_metadata ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), last_block_id, UG_dirty_block_version( last_dirty_block ), &reqdat );
+      if( rc != 0 ) {
+
+         fskit_entry_unlock( fent );
+         SG_error("SG_request_data_init rc = %d\n", rc );
+         UG_dirty_block_map_free( &write_blocks );
+
+         return -EIO;
+      }
+
+      // serialize the last block, in order to calculate its new hash
+      rc = UG_impl_block_serialize( gateway, &reqdat, UG_dirty_block_data_buf( block ), &serialized );
+      if( rc != 0 ) {
+
+         fskit_entry_unlock( fent );
+         SG_error("UG_impl_block_serialize rc = %d\n", rc );
+         UG_dirty_block_map_free( &write_blocks );
+
+         return -EIO;
+      }
+             
+      rc = UG_dirty_block_rehash( last_dirty_block, serialized.data, serialized.len );
+      SG_chunk_free( &serialized );
+
+      if( rc != 0 ) {
+
+         fskit_entry_unlock( fent );
+         SG_error("UG_dirty_block_rehash rc = %d\n", rc );
+         UG_dirty_block_map_free( &write_blocks );
+
+         return -EIO;
+      }
+
+      // put the last block's new metadata into place
+      rc = UG_inode_dirty_block_commit( gateway, inode, last_dirty_block );
+      if( rc != 0 ) {
+        
+         fskit_entry_unlock( fent ); 
+         SG_error("UG_inode_dirty_block_commit rc = %d\n", rc );
+         UG_dirty_block_map_free( &write_blocks );
+
+         return -EIO;
+      }
+   }
+
+   // put the rest of the written blocks into the manifest, flush them to disk, and prepare to vacuum overwritten blocks
    while( 1 ) {
       
-      // merge written blocks into the inode 
+      // merge written blocks into the inode, including their new hashes 
       // NOTE: moves contents of write_blocks into the inode, or frees them
-      rc = UG_write_dirty_blocks_merge( gateway, inode, UG_inode_file_version( inode ), fskit_entry_get_size( fent ), block_size, &write_blocks, true );
+      rc = UG_write_dirty_blocks_merge( gateway, inode, file_version, fskit_entry_get_size( fent ), block_size, &write_blocks, true );
       if( rc != 0 ) {
          
-         SG_error("UG_write_dirty_blocks_merge( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+         SG_error("UG_write_dirty_blocks_merge( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
          
          if( rc == -ENOMEM ) {
             
@@ -442,51 +559,53 @@ int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_m
       
       break;
    }
-   
-   // trim the inode's dirty blocks, flushing all but the last-written one to disk (but keeping it in RAM if it is unaligned)
-   if( (offset + buf_len) % block_size != 0 ) {
-      
-      rc = UG_inode_dirty_blocks_trim( gateway, fskit_route_metadata_path( route_metadata ), inode, &last_block_id, 1 );
-      if( rc != 0 ) {
-         
-         // not fatal, but annoying...
-         SG_error("UG_inode_dirty_blocks_trim( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
-         rc = 0;
-      }
+
+   if( rc != 0 ) {
+
+      fskit_entry_unlock( fent );
+      UG_dirty_block_map_free( &write_blocks );
+      return -EIO;
    }
-   
-   // update timestamps and write nonce
+
+   // update timestamps
    clock_gettime( CLOCK_REALTIME, &ts );
-   
    UG_write_timestamp_update( inode, &ts );
-   UG_write_nonce_update( inode );
    
-   if( UG_inode_coordinator_id( inode ) == gateway_id ) {
+   if( coordinator_id == gateway_id ) {
       
-      // we're the coordinator--advance the manifest's modtime 
+      // we're the coordinator--advance the manifest's modtime and write nonce
       SG_manifest_set_modtime( UG_inode_manifest( inode ), ts.tv_sec, ts.tv_nsec );
+      UG_write_nonce_update( inode );
    }
-   
+
+   // will need to contact MS with new metadata
    UG_inode_set_dirty( inode, true );
    
+   fskit_entry_unlock( fent );
    return rc;
 }
 
 
 // patch an inode's manifest.  Evict affected dirty blocks, cached blocks, and garbage blocks (the latter if the dirty block that got evicted was responsible for its creation).
+// Does not affect other metadata, like modtime or size
 // return 0 on success 
 // return -ENOMEM on OOM 
+// return -EPERM if we're not the coordinator
 // NOTE: inode->entry must be write-locked
 int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct UG_inode* inode, struct SG_manifest* write_delta ) {
    
    int rc = 0;
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
-   struct UG_replica_context rctx;
+   struct UG_replica_context* rctx = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+   
+   // basic sanity check: we must be the coordinator 
+   if( SG_manifest_get_coordinator( write_delta ) != SG_gateway_id( gateway ) ) {
+       return -EPERM;
+   }
    
    // clone manifest--we'll patch it and then move it into place as an atomic operation 
    struct SG_manifest new_manifest;
-   struct timespec old_manifest_modtime;
    
    rc = SG_manifest_dup( &new_manifest, UG_inode_manifest( inode ) );
    if( rc != 0 ) {
@@ -506,9 +625,17 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
       return rc;
    }
    
-   // try to replicate the patch manifest
-   old_manifest_modtime = UG_inode_old_manifest_modtime( inode );
-   rc = UG_replica_context_init( &rctx, ug, reqdat->fs_path, inode, &new_manifest, &old_manifest_modtime, NULL );
+   // alloc 
+   rctx = UG_replica_context_new();
+   if( rctx == NULL ) {
+      
+      // OOM 
+      SG_manifest_free( &new_manifest );
+      return -ENOMEM;
+   }
+   
+   // try to replicate the patched manifest
+   rc = UG_replica_context_init( rctx, ug, reqdat->fs_path, inode, &new_manifest, NULL );
    if( rc != 0 ) {
       
       // failed!
@@ -517,10 +644,28 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
       }
       
       SG_manifest_free( &new_manifest );
+      SG_safe_free( rctx );
       return rc;
    }
    
-   // success! replace the manifest locally 
+   // do the replication 
+   rc = UG_replicate( gateway, rctx );
+   if( rc != 0 ) {
+      
+      // failed!
+      SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
+      
+      UG_replica_context_free( rctx );
+      SG_safe_free( rctx );
+      SG_manifest_free( &new_manifest );
+      return rc;
+   }
+
+   // success!
+   UG_replica_context_free( rctx );
+   SG_safe_free( rctx );
+   
+   // replace the manifest locally 
    UG_inode_manifest_replace( inode, &new_manifest );
    
    // clear out overwritten dirty blocks, and replaced block listings

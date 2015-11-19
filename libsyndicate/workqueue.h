@@ -78,6 +78,7 @@ struct md_wq {
 
 extern "C" {
  
+struct md_wq* md_wq_new( int count );
 int md_wq_init( struct md_wq* wq, void* cls );
 int md_wq_start( struct md_wq* wq );
 int md_wq_stop( struct md_wq* wq );

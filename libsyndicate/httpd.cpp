@@ -263,7 +263,7 @@ int md_HTTP_create_response_fd( struct md_HTTP_response* resp, char const* mimet
    
    int rc = 0;
    
-   resp->resp = MHD_create_response_from_fd_at_offset( size, fd, offset );
+   resp->resp = MHD_create_response_from_fd_at_offset64( size, fd, offset );
    if( resp->resp == NULL ) {
       return -ENOMEM;
    }
@@ -1495,61 +1495,28 @@ int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls ) {
 // start the HTTP thread
 // return 0 on success
 // return -EPERM on failure to start
-int md_HTTP_start( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf ) {
+int md_HTTP_start( struct md_HTTP* http, int portnum ) {
    
    int rc = 0;
-   
-   if( conf->server_cert && conf->server_key ) {
+   int num_http_threads = sysconf( _SC_NPROCESSORS_CONF );
 
-      http->server_pkey = conf->server_key;
-      http->server_cert = conf->server_cert;
-      
-      // SSL enabled
-      if( (http->server_type & MHD_USE_THREAD_PER_CONNECTION) != 0 ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL | MHD_USE_SUSPEND_RESUME, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-   
-      if( http->http_daemon != NULL ) {
-         SG_debug( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert_path, conf->server_key_path, portnum);
-      }
-      else {
-         rc = -EPERM;
-      }
+   if( (http->server_type & MHD_USE_THREAD_PER_CONNECTION) != 0 ) {
+      http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+                                             MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
+                                             MHD_OPTION_END );
    }
    else {
-      // SSL disabled
-      if( (http->server_type & MHD_USE_THREAD_PER_CONNECTION) != 0 ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SUSPEND_RESUME, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      
-      if( http->http_daemon != NULL ) {
-         SG_debug( "Started HTTP server on port %d\n", portnum);
-      }
-      else {
-         rc = -EPERM;
-      }
+      http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SUSPEND_RESUME | MHD_USE_PIPE_FOR_SHUTDOWN, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+                                             MHD_OPTION_THREAD_POOL_SIZE, num_http_threads,
+                                             MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
+                                             MHD_OPTION_END );
+   }
+   
+   if( http->http_daemon != NULL ) {
+      SG_debug( "Started HTTP server on port %d\n", portnum);
+   }
+   else {
+      rc = -EPERM;
    }
    
    http->running = true;
@@ -1580,7 +1547,7 @@ int md_HTTP_free( struct md_HTTP* http ) {
 // parse a uint64_t 
 // return 0 on success, and set *out
 // return -EINVAL if it couldn't be parsed
-static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
+int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
    uint64_t ret = 0;
    int rc = sscanf( id_str, fmt, &ret );
    if( rc == 0 ) {
@@ -1596,7 +1563,7 @@ static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
 // parse a manifest timestamp 
 // return 0 on success, and set *manifest_timestamp
 // return -EINVAL if we fail
-static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
+int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
    long tv_sec = -1;
    long tv_nsec = -1;
    
@@ -1618,7 +1585,7 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
 // parse a string in the form of $BLOCK_ID.$BLOCK_VERSION 
 // return 0 on success, and set *_block_id and *_block_version 
 // return -EINVAL on failure
-static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
+int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
    uint64_t block_id = SG_INVALID_BLOCK_ID;
    int64_t block_version = 0;
    
@@ -1638,7 +1605,7 @@ static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t*
 // format is path.file_id.version 
 // return 0 on success, and set *_file_id and *_file_version 
 // return -EINVAL on failure
-static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_t* _file_id, int64_t* _file_version ) {
+int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_t* _file_id, int64_t* _file_version ) {
    
    // scan back for the second-to-last '.'
    char* ptr = _name_id_and_version_str + strlen(_name_id_and_version_str);
@@ -1672,229 +1639,6 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    *_file_version = file_version;
    
    return 0;
-}
-
-// clear the file ID from a string in the format of file_path.file_id 
-// return 0 on success, and set the . above to \0
-// return -EINVAL on failure
-static int md_clear_file_id( char* name_and_id ) {
-   char* file_id_ptr = strrchr( name_and_id, '.' );
-   if( file_id_ptr == NULL ) {
-      return -EINVAL;
-   }
-   
-   *file_id_ptr = '\0';
-   return 0;
-}
-
-// TODO: clean this up
-// parse a URL in the format of:
-// /$PREFIX/$volume_id/$file_path.$file_id.$file_version/($block_id.$block_version || manifest.$mtime_sec.$mtime_nsec)
-// the URL path must be absolute, with no "/../" in it.
-// return 0 on success, and set the given fields.
-//   if the URL was a manifest URL, set *_block_id and *_block_version to SG_INVALID_BLOCK_ID and -1, respectively, and set *_manifest_ts from the URL contents 
-//   if the url was a block URL, set *_block_id and *_block_version from the URL contents, and set *_manifest_ts to (-1, -1)
-// return -EINVAL on parse error
-// return -ENOMEM if OOM 
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, uint64_t* _file_id, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_ts ) {
-   
-   // sanity check 
-   if( strstr( _url_path, "/../" ) != NULL || strcmp( _url_path + strlen(_url_path) - 3, "/.." ) == 0 ) {
-      return -EINVAL;
-   }
-   
-   char* url_path = SG_strdup_or_null( _url_path );
-   if( url_path == NULL ) {
-      
-      return -ENOMEM;
-   }
-
-   // temporary values
-   uint64_t volume_id = SG_INVALID_VOLUME_ID;
-   char* file_path = NULL;
-   uint64_t file_id = SG_INVALID_FILE_ID;
-   int64_t file_version = -1;
-   uint64_t block_id = SG_INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   manifest_timestamp.tv_sec = -1;
-   manifest_timestamp.tv_nsec = -1;
-   int rc = 0;
-
-
-   int num_parts = 0;
-   char* prefix = NULL;
-   char* volume_id_str = NULL;
-
-   bool is_manifest = false;
-   int file_name_id_and_version_part = 0;
-   int manifest_part = 0;
-   int block_id_and_version_part = 0;
-   size_t file_path_len = 0;
-
-   char** parts = NULL;
-   char* tmp = NULL;
-   char* cursor = NULL;
-
-   // break url_path into tokens, by /
-   int num_seps = 0;
-   for( unsigned int i = 0; i < strlen(url_path); i++ ) {
-      if( url_path[i] == '/' ) {
-         num_seps++;
-         while( url_path[i] == '/' && i < strlen(url_path) ) {
-            i++;
-         }
-      }
-   }
-
-   // minimum number of parts: data prefix, volume_id, path.file_id.file_version, (block.version || manifest.tv_sec.tv_nsec)
-   if( num_seps < 4 ) {
-      rc = -EINVAL;
-      
-      SG_error("num_seps = %d\n", num_seps );
-      SG_safe_free( url_path );
-      return rc;
-   }
-
-   num_parts = num_seps;
-   parts = SG_CALLOC( char*, num_seps + 1 );
-   
-   if( parts == NULL ) {
-      rc = -ENOMEM;
-      SG_safe_free( url_path );
-      
-      return rc;
-   }
-   
-   tmp = NULL;
-   cursor = url_path;
-   
-   for( int i = 0; i < num_seps; i++ ) {
-      char* tok = strtok_r( cursor, "/", &tmp );
-      cursor = NULL;
-
-      if( tok == NULL ) {
-         break;
-      }
-
-      parts[i] = tok;
-   }
-   
-   prefix = parts[0];
-   volume_id_str = parts[1];
-   file_name_id_and_version_part = num_parts-2;
-   manifest_part = num_parts-1;
-   block_id_and_version_part = num_parts-1;
-
-   if( strcmp(prefix, SG_DATA_PREFIX) != 0 ) {
-      // invalid prefix
-      SG_safe_free( parts );
-      SG_safe_free( url_path );
-      
-      rc = -EINVAL;
-      
-      SG_error("prefix = '%s'\n", prefix);
-      return rc;
-   }
-
-   // volume ID?
-   rc = md_parse_uint64( volume_id_str, "%" PRIu64, &volume_id );
-   if( rc < 0 ) {
-      SG_safe_free( parts );
-      SG_safe_free( url_path );
-      
-      rc = -EINVAL;
-      
-      SG_error("could not parse '%s'\n", volume_id_str);
-      return rc;
-   }
-   
-   // is this a manifest request?
-   if( strncmp( parts[manifest_part], "manifest", strlen("manifest") ) == 0 ) {
-      rc = md_parse_manifest_timestamp( parts[manifest_part], &manifest_timestamp );
-      if( rc == 0 ) {
-         // success!
-         is_manifest = true;
-      }
-   }
-
-   if( !is_manifest ) {
-      // not a manifest request, so we must have a block ID and block version 
-      rc = md_parse_block_id_and_version( parts[block_id_and_version_part], &block_id, &block_version );
-      if( rc != 0 ) {
-         // invalid request--neither a manifest nor a block ID
-         SG_error("could not parse '%s'\n", parts[block_id_and_version_part]);
-         
-         SG_safe_free( parts );
-         SG_safe_free( url_path );
-         
-         rc = -EINVAL;
-         return rc;
-      }
-   }
-   
-   // parse file ID and version
-   rc = md_parse_file_id_and_version( parts[file_name_id_and_version_part], &file_id, &file_version );
-   if( rc != 0 ) {
-      // invalid 
-      SG_error("could not parse ID and/or version of '%s'\n", parts[file_name_id_and_version_part] );
-      
-      SG_safe_free( url_path );
-      SG_safe_free( parts );
-      
-      rc = -EINVAL;
-      return rc;
-   }
-   
-   // clear file version
-   md_clear_version( parts[file_name_id_and_version_part] );
-   
-   // clear file ID 
-   md_clear_file_id( parts[file_name_id_and_version_part] );
-
-   // assemble the path
-   for( int i = 2; i <= file_name_id_and_version_part; i++ ) {
-      file_path_len += strlen(parts[i]) + 2;
-   }
-
-   file_path = SG_CALLOC( char, file_path_len + 1 );
-   
-   if( file_path == NULL ) {
-      
-      SG_safe_free( parts );
-      SG_safe_free( url_path );
-      
-      rc = -ENOMEM;
-      return rc;
-   }
-   
-   for( int i = 2; i <= file_name_id_and_version_part; i++ ) {
-      strcat( file_path, "/" );
-      strcat( file_path, parts[i] );
-   }
-
-   *_volume_id = volume_id;
-   *_file_path = file_path;
-   *_file_id = file_id;
-   *_file_version = file_version;
-   *_block_id = block_id;
-   *_block_version = block_version;
-   _manifest_ts->tv_sec = manifest_timestamp.tv_sec;
-   _manifest_ts->tv_nsec = manifest_timestamp.tv_nsec;
-
-   /*
-   if( manifest_timestamp.tv_sec > 0 || manifest_timestamp.tv_nsec > 0 ) {
-      SG_debug("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld\n", volume_id, file_path, file_id, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec );
-   }
-   else {
-      SG_debug("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", volume_id, file_path, file_id, file_version, block_id, block_version );
-   }
-   */
-   
-   SG_safe_free( parts );
-   SG_safe_free( url_path );
-
-   return rc;
 }
 
 

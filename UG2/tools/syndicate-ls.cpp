@@ -16,19 +16,6 @@
 
 #include "syndicate-ls.h"
 
-int usage( char const* progname ) {
-
-   fprintf(stderr, "Usage: %s [syndicate options] /path/to/file/or/directory\n", progname );
-   return 0;
-}
-
-// print a single entry 
-int print_entry( struct md_entry* dirent ) {
-   
-   printf("%d %16" PRIX64 " %s\n", dirent->type, dirent->file_id, dirent->name );
-   return 0;
-}
-
 // entry point 
 int main( int argc, char** argv ) {
    
@@ -36,14 +23,23 @@ int main( int argc, char** argv ) {
    struct UG_state* ug = NULL;
    struct SG_gateway* gateway = NULL;
    UG_handle_t* dirh = NULL;
-   UG_dir_listing_t dirents = NULL;
+   struct md_entry** dirents = NULL;
    char* path = NULL;
    int path_optind = 0;
-   struct stat sb;
-   char* basename = NULL;
+   struct tool_opts opts;
+   
+   memset( &opts, 0, sizeof(tool_opts) );
+   
+   rc = parse_args( argc, argv, &opts );
+   if( rc != 0 ) {
+      
+      usage( argv[0], "dir [dir...]" );
+      md_common_usage();
+      exit(1);
+   }
    
    // setup...
-   ug = UG_init( argc, argv, true );
+   ug = UG_init( argc, argv, opts.anonymous );
    if( ug == NULL ) {
       
       SG_error("%s", "UG_init failed\n" );
@@ -56,104 +52,97 @@ int main( int argc, char** argv ) {
    path_optind = SG_gateway_first_arg_optind( gateway );
    if( path_optind == argc ) {
       
-      usage( argv[0] );
+      usage( argv[0], "dir [dir...]" );
+      md_common_usage();
       UG_shutdown( ug );
       exit(1);
    }
    
-   path = argv[ path_optind ];
-   
-   // load up...
-   rc = UG_stat( ug, path, &sb );
-   if( rc != 0 ) {
-      
-      fprintf(stderr, "Failed to stat '%s': %s\n", path, strerror( rc ) );
-      
-      UG_shutdown( ug );
-      exit(1);
-   }
-   
-   if( S_ISREG( sb.st_mode ) ) {
-      
-      // regular file
-      struct md_entry dirent;
-      
-      memset( &dirent, 0, sizeof(struct md_entry) );
-      
-      dirent.type = UG_TYPE_FILE;
-      dirent.file_id = sb.st_ino;
-      
-      char* basename = fskit_basename( path, NULL );
-      if( basename == NULL ) {
-         
-         // OOM 
-         fprintf(stderr, "Out of memory\n");
-         exit(2);
-      }
-      
-      dirent.name = basename;
-      
-      print_entry( &dirent );
-      
-      SG_safe_free( basename );
-      
-      UG_shutdown( ug );
-      exit(0);
-   }
-   else {
-   
-      // directory 
-      dirh = UG_opendir( ug, path, &rc );
-      if( dirh == NULL ) {
-      
-         fprintf(stderr, "Failed to open directory '%s': %s\n", path, strerror( rc ) );
-         
-         UG_shutdown( ug );
-         exit(1);
-      }
-      
-      while( true ) {
-         
-         rc = UG_readdir( ug, &dirents, LS_MAX_DIRENTS, dirh );
-         if( rc != 0 ) {
+   for( int i = path_optind; i < argc; i++ ) {
             
-            fprintf(stderr, "Failed to read directory '%s': %s\n", path, strerror( rc ) );
+        path = argv[ i ];
+        struct md_entry dirent;
+
+        // load up...
+        rc = UG_stat_raw( ug, path, &dirent );
+        if( rc != 0 ) {
+            
+            fprintf(stderr, "Failed to stat '%s': %s\n", path, strerror( abs(rc) ) );
+            
+            continue;
+        }
+
+        if( dirent.type == MD_ENTRY_FILE ) {
+            
+            // regular file
+            print_entry( &dirent );
+            md_entry_free( &dirent );
+        }
+        else {
+
+            // directory 
+            md_entry_free( &dirent );
+            dirh = UG_opendir( ug, path, &rc );
+            if( dirh == NULL ) {
+            
+                fprintf(stderr, "Failed to open directory '%s': %s\n", path, strerror( abs(rc) ) );
+                
+                UG_shutdown( ug );
+                exit(1);
+            }
+            
+            while( true ) {
+                
+                rc = UG_readdir( ug, &dirents, 1, dirh );
+                if( rc != 0 ) {
+                    
+                    fprintf(stderr, "Failed to read directory '%s': %s\n", path, strerror( abs(rc) ) );
+                    
+                    rc = UG_closedir( ug, dirh );
+                    if( rc != 0 ) {
+                        
+                        fprintf(stderr, "Failed to close directory '%s': %s\n", path, strerror( abs(rc) ) );
+                    }
+                    
+                    UG_shutdown( ug );
+                    exit(1);
+                }
+                
+                if( dirents != NULL ) {
+                        
+                    if( dirents[0] == NULL ) {
+                        
+                        // EOF 
+                        UG_free_dir_listing( dirents );
+                        break;
+                    }
+                    
+                    for( unsigned int j = 0; dirents[j] != NULL; j++ ) {
+                        
+                        print_entry( dirents[j] );
+                    }
+                    
+                    UG_free_dir_listing( dirents );
+                    dirents = NULL;
+                }
+                else {
+                    
+                    // no data
+                    break;
+                }
+            }
             
             rc = UG_closedir( ug, dirh );
             if( rc != 0 ) {
-               
-               fprintf(stderr, "Failed to close directory '%s': %s\n", path, strerror( rc ) );
+                
+                fprintf(stderr, "Failed to close directory '%s': %s\n", path, strerror( abs(rc) ) );
+                
+                UG_shutdown( ug );
+                exit(1);
             }
-            
-            UG_shutdown( ug );
-            
-            exit(1);
-         }
-         
-         if( dirents[0] == NULL ) {
-            
-            // EOF 
-            UG_free_dir_listing( dirents );
-            break;
-         }
-         
-         for( unsigned int i = 0; dirents[i] != NULL; i++ ) {
-            
-            print_entry( dirents[i] );
-         }
-         
-         UG_free_dir_listing( dirents );
-      }
-      
-      rc = UG_closedir( ug, dirh );
-      if( rc != 0 ) {
-         
-         fprintf(stderr, "Failed to close directory '%s': %s\n", path, strerror( rc ) );
-         rc = 1;
-      }
-      
-      UG_shutdown( ug );
-      
-      exit(rc);
+        }
    }
+
+   UG_shutdown( ug );
+   exit(0);
 }

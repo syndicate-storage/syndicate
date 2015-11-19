@@ -20,10 +20,11 @@ import "ms.proto";
 
 // manifest block metadata
 message ManifestBlock {
-   required uint64 block_id = 1;        // or, certificate ID (same as the gateway ID)
-   required int64 block_version = 2;    // or, certificate version
-   optional int64 caps = 3;             // gateway capabilities (only for certificate manifests)
-   optional bytes hash = 4;             // if not given, then each block must be signed
+   required uint64 block_id = 1;        // or, gateway ID
+   required int64 block_version = 2;
+   optional bytes hash = 3;             // if not given, then each block must be signed
+   optional uint64 owner_id = 4;        // for cert bundles, this is the user that owns the gateway
+   optional uint32 caps = 5;            // for cert bundles, this is the gateway's capability bits
 }
 
 // manifest (data plane)
@@ -68,9 +69,12 @@ message Request {
       WRITE = 1;                // update file manifest with new block versions
       TRUNCATE = 2;             // truncate a file to a new size
       DETACH = 3;               // delete file 
-      RENAME = 4;               // rename file 
+      RENAME = 4;               // rename file
       PUTBLOCK = 5;             // send a block
       DELETEBLOCK = 6;          // delete a block
+      SETXATTR = 7;             // set an xattr 
+      REMOVEXATTR = 8;          // remove an xattr 
+      RELOAD = 9;               // reload cert bundle; new versions in volume_version and cert_version
    }
 
    required uint64 volume_version = 1;    // volume configuration version
@@ -93,18 +97,21 @@ message Request {
    optional int32 new_manifest_mtime_nsec = 13;   // for WRITE, indicates the new manifest modification time (nanoseconds)
    
    required uint64 user_id = 14;         // ID of the user running this gateway
-   required uint64 dest_gateway_id = 15; // ID of the destination gateway
-   required uint64 src_gateway_id = 16;  // ID of the requesting gateway
-   required string signature = 17;       // signature over this message, with the requesting gateway's private key
+   required uint64 src_gateway_id = 15;  // ID of the requesting gateway
+   required string signature = 16;       // signature over this message, with the requesting gateway's private key
 
-   required uint64 message_nonce = 18;   // unique number for this request
+   required uint64 message_nonce = 17;   // unique number for this request
 
-   optional ms.ms_reply vacuum_ticket = 19;        // for DELETEBLOCK
+   // for WRITE
+   optional uint64 new_owner_id = 18;           // owner to set 
+   optional int32 new_mode = 19;                // mode (permission bits) to set
+   optional int64 new_mtime_sec = 20;           // modtime to set (seconds)
+   optional int32 new_mtime_nsec = 21;          // modtime to set (nanoseconds)
 
-   optional uint64 new_owner_id = 20;           // owner to set 
-   optional int32 new_mode = 21;                // mode (permission bits) to set
-   optional int64 new_mtime_sec = 22;           // modtime to set (seconds)
-   optional int32 new_mtime_nsec = 23;          // modtime to set (nanoseconds)
+   // for SETXATTR and REMOVEXATTR
+   optional string xattr_name = 22;             // xattr name 
+   optional string xattr_value = 23;            // xattr value
+   optional int32 xattr_flags = 24;             // xattr flags (create/replace) (SETXATTR only)
 }
 
 // control-plane reply 
@@ -121,4 +128,9 @@ message Reply {
    required uint64 gateway_id = 6;        // ID of the gateway replying
    required uint64 gateway_type = 7;      // type of the gateway replying
    required string signature = 8;         // signature over this message, with the replying gateway's private key
+
+   repeated string xattr_names = 9;       // one or more xattr names (listxattr)
+   optional string xattr_value = 10;      // xattr value (getxattr)
+
+   optional ms.ms_entry ent_out = 11;        // on UPDATE, this is the new state of the entry 
 }

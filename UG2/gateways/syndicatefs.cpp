@@ -50,8 +50,8 @@ int main( int argc, char** argv ) {
    }
    
    // start the UG 
-   ug_thread = md_start_thread( UG_main, &ug, false );
-   if( ug_thread == (pthread_t)(-1) ) {
+   rc = md_start_thread( &ug_thread, UG_main, &ug, false );
+   if( rc < 0 ) {
       
       SG_error("md_start_thread rc = %d\n", (int)ug_thread );
       exit(2);

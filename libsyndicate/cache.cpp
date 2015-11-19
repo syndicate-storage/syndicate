@@ -888,16 +888,18 @@ int md_cache_init( struct md_syndicate_cache* cache, struct md_syndicate_conf* c
 // return -1 if we failed to start the thread
 int md_cache_start( struct md_syndicate_cache* cache ) {
    
+   int rc = 0;
+   
    // start the thread up 
    struct md_syndicate_cache_thread_args* args = SG_CALLOC( struct md_syndicate_cache_thread_args, 1 );
    args->cache = cache;
    
    cache->running = true;
    
-   cache->thread = md_start_thread( md_cache_main_loop, (void*)args, false );
-   if( cache->thread == (pthread_t)(-1) ) {
+   rc = md_start_thread( &cache->thread, md_cache_main_loop, (void*)args, false );
+   if( rc < 0 ) {
       
-      SG_error("md_start_thread rc = %d\n", (int)cache->thread );
+      SG_error("md_start_thread rc = %d\n", rc );
       return -1;
    }
    

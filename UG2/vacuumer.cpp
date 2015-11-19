@@ -61,6 +61,8 @@ int UG_chunk_vacuum_context_free( struct UG_chunk_vacuum_context* block_ctx ) {
 // if replaced_blocks is NULL, then vacuum everything
 // return 0 on success
 // return -ENOMEM on OOM 
+// return -EINVAL if this is a directory
+// NOTE: inode->entry must be at least read-locked
 int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug, char const* fs_path, struct UG_inode* inode, struct SG_manifest* replaced_blocks ) {
    
    int rc = 0;
@@ -69,6 +71,13 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
    
    uint64_t* rg_ids = NULL;
    size_t num_rgs = 0;
+   
+   // sanity check 
+   if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) != FSKIT_ENTRY_TYPE_FILE ) {
+     
+      SG_error("Entry '%s' is not a file (type %d)\n", fs_path, fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) ); 
+      return -EINVAL;
+   }
    
    char* path = SG_strdup_or_null( fs_path );
    if( path == NULL ) {
@@ -79,15 +88,17 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
    // get RGs 
    rc = UG_state_list_replica_gateway_ids( ug, &rg_ids, &num_rgs );
    if( rc != 0 ) {
-      
+     
+      SG_error("UG_state_list_replica_gateway_ids rc = %d\n", rc ); 
       SG_safe_free( path );
       return rc;
    }
    
    // snapshot inode data 
-   rc = UG_inode_export( &vctx->inode_data, inode, 0, NULL );
+   rc = UG_inode_export( &vctx->inode_data, inode, 0 );
    if( rc != 0 ) {
       
+      SG_error("UG_inode_export('%s') rc = %d\n", fs_path, rc );
       SG_safe_free( path );
       SG_safe_free( rg_ids );
       return rc;
@@ -99,6 +110,7 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
       rc = SG_manifest_dup( &vctx->old_blocks, replaced_blocks );
       if( rc != 0 ) {
          
+         SG_error("SG_manifest_dup rc = %d\n", rc ); 
          md_entry_free( &vctx->inode_data );
          SG_safe_free( path );
          SG_safe_free( rg_ids );
@@ -111,6 +123,7 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
       rc = SG_manifest_dup( &vctx->old_blocks, UG_inode_replaced_blocks( inode ) );
       if( rc != 0 ) {
          
+         SG_error("SG_manifest_dup rc = %d\n", rc ); 
          md_entry_free( &vctx->inode_data );
          SG_safe_free( path );
          SG_safe_free( rg_ids );
@@ -150,13 +163,12 @@ int UG_vacuum_context_init( struct UG_vacuum_context* vctx, struct UG_state* ug,
    return 0;
 }
 
+
 // free up a vacuum context 
 int UG_vacuum_context_free( struct UG_vacuum_context* vctx ) {
    
    SG_manifest_free( &vctx->old_blocks );
    md_entry_free( &vctx->inode_data );
-   
-   SG_safe_delete( vctx->vacuum_ticket );
    
    SG_safe_free( vctx->fs_path );
    
@@ -219,7 +231,8 @@ int UG_vacuumer_enqueue( struct UG_vacuumer* vacuumer, struct UG_vacuum_context*
 }
 
 
-// set up block deletion state
+// prepare to delete a block
+// run the request through the driver as well.
 // return 0 on success, and populate *deletioN_context
 // return -ENOMEM on OOM 
 // return -EINVAL on invalid request information 
@@ -250,11 +263,22 @@ static int UG_vacuum_block_setup( struct SG_gateway* gateway, struct UG_vacuum_c
       return rc;
    }
    
+   // forward to the driver 
+   rc = SG_gateway_driver_delete_block( gateway, &reqdat );
+   if( rc != 0 && rc != -ENOSYS ) {
+      
+      // not allowed 
+      SG_safe_free( request );
+      return rc;
+   }
+   
+   rc = 0;
+   
    // remote gateway 
    reqdat.coordinator_id = remote_gateway_id;
    
    // set up the request itself 
-   rc = SG_client_request_DELETEBLOCK_setup( gateway, request, &reqdat, block_info, vctx->vacuum_ticket );
+   rc = SG_client_request_DELETEBLOCK_setup( gateway, request, &reqdat, block_info );
    
    SG_request_data_free( &reqdat );
    
@@ -269,8 +293,9 @@ static int UG_vacuum_block_setup( struct SG_gateway* gateway, struct UG_vacuum_c
 }
 
 
-// set up manifest deletion state
-// return 0 on success, and populate *deletioN_context
+// prepare to delete a manifest.
+// run the request through the driver.
+// return 0 on success, and populate *deletion_context
 // return -ENOMEM on OOM 
 // return -EINVAL on invalid request information 
 static int UG_vacuum_manifest_setup( struct SG_gateway* gateway, struct UG_vacuum_context* vctx, uint64_t remote_gateway_id,
@@ -303,8 +328,17 @@ static int UG_vacuum_manifest_setup( struct SG_gateway* gateway, struct UG_vacuu
    // remote gateway 
    reqdat.coordinator_id = remote_gateway_id;
    
+   rc = SG_gateway_driver_delete_manifest( gateway, &reqdat );
+   if( rc != 0 && rc != -ENOSYS ) {
+      
+      SG_error("SG_gateway_driver_delete_manifest( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat.file_id, reqdat.file_version, reqdat.fs_path, rc );
+      SG_safe_free( request );
+   }
+   
+   rc = 0;
+   
    // set up the request itself 
-   rc = SG_client_request_DETACH_setup( gateway, request, &reqdat, vctx->vacuum_ticket );
+   rc = SG_client_request_DETACH_setup( gateway, request, &reqdat );
    
    SG_request_data_free( &reqdat );
    
@@ -317,6 +351,7 @@ static int UG_vacuum_manifest_setup( struct SG_gateway* gateway, struct UG_vacuu
    // success!
    return rc;
 }
+
 
 // start deleting a chunk (a block or manifest 
 // return 0 on success, such that *vacuuming tracks a new, now-processing UG_chunk_vacuum_context instance
@@ -705,7 +740,7 @@ static int UG_vacuumer_peek_vacuum_log( struct UG_vacuumer* vacuumer, struct UG_
    memset( &ve, 0, sizeof(struct ms_vacuum_entry) );
    
    // get the head of the vacuum log, and keep the ticket so we can pass it along to the RG
-   rc = ms_client_peek_vacuum_log( ms, volume_id, file_id, &ve, true );
+   rc = ms_client_peek_vacuum_log( ms, volume_id, file_id, &ve );
    if( rc != 0 ) {
       
       SG_error("ms_client_peek_vacuum_log(%" PRIX64 ") rc = %d\n", file_id, rc );
@@ -746,10 +781,6 @@ static int UG_vacuumer_peek_vacuum_log( struct UG_vacuumer* vacuumer, struct UG_
          return rc;
       }
    }
-   
-   // transfer the vacuum ticket
-   vctx->vacuum_ticket = ve.ticket;
-   ve.ticket = NULL;
    
    ms_client_vacuum_entry_free( &ve );
    
@@ -1038,17 +1069,6 @@ static void* UG_vacuumer_main( void* arg ) {
 }
 
 
-   pthread_t thread;
-   
-   UG_vacuum_queue_t* vacuum_queue;             // queue of vacuum requests to perform
-   pthread_rwlock_t lock;                       // lock governing access to the vacuum queue 
-   
-   sem_t sem;                                   // used to wake up the vacuumer when there's work to be done
-   
-   bool running;                                // is this thread running?
-   
-   struct SG_gateway* gateway;                  // parent gateway
-
 // set up a vacuumer 
 // return 0 on success
 // return -ENOMEM on OOM 
@@ -1080,15 +1100,18 @@ int UG_vacuumer_init( struct UG_vacuumer* vacuumer, struct SG_gateway* gateway )
 // return -EPERM if not
 int UG_vacuumer_start( struct UG_vacuumer* vacuumer ) {
    
+   int rc = 0;
+   
    if( vacuumer->running ) {
       return 0;
    }
    
    vacuumer->running = true;
    
-   vacuumer->thread = md_start_thread( UG_vacuumer_main, vacuumer, false );
-   if( (int)vacuumer->thread == -1 ) {
+   rc = md_start_thread( &vacuumer->thread, UG_vacuumer_main, vacuumer, false );
+   if( rc < 0 ) {
       
+      SG_error("md_start_thread rc = %d\n", rc );
       vacuumer->running = false;
       return -EPERM;
    }
@@ -1137,7 +1160,7 @@ int UG_vacuumer_shutdown( struct UG_vacuumer* vacuumer ) {
       return -EINVAL;
    }
    
-   SG_safe_free( vacuumer->vacuum_queue );
+   SG_safe_delete( vacuumer->vacuum_queue );
    pthread_rwlock_destroy( &vacuumer->lock );
    sem_destroy( &vacuumer->sem );
    

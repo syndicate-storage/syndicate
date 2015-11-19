@@ -1,5 +1,5 @@
 /*
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2015 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -31,48 +31,36 @@
 #define SYNDICATE_OPTS_STDIN_MAX 65536 
 
 // command-line options
-struct md_opts {
-   char* config_file;
-   char* username;
-   char* volume_name;
-   char* ms_url;
-   char* gateway_name;
-   char* volume_pubkey_path;
-   char* gateway_pkey_path;
-   char* syndicate_pubkey_path;
-   char* hostname;
-   char* storage_root;
-   char* first_nonopt_arg;              // first argument that is not an option
-   
-   struct mlock_buf password;
-   struct mlock_buf user_pkey_pem;
-   struct mlock_buf gateway_pkey_pem;   // alternative to gateway_pkey_path
-   struct mlock_buf gateway_pkey_decryption_password;
-   
-   char* volume_pubkey_pem;     // alternative to volume_pubkey_path
-   char* syndicate_pubkey_pem;  // altenrative to syndicate_pubkey_path 
-   char* tls_pkey_path;
-   char* tls_cert_path;
-   bool read_stdin;     // if true, get arguments from stdin (i.e. to avoid them showing up in /proc/self/cmdline)
-   int debug_level;     // if 0, no debugging.  if 1, set global debug.  If 2, then set global and locking debug
-   bool foreground;     // if true, don't detach from the controlling terminal
-   
-   uint64_t cache_soft_limit;
-   uint64_t cache_hard_limit;
-   
-   // NOTE: not set by md_opts_parse
-   uint64_t gateway_type;
-   bool client;
-};
+struct md_opts;
 
 extern "C" {
 
+struct md_opts* md_opts_new( int count );
 int md_opts_default( struct md_opts* opts );
 int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
 int md_opts_free( struct md_opts* opts );
-void md_common_usage( char const* progname );
+void md_common_usage(void);
 
 int md_opts_parse_long( int c, char* opt, long* result );
+
+// getters
+bool md_opts_get_client( struct md_opts* opts );
+bool md_opts_get_ignore_driver( struct md_opts* opts );
+uint64_t md_opts_get_gateway_type( struct md_opts* opts );
+
+// setters (e.g. for python)
+void md_opts_set_client( struct md_opts* opts, bool client );
+void md_opts_set_ignore_driver( struct md_opts* opts, bool ignore_driver );
+void md_opts_set_gateway_type( struct md_opts* opts, uint64_t type );
+
+void md_opts_set_config_file( struct md_opts* opts, char* config_filepath );
+void md_opts_set_username( struct md_opts* opts, char* username );
+void md_opts_set_volume_name( struct md_opts* opts, char* volume_name );
+void md_opts_set_gateway_name( struct md_opts* opts, char* gateway_name );
+void md_opts_set_ms_url( struct md_opts* opts, char* ms_url );
+void md_opts_set_foreground( struct md_opts* opts, bool foreground );
+
+void md_opts_set_driver_config( struct md_opts* opts, char const* driver_exec_str, char const** driver_roles, size_t num_driver_roles );
 
 }
 

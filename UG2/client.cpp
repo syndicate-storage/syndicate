@@ -23,147 +23,31 @@
 #include "xattr.h"
 #include "replication.h"
 
-// propagate updated inode metadata
-// always succeeds
-// NOTE: inode->entry must be write-locked
-static int UG_update_propagate( struct UG_inode* inode, int64_t* write_nonce, uint64_t* owner_id, mode_t* mode, struct timespec* mtime ) {
-   
-   if( write_nonce != NULL ) {
-      
-      UG_inode_set_write_nonce( inode, *write_nonce );
-   }
-   if( owner_id != NULL ) {
-      
-      fskit_entry_set_owner( UG_inode_fskit_entry( inode ), *owner_id );
-      SG_manifest_set_owner_id( UG_inode_manifest( inode ), *owner_id );
-   }
-   if( mode != NULL ) {
-      
-      fskit_entry_set_mode( UG_inode_fskit_entry( inode ), *mode );
-   }
-   if( mtime != NULL ) {
-      
-      fskit_entry_set_mtime( UG_inode_fskit_entry( inode ), mtime );
-   }
-   
-   return 0;
-}
 
-// ask the MS to update inode metadata
-// NULL data will be ignored.
-// return 0 on success 
-// return -EINVAL if all data are NULL
-// return -ENOMEM on OOM
-static int UG_update_local( struct UG_state* state, char const* path, uint64_t* owner_id, mode_t* mode, struct timespec* mtime ) {
-   
-   int rc = 0;
-   struct md_entry inode_data;
-   
-   struct fskit_core* fs = UG_state_fs( state );
-   struct SG_gateway* gateway = UG_state_gateway( state );
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   
-   int64_t write_nonce = 0;
-   int64_t ms_write_nonce = 0;          // write nonce, according to the MS
-   
-   struct fskit_entry* fent = NULL;
-   struct UG_inode* inode = NULL;
-   
-   if( owner_id == NULL && mode == NULL && mtime == NULL ) {
-      return -EINVAL;
-   }
-   
-   // keep this around...
-   fent = fskit_entry_ref( fs, path, &rc );
-   if( fent == NULL ) {
-      
-      return rc;
-   }
-   
-   fskit_entry_rlock( fent );
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   write_nonce = UG_inode_write_nonce( inode );
-   
-   rc = UG_inode_export_fs( fs, path, &inode_data );
-   if( rc != 0 ) {
-      
-      fskit_entry_unlock( fent );
-      fskit_entry_unref( fs, path, fent );
-      return rc;
-   }
-   
-   fskit_entry_unlock( fent );
-   
-   if( mode != NULL ) {
-      
-      inode_data.mode = *mode;
-   }
-   
-   if( owner_id != NULL ) {
-      
-      inode_data.owner = *owner_id;
-   }
-   
-   if( mtime != NULL ) {
-      
-      inode_data.mtime_sec = mtime->tv_sec;
-      inode_data.mtime_nsec = mtime->tv_nsec;
-   }
-   
-   rc = ms_client_update( ms, &ms_write_nonce, &inode_data );
-   
-   md_entry_free( &inode_data );
-   
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_update('%s', mode=%o) rc = %d\n", path, *mode, rc );
-      
-      fskit_entry_unref( fs, path, fent );
-      return rc;
-   }
-   
-   fskit_entry_wlock( fent );
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   // propagate information back to the inode, if the write nonce hasn't changed
-   if( write_nonce == UG_inode_write_nonce( inode ) ) {
-      
-      UG_update_propagate( inode, NULL, owner_id, mode, mtime );
-   }
-   else {
-      
-      // mark stale, so we reload later 
-      UG_inode_set_read_stale( inode, true );
-   }
-   
-   fskit_entry_unlock( fent );
-   fskit_entry_unref( fs, path, fent );
-   
-   return 0;
-}
-
-
-// ask a remote gateway to update inode metadata on the MS.
-// NULL data will be ignored 
-// return 0 on success 
+// generate and send a WRITE message to another UG.
+// write_data should be prepopuldated with the manifest, owner, mode, mtime, etc.--everything *but* the routing info (which will get overwritten)
+// return 0 on success, get back the latest inode data via *inode_out and sy
 // return -EINVAL if all data are NULL
 // return -ENOMEM on OOM 
-static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64_t* owner_id, mode_t* mode, struct timespec* mtime ) {
-   
+// return -EAGAIN if the request should be retried (i.e. it timed out, or the remote gateway told us)
+// return -EREMOTEIO if there was a network-level error 
+int UG_send_WRITE( struct UG_state* state, char const* fs_path, struct SG_client_WRITE_data* write_data, struct md_entry* inode_out ) {
+    
    int rc = 0;
    
    struct fskit_core* fs = UG_state_fs( state );
    struct SG_gateway* gateway = UG_state_gateway( state );
    struct UG_inode* inode = NULL;
+   
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+   uint64_t coordinator_id = 0;
+   uint64_t file_id = 0;
+   int64_t file_version = 0;
+   int64_t write_nonce;
    
    SG_messages::Request req;
    SG_messages::Reply reply;
-   
-   int64_t write_nonce = 0;
-   uint64_t coordinator_id = 0;
    
    struct fskit_entry* fent = fskit_entry_ref( fs, fs_path, &rc );
    if( fent == NULL ) {
@@ -171,26 +55,30 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
       return rc;
    }
    
-   // snapshot...
    fskit_entry_rlock( fent );
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
 
-   // get write nonce, so we can optimistically propogate the metadata back into the inode (i.e. if it doesn't change before/after the update)
-   write_nonce = UG_inode_write_nonce( inode );
+   // who are we sending to?
    coordinator_id = UG_inode_coordinator_id( inode );
+   file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+   write_nonce = UG_inode_write_nonce( inode );
    
    fskit_entry_unlock( fent );
    
    if( rc != 0 ) {
       
       // OOM
-      fskit_entry_unlock( fent );
       fskit_entry_unref( fs, fs_path, fent );
       return rc;
    }
    
-   rc = SG_client_request_WRITE_setup( gateway, &req, fs_path, NULL, owner_id, mode, mtime );
+   // make write data 
+   SG_client_WRITE_data_set_routing_info( write_data, volume_id, coordinator_id, file_id, file_version );
+   
+   // NOTE: update metadata only; use UG_write() to update manifest blocks
+   rc = SG_client_request_WRITE_setup( gateway, &req, fs_path, write_data );
    if( rc != 0 ) {
       
       // OOM 
@@ -207,6 +95,17 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
       SG_error("SG_client_request_send(WRITE '%s') rc = %d\n", fs_path, rc );
       
       fskit_entry_unref( fs, fs_path, fent );
+      
+      // timed out? retry 
+      if( rc == -ETIMEDOUT ) {
+         rc = -EAGAIN;
+      }
+      
+      // propagate retries; everything else is remote I/O error 
+      if( rc != -EAGAIN ) {
+         rc = -EREMOTEIO;
+      }
+      
       return rc;
    }
    
@@ -216,22 +115,252 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
       SG_error("SG_client_request_send(WRITE '%s') reply error = %d\n", fs_path, rc );
       
       fskit_entry_unref( fs, fs_path, fent );
+      return reply.error_code();
+   }
+   
+   // recover write nonce
+   if( reply.has_ent_out() ) {
+      
+      // verify response
+      rc = ms_entry_verify( SG_gateway_ms( gateway ), reply.mutable_ent_out() );
+      if( rc != 0 ) {
+          
+          SG_error("Unable to verify response %" PRIX64 " (%s) from %" PRIu64 ", rc = %d\n", file_id, fs_path, coordinator_id, rc );
+          fskit_entry_unref( fs, fs_path, fent );
+          return rc;
+      }
+      
+      // deserialize
+      memset( inode_out, 0, sizeof(struct md_entry) );
+      rc = ms_entry_to_md_entry( reply.ent_out(), inode_out );
+      if( rc != 0 ) {
+          
+          fskit_entry_unref( fs, fs_path, fent );
+          return rc;
+      }
+      
+      fskit_entry_wlock( fent );
+    
+      inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+      
+      // reload, if we haven't written in the mean time
+      if( write_nonce == UG_inode_write_nonce( inode ) ) {
+         rc = UG_inode_import( inode, inode_out );
+      }
+      else {
+         rc = 0;
+      }
+      
+      fskit_entry_unlock( fent );
+      
+      if( rc != 0 ) {
+          
+          // will need to refresh
+          SG_error("UG_inode_import(%" PRIX64 " (%s)) rc = %d\n", file_id, fs_path, rc );
+          UG_inode_set_read_stale( inode, true );
+          
+          rc = 0;
+      }
+   }
+   
+   fskit_entry_unref( fs, fs_path, fent );
+   
+   return rc;
+}
+
+// propagate locally-updated inode metadata
+// always succeeds
+// NOTE: inode->entry must be write-locked
+static int UG_update_propagate_local( struct UG_inode* inode, struct md_entry* inode_ms ) {
+   
+   if( inode_ms != NULL ) {
+       
+      UG_inode_set_write_nonce( inode, inode_ms->write_nonce );
+      
+      fskit_entry_set_owner( UG_inode_fskit_entry( inode ), inode_ms->owner );
+      SG_manifest_set_owner_id( UG_inode_manifest( inode ), inode_ms->owner );
+      
+      fskit_entry_set_mode( UG_inode_fskit_entry( inode ), inode_ms->mode );
+      
+      struct timespec mtime;
+      mtime.tv_sec = inode_ms->mtime_sec;
+      mtime.tv_nsec = inode_ms->mtime_nsec;
+      
+      fskit_entry_set_mtime( UG_inode_fskit_entry( inode ), &mtime );
+   }
+   
+   return 0;
+}
+
+
+// ask the MS to update inode metadata
+// NULL data will be ignored.
+// return 0 on success 
+// return -EINVAL if all data are NULL
+// return -ENOMEM on OOM
+static int UG_update_local( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data ) {
+   
+   int rc = 0;
+   struct md_entry inode_data;
+   
+   struct fskit_core* fs = UG_state_fs( state );
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   
+   int64_t write_nonce = 0;
+   struct md_entry inode_data_out;
+   memset( &inode_data_out, 0, sizeof(struct md_entry) );
+   
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+   
+   unsigned char xattr_hash[SHA256_DIGEST_LENGTH];
+   
+   // keep this around...
+   fent = fskit_entry_ref( fs, path, &rc );
+   if( fent == NULL ) {
+      
       return rc;
    }
    
-   // opportunistically propagate this data locally 
-   fskit_entry_wlock( fent );
+   fskit_entry_rlock( fent );
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-
-   if( write_nonce == UG_inode_write_nonce( inode ) ) {
+   
+   write_nonce = UG_inode_write_nonce( inode );
+   
+   rc = UG_inode_export( &inode_data, inode, 0 );
+   if( rc != 0 ) {
       
-      UG_update_propagate( inode, NULL, owner_id, mode, mtime );
+      fskit_entry_unlock( fent );
+      fskit_entry_unref( fs, path, fent );
+      return rc;
+   }
+   
+   rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), inode, xattr_hash );
+   if( rc != 0 ) {
+       
+      fskit_entry_unlock( fent );
+      fskit_entry_unref( fs, path, fent );
+      return rc;
    }
    
    fskit_entry_unlock( fent );
-   fskit_entry_unref( fs, fs_path, fent );
    
+   // apply changes to the inode we'll send
+   SG_client_WRITE_data_merge( write_data, &inode_data );
+   
+   // send along xattr hash too
+   inode_data.xattr_hash = xattr_hash;
+   
+   // send the update along
+   rc = ms_client_update( ms, &inode_data_out, &inode_data );
+   
+   // NOTE: don't free this
+   inode_data.xattr_hash = NULL;
+   
+   md_entry_free( &inode_data );
+   
+   if( rc != 0 ) {
+      
+      SG_error("ms_client_update('%s') rc = %d\n", path, rc );
+      
+      fskit_entry_unref( fs, path, fent );
+      md_entry_free( &inode_data_out );
+      return rc;
+   }
+   
+   fskit_entry_wlock( fent );
+   
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   
+   // propagate information back to the inode
+   if( write_nonce == UG_inode_write_nonce( inode ) ) {
+       
+       // haven't written in the mean time, so apply changes to local copy as well
+       // to keep it coherent with the MS
+       UG_update_propagate_local( inode, &inode_data_out );
+   }
+   else {
+       
+       // data has since changed; will need to pull latest 
+       UG_inode_set_read_stale( inode, true );
+   }
+   
+   fskit_entry_unlock( fent );
+   fskit_entry_unref( fs, path, fent );
+   
+   return 0;
+}
+
+
+// ask a remote gateway to update inode metadata on the MS.
+// NULL data will be ignored 
+// return 0 on success 
+// return -EINVAL if all data are NULL
+// return -ENOMEM on OOM 
+// return -EAGAIN if the request should be retried (i.e. it timed out, or the remote gateway told us)
+// return -EREMOTEIO if there was a network-level error 
+// return non-zero error if the write was processed remotely, but failed remotely
+static int UG_update_remote( struct UG_state* state, char const* fs_path, struct SG_client_WRITE_data* write_data ) {
+   
+   int rc = 0;
+   struct md_entry inode_out;
+   struct fskit_core* fs = UG_state_fs( state );
+   struct UG_inode* inode = NULL;
+   int64_t write_nonce = 0;
+   uint64_t file_id = 0;
+   
+   struct fskit_entry* fent = fskit_entry_ref( fs, fs_path, &rc );
+   if( fent == NULL ) {
+      
+      return rc;
+   }
+   
+   fskit_entry_rlock( fent );
+   
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+
+   // who are we sending to?
+   file_id = UG_inode_file_id( inode );
+   write_nonce = UG_inode_write_nonce( inode );
+   
+   fskit_entry_unlock( fent );
+   
+   // send the write off
+   rc = UG_send_WRITE( state, fs_path, write_data, &inode_out );
+   if( rc != 0 ) {
+       
+       SG_error("UG_send_write('%s') rc = %d\n", fs_path, rc );
+       fskit_entry_unref( fs, fs_path, fent );
+       return rc;
+   }
+   
+   // sync with inode 
+   fskit_entry_wlock( fent );
+
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+    
+   // reload, if we haven't written in the mean time
+   if( write_nonce == UG_inode_write_nonce( inode ) ) {
+       rc = UG_inode_import( inode, &inode_out );
+   }
+   else {
+       rc = 0;
+   }
+    
+   fskit_entry_unlock( fent );
+    
+   if( rc != 0 ) {
+        
+       // will need to refresh
+       SG_error("UG_inode_import(%" PRIX64 " (%s)) rc = %d\n", file_id, fs_path, rc );
+       UG_inode_set_read_stale( inode, true );
+        
+       rc = 0;
+   }
+   
+   fskit_entry_unref( fs, fs_path, fent );
    return rc;
 }
 
@@ -242,7 +371,7 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, uint64
 // return -EINVAL if all data are NULL
 // return -ENOMEM on OOM 
 // NOTE: inode->entry must be write-locked!
-static int UG_update( struct UG_state* state, char const* path, uint64_t* owner_id, mode_t* mode, struct timespec* mtime ) {
+int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data ) {
    
    int rc = 0;
    struct SG_gateway* gateway = UG_state_gateway( state );
@@ -273,7 +402,7 @@ static int UG_update( struct UG_state* state, char const* path, uint64_t* owner_
    
    fskit_entry_unlock( fent );
    
-   UG_try_or_coordinate( gateway, path, coordinator_id, UG_update_local( state, path, owner_id, mode, mtime ), UG_update_remote( state, path, owner_id, mode, mtime ), &rc );
+   UG_try_or_coordinate( gateway, path, coordinator_id, UG_update_local( state, path, write_data ), UG_update_remote( state, path, write_data ), &rc );
    
    fskit_entry_unref( fs, path, fent );
    
@@ -298,6 +427,30 @@ int UG_stat( struct UG_state* state, char const* path, struct stat *statbuf ) {
    return fskit_stat( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), statbuf );
 }
 
+
+// stat raw entry
+// get the md_entry itself
+// return 0 on success
+// return -errno on error
+int UG_stat_raw( struct UG_state* state, char const* path, struct md_entry* ent ) {
+    
+   int rc = 0;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   struct fskit_core* fs_core = UG_state_fs( state ); 
+
+   // refresh path 
+   rc = UG_consistency_path_ensure_fresh( gateway, path );
+   if( rc != 0 ) {
+
+      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
+      return rc;
+   }
+
+   rc = UG_inode_export_fs( fs_core, path, ent );
+   return rc;
+}
+
+
 // mkdir(2)
 // forward to fskit, which will take care of communicating with the MS
 int UG_mkdir( struct UG_state* state, char const* path, mode_t mode ) {
@@ -311,10 +464,12 @@ int UG_mkdir( struct UG_state* state, char const* path, mode_t mode ) {
       
       if( rc == 0 ) {
          // already exists 
+         SG_error("Path '%s' already exists\n", path );
          rc = -EEXIST;
       }
-      
-      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
+      else {
+         SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
+      }
       return rc;
    }
    
@@ -387,25 +542,73 @@ int UG_rename( struct UG_state* state, char const* path, char const* newpath ) {
 // chmod(2)
 int UG_chmod( struct UG_state* state, char const* path, mode_t mode ) {
    
-   return UG_update( state, path, NULL, &mode, NULL );
+   int rc = 0;
+   struct SG_client_WRITE_data* write_data = NULL;
+   
+   write_data = SG_client_WRITE_data_new();
+   if( write_data == NULL ) {
+       return -ENOMEM;
+   }
+   
+   // prepare to write 
+   SG_client_WRITE_data_init( write_data );
+   SG_client_WRITE_data_set_mode( write_data, mode );
+   
+   rc = UG_update( state, path, write_data );
+   
+   SG_safe_free( write_data );
+   
+   return rc;
 }
 
 // chown(2)
 int UG_chown( struct UG_state* state, char const* path, uint64_t new_owner ) {
    
-   return UG_update( state, path, &new_owner, NULL, NULL );
+   int rc = 0;
+   struct SG_client_WRITE_data* write_data = NULL;
+   
+   write_data = SG_client_WRITE_data_new();
+   if( write_data == NULL ) {
+       return -ENOMEM;
+   }
+   
+   SG_client_WRITE_data_init( write_data );
+   
+   // prepare to write 
+   SG_client_WRITE_data_init( write_data );
+   SG_client_WRITE_data_set_owner_id( write_data, new_owner );
+   
+   rc = UG_update( state, path, write_data );
+   
+   SG_safe_free( write_data );
+   
+   return rc;
 }
 
 
 // utime(2)
 int UG_utime( struct UG_state* state, char const* path, struct utimbuf *ubuf ) {
    
+   int rc = 0;
+   struct SG_client_WRITE_data* write_data = NULL;
    struct timespec mtime;
+   
+   write_data = SG_client_WRITE_data_new();
+   if( write_data == NULL ) {
+       return -ENOMEM;
+   }
    
    mtime.tv_sec = ubuf->modtime;
    mtime.tv_nsec = 0;
    
-   return UG_update( state, path, NULL, NULL, &mtime );
+   SG_client_WRITE_data_init( write_data );
+   SG_client_WRITE_data_set_mtime( write_data, &mtime );
+   
+   rc = UG_update( state, path, write_data );
+   
+   SG_safe_free( write_data );
+   
+   return rc;
 }
 
 
@@ -418,6 +621,7 @@ int UG_utime( struct UG_state* state, char const* path, struct utimbuf *ubuf ) {
 // return -EREMOTEIO on remote MS error
 // return -ENODATA if no/partial data was received 
 // return -ETIMEDOUT if the request timed out
+// return -EAGAIN if we need to try again--i.e. the information we had about the inode was out-of-date 
 int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordinator_response ) {
    
    int rc = 0;
@@ -429,8 +633,19 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
    struct fskit_entry* fent = NULL;
    struct UG_inode* inode = NULL;
    
-   uint64_t ms_new_coordinator = 0;     // coordinator according to the MS
-   int64_t ms_write_nonce = 0;          // write nonce, according to the MS
+   uint64_t file_id = 0;
+   int64_t xattr_nonce = 0;
+   int64_t write_nonce = 0;
+   
+   fskit_xattr_set* xattrs = NULL;      // xattrs to fetch
+   fskit_xattr_set* old_xattrs = NULL;
+   
+   struct md_entry inode_data_out;
+   memset( &inode_data_out, 0, sizeof(struct md_entry) );
+   
+   unsigned char xattr_hash[ SHA256_DIGEST_LENGTH ];
+   unsigned char ms_xattr_hash[ SHA256_DIGEST_LENGTH ];
+   unsigned char ms_xattr_hash2[ SHA256_DIGEST_LENGTH ];
    
    uint64_t caps = ms_client_get_gateway_caps( ms, SG_gateway_id( gateway ) );
    
@@ -461,6 +676,7 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
    if( rc != 0 ) {
       
       SG_error("UG_consistency_manifest_ensure_fresh('%s') rc = %d\n", path, rc );
+      fskit_entry_unref( fs, path, fent );
       return rc;
    }
    
@@ -468,38 +684,125 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
+   // MS-given info
+   file_id = UG_inode_file_id( inode );
+   xattr_nonce = UG_inode_xattr_nonce( inode );
+   write_nonce = UG_inode_write_nonce( inode );
+   UG_inode_ms_xattr_hash( inode, ms_xattr_hash );
+   
+   fskit_entry_unlock( fent );
+   
+   // go get the xattrs, and verify that they match this hash 
+   rc = UG_consistency_fetchxattrs( gateway, file_id, xattr_nonce, ms_xattr_hash, &xattrs );
+   if( rc != 0 ) {
+       
+       SG_error("UG_consistency_fetchxattrs('%s') rc = %d\n", path, rc );
+       fskit_entry_unref( fs, path, fent );
+       return rc;
+   }
+   
+   fskit_entry_wlock( fent );
+   
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   
+   UG_inode_ms_xattr_hash( inode, ms_xattr_hash2 );
+   
+   // verify no changes in the mean time (otherwise retry)
+   if( sha256_cmp( ms_xattr_hash, ms_xattr_hash2 ) == 0 ) {
+       
+       SG_error("xattr hash changed for %" PRIX64 "; retrying...\n", file_id );
+       fskit_entry_unlock( fent );
+       fskit_entry_unref( fs, path, fent );
+       return -EAGAIN;
+   }
+   
+   // good to go! install xattrs 
+   old_xattrs = fskit_entry_swap_xattrs( fent, xattrs );
+   if( old_xattrs != NULL ) {
+       
+       fskit_xattr_set_free( old_xattrs );
+       old_xattrs = NULL;
+   }
+   
+   // get inode info
+   rc = UG_inode_export( &inode_data, inode, 0 );
    if( rc != 0 ) {
    
       fskit_entry_unlock( fent );
+      fskit_entry_unref( fs, path, fent );
       return rc;
    }
    
-   // set the new coordinator 
+   // get new xattr hash 
+   rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), inode, xattr_hash );
+   if( rc != 0 ) {
+      
+      md_entry_free( &inode_data );
+      fskit_entry_unlock( fent );
+      fskit_entry_unref( fs, path, fent );
+      return rc;
+   }
+   
+   // propagate new xattr hash
+   inode_data.xattr_hash = xattr_hash;
+   
+   // set the new coordinator to ourselves
    inode_data.coordinator = SG_gateway_id( gateway );
+   fskit_entry_unlock( fent );
    
    // ask the MS to make us the coordinator
-   rc = ms_client_coordinate( ms, &ms_new_coordinator, &ms_write_nonce, &inode_data );
+   rc = ms_client_coordinate( ms, &inode_data_out, &inode_data, xattr_hash );
    
+   inode_data.xattr_hash = NULL;        // don't free this...
    md_entry_free( &inode_data );
    
    if( rc != 0 ) {
       
-      SG_error("ms_client_coordinate('%s', %" PRIu64 ") rc = %d\n", path, ms_new_coordinator, rc );
+      SG_error("ms_client_coordinate('%s', %" PRIu64 ") rc = %d\n", path, inode_data_out.coordinator, rc );
       
+      fskit_entry_unref( fs, path, fent );
+      md_entry_free( &inode_data_out );
       return rc;
    }
    
-   *new_coordinator_response = ms_new_coordinator;
-   
-   // refresh again, to see if we got the coordinatorship
-   rc = UG_consistency_path_ensure_fresh( gateway, path );
-   if( rc != 0 ) {
-      
-      SG_error("UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
-      return rc;
+   // did we succeed?
+   if( inode_data_out.coordinator != SG_gateway_id( gateway ) ) {
+       
+       // nope 
+       fskit_entry_unref( fs, path, fent );
+       md_entry_free( &inode_data_out );
+       return -EAGAIN;
    }
    
+   // yup!
+   *new_coordinator_response = inode_data_out.coordinator;
+   
+   // can we load this data?
+   fskit_entry_wlock( fent );
+   
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   
+   if( write_nonce == UG_inode_write_nonce( inode ) ) {
+       
+       // MS data is fresh 
+       rc = UG_inode_import( inode, &inode_data_out );
+       if( rc != 0 ) {
+           
+           // failed to load. mark stale.
+           UG_inode_set_read_stale( inode, true );
+           rc = 0;
+       }
+   }
+   else {
+       
+       // local changes.  make sure we reload before trying again.
+       UG_inode_set_read_stale( inode, true );
+   }
+   
+   fskit_entry_unlock( fent );
+   fskit_entry_unref( fs, path, fent );
+   
+   md_entry_free( &inode_data_out );
    return rc;
 }
 
@@ -552,6 +855,10 @@ UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* 
 // forward to fskit
 int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t *fi ) {
    
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
@@ -576,6 +883,10 @@ int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t *fi ) {
 // forward to fskit
 int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t *fi ) {
 
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
@@ -593,6 +904,10 @@ int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t 
 // lseek(2)
 off_t UG_seek( UG_handle_t* fi, off_t pos, int whence ) {
    
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
@@ -622,6 +937,10 @@ off_t UG_seek( UG_handle_t* fi, off_t pos, int whence ) {
 int UG_close( struct UG_state* state, UG_handle_t *fi ) {
 
    int rc = 0;
+
+   if( fi == NULL ) {
+      return -EBADF;
+   }
    
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
@@ -630,7 +949,6 @@ int UG_close( struct UG_state* state, UG_handle_t *fi ) {
    rc = fskit_close( UG_state_fs( state ), fi->fh );
    
    if( rc == 0 ) {
-      free( fi->fh );
       free( fi );
    }
    
@@ -642,6 +960,10 @@ int UG_close( struct UG_state* state, UG_handle_t *fi ) {
 // forward to fskit
 int UG_fsync( struct UG_state* state, UG_handle_t *fi ) {
    
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
@@ -678,23 +1000,26 @@ UG_handle_t* UG_opendir( struct UG_state* state, char const* path, int* rc ) {
 }
 
 // readdir(3)
-int UG_readdir( struct UG_state* state, UG_dir_listing_t* ret_listing, size_t num_children, UG_handle_t *fi ) {
+int UG_readdir( struct UG_state* state, struct md_entry*** ret_listing, size_t num_children, UG_handle_t *fi ) {
 
    size_t num_read = 0;
    size_t num_md_read = 0;
    int rc = 0;
    struct fskit_dir_entry** listing = NULL;
-   UG_dir_listing_t md_listing = NULL;
+   struct md_entry** md_listing = NULL;
    
-   // TODO: add fskit getter for this 
-   struct fskit_entry* dent = fi->dh->dent;
-   char const* path = fi->fh->path;
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   struct fskit_entry* dent = fskit_dir_handle_get_entry( fi->dh );
+   char const* path = fskit_dir_handle_get_path( fi->dh );
    
    fskit_entry_rlock( dent );
    
-   listing = fskit_readdir( UG_state_fs( state ), fi->dh, fi->offset, num_children, &num_read, &rc );
+   listing = fskit_readdir( UG_state_fs( state ), fi->dh, num_children, &num_read, &rc );
    
-   if( listing != NULL ) {
+   if( listing != NULL && num_read > 0 ) {
       
       // convert to list of md_entry 
       md_listing = SG_CALLOC( struct md_entry*, num_read + 1 );
@@ -740,7 +1065,7 @@ int UG_readdir( struct UG_state* state, UG_dir_listing_t* ret_listing, size_t nu
          
          if( inode != NULL ) {
             
-            rc = UG_inode_export( md_listing[i], inode, 0, NULL );
+            rc = UG_inode_export( md_listing[i], inode, 0 );
          }
          
          fskit_entry_unlock( child );
@@ -753,12 +1078,14 @@ int UG_readdir( struct UG_state* state, UG_dir_listing_t* ret_listing, size_t nu
          
          num_md_read ++;
       }
-      
-      fskit_entry_unlock( dent );
-      
-      fskit_dir_entry_free_list( listing );
-      fi->offset += num_md_read;
    }
+   
+   if( listing != NULL ) {
+       
+      fskit_dir_entry_free_list( listing );
+   }
+   
+   fskit_entry_unlock( dent );
    
    *ret_listing = md_listing;
    
@@ -769,20 +1096,32 @@ int UG_readdir( struct UG_state* state, UG_dir_listing_t* ret_listing, size_t nu
 // rewindidir(3)
 int UG_rewinddir( UG_handle_t* fi ) {
    
-   fi->offset = 0;
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   fskit_rewinddir( fi->dh );
    return 0;
 }
 
 // telldir(3)
 off_t UG_telldir( UG_handle_t* fi ) {
    
-   return fi->offset;
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   return fskit_telldir( fi->dh );
 }
 
 // seekdir(3)
 int UG_seekdir( UG_handle_t* fi, off_t loc ) {
    
-   fi->offset = loc;
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   fskit_seekdir( fi->dh, loc );
    return 0;
 }
 
@@ -791,10 +1130,13 @@ int UG_closedir( struct UG_state* state, UG_handle_t *fi ) {
    
    int rc = 0;
    
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    rc = fskit_closedir( UG_state_fs( state ), fi->dh );
    if( rc == 0 ) {
       
-      free( fi->dh );
       free( fi );
    }
    
@@ -803,7 +1145,7 @@ int UG_closedir( struct UG_state* state, UG_handle_t *fi ) {
 
 // free a dir listing 
 // always succeeds
-void UG_free_dir_listing( UG_dir_listing_t listing ) {
+void UG_free_dir_listing( struct md_entry** listing ) {
    
    for( int i = 0; listing[i] != NULL; i++ ) {
       
@@ -862,7 +1204,7 @@ UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, i
       *ret_rc = -ENOMEM;
       return NULL;
    }
-   
+  
    fh = fskit_create( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), mode, ret_rc );
    
    if( fh == NULL ) {
@@ -881,6 +1223,10 @@ UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, i
 // forward to fskit
 int UG_ftruncate( struct UG_state* state, off_t length, UG_handle_t *fi ) {
    
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
    return fskit_ftrunc( UG_state_fs( state ), fi->fh, length );
 }
 
@@ -888,6 +1234,10 @@ int UG_ftruncate( struct UG_state* state, off_t length, UG_handle_t *fi ) {
 // forward to fskit
 int UG_fstat( struct UG_state* state, struct stat *statbuf, UG_handle_t *fi ) {
    
+   if( fi == NULL ) { 
+      return -EBADF;
+   }
+
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
@@ -920,35 +1270,4 @@ int UG_listxattr( struct UG_state* state, char const* path, char *list, size_t s
 // forward to xattr 
 int UG_removexattr( struct UG_state* state, char const* path, char const* name ) {
    return UG_xattr_removexattr( UG_state_gateway( state ), path, name, UG_state_owner_id( state ), UG_state_volume_id( state ) );
-}
-
-// chownxattr 
-// forward to xattr 
-int UG_chownxattr( struct UG_state* state, char const* path, char const* name, uint64_t new_owner ) {
-   return UG_xattr_chownxattr( UG_state_gateway( state ), path, name, new_owner );
-}
-
-// chmodxattr 
-// forward to xattr 
-int UG_chmodxattr( struct UG_state* state, char const* path, char const* name, mode_t mode ) {
-   return UG_xattr_chmodxattr( UG_state_gateway( state ), path, name, mode );
-}
-
-// get-or-set xattr 
-// forward to xattr 
-int UG_getsetxattr( struct UG_state* state, char const* path, char const* name, char const* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode ) {
-   
-   int rc = 0;
-   struct fskit_entry* fent = NULL;
-   
-   fent = fskit_entry_resolve_path( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), true, &rc );
-   if( fent == NULL ) {
-      return rc;
-   }
-   
-   rc = UG_xattr_get_or_set_xattr( UG_state_gateway( state ), fent, name, new_value, new_value_len, value, value_len, mode );
-   
-   fskit_entry_unlock( fent );
-   
-   return rc;
 }

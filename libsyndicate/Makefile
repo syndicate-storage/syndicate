@@ -14,6 +14,8 @@ CXSRCS	:= $(wildcard *.cpp) \
 HEADERS := $(wildcard *.h) \
            $(wildcard */*.h)
 
+HEADERS_PRIVATE := $(wildcard private/*.h)
+
 LIBSYNDICATE_OBJ := $(patsubst %.c,$(BUILD_LIBSYNDICATE)/%.o,$(C_SRCS)) \
                     $(patsubst %.cpp,$(BUILD_LIBSYNDICATE)/%.o,$(CXSRCS))
 
@@ -31,49 +33,54 @@ LIBSYNDICATE_SO 	:= $(BUILD_LIBSYNDICATE)/$(LIBSYNDICATE_SONAME)
 LIBSYNDICATE_LIB 	:= $(BUILD_LIBSYNDICATE)/libsyndicate.so.$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 LIBSYNDICATE_HEADERS := $(patsubst %.h,$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(HEADERS))
+LIBSYNDICATE_HEADERS_PRIVATE := $(patsubst %.h,$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(HEADERS_PRIVATE))
 
 LIBSYNDICATE_FILES := $(LIBSYNDICATE) $(LIBSYNDICATE_SO) $(LIBSYNDICATE_LIB)
 
 LIBSYNDICATE_FILES_INSTALL := $(patsubst $(BUILD_LIBSYNDICATE)/%,$(LIBDIR)/%,$(LIBSYNDICATE_FILES))
-LIBSYNDICATE_HEADERS_INSTALL := $(patsubst $(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(INCLUDEDIR)/libsyndicate/%.h,$(LIBSYNDICATE_HEADERS))
+LIBSYNDICATE_HEADERS_INSTALL := $(patsubst $(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(INCLUDEDIR)/libsyndicate/%.h,$(filter-out $(LIBSYNDICATE_HEADERS_PRIVATE),$(LIBSYNDICATE_HEADERS)))
 
 LIBSYNDICATE_INSTALL := $(LIBSYNDICATE_FILES_INSTALL) $(LIBSYNDICATE_HEADERS_INSTALL)
 
 all: $(LIBSYNDICATE_HEADERS) $(LIBSYNDICATE) $(LIBSYNDICATE_SO) $(LIBSYNDICATE_LIB)
 
 $(LIBSYNDICATE_LIB): $(OBJ)
-	@mkdir -p $(shell dirname $@)
-	$(CPP) -shared -Wl,-soname,$(LIBSYNDICATE_SONAME) -o $@ $(OBJ) $(LIBINC) $(LIB)
+	@mkdir -p "$(shell dirname "$@")"
+	@rm -f "$@"
+	$(CPP) -shared -Wl,-soname,$(LIBSYNDICATE_SONAME) -o "$@" $(OBJ) $(LIBINC) $(LIB)
 
 $(LIBSYNDICATE_SO): $(LIBSYNDICATE_LIB)
-	@ln -sf $(shell basename $(LIBSYNDICATE_LIB)) $@
+	@rm -f "$@"
+	@ln -sf "$(shell basename $(LIBSYNDICATE_LIB))" "$@"
 
 $(LIBSYNDICATE): $(LIBSYNDICATE_SO)
-	@ln -sf $(shell basename $(LIBSYNDICATE_SO)) $@
+	@rm -f "$@"
+	@ln -sf "$(shell basename $(LIBSYNDICATE_SO))" "$@"
 
-$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h: %.h $(LIBSYNDICATE) 
-	@mkdir -p $(shell dirname $@)
-	@cat $< > $@
+$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h: %.h 
+	@mkdir -p "$(shell dirname "$@")"
+	@cat "$<" > "$@"
 
-$(BUILD_LIBSYNDICATE)/%.o : %.c $(PROTOBUF_OBJ)
-	@mkdir -p $(shell dirname $@)
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+$(BUILD_LIBSYNDICATE)/%.o : %.c $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
+	@mkdir -p "$(shell dirname "$@")"
+	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
-$(BUILD_LIBSYNDICATE)/%.o : %.cpp $(PROTOBUF_OBJ)
-	@mkdir -p $(shell dirname $@)
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+$(BUILD_LIBSYNDICATE)/%.o : %.cpp $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
+	@mkdir -p "$(shell dirname "$@")"
+	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
 .PHONY: install
 install: $(LIBSYNDICATE_INSTALL)
-	ldconfig
 
 $(LIBDIR)/%: $(BUILD_LIBSYNDICATE)/%
-	@mkdir -p $(shell dirname $@)
-	cp -a $< $@
+	@mkdir -p "$(shell dirname "$@")"
+	@rm -f "$@"
+	cp -a "$<" "$@"
 
 $(INCLUDEDIR)/libsyndicate/%: $(BUILD_LIBSYNDICATE_INCLUDEDIR)/%
-	@mkdir -p $(shell dirname $@)
-	cp -a $< $@
+	@mkdir -p "$(shell dirname "$@")"
+	@rm -f "$@"
+	cp -a "$<" "$@"
 
 .PHONY: clean
 clean:

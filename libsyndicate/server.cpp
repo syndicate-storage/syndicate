@@ -106,8 +106,10 @@ static int SG_server_stat_request( struct SG_gateway* gateway, struct md_HTTP_re
 }
 
 
-// sanity-check on inbound requests
-// reject a request if the requested entity is not found, or does not have the requisite permissions
+// early sanity-check on inbound requests:
+// * accept a request if the gateway imposes no request rejection policy--i.e. all requests are considered sound.
+// * reject a request if the requested entity is not found, or does not have the requisite permissions.
+// * redirect a request if the request refers to a stale version of the entity.
 // redirect a request if it is to a stale version, or to a file we don't coordinate
 // return 0 if handled 
 // return 1 if not handled, but the request is sound (i.e. the caller should service it)
@@ -125,7 +127,7 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
    
    char* url = NULL;
 
-   if( !SG_request_is_block( reqdat ) && !SG_request_is_manifest( reqdat ) ) {
+   if( !SG_request_is_block( reqdat ) && !SG_request_is_manifest( reqdat ) && !SG_request_is_getxattr( reqdat ) && !SG_request_is_listxattr( reqdat ) ) {
       
       SG_error("%s", "Invalid request\n");
       
@@ -134,10 +136,9 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
    }
    
    if( gateway->impl_stat == NULL ) {
-      
-      SG_error("%s", "BUG: gateway->impl_stat is undefined\n");
-      
-      return md_HTTP_create_response_builtin( resp, 501 );
+     
+      // accept by default 
+      return 1; 
    }
    
    // stat the requested entity 
@@ -148,78 +149,178 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
       return rc;
    }
    
-   rc = 0;
+   rc = 1;
    
-   // do we need to redirect?
-   if( gateway_id != entity_info.coordinator_id ||               // coordinators do not match
-       reqdat->file_version != entity_info.file_version ||       // file versions do not match
-       (SG_request_is_block( reqdat ) && reqdat->block_version != entity_info.block_version) ||  // block request, and block versions do not match
-       (SG_request_is_manifest( reqdat ) && (reqdat->manifest_timestamp.tv_sec < entity_info.manifest_timestamp.tv_sec ||       // manifest request, and timestamps are behind current
-                                            (reqdat->manifest_timestamp.tv_sec == entity_info.manifest_timestamp.tv_sec && reqdat->manifest_timestamp.tv_nsec < entity_info.manifest_timestamp.tv_nsec)))) {
+   // redirect block?
+   if( SG_request_is_block( reqdat ) ) {
       
-      // redirect 
-      if( SG_request_is_block( reqdat ) ) {
+      // block_request 
+      if( gateway_id != entity_info.coordinator_id ) {
          
-         // block_request 
-         if( gateway_id != entity_info.coordinator_id ) {
-            
-            SG_debug("REDIRECT: Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", entity_info.coordinator_id, gateway_id );
-            
-            // redirect block request to remote coordinator
-            rc = md_url_make_block_url( ms, entity_info.fs_path, entity_info.coordinator_id, entity_info.file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, &url );
-         }
-         else {
-            
-            SG_debug("REDIRECT: Block/version mismatch: expected version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 ", got version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 "\n",
-                     entity_info.file_version, entity_info.block_id, entity_info.block_version,
-                     reqdat->file_version, reqdat->block_id, reqdat->block_version );
-                     
-            // redirect block request to newer local version 
-            url = md_url_public_block_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, entity_info.block_id, entity_info.block_version );
-            
-            if( url == NULL ) {
-               
-               // OOM
-               rc = -ENOMEM;
-            }
-         }
+         rc = 0;
+         
+         SG_debug("REDIRECT: Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", entity_info.coordinator_id, gateway_id );
+         
+         // redirect block request to remote coordinator
+         rc = md_url_make_block_url( ms, entity_info.fs_path, entity_info.coordinator_id, entity_info.file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, &url );
       }
-      else {
+      
+      else if( reqdat->file_version != entity_info.file_version ) {
          
-         // manifest request 
-         if( gateway_id != entity_info.coordinator_id ) {
+         rc = 0;
+         
+         SG_debug("REDIRECT: File version mismatch: expected %" PRId64 ", got %" PRId64 "\n", entity_info.file_version, reqdat->file_version );
+         
+         // redirect block request to latest version 
+         url = md_url_public_block_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, entity_info.block_id, entity_info.block_version );
+         
+         if( url == NULL ) {
             
-            SG_debug("REDIRECT: Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", entity_info.coordinator_id, gateway_id );
-            
-            // redirect manifest request to remote coordinator
-            rc = md_url_make_manifest_url( ms, entity_info.fs_path, entity_info.coordinator_id, entity_info.file_id, reqdat->file_version, &reqdat->manifest_timestamp, &url );
-         }
-         else {
-            
-            SG_debug("REDIRECT: Manifest/version mismatch: expected version=%" PRId64 ", ts=%" PRId64 ".%ld, got version=%" PRId64 ", ts=%" PRId64 ".%ld\n",
-                     entity_info.file_version, entity_info.manifest_timestamp.tv_sec, entity_info.manifest_timestamp.tv_nsec,
-                     reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
-            
-            // redirect manifest request to newer local version 
-            url = md_url_public_manifest_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, &entity_info.manifest_timestamp );
-            
-            if( url == NULL ) {
-               
-               // OOM 
-               rc = -ENOMEM;
-            }
+            // OOM
+            rc = -ENOMEM;
          }
       }
       
-      if( url == NULL || rc != 0 ) {
+      else if( reqdat->block_version != entity_info.block_version ) {
          
-         // failure 
+         rc = 0;
+         
+         SG_debug("REDIRECT: Block/version mismatch: expected version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 ", got version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 "\n",
+                  entity_info.file_version, entity_info.block_id, entity_info.block_version,
+                  reqdat->file_version, reqdat->block_id, reqdat->block_version );
+                  
+         // redirect block request to newer local version 
+         url = md_url_public_block_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, entity_info.block_id, entity_info.block_version );
+         
+         if( url == NULL ) {
+            
+            // OOM
+            rc = -ENOMEM;
+         }
+      }
+   }
+   else if( SG_request_is_manifest( reqdat ) ) {
+      
+      // manifest request 
+      if( gateway_id != entity_info.coordinator_id ) {
+         
+         rc = 0;
+         
+         SG_debug("REDIRECT: Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", entity_info.coordinator_id, gateway_id );
+         
+         // redirect manifest request to remote coordinator
+         rc = md_url_make_manifest_url( ms, entity_info.fs_path, entity_info.coordinator_id, entity_info.file_id, reqdat->file_version, &reqdat->manifest_timestamp, &url );
+      }
+      
+      else if( reqdat->file_version != entity_info.file_version ) {
+         
+         rc = 0;
+         
+         SG_debug("REDIRECT: File version mismatch: expected %" PRId64 ", got %" PRId64 "\n", entity_info.file_version, reqdat->file_version );
+         
+         // redirect manifest request to latest version 
+         url = md_url_public_manifest_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, &entity_info.manifest_timestamp );
+         
+         if( url == NULL ) {
+            
+            // OOM 
+            rc = -ENOMEM;
+         }
+      }
+      
+      else if(reqdat->manifest_timestamp.tv_sec < entity_info.manifest_timestamp.tv_sec ||       // manifest request, and timestamps are behind current
+             (reqdat->manifest_timestamp.tv_sec == entity_info.manifest_timestamp.tv_sec && reqdat->manifest_timestamp.tv_nsec < entity_info.manifest_timestamp.tv_nsec) ) {
+         
+         rc = 0;
+      
+         SG_debug("REDIRECT: Manifest/version mismatch: expected version=%" PRId64 ", ts=%" PRId64 ".%ld, got version=%" PRId64 ", ts=%" PRId64 ".%ld\n",
+                  entity_info.file_version, entity_info.manifest_timestamp.tv_sec, entity_info.manifest_timestamp.tv_nsec,
+                  reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
+         
+         // redirect manifest request to newer local version 
+         url = md_url_public_manifest_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, &entity_info.manifest_timestamp );
+         
+         if( url == NULL ) {
+            
+            // OOM 
+            rc = -ENOMEM;
+         }
+      }
+   }
+   
+   else if( reqdat->xattr_name != NULL ) {
+      
+      // getxattr, setxattr, or removexattr request 
+      if( gateway_id != entity_info.coordinator_id ) {
+         
+         rc = 0;
+         
+         SG_debug("REDIRECT: Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", entity_info.coordinator_id, gateway_id );
+         
+         // redirect getxattr request to remote coordinator
+         rc = md_url_make_getxattr_url( ms, entity_info.fs_path, entity_info.coordinator_id, entity_info.file_id, reqdat->file_version, reqdat->xattr_name, reqdat->xattr_nonce, &url );
+      }
+      
+      else if( reqdat->file_version != entity_info.file_version ) {
+         
+         rc = 0;
+         
+         SG_debug("REDIRECT: File version mismatch: expected %" PRId64 ", got %" PRId64 "\n", entity_info.file_version, reqdat->file_version );
+         
+         // redirect getxattr request to latest version 
+         url = md_url_public_getxattr_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, reqdat->xattr_name, reqdat->xattr_nonce );
+         
+         if( url == NULL ) {
+            
+            // OOM 
+            rc = -ENOMEM;
+         }
+      }
+      
+      else if( reqdat->xattr_nonce != entity_info.xattr_nonce ) {
+         
+         rc = 0;
+         
+         SG_debug("REDIRECT: xattr nonce mismatch: expected %" PRId64 ", got %" PRId64 "\n", entity_info.xattr_nonce, reqdat->xattr_nonce );
+         
+         // redirect getxattr request to latest version 
+         url = md_url_public_getxattr_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, reqdat->xattr_name, reqdat->xattr_nonce );
+         
+         if( url == NULL ) {
+            
+            // OOM 
+            rc = -ENOMEM;
+         }
+      }
+   }
+
+   else if( !SG_request_is_listxattr( reqdat ) ) {
+      
+      // invalid request
+      if( url != NULL ) {
          SG_safe_free( url );
-         SG_request_data_free( &entity_info );
-         
-         return md_HTTP_create_response_builtin( resp, 500 );
       }
       
+      SG_request_data_free( &entity_info );
+      
+      return md_HTTP_create_response_builtin( resp, 400 );
+   }
+   
+   if( rc < 0 ) {
+      
+      // failure 
+      if( url != NULL ) {
+         SG_safe_free( url );
+      }
+      
+      SG_request_data_free( &entity_info );
+      
+      return md_HTTP_create_response_builtin( resp, 500 );
+   }
+   
+   if( rc == 0 ) {
+      
+      // will redirect
       // return 302 
       rc = md_HTTP_create_response_ram( resp, "text/plain", 302, "Redirect\n", strlen("Redirect\n") + 1 );
       if( rc != 0 ) {
@@ -261,21 +362,115 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
       return 0;
    }
    
-   // permission check 
-   if( (entity_mode & mode) == 0 ) {
+   else {
       
-      // denied 
-      SG_safe_free( url );
+      // will not redirect
+      // permission check 
+      if( (entity_mode & mode) == 0 ) {
+         
+         // denied 
+         SG_safe_free( url );
+         SG_request_data_free( &entity_info );
+         
+         return md_HTTP_create_response_builtin( resp, 403 );
+      }
+      
+      // request is sound, and refers to fresh data 
+      if( url != NULL ) {
+         SG_safe_free( url );
+      }
       SG_request_data_free( &entity_info );
       
-      return md_HTTP_create_response_builtin( resp, 403 );
+      return 1;
+   }
+}
+
+
+// populate a reply message
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EINVAL on failure to serialize and sign
+static int SG_server_reply_populate( struct SG_gateway* gateway, SG_messages::Reply* reply, uint64_t message_nonce, int error_code ) {
+   
+   int rc = 0;
+   
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
+   
+   uint64_t gateway_id = ms->gateway_id;
+   uint64_t gateway_type = ms->gateway_type;
+   uint64_t volume_version = ms_client_volume_version( ms );
+   uint64_t cert_version = ms_client_cert_version( ms );
+   uint64_t user_id = conf->owner;
+   
+   EVP_PKEY* gateway_private_key = SG_gateway_private_key( gateway );
+   
+   try {
+      
+      reply->set_volume_version( volume_version );
+      reply->set_cert_version( cert_version );
+      reply->set_message_nonce( message_nonce );
+      reply->set_error_code( error_code );
+      
+      reply->set_user_id( user_id );
+      reply->set_gateway_id( gateway_id );
+      reply->set_gateway_type( gateway_type );  
+   }
+   catch( bad_alloc& ba ) {
+      
+      return -ENOMEM;
    }
    
-   // request is sound, and refers to fresh data 
-   SG_safe_free( url );
-   SG_request_data_free( &entity_info );
+   rc = md_sign< SG_messages::Reply >( gateway_private_key, reply );
+   if( rc != 0 ) {
       
-   return 1;
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+// sign a reply message
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EINVAL on failure to serialize and sign
+static int SG_server_reply_sign( struct SG_gateway* gateway, SG_messages::Reply* reply ) {
+   
+   int rc = 0;
+   EVP_PKEY* gateway_private_key = SG_gateway_private_key( gateway );
+   
+   rc = md_sign< SG_messages::Reply >( gateway_private_key, reply );
+   if( rc != 0 ) {
+      
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+
+// generate a populated, signed reply.
+// serialize it and put it into a response 
+// return 0 on success (indicates that we generated the HTTP response)
+// return -ENOMEM on OOM 
+static int SG_server_reply_serialize( struct SG_gateway* gateway, SG_messages::Reply* reply, struct md_HTTP_response* resp ) {
+   
+   char* serialized_reply = NULL;
+   size_t serialized_reply_len = 0;
+   int rc = 0;
+   
+   // serialize...
+   rc = md_serialize< SG_messages::Reply >( reply, &serialized_reply, &serialized_reply_len );
+   if( rc != 0 ) {
+      
+      // failed (invalid or OOM)
+      return md_HTTP_create_response_builtin( resp, 500 );
+   }
+   
+   // generate!
+   return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, serialized_reply, serialized_reply_len );
 }
 
 
@@ -317,19 +512,164 @@ int SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* con_data, struc
 }
 
 
-// GET a block 
-// try the cache first, then the implementation 
-// return 0 on success
+// GET an xattr
+// return 0 on success 
 // return -ENOMEM on OOM
-int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct md_HTTP_response* resp ) {
+int SG_server_HTTP_GET_getxattr( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* ignored, struct md_HTTP_connection_data* ignored2, struct md_HTTP_response* resp ) {
    
    int rc = 0;
-   uint64_t impl_hints = SG_gateway_impl_hints( gateway );
+   SG_messages::Reply reply;
+   struct SG_chunk xattr_value;
+   
+   // getxattr request 
+   SG_debug("GETXATTR %" PRIX64 ".%" PRId64 " (%s) %s.%" PRId64 "\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, reqdat->xattr_name, reqdat->xattr_nonce );
+   
+   // do the getxattr in the implementation
+   rc = SG_gateway_impl_getxattr( gateway, reqdat, &xattr_value );
+   if( rc < 0 ) {
+      
+      if( rc == -ENOENT ) {
+         
+         // not present 
+         return md_HTTP_create_response_builtin( resp, 404 );
+      }
+      else {
+         
+         // general failure 
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+   }
+   else {
+      
+      // success!
+      // put it into a reply 
+      rc = SG_server_reply_populate( gateway, &reply, 0, 0 );
+      if( rc != 0 ) {
+         
+         SG_error("SG_server_reply_populate rc = %d\n", rc );
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      
+      try {
+         // add our xattr 
+         reply.set_xattr_value( string(xattr_value.data, xattr_value.len) );
+      }
+      catch( bad_alloc& ba ) {
+         
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      
+      // serialize and send off
+      rc = SG_server_reply_serialize( gateway, &reply, resp );
+      if( rc != 0 ) {
+         
+         SG_error("SG_server_reply_serialize rc = %d\n", rc );
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      else {
+         
+         return rc;
+      }
+   }
+}
+
+
+// GET the list of xattrs
+// return 0 on success 
+// return -ENOMEM on OOM
+int SG_server_HTTP_GET_listxattr( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* ignored, struct md_HTTP_connection_data* ignored2, struct md_HTTP_response* resp ) {
+   
+   int rc = 0;
+   SG_messages::Reply reply;
+   struct SG_chunk* xattr_names = NULL;
+   size_t num_xattrs = 0;
+   
+   // getxattr request 
+   SG_debug("LISTXATTR %" PRIX64 ".%" PRId64 " (%s)\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path );
+   
+   // do the getxattr in the implementation
+   rc = SG_gateway_impl_listxattr( gateway, reqdat, &xattr_names, &num_xattrs );
+   if( rc < 0 ) {
+      
+      if( rc == -ENOENT ) {
+         
+         // not present 
+         return md_HTTP_create_response_builtin( resp, 404 );
+      }
+      else {
+         
+         // general failure 
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+   }
+   else {
+      
+      // success!
+      // put it into a reply 
+      rc = SG_server_reply_populate( gateway, &reply, 0, 0 );
+      if( rc != 0 ) {
+         
+         SG_error("SG_server_reply_populate rc = %d\n", rc );
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      
+      try {
+         // add our xattrs
+         for( size_t i = 0; i < num_xattrs; i++ ) {
+            
+            reply.add_xattr_names( string(xattr_names[i].data, xattr_names[i].len) );
+         }
+      }
+      catch( bad_alloc& ba ) {
+         
+         for( size_t i = 0; i < num_xattrs; i++ ) {
+            
+            SG_chunk_free( &xattr_names[i] );
+         }
+         
+         SG_safe_free( xattr_names );
+         
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      
+      // serialize and send off
+      rc = SG_server_reply_serialize( gateway, &reply, resp );
+      
+      // free memory
+      for( size_t i = 0; i < num_xattrs; i++ ) {
+            
+         SG_chunk_free( &xattr_names[i] );
+      }
+      
+      SG_safe_free( xattr_names );
+      
+      if( rc != 0 ) {
+         
+         SG_error("SG_server_reply_serialize rc = %d\n", rc );
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
+      else {
+         
+         return rc;
+      }
+   }
+}
+
+// GET a block, as part of an I/O complection.
+// try the cache first, then the implementation.
+// on cache miss, run the block through the "put block" driver method and cache it for next time.
+// return 0 on success
+// return -ENOMEM on OOM
+int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* ignored, struct md_HTTP_connection_data* ignored2, struct md_HTTP_response* resp ) {
+   
+   int rc = 0;
 
    // block request 
    struct SG_chunk block;
    struct SG_chunk block_dup;
    struct md_cache_block_future* block_fut = NULL;
+   
+   memset( &block, 0, sizeof( struct SG_chunk ) );
    
    // sanity check 
    if( gateway->impl_get_block == NULL ) {
@@ -339,29 +679,26 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
       // not implemented 
       return md_HTTP_create_response_builtin( resp, 500 );
    }
+
+   // get raw block from the cache?
+   rc = SG_gateway_cached_block_get_raw( gateway, reqdat, &block );
    
-   if( (impl_hints & SG_GATEWAY_HINT_NO_BLOCK_CACHE) == 0 ) {
+   if( rc == 0 ) {
       
-      // service from the cache?
-      rc = SG_gateway_cached_block_get_raw( gateway, reqdat, &block );
+      // reply 
+      return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, block.data, block.len );
+   }
+   else if( rc != -ENOENT ) {
       
-      if( rc == 0 ) {
-         
-         // reply 
-         return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, block.data, block.len );
-      }
-      else if( rc != -ENOENT ) {
-         
-         // error 
-         return md_HTTP_create_response_builtin( resp, 500 );
-      }
+      // error 
+      SG_warn("SG_gateway_cached_block_get_raw( %" PRIX64 ".%" PRId64 "[block %" PRIu64 ".%" PRId64 "] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, rc );
    }
 
    // cache miss 
    SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[block %" PRIu64 ".%" PRId64 "]\n", reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version );
    
-   // get from the implementation
-   rc = SG_gateway_impl_block_get( gateway, reqdat, &block );
+   // get raw block from the implementation, but don't deserialize
+   rc = SG_gateway_impl_block_get( gateway, reqdat, &block, 0 );
    if( rc < 0 ) {
       
       if( rc == -ENOENT ) {
@@ -369,9 +706,12 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
          // not present (i.e. EOF)
          return md_HTTP_create_response_builtin( resp, 404 );
       }
-      
-      // failure
-      return md_HTTP_create_response_builtin( resp, 500 );
+      else {
+         
+         // general failure
+         SG_error("SG_gateway_cached_block_get_raw( %" PRIX64 ".%" PRId64 "[block %" PRIu64 ".%" PRId64 "] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, rc );
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
    }
    
    // duplicate the block--give one to the cache, and send one back 
@@ -383,8 +723,8 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
       return md_HTTP_create_response_builtin( resp, 503 );
    }
    
-   // apply the closure and cache this block, asynchronously 
-   rc = SG_gateway_cached_block_put_async( gateway, reqdat, &block, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &block_fut );
+   // cache the raw block, asynchronously 
+   rc = SG_gateway_cached_block_put_raw_async( gateway, reqdat, &block, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &block_fut );
    if( rc < 0 ) {
       
       // failure 
@@ -397,25 +737,26 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
 
 
 
-// GET a manifest 
-// try the cache first, then the implementation 
+// GET a manifest, as part of an I/O completion
+// try the cache first, then the implementation.
+// on cache miss, run the serialized signed manifest through the "put manifest" driver method and cache it for next time.
 // return 0 on success
 // return -ENOMEM on OOM
-int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct md_HTTP_response* resp ) {
+int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* ignored, struct md_HTTP_connection_data* ignored2, struct md_HTTP_response* resp ) {
    
    int rc = 0;
-   uint64_t impl_hints = SG_gateway_impl_hints( gateway );
 
    // manifest request 
-   struct SG_chunk raw_serialized_manifest;  // out of the cache 
-   struct SG_chunk serialized_manifest;      // into the cache
-   struct SG_chunk serialized_manifest_resp; // response
+   struct SG_chunk raw_serialized_manifest;  // serialized manifest from out of the cache
+   struct SG_chunk protobufed_manifest;      // unserialized manifest, as a protobuf str
+   struct SG_chunk serialized_manifest;      // final manifest to cache
+   struct SG_chunk serialized_manifest_resp; // response to send
    
    struct SG_manifest manifest;              // from the implementation
    SG_messages::Manifest manifest_message;
    
-   char* serialized_manifest_str;
-   size_t serialized_manifest_len;
+   char* protobuf_manifest_str;
+   size_t protobuf_manifest_len;
    
    struct md_cache_block_future* manifest_fut = NULL;
    
@@ -429,23 +770,19 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       // not implemented 
       return md_HTTP_create_response_builtin( resp, 501 );
    }
+
+   // try the cache
+   rc = SG_gateway_cached_manifest_get_raw( gateway, reqdat, &raw_serialized_manifest );
    
-   // manifest request 
-   if( (impl_hints & SG_GATEWAY_HINT_NO_MANIFEST_CACHE) == 0 ) {
+   if( rc == 0 ) {
       
-      // try the cache
-      rc = SG_gateway_cached_manifest_get_raw( gateway, reqdat, &raw_serialized_manifest );
+      // reply 
+      return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, raw_serialized_manifest.data, raw_serialized_manifest.len );
+   }
+   else if( rc != -ENOENT ) {
       
-      if( rc == 0 ) {
-         
-         // reply 
-         return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, raw_serialized_manifest.data, raw_serialized_manifest.len );
-      }
-      else if( rc != -ENOENT ) {
-         
-         // error 
-         return md_HTTP_create_response_builtin( resp, 500 );
-      }
+      // error 
+      SG_warn("SG_gateway_cached_manifest_get_raw( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
    }
    
    SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld]\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
@@ -454,50 +791,82 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    // get from the implementation 
    memset( &manifest, 0, sizeof(struct SG_manifest) );
    
-   rc = SG_gateway_impl_manifest_get( gateway, reqdat, &manifest );
+   // get the manifest
+   rc = SG_gateway_impl_manifest_get( gateway, reqdat, &manifest, 0 );
    if( rc != 0 ) {
       
-      // failed 
-      return md_HTTP_create_response_builtin( resp, 500 );
+      if( rc == -ENOENT ) {
+         
+         // not found 
+         return md_HTTP_create_response_builtin( resp, 404 );
+      }
+      else {
+            
+         // failed 
+         SG_error("SG_gateway_impl_manifest_get( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc ); 
+         return md_HTTP_create_response_builtin( resp, 500 );
+      }
    }
    
-   // serialize 
+   // serialize to string
    rc = SG_manifest_serialize_to_protobuf( &manifest, &manifest_message );
    
    SG_manifest_free( &manifest );
    
    if( rc != 0 ) {
-      
+   
       // failed 
-      SG_error("SG_manifest_serialize_to_protobuf( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] rc = %d\n",
+      SG_error("SG_manifest_serialize_to_protobuf( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
                reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
       
       return md_HTTP_create_response_builtin( resp, 500 );
    }
-   
+
    // sign manifest 
    rc = md_sign< SG_messages::Manifest >( gateway_private_key, &manifest_message );
    if( rc != 0 ) {
       
       // failed to sign 
-      SG_error("md_sign( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] rc = %d\n",
+      SG_error("md_sign( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
                reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
       
       return md_HTTP_create_response_builtin( resp, 500 );
    }
    
-   // serialize to string 
-   rc = md_serialize< SG_messages::Manifest >( &manifest_message, &serialized_manifest_str, &serialized_manifest_len );
+   // serialize to string (with signature) 
+   rc = md_serialize< SG_messages::Manifest >( &manifest_message, &protobuf_manifest_str, &protobuf_manifest_len );
    if( rc != 0 ) {
       
-      SG_error("md_serialize( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] rc = %d\n",
+      SG_error("md_serialize( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
                reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
       
       return md_HTTP_create_response_builtin( resp, 500 );
    }
-   
-   SG_chunk_init( &serialized_manifest, serialized_manifest_str, serialized_manifest_len );
-   
+
+   // feed through the gateway's serializer (if given)
+   SG_chunk_init( &protobufed_manifest, protobuf_manifest_str, protobuf_manifest_len );
+   rc = SG_gateway_impl_serialize( gateway, reqdat, &protobufed_manifest, &serialized_manifest );
+   if( rc != 0 ) {
+    
+      if( rc == -ENOSYS ) {
+          // this fine--the final form is the protobuf
+          serialized_manifest = protobufed_manifest;
+          memset( &protobufed_manifest, 0, sizeof(struct SG_chunk) );
+      }
+      else {
+          // some other error 
+          SG_error("SG_gateway_impl_serialize(  %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
+                   reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
+          
+          return md_HTTP_create_response_builtin( resp, 500 );
+      }
+   }
+   else {
+
+      // no need for the protobuf'ed form
+      SG_chunk_free( &protobufed_manifest );
+   }
+
    // duplicate--send one back, and send the other to the cache
    rc = SG_chunk_dup( &serialized_manifest_resp, &serialized_manifest );
    if( rc != 0 ) {
@@ -507,9 +876,9 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       return md_HTTP_create_response_builtin( resp, 500 );
    }
    
-   // apply the closure and cache (asynchronously)
+   // cache (asynchronously)
    // cache takes ownership of the memory 
-   rc = SG_gateway_cached_manifest_put_async( gateway, reqdat, &serialized_manifest, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &manifest_fut );
+   rc = SG_gateway_cached_manifest_put_raw_async( gateway, reqdat, &serialized_manifest, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &manifest_fut );
    if( rc != 0 ) {
       
       // failed 
@@ -528,20 +897,25 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
 // try the cache first, and then the implementation.
 // return 0 on success, and populate *resp
 // return -ENOMEM on OOM
-// TODO: handle in an I/O work thread
 int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp ) {
 
    struct SG_server_connection* sgcon = (struct SG_server_connection*)con_data->cls;
    
-   struct SG_request_data reqdat;
+   struct SG_request_data* reqdat = NULL;
    struct SG_gateway* gateway = sgcon->gateway;
    
    int rc = 0;
+
+   reqdat = SG_CALLOC( struct SG_request_data, 1 );
+   if( reqdat == NULL ) {
+      return -ENOMEM;
+   }
    
    // parse the request
-   rc = SG_request_data_parse( &reqdat, con_data->url_path );
+   rc = SG_request_data_parse( reqdat, con_data->url_path );
    if( rc != 0 ) {
       
+      SG_safe_free( reqdat );
       if( rc != -ENOMEM ) {
          return md_HTTP_create_response_builtin( resp, 400 );
       }
@@ -551,23 +925,34 @@ int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct
    }
    
    // redirect? expect world-readable or volume-readable
-   rc = SG_server_redirect_request( gateway, resp, &reqdat, 0044 );
+   rc = SG_server_redirect_request( gateway, resp, reqdat, 0044 );
    if( rc <= 0 ) {
       
       // handled, or error 
-      SG_request_data_free( &reqdat );
+      SG_request_data_free( reqdat );
+      SG_safe_free( reqdat );
       return rc;
    }
    
-   // block request?
-   if( SG_request_is_block( &reqdat ) ) {
-
-      rc = SG_server_HTTP_GET_block( gateway, &reqdat, resp );
+   // getxattr request?
+   if( SG_request_is_getxattr( reqdat ) ) {
+      rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_READ, SG_server_HTTP_GET_getxattr, reqdat, NULL, con_data, resp );
    }
    
-   else if( SG_request_is_manifest( &reqdat ) ) {
+   // listxattr request?
+   else if( SG_request_is_listxattr( reqdat ) ) {
+      rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_READ, SG_server_HTTP_GET_listxattr, reqdat, NULL, con_data, resp );
+   }
+   
+   // block request?
+   else if( SG_request_is_block( reqdat ) ) {
+
+      rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_READ, SG_server_HTTP_GET_block, reqdat, NULL, con_data, resp );
+   }
+   
+   else if( SG_request_is_manifest( reqdat ) ) {
       
-      rc = SG_server_HTTP_GET_manifest( gateway, &reqdat, resp );
+      rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_READ, SG_server_HTTP_GET_manifest, reqdat, NULL, con_data, resp );
    }
    
    else {
@@ -576,76 +961,13 @@ int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct
       rc = md_HTTP_create_response_builtin( resp, 400 );
    }
    
-   SG_request_data_free( &reqdat );
+   if( rc != 0 ) {
+      // only do this in error; the I/O thread will clean up otherwise
+      SG_request_data_free( reqdat );
+      SG_safe_free( reqdat );
+   }
+
    return rc;
-}
-
-
-// populate a reply message, signing it as well
-// return 0 on success
-// return -ENOMEM on OOM
-// return -EINVAL on failure to serialize and sign
-static int SG_server_reply_setup( struct SG_gateway* gateway, SG_messages::Reply* reply, uint64_t message_nonce, int error_code ) {
-   
-   int rc = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
-   
-   uint64_t gateway_id = ms->gateway_id;
-   uint64_t gateway_type = ms->gateway_type;
-   uint64_t volume_version = ms_client_volume_version( ms );
-   uint64_t cert_version = ms_client_cert_version( ms );
-   uint64_t user_id = conf->owner;
-   
-   EVP_PKEY* gateway_private_key = SG_gateway_private_key( gateway );
-   
-   try {
-      
-      reply->set_volume_version( volume_version );
-      reply->set_cert_version( cert_version );
-      reply->set_message_nonce( message_nonce );
-      reply->set_error_code( error_code );
-      
-      reply->set_user_id( user_id );
-      reply->set_gateway_id( gateway_id );
-      reply->set_gateway_type( gateway_type );  
-   }
-   catch( bad_alloc& ba ) {
-      
-      return -ENOMEM;
-   }
-   
-   rc = md_sign< SG_messages::Reply >( gateway_private_key, reply );
-   if( rc != 0 ) {
-      
-      return rc;
-   }
-   
-   return 0;
-}
-
-
-// generate a populated, signed reply.
-// serialize it and put it into a response 
-// return 0 on success (indicates that we generated the HTTP response)
-// return -ENOMEM on OOM 
-static int SG_server_reply_serialize( struct SG_gateway* gateway, SG_messages::Reply* reply, struct md_HTTP_response* resp ) {
-   
-   char* serialized_reply = NULL;
-   size_t serialized_reply_len = 0;
-   int rc = 0;
-   
-   // serialize...
-   rc = md_serialize< SG_messages::Reply >( reply, &serialized_reply, &serialized_reply_len );
-   if( rc != 0 ) {
-      
-      // failed (invalid or OOM)
-      return md_HTTP_create_response_builtin( resp, 500 );
-   }
-   
-   // generate!
-   return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, serialized_reply, serialized_reply_len );
 }
 
 
@@ -654,6 +976,7 @@ static int SG_server_reply_serialize( struct SG_gateway* gateway, SG_messages::R
 // return -EINVAL if the message could not be parsed or verified 
 // return -ENOMEM on OOM
 // return -EAGAIN if we couldn't find the requester's certificate (i.e. we need to reload our config)
+// return -EPERM if the message could not be validated, and will not ever be in the future.
 static int SG_request_message_parse( struct SG_gateway* gateway, SG_messages::Request* msg, char* msg_buf, size_t msg_sz ) {
    
    int rc = 0;
@@ -667,12 +990,33 @@ static int SG_request_message_parse( struct SG_gateway* gateway, SG_messages::Re
       return rc;
    }
    
-   // verify 
-   rc = ms_client_verify_gateway_message< SG_messages::Request >( ms, msg->volume_id(), msg->src_gateway_id(), msg );
-   if( rc != 0 ) {
+   // is this a request from a gateway, or a control-plane request from the command-line tool?
+   if( msg->src_gateway_id() == SG_GATEWAY_TOOL ) {
       
-      SG_error("ms_client_verify_gateway_message( from=%" PRIu64 " ) rc = %d\n", msg->src_gateway_id(), rc );
-      return rc;
+      ms_client_config_rlock( ms );
+      
+      // from the admin tool.  verify that it's from the volume owner  
+      rc = md_verify< SG_messages::Request >( ms->volume->volume_public_key, msg );
+      
+      ms_client_config_unlock( ms );
+      
+      if( rc != 0 ) {
+         
+         SG_error("Invalid admin message from %" PRIu64 "\n", msg->user_id() );
+         return -EPERM;
+      }
+   }
+   
+   else {
+      
+      // from a gateway 
+      rc = ms_client_verify_gateway_message< SG_messages::Request >( ms, msg->volume_id(), msg->src_gateway_id(), msg );
+            
+      if( rc != 0 ) {
+            
+          SG_error("ms_client_verify_gateway_message( from=%" PRIu64 " ) rc = %d\n", msg->src_gateway_id(), rc );
+          return -EPERM;
+      }
    }
    
    return 0;
@@ -682,6 +1026,7 @@ static int SG_request_message_parse( struct SG_gateway* gateway, SG_messages::Re
 // extract request info from the request message 
 // return 0 on success
 // return -ENOMEM if OOM
+// return -EINVAL if no message type could be discerned
 // NOTE: if request_msg encodes multiple blocks, only the first (block ID, block version) pair will be put into reqdat
 static int SG_request_data_from_message( struct SG_request_data* reqdat, SG_messages::Request* request_msg ) {
    
@@ -701,7 +1046,42 @@ static int SG_request_data_from_message( struct SG_request_data* reqdat, SG_mess
    reqdat->file_version = request_msg->file_version();
    reqdat->user_id = request_msg->user_id();
    
-   if( request_msg->has_new_manifest_mtime_sec() && request_msg->has_new_manifest_mtime_nsec() ) {
+   if( request_msg->request_type() == SG_messages::Request::SETXATTR ) {
+      if( request_msg->has_xattr_name() && request_msg->has_xattr_value() ) {
+         
+         reqdat->xattr_name = SG_strdup_or_null( request_msg->xattr_name().c_str() );
+         if( reqdat->xattr_name == NULL ) {
+            
+            return -ENOMEM;
+         }
+      }
+      else {
+         
+         // invalid 
+         SG_error("SETXATTR request on '%s' is missing xattr value\n", reqdat->fs_path );
+         SG_request_data_free( reqdat );
+         return -EINVAL;
+      }
+   }
+   else if( request_msg->request_type() == SG_messages::Request::REMOVEXATTR ) {
+      
+      if( request_msg->has_xattr_name() ) {
+         
+         reqdat->xattr_name =  SG_strdup_or_null( request_msg->xattr_name().c_str() );
+         if( reqdat->xattr_name == NULL ) {
+            
+            return -ENOMEM;
+         }
+      }  
+      else {
+         
+         // invalid 
+         SG_error("REMOVEXATTR request on '%s' is missing xattr name\n", reqdat->fs_path );
+         SG_request_data_free( reqdat );
+         return -EINVAL;
+      }
+   }
+   else if( request_msg->has_new_manifest_mtime_sec() && request_msg->has_new_manifest_mtime_nsec() ) {
       
       // manifest
       reqdat->manifest_timestamp.tv_sec = request_msg->new_manifest_mtime_sec();
@@ -713,6 +1093,11 @@ static int SG_request_data_from_message( struct SG_request_data* reqdat, SG_mess
       reqdat->block_id = request_msg->blocks(0).block_id();
       reqdat->block_version = request_msg->blocks(0).block_version();
    }
+   else {
+      
+      return -EINVAL;
+   }
+   
    return 0;
 }
 
@@ -725,6 +1110,20 @@ uint64_t SG_server_request_capabilities( uint64_t request_type ) {
    uint64_t caps_required = (uint64_t)(-1);         // all bits set
    
    switch( request_type ) {
+      
+      case SG_messages::Request::RELOAD: {
+         
+         // we only need a signature from the volume owner
+         caps_required = 0;
+         break;
+      }
+         
+      case SG_messages::Request::SETXATTR:
+      case SG_messages::Request::REMOVEXATTR: {
+         
+         caps_required = SG_CAP_WRITE_METADATA;
+         break;
+      }
       
       case SG_messages::Request::DETACH:
       case SG_messages::Request::RENAME: {
@@ -814,21 +1213,25 @@ int SG_server_check_capabilities( struct SG_gateway* gateway, SG_messages::Reque
    return 0;
 }
 
+
 // start up an I/O request: suspend the connection and pass the request on to an I/O thread, for it to be dispatched asynchronously 
 // reqdat and request_msg must be heap-allocated; the I/O subsystem will take ownership
 // return 0 on success 
 // return -ENOMEM on OOM 
-int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion io_cb, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp ) {
+int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_completion io_cb, struct SG_request_data* reqdat, SG_messages::Request* request_msg,
+                             struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp ) {
    
    int rc = 0;
    struct SG_server_io* io = NULL;
-   struct md_wreq wreq;
-   
-   memset( &wreq, 0, sizeof( struct md_wreq ) );
+   struct md_wreq* wreq = SG_CALLOC( struct md_wreq, 1 );
+   if( wreq == NULL ) {
+      return -ENOMEM;
+   }
    
    io = SG_CALLOC( struct SG_server_io, 1 );
    if( io == NULL ) {
       
+      SG_safe_free( wreq );
       return -ENOMEM;
    }
    
@@ -838,6 +1241,7 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion
    io->con_data = con_data;
    io->resp = resp;
    io->io_completion = io_cb;
+   io->io_type = type;
    
    // suspend the connection
    rc = md_HTTP_connection_suspend( con_data );
@@ -846,11 +1250,15 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion
       SG_error("md_HTTP_connection_suspend rc = %d\n", rc );
       
       SG_safe_free( io );
+      SG_safe_free( wreq );
       return rc;
    }
    
    // enqueue the work
-   rc = md_wreq_init( &wreq, SG_server_HTTP_IO_finish, io, 0 );
+   // TODO: this needlessly constrains the order in which I/O happens.
+   // what we really want is to "select()" on outstanding I/O requests, and collect results as we get them.
+    
+   rc = md_wreq_init( wreq, SG_server_HTTP_IO_finish, io, 0 );
    if( rc != 0 ) {
       
       SG_error("md_wreq_init rc = %d\n", rc );
@@ -858,10 +1266,11 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion
       md_HTTP_create_response_builtin( resp, 500 );
       md_HTTP_connection_resume( con_data, resp );
       SG_safe_free( io );
+      SG_safe_free( wreq );
       return rc;
    }
    
-   rc = SG_gateway_io_start( gateway, &wreq );
+   rc = SG_gateway_io_start( gateway, wreq );
    
    if( rc != 0 ) {
       
@@ -877,7 +1286,7 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion
 }
 
 
-// finish an I/O request: generate a response, resume the connection, and send it off
+// finish an I/O request: generate a response, resume the connection, and send it off.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -errno on failure to generate a response
@@ -888,33 +1297,70 @@ int SG_server_HTTP_IO_finish( struct md_wreq* wreq, void* cls ) {
    int io_rc = 0;
    SG_messages::Reply reply_msg;
    
+   int io_type = io->io_type;
    struct SG_gateway* gateway = io->gateway;
    struct md_HTTP_connection_data* con_data = io->con_data;
    struct md_HTTP_response* resp = io->resp;
    struct SG_request_data* reqdat = io->reqdat;
    SG_messages::Request* request_msg = io->request_msg;
    
-   // run the operation
-   io_rc = (*io->io_completion)( gateway, reqdat, request_msg, con_data );
-   
-   // generate response 
-   rc = SG_server_reply_setup( gateway, &reply_msg, request_msg->message_nonce(), io_rc );
-   if( rc != 0 ) {
+   // what kind of response do we expect?
+   if( io_type == SG_SERVER_IO_WRITE ) {
       
-      // failed to set up
-      SG_error("SG_server_reply_setup rc = %d\n", rc );
-      md_HTTP_create_response_builtin( resp, 500 );
-   }
-   
-   else {
+      // run the operation
+      io_rc = (*io->io_completion)( gateway, reqdat, request_msg, con_data, NULL );
       
-      rc = SG_server_reply_serialize( gateway, &reply_msg, resp );
+      // generate response 
+      rc = SG_server_reply_populate( gateway, &reply_msg, request_msg->message_nonce(), io_rc );
       if( rc != 0 ) {
          
-         // failed to serialize 
-         SG_error("SG_server_reply_serialize rc = %d\n", rc );
-         md_HTTP_create_response_builtin( resp, 500 );
+         // failed to set up
+         SG_error("SG_server_reply_populate rc = %d\n", rc );
+         rc = md_HTTP_create_response_builtin( resp, 500 );
       }
+      
+      else {
+         
+         // sign it
+         rc = SG_server_reply_sign( gateway, &reply_msg );
+         if( rc != 0 ) {
+            
+            // failed to sign 
+            SG_error("SG_server_reply_sign rc = %d\n", rc );
+            rc = md_HTTP_create_response_builtin( resp, 500 );
+         }
+         
+         else {
+            
+            // serialize it
+            rc = SG_server_reply_serialize( gateway, &reply_msg, resp );
+            if( rc != 0 ) {
+               
+               // failed to serialize 
+               SG_error("SG_server_reply_serialize rc = %d\n", rc );
+               rc = md_HTTP_create_response_builtin( resp, 500 );
+            }
+         }
+      }
+   }
+   else {
+      
+      // run the operation directly; the IO completion callback will generate the response.
+      io_rc = (*io->io_completion)( gateway, reqdat, NULL, NULL, resp );
+      if( io_rc != 0 ) {
+
+         // failed
+         SG_error("io_completion rc = %d\n", io_rc );
+         rc = md_HTTP_create_response_builtin( resp, 500 );
+      }
+   }
+   
+   if( rc != 0 ) {
+      
+      // failed to create a response
+      // TODO: have a static built-in response for this case
+      SG_error("%s", "Out of memory\n");
+      exit(1);
    }
    
    // resume the connection so we can send back the response
@@ -935,25 +1381,27 @@ int SG_server_HTTP_IO_finish( struct md_wreq* wreq, void* cls ) {
 }
 
 
-// handle a WRITE request
+// handle a WRITE request--run a manifest through the implementation's "patch manifest" callback.
+// this is called as part of an IO completion.
 // return 0 on success
 // return -ENOMEM on OOM
 // return -EINVAL if the WRITE fields in request_msg are missing or malformed
 // return -ENOSYS if there is no impl_patch_manifest method defined
-static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    struct SG_manifest write_delta;
    
    // sanity check 
    if( gateway->impl_patch_manifest == NULL ) {
-      
+     
       return -ENOSYS;
    }
    
    // santiy check: must have >0 blocks 
    if( request_msg->blocks_size() == 0 ) {
-      
+     
+      SG_error("FATAL: request has %d blocks\n", request_msg->blocks_size() ); 
       return -EINVAL;
    }
    
@@ -962,7 +1410,8 @@ static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_requ
    rc = SG_manifest_init( &write_delta, reqdat->volume_id, request_msg->coordinator_id(), reqdat->file_id, reqdat->file_version );
    if( rc != 0 ) {
       
-      // OOM
+      // OOM or invalid
+      SG_error("FATAL: SG_manifest_init() rc = %d\n", rc );
       return rc;
    }
    
@@ -978,6 +1427,7 @@ static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_requ
       if( rc != 0 ) {
          
          // OOM or invalid
+         SG_error("FATAL: SG_manifest_load_from_protobuf rc = %d\n", rc );
          SG_manifest_free( &write_delta );
          return rc;
       }
@@ -986,7 +1436,8 @@ static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_requ
       rc = SG_manifest_put_block_nocopy( &write_delta, &block, true );
       if( rc != 0 ) {
          
-         // OOM 
+         // OOM or invalid
+         SG_error("FATAL: SG_manifest_put_block_nocopy rc = %d\n", rc );
          SG_manifest_block_free( &block );
          SG_manifest_free( &write_delta );
          return rc;
@@ -1003,16 +1454,19 @@ static int SG_server_HTTP_POST_WRITE( struct SG_gateway* gateway, struct SG_requ
       SG_error("SG_gateway_impl_manifest_patch( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
    }
    
+   // TODO: reply ent_out
+   
    return rc;
 }
 
 
-// handle a TRUNCATE request
+// handle a TRUNCATE request: feed the request to the implementation's "truncate" callback.
+// this is called as part of an IO completion.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EINVAL if the new size field is missing
 // return -ENOSYS if not implemented
-static int SG_server_HTTP_POST_TRUNCATE( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+static int SG_server_HTTP_POST_TRUNCATE( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    uint64_t new_size = 0;
@@ -1043,12 +1497,13 @@ static int SG_server_HTTP_POST_TRUNCATE( struct SG_gateway* gateway, struct SG_r
 }
 
 
-// handle a RENAME request 
+// handle a RENAME request: feed the request to the implementation's "rename" callback.
+// this is called as part of an IO completion.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EINVAL if the new path field is missing 
 // return -ENOSYS if not implemented
-static int SG_server_HTTP_POST_RENAME( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+static int SG_server_HTTP_POST_RENAME( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    char* new_path;      // guarantee NULL-terminated
@@ -1086,11 +1541,13 @@ static int SG_server_HTTP_POST_RENAME( struct SG_gateway* gateway, struct SG_req
    return rc;
 }
 
-// handle a DETACH request 
+// handle a DETACH request: feed the request to the implementation's "detach" callback
+// This is called as part of an IO completion.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -ENOSYS if not implemented
-static int SG_server_HTTP_POST_DETACH( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+// return -EINVAL if this isn't a manifest request
+static int SG_server_HTTP_POST_DETACH( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    
@@ -1100,6 +1557,13 @@ static int SG_server_HTTP_POST_DETACH( struct SG_gateway* gateway, struct SG_req
       return -ENOSYS;
    }
    
+   // sanity check: manifest request?
+   if( !SG_request_is_manifest( reqdat ) ) {
+      
+      return -EINVAL;
+   }
+   
+   // yup 
    rc = SG_gateway_impl_detach( gateway, reqdat );
    
    if( rc != 0 ) {
@@ -1111,11 +1575,13 @@ static int SG_server_HTTP_POST_DETACH( struct SG_gateway* gateway, struct SG_req
 }
 
 
-// handle a DELETEBLOCK request: suspend the connection and handle it in an I/O thread.
-// return 0 on success 
+// handle a DELETEBLOCK request: feed the request into the implementation's "delete block" callback.
+// this is called as part of an IO completion.
+// return 0 on success, and evict the block from the cache.
 // return -ENOMEM on OOM 
 // return -ENOSYS if not implemented
-static int SG_server_HTTP_POST_DELETEBLOCK( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+// return -EINVAL if the request is not a block request
+static int SG_server_HTTP_POST_DELETEBLOCK( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    
@@ -1140,13 +1606,19 @@ static int SG_server_HTTP_POST_DELETEBLOCK( struct SG_gateway* gateway, struct S
    return rc;
 }
 
-// handle a PUTBLOCK request: suspend the connection and handle it in an I/O thread.
-// return 0 on success 
+
+// handle a PUTBLOCK request: feed the request into the implementation's "put block" callback.
+// this is called as part of an IO completion.
+// NOTE: reqdat must be a block request
+// NOTE: the block will be passed to the implementation *without* passing through the driver--the implementation must invoke it manually if desired.
+// The thinking behind this is that this method is meant primarily for writing bulk data.  Only the reader needs to deserialize blocks, and only when
+// the client program asks for the data.
+// return 0 on success
 // return -ENOSYS if not implemented 
 // return -EINVAL if the request does not contain block information
 // return -EBADMSG if the block's hash does not match the hash given on the control plane
 // return -errno on fchmod, mmap failure
-static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data ) {
+static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    int block_fd = 0;
@@ -1166,6 +1638,12 @@ static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_r
    
    // sanity check: must have one block 
    if( request_msg->blocks_size() != 1 ) {
+      
+      return -EINVAL;
+   }
+   
+   // sanity check: block request?
+   if( !SG_request_is_block( reqdat ) ) {
       
       return -EINVAL;
    }
@@ -1215,7 +1693,7 @@ static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_r
       SG_error("fstat rc = %d\n", rc );
       return rc;
    }
-   
+  
    // map the block into RAM 
    block_mmap = (char*)mmap( NULL, sb.st_size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, block_fd, 0 );
    if( block_mmap == NULL ) {
@@ -1252,7 +1730,7 @@ static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_r
       md_sprintf_data( expected, block_info.hash, block_info.hash_len );
       md_sprintf_data( actual, block_hash, SG_BLOCK_HASH_LEN );
       
-      SG_error("%" PRIX64 ".%" PRId64 "[block %" PRIu64 ".%" PRId64 "]: expected '%s', got '%s'\n", reqdat->file_id, reqdat->file_version, block_id, block_version, expected, actual );
+      SG_error("%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%zu): expected '%s', got '%s'\n", reqdat->file_id, reqdat->file_version, block_id, block_version, sb.st_size, expected, actual );
       
       // clean up 
       rc = munmap( block_mmap, sb.st_size );
@@ -1270,13 +1748,17 @@ static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_r
    
    // set up a chunk 
    SG_chunk_init( &block, block_mmap, sb.st_size );
+
+   // pass it into the implementation for subsequent processing
+   rc = SG_gateway_impl_block_put( gateway, reqdat, &block, 0 );
    
-   // call into the implementation 
-   rc = SG_gateway_impl_block_put( gateway, reqdat, &block );
-   
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       
       SG_error("SG_gateway_impl_block_put( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+   }
+   else {
+      
+      rc = 0;
    }
    
    int unmap_rc = munmap( block_mmap, sb.st_size );
@@ -1285,6 +1767,75 @@ static int SG_server_HTTP_POST_PUTBLOCK( struct SG_gateway* gateway, struct SG_r
       
       unmap_rc = -errno;
       SG_error("munmap rc = %d\n", unmap_rc );
+   }
+   
+   return rc;
+}
+
+
+// handle a SETXATTR request: feed the request into the implementation's "setxattr" callback.
+// this is called as part of an IO completion.
+// NOTE: reqdat must be a getxattr request
+// return 0 on success
+// return -ENOSYS if not implemented 
+// return -EINVAL if the request does not contain xattr information
+// return -EAGAIN if stale
+static int SG_server_HTTP_POST_SETXATTR( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
+   
+   int rc = 0;
+   struct SG_chunk xattr_value;
+   
+   // sanity check 
+   if( gateway->impl_setxattr == NULL ) {
+      
+      return -ENOSYS;
+   }
+   
+   if( reqdat->xattr_name == NULL ) {
+      
+      return -EINVAL;
+   }
+   
+   memset( &xattr_value, 0, sizeof(struct SG_chunk) );
+   SG_chunk_init( &xattr_value, (char*)request_msg->xattr_value().data(), request_msg->xattr_value().size() );
+   
+   rc = SG_gateway_impl_setxattr( gateway, reqdat, &xattr_value );
+   
+   if( rc != 0 ) {
+   
+      SG_error("SG_gateway_impl_setxattr( %" PRIX64 ".%" PRId64 ".%s (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->xattr_name, reqdat->fs_path, rc );
+   }
+   
+   return rc;
+}
+
+
+// handle a REMOVEXATTR request: feed the request into the implementation's "removexattr" callback.
+// this is called as part of an IO completion.
+// NOTE: reqdat must be a getxattr request
+// return 0 on success
+// return -ENOSYS if not implemented 
+// return -EINVAL if the request does not contain xattr information
+static int SG_server_HTTP_POST_REMOVEXATTR( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
+   
+   int rc = 0;
+   
+   // sanity check 
+   if( gateway->impl_removexattr == NULL ) {
+      
+      return -ENOSYS;
+   }
+   
+   if( reqdat->xattr_name == NULL ) {
+      
+      return -EINVAL;
+   }
+   
+   rc = SG_gateway_impl_removexattr( gateway, reqdat );
+   
+   if( rc != 0 ) {
+   
+      SG_error("SG_gateway_impl_removexattr( %" PRIX64 ".%" PRId64 ".%s (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->xattr_name, reqdat->fs_path, rc );
    }
    
    return rc;
@@ -1312,37 +1863,17 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       return -ENOMEM;
    }
    
-   // request information
-   reqdat = SG_CALLOC( struct SG_request_data, 1 );
-   if( reqdat == NULL ) {
-      
-      SG_safe_delete( request_msg );
-      return -ENOMEM;
-   }
-   
    // serialized request that we got
    char* request_message_str = NULL;
    size_t request_message_len = 0;
    
    int rc = 0;
    
-   // sanity check--we'll need to ensure certain methods are defined 
-   if( gateway->impl_stat == NULL ) {
-      
-      SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
-      
-      SG_safe_delete( request_msg );
-      SG_safe_free( reqdat );
-      
-      return md_HTTP_create_response_builtin( resp, 501 );
-   }
-   
    // get the control-plane component of the data 
    rc = md_HTTP_upload_get_field_buffer( con_data, SG_SERVER_POST_FIELD_CONTROL_PLANE, &request_message_str, &request_message_len );
    if( rc != 0 ) {
       
       SG_safe_delete( request_msg );
-      SG_safe_free( reqdat );
       
       // failed to process control-plane
       SG_error("md_HTTP_upload_get_field_buffer( '%s' ) rc = %d\n", SG_SERVER_POST_FIELD_CONTROL_PLANE, rc );
@@ -1356,7 +1887,6 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
    if( rc != 0 ) {
       
       SG_safe_delete( request_msg );
-      SG_safe_free( reqdat );
       
       // failed to parse and verify control-plane message 
       SG_error("SG_request_message_parse( '%s' ) rc = %d\n", SG_SERVER_POST_FIELD_CONTROL_PLANE, rc );
@@ -1372,6 +1902,11 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
          // bad message
          return md_HTTP_create_response_builtin( resp, 400 );
       }
+      else if( rc == -EPERM ) {
+         
+         // invalid caller 
+         return md_HTTP_create_response_builtin( resp, 403 );
+      }
       else {
          
          // some other error
@@ -1385,7 +1920,6 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
    if( rc != 0 ) {
       
       SG_safe_delete( request_msg );
-      SG_safe_free( reqdat );
       
       if( rc == -EAGAIN ) {
          
@@ -1414,11 +1948,19 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
    else if( rc > 0 ) {
       
       SG_safe_delete( request_msg );
-      SG_safe_free( reqdat );
       
       // yup, need a reload 
       SG_gateway_start_reload( gateway );
       return md_HTTP_create_response_builtin( resp, SG_HTTP_TRYAGAIN );
+   }
+   
+   // request information
+   reqdat = SG_CALLOC( struct SG_request_data, 1 );
+   if( reqdat == NULL ) {
+      
+      // OOM!
+      SG_safe_delete( request_msg );
+      return md_HTTP_create_response_builtin( resp, 500 );
    }
    
    // extract request info from the request 
@@ -1431,7 +1973,9 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       return md_HTTP_create_response_builtin( resp, 500 );
    }
-   
+  
+   SG_debug("Got message type %d\n", (int)request_msg->request_type() );
+
    // dispatch operation 
    switch( request_msg->request_type() ) {
       
@@ -1448,7 +1992,7 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
          else {
             
             // start write 
-            rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_WRITE, reqdat, request_msg, con_data, resp );
+            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_WRITE, reqdat, request_msg, con_data, resp );
             if( rc != 0 ) {
                
                SG_error("SG_server_HTTP_IO_start( WRITE(%" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
@@ -1460,44 +2004,75 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::TRUNCATE: {
          
-         // accessible? expect world-writeable or volume-writeable
-         rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
-         if( rc <= 0 ) {
+         // requires reqdat to be a manifest 
+         if( !SG_request_is_manifest( reqdat ) ) {
             
-            if( rc < 0 ) {
-               SG_error("SG_server_stat_request rc = %d\n", rc );
-            }
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a manifest request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
          }
-         else {
+
+         if( gateway->impl_stat == NULL ) {
+      
+            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
+            SG_safe_delete( request_msg );
+            return md_HTTP_create_response_builtin( resp, 501 );
+         }
          
-            // start truncate 
-            rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_TRUNCATE, reqdat, request_msg, con_data, resp );
-            if( rc != 0 ) {
+         else {
+            // accessible? expect world-writeable or volume-writeable
+            rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
+            if( rc <= 0 ) {
                
-               SG_error("SG_server_HTTP_IO_START( TRUNCATE( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               if( rc < 0 ) {
+                  SG_error("SG_server_stat_request rc = %d\n", rc );
+               }
+            }
+            else {
+            
+               // start truncate 
+               rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_TRUNCATE, reqdat, request_msg, con_data, resp );
+               if( rc != 0 ) {
+                  
+                  SG_error("SG_server_HTTP_IO_START( TRUNCATE( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               }
             }
          }
-            
          break;
       }
       
       case SG_messages::Request::RENAME: {
          
-         // accessible? expect world-writeable or volume-writeable
-         rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
-         if( rc <= 0 ) {
+         // requires reqdat to be a manifest 
+         if( !SG_request_is_manifest( reqdat ) ) {
             
-            if( rc < 0 ) {
-               SG_error("SG_server_stat_request rc = %d\n", rc );
-            }
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a manifest request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+         
+         if( gateway->impl_stat == NULL ) {
+      
+            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
+            SG_safe_delete( request_msg );
+            return md_HTTP_create_response_builtin( resp, 501 );
          }
          else {
-            
-            // start rename 
-            rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_RENAME, reqdat, request_msg, con_data, resp );
-            if( rc != 0 ) {
                
-               SG_error("SG_server_HTTP_IO_start( RENAME( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+            // accessible? expect world-writeable or volume-writeable
+            rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
+            if( rc <= 0 ) {
+               
+               if( rc < 0 ) {
+                  SG_error("SG_server_stat_request rc = %d\n", rc );
+               }
+            }
+            else {
+               
+               // start rename 
+               rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_RENAME, reqdat, request_msg, con_data, resp );
+               if( rc != 0 ) {
+                  
+                  SG_error("SG_server_HTTP_IO_start( RENAME( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               }
             }
          }
          
@@ -1506,21 +2081,37 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::DETACH: {
          
-         // accessible? expect world-writeable or volume-writeable
-         rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
-         if( rc <= 0 ) {
+         // requires reqdat to be a manifest 
+         if( !SG_request_is_manifest( reqdat ) ) {
             
-            if( rc < 0 ) {
-               SG_error("SG_server_stat_request rc = %d\n", rc );
-            }
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a manifest request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+         
+         if( gateway->impl_stat == NULL ) {
+      
+            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
+            SG_safe_delete( request_msg );
+            return md_HTTP_create_response_builtin( resp, 501 );
          }
          else {
+            
+            // accessible? expect world-writeable or volume-writeable
+            rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
+            if( rc <= 0 ) {
                
-            // start detach
-            rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_DETACH, reqdat, request_msg, con_data, resp );
-            if( rc != 0 ) {
-               
-               SG_error("SG_server_HTTP_IO_start( DETACH( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               if( rc < 0 ) {
+                  SG_error("SG_server_stat_request rc = %d\n", rc );
+               }
+            }
+            else {
+                  
+               // start detach
+               rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_DETACH, reqdat, request_msg, con_data, resp );
+               if( rc != 0 ) {
+                  
+                  SG_error("SG_server_HTTP_IO_start( DETACH( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               }
             }
          }
          
@@ -1529,38 +2120,95 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::DELETEBLOCK: {
          
-         // accessible? expect world-writable or volume-writable 
-         rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
-         if( rc <= 0 ) {
+         // requires reqdat to be for a block 
+         if( !SG_request_is_block( reqdat ) ) {
             
-            if( rc < 0 ) {
-               SG_error("SG_server_stat_request rc = %d\n", rc );
-            }
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+
+         if( gateway->impl_stat == NULL ) {
+      
+            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
+            SG_safe_delete( request_msg );
+            return md_HTTP_create_response_builtin( resp, 501 );
          }
          else {
-            
+               
             // start delete block request 
-            rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_DELETEBLOCK, reqdat, request_msg, con_data, resp );
+            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_DELETEBLOCK, reqdat, request_msg, con_data, resp );
             if( rc != 0 ) {
                
                SG_error("SG_server_HTTP_IO_start( DELETEBLOCK( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) ) rc = %d\n",
-                         reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->fs_path, rc );
+                        reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->fs_path, rc );
             }
          }
-         
+      
          break;
       }
       
       case SG_messages::Request::PUTBLOCK: {
          
          // block request 
-         // NOTE: no request redirection here--it's possible for blocks to arrive out-of-order.  the implementation may choose to do so, however
-         rc = SG_server_HTTP_IO_start( gateway, SG_server_HTTP_POST_PUTBLOCK, reqdat, request_msg, con_data, resp );
-         if( rc != 0 ) {
+         if( !SG_request_is_block( reqdat ) ) {
             
-            SG_error("SG_server_HTTP_IO_start( PUTBLOCK( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+         else {
+            
+            // NOTE: no request redirection here--it's possible for blocks to arrive out-of-order.  the implementation may choose to do so, however
+            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_PUTBLOCK, reqdat, request_msg, con_data, resp );
+            if( rc != 0 ) {
+               
+               SG_error("SG_server_HTTP_IO_start( PUTBLOCK( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+            }
          }
          
+         break;
+      }
+      
+      case SG_messages::Request::SETXATTR: {
+         
+         if( reqdat->xattr_name == NULL || !request_msg->has_xattr_value() ) {
+            
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+         else {
+            
+            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_SETXATTR, reqdat, request_msg, con_data, resp );
+            if( rc != 0 ) {
+               
+               SG_error("SG_server_HTTP_IO_start( SETXATTR( %" PRIX64 ".%" PRId64 ".%s (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->xattr_name, reqdat->fs_path, rc );
+            }
+         }
+         
+         break;
+      }
+      
+      case SG_messages::Request::REMOVEXATTR: {
+         
+         if( reqdat->xattr_name == NULL ) {
+            
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+         else {
+            
+            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_REMOVEXATTR, reqdat, request_msg, con_data, resp );
+            if( rc != 0 ) {
+               
+               SG_error("SG_server_HTTP_IO_start( REMOVEXATTR( %" PRIX64 ".%" PRId64 ".%s (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->xattr_name, reqdat->fs_path, rc );
+            }
+         }
+         
+         break;
+      }
+      
+      case SG_messages::Request::RELOAD: {
+         
+         // TODO 
          break;
       }
       

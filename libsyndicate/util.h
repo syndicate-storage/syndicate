@@ -21,7 +21,6 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
-//#include <memory.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -78,6 +77,7 @@ extern int _SG_ERROR_MESSAGES;
 #define SG_FREE_LIST(list, freefunc) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { freefunc( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
 
 #define SG_strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
+#define SG_strlen_or_zero( str )  (str) != NULL ? strlen(str) : 0
 
 #define SG_safe_new( foo ) new (nothrow) foo
 #define SG_safe_free( buf ) if( (buf) != NULL ) { free(buf); buf = NULL; }
@@ -122,6 +122,7 @@ mode_t md_get_umask();
 int md_unix_socket( char const* path, bool server );
 int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path );
 char* md_load_file( char const* path, off_t* size );
+int md_write_file( char const* path, char const* data, size_t len, mode_t mode );
 
 // I/O functions 
 ssize_t md_read_uninterrupted( int fd, char* buf, size_t len );
@@ -143,8 +144,10 @@ int md_inflate( char* in, size_t in_len, char** out, size_t* out_len );
 // sha256 functions
 size_t sha256_len(void);
 unsigned char* sha256_hash( char const* input );
+void sha256_hash_buf( char const* input, size_t len, unsigned char* output );
 unsigned char* sha256_hash_data( char const* input, size_t len );
 char* sha256_printable( unsigned char const* sha256 );
+void sha256_printable_buf( unsigned char const* sha256, char* buf );
 char* sha256_hash_printable( char const* input, size_t len );
 unsigned char* sha256_data( char const* printable );
 unsigned char* sha256_file( char const* path );
@@ -175,10 +178,12 @@ int mlock_free( struct mlock_buf* buf );
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );
 int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src );
 
+// memory functions
 char* md_response_buffer_to_string( md_response_buffer_t* rb );
 char* md_response_buffer_to_c_string( md_response_buffer_t* rb );
 void md_response_buffer_free( md_response_buffer_t* rb );
 off_t md_response_buffer_size( md_response_buffer_t* rb );
+void* md_memdup( void* buf, size_t len );
 
 // linux-specific...
 pid_t gettid(void);

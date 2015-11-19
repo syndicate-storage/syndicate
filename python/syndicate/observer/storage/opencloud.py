@@ -41,7 +41,6 @@ logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s
 logger = logging.getLogger()
 logger.setLevel( logging.INFO )
 
-import syndicate.ms.syntool as syntool
 import syndicate.ms.msconfig as msconfig
 import syndicate.ms.api as api
 import syndicate.util.storage as syndicate_storage_api

@@ -87,45 +87,6 @@ uint64_t ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
 }
 
 
-// get the ID of the gateway we're attached to 
-// return the id on success
-// return SG_INVALID_GATEWAY_ID if we're not attached  
-uint64_t ms_client_get_gateway_id( struct ms_client* client ) {
-    
-    uint64_t ret = 0;
-    
-    ms_client_config_rlock( client );
-    
-    ret = client->gateway_id;
-    if( ret == 0 ) {
-        ret = SG_INVALID_GATEWAY_ID;
-    }
-    
-    ms_client_config_unlock( client );
-    
-    return ret;
-}
-
-
-// get the ID of the user running this gateway we're attached to 
-// return the user id on success
-// return SG_INVALID_USER_ID if we're not attached  
-uint64_t ms_client_get_owner_id( struct ms_client* client ) {
-    
-    uint64_t ret = 0;
-    
-    ms_client_config_rlock( client );
-    
-    ret = client->owner_id;
-    if( ret == 0 ) {
-        ret = SG_INVALID_USER_ID;
-    }
-    
-    ms_client_config_unlock( client );
-    
-    return ret;
-}
-
 // get the name of the gateway
 // return 0 on success
 // return -ENOTCONN if we aren't connected to a volume
@@ -139,7 +100,7 @@ int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_id, c
    
    uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
    
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
       
       ms_client_config_unlock( client );
       return -EAGAIN;
@@ -167,7 +128,7 @@ int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_id, c
 
 // get a gateway's host URL 
 // return the calloc'ed URL on success 
-// return NULL on error (i.e. gateway not known or not found)
+// return NULL on error (i.e. gateway not known, is anonymous, or not found)
 char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id ) {
    
    char* ret = NULL;
@@ -176,7 +137,7 @@ char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id )
    
    uint64_t gateway_type = ms_client_get_gateway_type( client, gateway_id );
    
-   if( !SG_VALID_GATEWAY_TYPE( gateway_type ) ) {
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
       
       ms_client_config_unlock( client );
       return NULL;
@@ -307,54 +268,69 @@ int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_id,
 }
 
 
-// get a copy of the closure text for this gateway
-// return 0 on success, and set *closure_text and *closure_len accordingly 
-// return -ENODATA if this is an anonymous gateway 
-// return -ENOTCONN if we don't have the closure data yet 
-// return -ENOENT if there is no closure for this gateway 
-// return -ENOMEM if we're out of memory
-int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len ) {
+// get the gateway's hash.  hash_buf should be at least SHA256_DIGEST_LEN bytes long
+// return 0 on success
+// return -EAGAIN if we have no certificate 
+int ms_client_get_gateway_driver_hash( struct ms_client* client, uint64_t gateway_id, unsigned char* hash_buf ) {
    
    struct ms_gateway_cert* cert = NULL;
-   int rc = 0;
+   
+   ms_client_config_rlock( client );
+   
+   cert = ms_client_get_gateway_cert( client, gateway_id );
+   if( cert == NULL ) {
+      
+      // no cert 
+      ms_client_config_unlock( client );
+      return -EAGAIN;
+   }
+   
+   memcpy( hash_buf, cert->driver_hash, cert->driver_hash_len );
+   
+   ms_client_config_unlock( client );
+   
+   return 0;
+}
+
+
+// get a copy of the gateway's driver text.
+// return 0 on success 
+// return -EAGAIN if cert is not on file, or there is (currently) no driver 
+// return -ENOMEM on OOM
+int ms_client_gateway_get_driver_text( struct ms_client* client, char** driver_text, size_t* driver_text_len ) {
+   
+   struct ms_gateway_cert* cert = NULL;
    
    ms_client_config_rlock( client );
    
    cert = ms_client_get_gateway_cert( client, client->gateway_id );
    if( cert == NULL ) {
       
-      // no certificate on file for this gateway.  It might be anonymous
-      if( client->conf->is_client || client->gateway_id == SG_GATEWAY_ANON ) {
-         rc = -ENODATA;
-      }
-      else {
-         rc = -ENOTCONN;
-      }
-      
+      // no cert for us
       ms_client_config_unlock( client );
-      return rc;
+      return -EAGAIN;
    }
    
-   if( cert->closure_text != NULL ) {
+   if( cert->driver_text == NULL ) {
       
-      // duplicate it!
-      *closure_text = SG_CALLOC( char, cert->closure_text_len );
-      if( *closure_text == NULL ) {
-         
-         ms_client_config_unlock( client );
-         return -ENOMEM;
-      }
-      
-      memcpy( *closure_text, cert->closure_text, cert->closure_text_len );
-      *closure_len = cert->closure_text_len;
-   }
-   else {
-      rc = -ENOENT;
+      // no driver 
+      ms_client_config_unlock( client );
+      return -EAGAIN;
    }
    
+   *driver_text = SG_CALLOC( char, cert->driver_text_len );
+   if( *driver_text == NULL ) {
+      
+      // OOM 
+      ms_client_config_unlock( client );
+      return -ENOMEM;
+   }
+   
+   memcpy( *driver_text, cert->driver_text, cert->driver_text_len );
+   *driver_text_len = cert->driver_text_len; 
    ms_client_config_unlock( client );
    
-   return rc;
+   return 0;
 }
 
 

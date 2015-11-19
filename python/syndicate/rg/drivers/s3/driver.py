@@ -19,19 +19,26 @@
 import sys
 import os
 import boto
+import logging 
+import errno
 
-def get_bucket(context, bucket_name):
+from boto.s3.key import Key
 
-   aws_id = context.secrets.get( 'AWS_ACCESS_KEY_ID', None )
-   aws_key = context.secrets.get( 'AWS_SECRET_ACCESS_KEY', None )
+log = logging.get_logger()
+formatter = logging.Formatter('[%(levelname)s] [%(module)s:%(lineno)d] %(message)s')
+handler_stream = logging.StreamHandler()
+handler_stream.setFormatter(formatter)
+log.addHandler(handler_stream)
+
+#-------------------------
+def get_bucket( bucket_name, secrets ):
+
+   aws_id = secrets.get( 'AWS_ACCESS_KEY_ID', None )
+   aws_key = secrets.get( 'AWS_SECRET_ACCESS_KEY', None )
    
-   print "key ID: '%s'" % aws_id
-   print "key   : '%s'" % aws_key
-
-   log = context.log
+   assert aws_id is not None, "No AWS ID given"
+   assert aws_key is not None, "No AWS key given"
    
-   #from boto.s3.connection import Location
-
    try:
       conn = boto.connect_s3(aws_id, aws_key)
    except Exception, e:
@@ -55,18 +62,12 @@ def get_bucket(context, bucket_name):
    return bucket
 
 #-------------------------
-def write_file(file_name, infile, **kw):
+def write_chunk( chunk_path, chunk_buf, config, secrets ):
    
-   context = kw['context']
-   
-   log = context.log
-   config = context.config
-   secrets = context.secrets
-   
-   log.debug("Writing File: " + file_name)
+   log.debug("Writing File: " + chunk_path)
 
-   assert config != None, "No config given"
-   assert secrets != None, "No AWS API tokens given"
+   assert config is not None, "No config given"
+   assert secrets is not None, "No AWS API tokens given"
    assert config.has_key("BUCKET"), "No bucket name given"
    
    bucket_name = config['BUCKET']
@@ -75,36 +76,28 @@ def write_file(file_name, infile, **kw):
    if bucket == None:
       raise Exception("Failed to get bucket")
 
-   from boto.s3.key import Key
    k = Key(bucket)
-   k.key = file_name
+   k.key = chunk_path
 
-   rc = 500
+   rc = 0
    try:
-      k.set_contents_from_file(infile)
-      rc = 200
-      log.debug("Wrote %s to s3" % file_name)
+      k.set_contents_from_string( chunk_buf )
+      log.debug("Wrote %s to s3" % chunk_path)
       
    except Exception, e:
-      log.error("Failed to write file %s" % file_name)
+      log.error("Failed to write file %s" % chunk_path)
       log.exception(e)
+      rc = -errno.EREMOTEIO
    
    return rc
 
 #-------------------------
-def read_file( file_name, outfile, **kw ):
+def read_chunk( chunk_path, outfile, config, secrets ):
    
-   context = kw['context']
-   
-   log = context.log
-   config = context.config
-   secrets = context.secrets
-   
-   
-   log.debug("Reading File: " + file_name)
+   log.debug("Reading File: " + chunk_path)
 
-   assert config != None, "No config given"
-   assert secrets != None, "No AWS API tokens given"
+   assert config is not None, "No config given"
+   assert secrets is not None, "No AWS API tokens given"
    assert config.has_key("BUCKET"), "No bucket name given"
    
    bucket_name = config['BUCKET']
@@ -113,36 +106,29 @@ def read_file( file_name, outfile, **kw ):
    if bucket == None:
       raise Exception("Failed to get bucket")
 
-   from boto.s3.key import Key
-   
    k = Key(bucket)
-   k.key = file_name
+   k.key = chunk_path
 
-   rc = 500
+   rc = 0
    
    try:
       k.get_contents_to_file(outfile)
-      rc = 200
       log.debug("Read data from s3")
+      
    except Exception, e:
-      log.error("Failed to read %s" % file_name)
+      log.error("Failed to read %s" % chunk_path)
       log.exception(e)
-   
+      rc = -errno.REMOTEIO
+      
    return rc
    
 #-------------------------
-def delete_file(file_name, **kw):
+def delete_chunk(chunk_path, config, secrets ):
    
-   context = kw['context']
+   log.debug("Deleting File: " + chunk_path)
    
-   log = context.log
-   config = context.config
-   secrets = context.secrets
-   
-   log.debug("Deleting File: " + file_name)
-   
-   assert config != None, "No config given"
-   assert secrets != None, "No AWS API tokens given"
+   assert config is not None, "No config given"
+   assert secrets is not None, "No AWS API tokens given"
    assert config.has_key("BUCKET"), "No bucket name given"
    
    bucket_name = config['BUCKET']
@@ -151,83 +137,17 @@ def delete_file(file_name, **kw):
    if bucket == None:
       raise Exception("Failed to get bucket")
 
-   from boto.s3.key import Key
    k = Key(bucket)
-   k.key = file_name
+   k.key = chunk_path
    
-   rc = 500
-
+   rc = 0
    try:
       k.delete()
-      rc = 200
-      log.debug("Deleted s3 file %s" % (file_name) )
+      log.debug("Deleted s3 file %s" % (chunk_path) )
    except Exception, e:
-      log.error("Failed to delete %s" % file_name)
+      log.error("Failed to delete %s" % chunk_path)
       log.exception(e)
+      rc = -errno.REMOTEIO
 
    return rc
-
-#-------------------------    
-def usage():
-    print 'Usage: {prog} [OPTIONS -w -r -d] <access_key_id> <secret_access_key> <file_name> <bucket_name>'.format(prog=sys.argv[0])
-    return -1 
-
-#-------------------------    
-if __name__ == "__main__":
-
-   if len(sys.argv) != 6:
-      usage() 
-   else:
-      option = sys.argv[1]
-      access_key_id = sys.argv[2]
-      secret_access_key = sys.argv[3]
-      file_name = sys.argv[4]
-      bucket_name = sys.argv[5]
-      
-      import syndicate.rg.closure as rg_closure
-      import syndicate.rg.common as rg_common
-      
-      config = {
-         "BUCKET": bucket_name
-      }
-      
-      secrets = {
-         "AWS_ACCESS_KEY_ID": access_key_id,
-         "AWS_SECRET_ACCESS_KEY": secret_access_key
-      }
-      
-      log = rg_common.get_logger()
-      
-      context = rg_closure.make_context( config, secrets, None, log )
-
-      if(option == '-w'):
-         test_path = "/tmp/sd_s3_test.write"
-         
-         testfile_fd = open( test_path, "w")
-         testfile_fd.write("This is a test of the S3 storage driver.  If you can read this, it works.")
-         testfile_fd.close()
-         
-         testfile_fd = open( test_path, "r")
-         write_file(file_name, testfile_fd, context=context)
-         testfile_fd.close()
-         
-         os.unlink( test_path )
-         
-      elif(option == '-r'):
-         
-         test_path = "/tmp/sd_s3_test.read"
-         
-         testfile_fd = open(test_path, "w")
-         read_file(file_name, testfile_fd, context=context)
-         testfile_fd.close()
-         
-         print "wrote to %s" % test_path
-         
-      elif(option == '-d'):
-         
-         delete_file(file_name, context=context)
-         
-      else:
-         usage()
-
 

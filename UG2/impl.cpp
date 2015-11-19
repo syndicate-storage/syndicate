@@ -20,11 +20,11 @@
 #include "client.h"
 #include "core.h"
 
-// get a block from a file 
+// get a block from a file, on cache miss.
 // return 0 on success, and fill in *block 
 // return -ENOENT if the block is not present locally.  The caller will need to try an RG.
 // return -errno on error
-static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block, void* cls ) {
+static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block, uint64_t hints, void* cls ) {
    
    int rc = 0;
    struct fskit_entry* fent = NULL;
@@ -78,7 +78,8 @@ static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data
       return rc;
    }
    
-   // fetch block, if it is local
+   // fetch block, if it is local.
+   // TODO: don't look at the cache--this method is only called on cache miss
    rc = UG_read_blocks_local( gateway, reqdat->fs_path, inode, &block_bufs, &non_local );
    if( rc != 0 ) {
       
@@ -115,7 +116,7 @@ static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data
 // return -ENOMEM on OOM
 // return -ESTALE if the inode is not local
 // return -errno on error
-static int UG_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, void* cls ) {
+static int UG_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints, void* cls ) {
    
    int rc = 0;
    struct fskit_entry* fent = NULL;
@@ -251,6 +252,7 @@ static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* req
       entity_info->coordinator_id = UG_inode_coordinator_id( inode );
       entity_info->file_id = sb.st_ino;
       entity_info->file_version = UG_inode_file_version( inode );
+      entity_info->xattr_nonce = UG_inode_xattr_nonce( inode );
    }
    
    fskit_entry_unlock( fent );

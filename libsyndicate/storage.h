@@ -33,4 +33,27 @@ int md_mkdirs2( char const* dirp, int start, mode_t mode );
 int md_mkdirs3( char const* dirp, mode_t mode );
 int md_rmdirs( char const* dirp );
 
+void md_object_cert_path( char const* object_dir, char const* object_name, char* path, size_t path_len );
+
+// certs
+int md_volume_cert_load( char const* volumes_root, char const* volume_name, ms::ms_volume_metadata* volume_cert );
+int md_volume_cert_store( char const* volumes_root, char const* volume_name, ms::ms_volume_metadata* volume_cert );
+int md_volume_cert_remove( char const* volumes_root, char const* volume_name );
+
+int md_gateway_cert_load( char const* gateways_root, char const* gateway_name, ms::ms_gateway_cert* cert );
+int md_gateway_cert_store( char const* gateways_root, char const* gateway_name, ms::ms_gateway_cert* cert );
+int md_gateway_cert_remove( char const* volumes_root, char const* gateway_name );
+
+int md_gateway_private_key_load( char const* gateways_root, char const* gateway_name, struct mlock_buf* private_key );
+
+int md_user_cert_load( char const* users_root, char const* username, ms::ms_user_cert* user_cert );
+int md_user_cert_store( char const* users_root, char const* username, ms::ms_user_cert* user_cert );
+int md_user_cert_remove( char const* users_root, char const* username );
+
+int md_cert_bundle_version_load( char const* volumes_root, char const* volume_name, uint64_t* cert_bundle_version );
+int md_cert_bundle_version_store( char const* volumes_root, char const* volume_name, uint64_t cert_bundle_version );
+
+int md_syndicate_pubkey_load( char const* syndicate_dir, char const* syndicate_name, char** syndicate_pubkey_pem, size_t* syndicate_pubkey_pem_len );
+int md_syndicate_pubkey_store( char const* syndicate_dir, char const* syndicate_name, char* syndicate_pubkey_pem, size_t syndicate_pubkey_pem_len );
+
 #endif

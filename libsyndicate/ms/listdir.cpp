@@ -34,7 +34,7 @@ static void ms_client_get_dir_download_state_init( struct ms_client_get_dir_down
    
    dlstate->batch_id = batch_id;
    dlstate->url = url;
-   dlstate->auth_header;
+   dlstate->auth_header = auth_header;
    return;
 }
 
@@ -60,6 +60,7 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
    int rc = 0;
    CURL* curl = NULL;   
    char* url = NULL;
+   char* auth_header = NULL;
    uint64_t volume_id = ms_client_get_volume_id( client );
    
    struct ms_client_get_dir_download_state* dlstate = NULL;
@@ -67,12 +68,12 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
    if( least_unknown_generation > 0 ) {
       
       // least unknown generation
-      url = ms_client_file_listdir_url( client->url, volume_id, parent_id, -1, least_unknown_generation );
+      url = ms_client_file_listdir_url( client->url, volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ), parent_id, -1, least_unknown_generation );
    }
    else {
       
       // page id
-      url = ms_client_file_listdir_url( client->url, volume_id, parent_id, batch_id, -1 );
+      url = ms_client_file_listdir_url( client->url, volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ), parent_id, batch_id, -1 );
    }
 
    if( url == NULL ) {
@@ -170,7 +171,8 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
    int64_t biggest_generation = 0;
    
    struct ms_client_get_dir_download_state* dlstate = (struct ms_client_get_dir_download_state*)md_download_context_get_cls( dlctx );
-   
+   md_download_context_set_cls( dlctx, NULL );
+
    // download status?
    rc = ms_client_download_parse_errors( dlctx );
    
@@ -181,20 +183,30 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
          SG_error("ms_client_download_parse_errors( %p ) rc = %d\n", dlctx, rc );
       }
       
-      md_download_context_free( dlctx, &curl );
+      int unref_rc = md_download_context_unref( dlctx );
+      if( unref_rc > 0 ) {
+
+         md_download_context_free( dlctx, &curl );
+         
+         // TODO: connection pool 
+         curl_easy_cleanup( curl );
+      }
+
       ms_client_get_dir_download_state_free( dlstate );
       
-      // TODO: connection pool 
-      curl_easy_cleanup( curl );
       return rc;
    }
    
    // collect the data 
    rc = ms_client_listing_read_entries( client, dlctx, &children, &num_children, &listing_error );
    
-   // done with the download 
-   md_download_context_free( dlctx, &curl );
-   curl_easy_cleanup( curl );
+   // done with the download
+   int unref_rc = md_download_context_unref( dlctx );
+   if( unref_rc > 0 ) { 
+       md_download_context_free( dlctx, &curl );
+       curl_easy_cleanup( curl );
+   }
+
    ms_client_get_dir_download_state_free( dlstate );
    
    // did we get valid data?
@@ -257,18 +269,18 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
 }
 
 // download metadata for a directory, in one of two ways:
-// LISTDIR: fetch num_children entries in parallel by requesting disjoint ranges of them by index, in the range [0, parent_capacity].
+// LISTDIR: fetch num_children entries in parallel by requesting disjoint ranges of them by index, in the range [0, dir_capacity].
 // DIFFDIR: query by least unknown generation number until we have num_children entries, or the number of entries in a downloaded batch becomes 0 (i.e. no more entries known).
 // in both cases, stop once the number of children is exceeded.
 // if least_unknown_generation >= 0, then we will DIFFDIR.
-// if parent_capacity >= 0, then we will LISTDIR.
+// if dir_capacity >= 0, then we will LISTDIR.
 // we can only do one or the other (both/neither are invalid arguments)
 // return partial results, even on error 
 // return 0 on success
 // return -EINVAL for invalid arguments.
 // return -ENOMEM on OOM 
 // return negative on download failure, or corruption
-static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t parent_capacity, struct ms_client_multi_result* results ) {
+static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, int64_t dir_capacity, struct ms_client_multi_result* results ) {
    
    int rc = 0;
    
@@ -290,17 +302,17 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
    struct md_entry* ents = NULL;
    
    // sanity check 
-   if( least_unknown_generation < 0 && parent_capacity < 0 ) {
+   if( least_unknown_generation < 0 && dir_capacity < 0 ) {
       return -EINVAL;
    }
    
-   if( least_unknown_generation >= 0 && parent_capacity >= 0 ) {
+   if( least_unknown_generation >= 0 && dir_capacity >= 0 ) {
       return -EINVAL;
    }
    
    memset( results, 0, sizeof(struct ms_client_multi_result) );
    
-   SG_debug("listdir %" PRIX64 ", num_children = %" PRId64 ", l.u.g. = %" PRId64 ", parent_capacity = %" PRId64 "\n", parent_id, num_children, least_unknown_generation, parent_capacity );
+   SG_debug("listdir %" PRIX64 ", num_children = %" PRId64 ", l.u.g. = %" PRId64 ", dir_capacity = %" PRId64 "\n", parent_id, num_children, least_unknown_generation, dir_capacity );
    
    try {
       if( least_unknown_generation >= 0 ) {
@@ -311,7 +323,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       else {
          
          // get all batches in parallel
-         for( int64_t batch_id = 0; batch_id * client->page_size < parent_capacity; batch_id++ ) {
+         for( int64_t batch_id = 0; batch_id * client->page_size < dir_capacity; batch_id++ ) {
             
             batch_queue.push( batch_id );
          }
@@ -411,6 +423,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          if( batch_queue.size() == 0 && num_children_downloaded < (unsigned)num_children ) {
             
             // yup
+            SG_debug("Fetched %" PRIu64 " children (%" PRId64 " total); l.u.g. is now %" PRIu64 "\n", num_children_downloaded, num_children, max_known_generation + 1 );
             least_unknown_generation = max_known_generation + 1;
             batch_queue.push( least_unknown_generation );
          }
@@ -420,7 +433,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          break;
       }
       
-   } while( md_download_loop_running( &dlloop ) && num_children_downloaded < (unsigned)num_children );
+   } while( (batch_queue.size() > 0 || md_download_loop_running( &dlloop )) && num_children_downloaded < (unsigned)num_children );
    
    if( rc != 0 && rc != MD_DOWNLOAD_FINISH ) {
       
@@ -481,8 +494,8 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
 // return 0 on success
 // return negative on failure
 // NOTE: even if this method fails, the caller should free the contents of results
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity, struct ms_client_multi_result* results ) {
-   return ms_client_get_dir_metadata( client, parent_id, num_children, -1, parent_capacity, results );
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t dir_capacity, struct ms_client_multi_result* results ) {
+   return ms_client_get_dir_metadata( client, parent_id, num_children, -1, dir_capacity, results );
 }
 
 // get new directory entries, and put the data into results 

@@ -22,6 +22,10 @@
 #include <libsyndicate/client.h>
 #include <libsyndicate/opts.h>
 
+#include <fskit/fskit.h>
+
+#define UG_DEFAULT_DRIVER_EXEC_STR "/usr/local/lib/syndicate/ug-driver"
+
 // prototypes...
 struct UG_vacuumer;
 
@@ -49,6 +53,11 @@ struct fskit_core* UG_state_fs( struct UG_state* state );
 struct UG_vacuumer* UG_state_vacuumer( struct UG_state* state );
 uint64_t UG_state_owner_id( struct UG_state* state );
 uint64_t UG_state_volume_id( struct UG_state* state );
+struct md_wq* UG_state_wq( struct UG_state* state );
+char const* UG_core_get_exec_str( struct UG_state* state );
+struct UG_state* UG_state_driver( struct UG_state* state );
+char const** UG_state_driver_roles( struct UG_state* state );
+size_t UG_state_driver_num_roles( struct UG_state* state );
 
 }
 

@@ -9,21 +9,26 @@ HOSTNAME="localhost"
 PASS="asdf"
 GATEWAY_PASS="poop"
 
+UG_TYPE=1
+RG_TYPE=2
+AG_TYPE=3
+
 syntool() {
    $BIN/syntool.py -c $SYNCONF/syndicate.conf -P $PASS $@
 }
 
 if [ ! -d $SYNCONF ]; then 
    mkdir $SYNCONF
-   mkdir -p $SYNCONF/user_keys/signing/
-   cp user_test_key.pem $SYNCONF/user_keys/signing/$USER_ID.pkey
+   mkdir -p $SYNCONF/user_keys/
+   cp user_test_key.pem $SYNCONF/user_keys/$USER_ID.pkey
 
+   # TODO: have syntool generate this automatically
    echo "[syndicate]
 url=http://localhost:8080
-user_id=$USER_ID
-gateway=gateway_keys/
-volume=volume_keys/
-user=user_keys/" > $SYNCONF/syndicate.conf
+username=$USER_ID
+gateway=gateways/
+volume=volumes/
+user=users/" > $SYNCONF/syndicate.conf
 
    mkdir -p $SYNCONF/gateway_keys
    mkdir -p $SYNCONF/volume_keys
@@ -42,8 +47,9 @@ rm -f $SYNCONF/gateway_keys/RG-genbank-demo.pkey
 rm -f $SYNCONF/gateway_keys/UG-genbank-demo-2.pkey
 rm -f $SYNCONF/volume_keys/genbank-demo.pkey
 
-syntool create_volume $USER_ID genbank-demo 'test-genbank' 102400 private=False default_gateway_caps=ALL || exit 1
-syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID UG UG-genbank-demo $HOSTNAME 33000 || exit 1
-syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID AG AG-genbank-demo $HOSTNAME 34000 || exit 1
-syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID RG RG-genbank-demo $HOSTNAME 35000 || exit 1
-syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID UG UG-genbank-demo-2 $HOSTNAME 36000 || exit 1
+# TODO: keyword arguments; gateway caps
+syntool create_volume $USER_ID genbank-demo 'test-genbank' 102400 private=False || exit 1
+syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID $UG_TYPE UG-genbank-demo $HOSTNAME 33000 || exit 1
+syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID $AG_TYPE AG-genbank-demo $HOSTNAME 34000 || exit 1
+syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID $RG_TYPE RG-genbank-demo $HOSTNAME 35000 || exit 1
+syntool -g $GATEWAY_PASS create_gateway genbank-demo $USER_ID $UG_TYPE UG-genbank-demo-2 $HOSTNAME 36000 || exit 1

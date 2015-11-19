@@ -362,7 +362,7 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
          rc = SG_client_get_block_async( gateway, &reqdat, gateway_ids[ gateway_idx ], &dlloop, dlctx );
          if( rc != 0 ) {
             
-            SG_error("SG_client_cert_download_async( %" PRIu64 " ) rc = %d\n", gateway_id, rc );
+            SG_error("SG_client_get_block_async( %" PRIu64 " ) rc = %d\n", gateway_id, rc );
             break;
          }
          
@@ -731,7 +731,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    struct SG_manifest blocks_to_download;
    
    // make sure the manifest is fresh
-   rc = UG_consistency_manifest_ensure_fresh( gateway, fskit_route_metadata_path( route_metadata ) );
+   rc = UG_consistency_manifest_ensure_fresh( gateway, fskit_route_metadata_get_path( route_metadata ) );
    
    fskit_entry_rlock( fent );
    
@@ -744,7 +744,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
       
       fskit_entry_unlock( fent );
       
-      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", file_id, fskit_route_metadata_path( route_metadata ), rc );
+      SG_error("UG_consistency_manifest_ensure_fresh( %" PRIX64 " ('%s')) rc = %d\n", file_id, fskit_route_metadata_get_path( route_metadata ), rc );
       return rc;
    }
    
@@ -761,12 +761,12 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    }
    
    // get unaligned blocks 
-   rc = UG_read_unaligned_setup( gateway, fskit_route_metadata_path( route_metadata ), inode, buf_len, offset, &read_blocks );
+   rc = UG_read_unaligned_setup( gateway, fskit_route_metadata_get_path( route_metadata ), inode, buf_len, offset, &read_blocks );
    if( rc != 0 ) {
       
       fskit_entry_unlock( fent );
       
-      SG_error("UG_read_unaligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+      SG_error("UG_read_unaligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
       
       SG_manifest_free( &blocks_to_download );
       return rc;
@@ -778,7 +778,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
       
       fskit_entry_unlock( fent );
       
-      SG_error("UG_read_aligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+      SG_error("UG_read_aligned_setup( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
       
       UG_dirty_block_map_free( &read_blocks );
       
@@ -788,7 +788,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    }
    
    // fetch local 
-   rc = UG_read_blocks_local( gateway, fskit_route_metadata_path( route_metadata ), inode, &read_blocks, &blocks_to_download );
+   rc = UG_read_blocks_local( gateway, fskit_route_metadata_get_path( route_metadata ), inode, &read_blocks, &blocks_to_download );
    if( rc != 0 ) {
       
       fskit_entry_unlock( fent );
@@ -809,7 +809,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    if( SG_manifest_get_block_count( &blocks_to_download ) > 0 ) {
    
       // fetch remote 
-      rc = UG_read_blocks_remote( gateway, fskit_route_metadata_path( route_metadata ), &blocks_to_download, &read_blocks );
+      rc = UG_read_blocks_remote( gateway, fskit_route_metadata_get_path( route_metadata ), &blocks_to_download, &read_blocks );
       if( rc != 0 ) {
          
          SG_error("UG_read_blocks_remote( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
@@ -821,7 +821,6 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    
    // cache last read block, but only if no writes occurred
    if( file_version == UG_inode_file_version( inode ) && write_nonce == UG_inode_write_nonce( inode ) ) {
-      
       
       last_block_id = (buf_len + offset) / block_size;
       
@@ -838,7 +837,7 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
          if( rc != 0 ) {
             
             // not fatal, but annoying...
-            SG_error("UG_inode_dirty_block_cache( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_path( route_metadata ), buf_len, offset, rc );
+            SG_error("UG_inode_dirty_block_cache( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
             rc = 0;
          }
       }

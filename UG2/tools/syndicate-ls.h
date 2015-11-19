@@ -20,6 +20,8 @@
 #include <syndicate-ug/client.h>
 #include <syndicate-ug/core.h>
 
+#include "common.h"
+
 #define LS_MAX_DIRENTS  65536
 
 #endif

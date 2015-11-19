@@ -19,6 +19,8 @@
 #include "libsyndicate/ms/file.h"
 #include "libsyndicate/download.h"
 
+/* DEPRECATED
+ 
 // set a CURL handle's HTTP method, URL and query string
 // return 0 on success
 // return -EINVAL if the method is invalid.
@@ -680,3 +682,4 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
    SG_warn("%s", "will not verify RPC result from Syndicate MS\n");
    return ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, request_len, response_buf, response_len, NULL );
 }
+*/

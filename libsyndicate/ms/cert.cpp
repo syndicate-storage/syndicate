@@ -26,7 +26,10 @@ void ms_client_gateway_cert_free( struct ms_gateway_cert* cert ) {
    
    SG_safe_free( cert->hostname );
    SG_safe_free( cert->name );
-   SG_safe_free( cert->closure_text );
+   SG_safe_free( cert->driver_hash );
+   SG_safe_free( cert->driver_text );
+   SG_safe_delete( cert->pb );
+   SG_safe_delete( cert->user_pb );
    
    if( cert->pubkey != NULL ) {
       EVP_PKEY_free( cert->pubkey );
@@ -40,108 +43,39 @@ void ms_client_cert_bundle_free( ms_cert_bundle* bundle ) {
    
    for( ms_cert_bundle::iterator itr = bundle->begin(); itr != bundle->end(); itr++ ) {
       
-      ms_client_gateway_cert_free( itr->second );
-      SG_safe_free( itr->second );
+      if( itr->second != NULL ) {
+         ms_client_gateway_cert_free( itr->second );
+         SG_safe_free( itr->second );
+      }
    }
    
    bundle->clear();
 }
 
 
-// go through the volume's certificates and revoke the ones that are *not* represneted by the certificate manifest, or have expired, or are stale
-// return 0 on success (always succeeds)
-int ms_client_revoke_certs( struct ms_client* client, struct SG_manifest* manifest ) {
-   
-   uint64_t now_s = md_current_time_seconds();
-   int rc = 0;
-   int64_t version = 0;
-   
-   ms_client_config_wlock( client );
-   
-   for( ms_cert_bundle::iterator itr = client->certs->begin(); itr != client->certs->end(); ) {
-      
-      // expired?
-      if( itr->second->expires > 0 && itr->second->expires < now_s ) {
-         
-         SG_debug("Revoke certificate for %" PRIu64 ": expired at %" PRIu64 " (it is now %" PRIu64 ")\n", itr->second->gateway_id, itr->second->expires, now_s );
-         
-         ms_client_gateway_cert_free( itr->second );
-         SG_safe_free( itr->second );
-         
-         // blow it away 
-         ms_cert_bundle::iterator old_itr = itr;
-         itr++;
-         
-         client->certs->erase( old_itr );
-         continue;
-      }
-      
-      // not present?
-      rc = SG_manifest_get_block_version( manifest, itr->second->gateway_id, &version );
-      if( rc != 0 ) {
-         
-         if( rc == -ENOENT ) {
-            
-            // nope 
-            SG_debug("Revoke certificate for %" PRIu64 ": it was removed from the volume\n", itr->second->gateway_id );
-            
-            ms_client_gateway_cert_free( itr->second );
-            SG_safe_free( itr->second );
-            
-            // blow it away 
-            ms_cert_bundle::iterator old_itr = itr;
-            itr++;
-            
-            client->certs->erase( old_itr );
-            continue;
-         }
-         else {
-            
-            // some other error?
-            SG_error("SG_manifest_get_block_version( %" PRIu64 " ) rc = %d\n", itr->second->gateway_id, rc );
-            
-            itr++;
-            continue;
-         }
-      }
-      
-      // old version?
-      if( itr->second->version < (uint64_t)version ) {
-         
-         // old version 
-         SG_debug("Revoke certificate for %" PRIu64 ": it is stale (local=%" PRIu64 ", current=%" PRIu64 ")\n", itr->second->gateway_id, itr->second->version, (uint64_t)version );
-         
-         ms_client_gateway_cert_free( itr->second );
-         SG_safe_free( itr->second );
-         
-         // blow it away
-         ms_cert_bundle::iterator old_itr = itr;
-         itr++;
-         
-         client->certs->erase( old_itr );
-         continue;
-      }
-      
-      itr++;
-   }
-   
-   ms_client_config_unlock( client );
-   return 0;
-}
-
-
 // does a certificate have a public key set?
-int ms_client_cert_has_public_key( const ms::ms_gateway_cert* ms_cert ) {
+int ms_client_cert_has_public_key( ms::ms_gateway_cert* ms_cert ) {
    return (strcmp( ms_cert->public_key().c_str(), "NONE" ) != 0);
 }
 
 
-// (re)load a gateway certificate.
-// If my_gateway_id matches the ID in the cert, then load the closure as well (since we'll need it)
-// client cannot be write-locked! (but volume/view data can be)
-int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gateway_id, const ms::ms_gateway_cert* ms_cert ) {
+// initialize a gateway certificate.
+// NOTE cert takes ownership of ms_cert 
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EINVAL on invalid
+int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gateway_id, ms::ms_gateway_cert* ms_cert ) {
    
    int rc = 0;
+   
+   // sanity check
+   if( my_gateway_id == cert->gateway_id && ms_cert->driver_hash().size() > 0 ) {
+       
+      if( ms_cert->driver_hash().size() != SHA256_DIGEST_LENGTH ) {
+         SG_error("Invalid driver hash length: expected %d, got %zu\n", SHA256_DIGEST_LENGTH, ms_cert->driver_hash().size() );
+         return -EINVAL;
+      }
+   }
    
    cert->name = strdup( ms_cert->name().c_str() );
    cert->hostname = strdup( ms_cert->host().c_str() );
@@ -160,38 +94,31 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
    cert->version = ms_cert->version();
    cert->caps = ms_cert->caps();
    cert->volume_id = ms_cert->volume_id();
+   cert->driver_text = NULL;
+   cert->driver_text_len = 0;
+   cert->pb = ms_cert;
    
-   // NOTE: closure information is base64-encoded
-   // only store the closure if its for us
-   if( my_gateway_id == cert->gateway_id && ms_cert->closure_text().size() > 0 ) {
+   // store *our* driver hash 
+   if( my_gateway_id == cert->gateway_id && ms_cert->driver_hash().size() > 0 ) {
       
-      cert->closure_text_len = ms_cert->closure_text().size();
-      cert->closure_text = SG_CALLOC( char, cert->closure_text_len + 1 );
+      cert->driver_hash_len = ms_cert->driver_hash().size();
+      cert->driver_hash = SG_CALLOC( unsigned char, cert->driver_hash_len );
       
-      if( cert->closure_text == NULL ) {
+      if( cert->driver_hash == NULL ) {
          // OOM
          SG_safe_free( cert->name );
          SG_safe_free( cert->hostname );
          return -ENOMEM;
       }
       
-      memcpy( cert->closure_text, ms_cert->closure_text().c_str(), cert->closure_text_len );
+      memcpy( cert->driver_hash, ms_cert->driver_hash().data(), cert->driver_hash_len );
    }
    else {
       
-      cert->closure_text = NULL;
-      cert->closure_text_len = 0;
+      cert->driver_hash = NULL;
+      cert->driver_hash_len = 0;
    }
    
-   // validate... 
-   if( !SG_VALID_GATEWAY_TYPE( cert->gateway_type ) ) {
-      
-      SG_error("Invalid gateway type %" PRIu64 "\n", cert->gateway_type );
-      
-      ms_client_gateway_cert_free( cert );
-      return -EINVAL;
-   }
-
    if( !ms_client_cert_has_public_key( ms_cert ) ) {
       
       // no public key for this gateway on the MS
@@ -200,7 +127,7 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
    }
    else {
       
-      rc = md_load_pubkey( &cert->pubkey, ms_cert->public_key().c_str() );
+      rc = md_load_pubkey( &cert->pubkey, ms_cert->public_key().c_str(), ms_cert->public_key().size() );
       if( rc != 0 ) {
          SG_error("md_load_pubkey(Gateway %s) rc = %d\n", cert->name, rc );
       }
@@ -216,3 +143,83 @@ int ms_client_gateway_cert_init( struct ms_gateway_cert* cert, uint64_t my_gatew
 }
 
 
+// get the cert version 
+uint64_t ms_client_gateway_cert_version( struct ms_gateway_cert* cert ) {
+   return cert->version;
+}
+
+
+// get the user cert 
+ms::ms_user_cert* ms_client_gateway_cert_user( struct ms_gateway_cert* cert ) {
+   return cert->user_pb;
+}
+
+
+// get the gateway cert pb 
+ms::ms_gateway_cert* ms_client_gateway_cert_gateway( struct ms_gateway_cert* cert ) {
+   return cert->pb;
+}
+
+
+char const* ms_client_gateway_cert_name( struct ms_gateway_cert* cert ) {
+   return cert->name;
+}
+
+
+EVP_PKEY* ms_client_gateway_pubkey( struct ms_gateway_cert* cert ) {
+   return cert->pubkey;
+}
+
+// add a user protobuf 
+// NOTE: no authenticity check will be performed; this just sets the field.
+// return 0 on success
+int ms_client_gateway_cert_set_user( struct ms_gateway_cert* cert, ms::ms_user_cert* user_pb ) {
+   
+   cert->user_pb = user_pb;
+   return 0;
+}
+
+// set the cert's driver 
+// NOTE: no consistency check will be performed against the hash; this just sets the field.
+// NOTE: the gateway cert takes ownership of the driver; the driver text must be malloc'ed or otherwise not go out of scope.
+// return 0 on success 
+int ms_client_gateway_cert_set_driver( struct ms_gateway_cert* cert, char* driver_text, uint64_t driver_text_len ) {
+   
+   if( cert->driver_text != NULL ) {
+      SG_safe_free( cert->driver_text );
+   }
+   
+   cert->driver_text = driver_text;
+   cert->driver_text_len = driver_text_len;
+   return 0;
+}
+
+
+// set the cert driver hash 
+// NOTE: no consistency check will be performed against the driver text; this just sets the field
+// NOTE: the gateway cert takes ownership of the hash; the driver hash must be malloc'ed or otherwise not go out of scope.
+// return 0 on success 
+int ms_client_gateway_cert_set_driver_hash( struct ms_gateway_cert* cert, unsigned char* driver_hash, size_t driver_hash_len ) {
+   
+   if( cert->driver_hash != NULL ) {
+      SG_safe_free( cert->driver_hash );
+   }
+   
+   cert->driver_hash = driver_hash;
+   cert->driver_hash_len = driver_hash_len;
+   return 0;
+}
+
+// put a cert into a cert bundle 
+// return 0 on success 
+// return -ENOMEM on OOM 
+int ms_client_cert_bundle_put( ms_cert_bundle* bundle, struct ms_gateway_cert* cert ) {
+   try {
+      (*bundle)[ cert->gateway_id ] = cert;
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+   
+   return 0;
+}

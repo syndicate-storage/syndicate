@@ -24,7 +24,7 @@
 
 struct UG_sync_context {
    
-   struct UG_replica_context rctx;      // replication information 
+   struct UG_replica_context* rctx;      // replication information 
    
    struct UG_vacuum_context* vctx;       // vacuum information 
    

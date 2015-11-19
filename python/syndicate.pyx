@@ -120,158 +120,6 @@ cpdef decrypt_data( sender_pubkey_str, receiver_privkey_str, encrypted_data_str 
       
 
 # ------------------------------------------
-cpdef encrypt_closure_secrets( sender_privkey_str, gateway_pubkey_str, closure_secrets ):
-   '''
-      Encrypt a string with a gateway's public key.
-   '''
-
-   crypt_ensure_inited()
-   
-   return encrypt_data( sender_privkey_str, gateway_pubkey_str, closure_secrets )
-
-
-# ------------------------------------------
-cpdef decrypt_closure_secrets( sender_pubkey_str, gateway_privkey_str, closure_secrets ):
-   '''
-      Decrypt a string with a gateway's public key.
-   '''
-   
-   crypt_ensure_inited()
-   
-   return decrypt_data( sender_pubkey_str, gateway_privkey_str, closure_secrets )
-      
-
-# ------------------------------------------
-cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
-   '''
-      Perform an RPC call to the MS, via OpenID
-   '''
-
-   cdef char* c_request_buf = request_buf
-   cdef size_t c_request_buf_len = len(request_buf)
-
-   cdef char* c_response_buf = NULL
-   cdef size_t c_response_buf_len = 0
-
-   rc = ms_client_openid_rpc( ms_openid_url, username, password, rpc_type, c_request_buf, c_request_buf_len, &c_response_buf, &c_response_buf_len )
-   if rc != 0:
-      return (rc, None)
-
-   else:
-      py_response_buf = None
-      try:
-         py_response_buf = c_response_buf[:c_response_buf_len]
-      except MemoryError:
-         py_response_buf = None
-         rc = -errno.ENOMEM
-      finally:
-         stdlib.free( c_response_buf )
-
-      return (rc, py_response_buf)
-
-
-# ------------------------------------------
-cpdef openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, syndicate_pubkey_pem ):
-   '''
-      Perform an RPC call to the MS, via OpenID.  Verify the call with the Syndicate public key.
-   '''
-
-   cdef char* c_request_buf = request_buf
-   cdef size_t c_request_buf_len = len(request_buf)
-
-   cdef char* c_response_buf = NULL
-   cdef size_t c_response_buf_len = 0
-
-   cdef char* c_syndicate_pubkey_pem = syndicate_pubkey_pem
-
-   rc = ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, c_request_buf, c_request_buf_len, &c_response_buf, &c_response_buf_len, c_syndicate_pubkey_pem )
-   if rc != 0:
-      return (rc, None)
-
-   else:
-      py_response_buf = None
-      try:
-         py_response_buf = c_response_buf[:c_response_buf_len]
-      except MemoryError:
-         py_response_buf = None
-         rc = -errno.ENOMEM
-      finally:
-         stdlib.free( c_response_buf )
-
-      return (rc, py_response_buf)
-
-# ------------------------------------------
-cpdef password_seal( input_buf, password ):
-   '''
-      Seal data with a password
-   '''
-
-   crypt_ensure_inited()
-   
-   cdef char* c_input_buf = input_buf 
-   cdef size_t c_input_buf_len = len(input_buf)
-
-   cdef char* c_password = password 
-   cdef size_t c_password_len = len(password)
-
-   cdef char* c_output_buf = NULL
-   cdef size_t c_output_buf_len = 0
-
-   rc = md_password_seal( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len)
-   if rc != 0:
-      return (rc, None)
-
-   else:
-      py_sealed_data = None
-      try:
-         py_sealed_data = c_output_buf[:c_output_buf_len]
-      except MemoryError:
-         py_sealed_data = None
-         rc = -errno.ENOMEM
-      finally:
-         stdlib.free( c_output_buf )
-
-      return (rc, py_sealed_data)
-   
-
-# ------------------------------------------
-cpdef password_unseal( input_buf, password ):
-   '''
-      Unseal data with a password 
-   '''
-
-   crypt_ensure_inited()
-   
-   cdef char* c_input_buf = input_buf 
-   cdef size_t c_input_buf_len = len(input_buf)
-
-   cdef char* c_password = password 
-   cdef size_t c_password_len = len(password)
-
-   cdef char* c_output_buf = NULL
-   cdef size_t c_output_buf_len = 0
-   
-   # NOTE: we have to use the unsafe version here (which does NOT mlock the output'ed data),
-   # since Python doesn't seem to have a way to munlock the memory when it gets garbage-collected :(
-
-   rc = md_password_unseal( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len )
-   if rc != 0:
-      return (rc, None)
-
-   else:
-      py_output = None
-      try:
-         py_output = c_output_buf[:c_output_buf_len]
-      except MemoryError:
-         py_output = None
-         rc = -errno.ENOMEM
-      finally:
-         stdlib.free( c_output_buf )
-
-      return (rc, py_output)
-
-
-# ------------------------------------------
 cpdef symmetric_seal( input_buf, key ):
    '''
       Seal data with a (256-bit) key 
@@ -380,10 +228,6 @@ cdef class Syndicate:
       Used to create Pythonic gateways
    '''
    
-   GATEWAY_TYPE_UG = SYNDICATE_UG
-   GATEWAY_TYPE_RG = SYNDICATE_RG
-   GATEWAY_TYPE_AG = SYNDICATE_AG
-   
    CAP_READ_DATA        = SG_CAP_READ_DATA
    CAP_WRITE_DATA       = SG_CAP_WRITE_DATA
    CAP_READ_METADATA    = SG_CAP_READ_METADATA
@@ -393,7 +237,7 @@ cdef class Syndicate:
    mlock_buf_type = 1
    
    # internal gateway instance
-   cdef SG_gateway gateway_inst
+   # cdef SG_gateway gateway_inst
    
    def __cinit__(self):
       pass
@@ -408,54 +252,34 @@ cdef class Syndicate:
       syndicate_inited = False
       syndicate_ref = None
       
-   cdef md_opts opts_to_syndicate( cls, opts ):
+   cdef md_opts* opts_to_syndicate( cls, opts ):
       '''
       Convert a dictionary of options into a struct md_opts.
+      Return None if OOM
       '''
       
-      cdef md_opts syn_opts
+      cdef md_opts* syn_opts = md_opts_new( 1 )
+      if syn_opts == NULL:
+         return NULL
       
-      syn_opts.config_file = string_or_null( opts.get("config_file") )
-      syn_opts.username = string_or_null( opts.get("username") )
-      syn_opts.volume_name = string_or_null( opts.get("volume_name") )
-      syn_opts.gateway_name = string_or_null( opts.get("ms_url") )
-      syn_opts.volume_pubkey_path = string_or_null( opts.get("volume_pubkey_path") )
-      syn_opts.gateway_pkey_path = string_or_null( opts.get("gateway_pkey_path") )
-      syn_opts.syndicate_pubkey_path = string_or_null( opts.get("syndicate_pubkey_path") )
-      syn_opts.hostname = string_or_null( opts.get("hostname") )
-      syn_opts.storage_root = string_or_null( opts.get("storage_root") )
-      syn_opts.first_nonopt_arg = string_or_null( opts.get("first_nonopt_arg") )
+      cdef mlock_buf password
+      cdef mlock_buf user_pkey_pem
+      cdef mlock_buf gateway_pkey_pem 
       
-      syn_opts.password.ptr = string_or_null( opts.get("password") )
-      syn_opts.password.len = strlen_or_zero( opts.get("password") )
-
-      syn_opts.user_pkey_pem.ptr = string_or_null( opts.get("user_pkey_pem") )
-      syn_opts.user_pkey_pem.len = strlen_or_zero( opts.get("user_pkey_pem") )
+      md_opts_set_config_file( syn_opts, string_or_null( opts.get("config_file") ) )
+      md_opts_set_username( syn_opts, string_or_null( opts.get("username") ) )
+      md_opts_set_volume_name( syn_opts, string_or_null( opts.get("volume_name") ) )
+      md_opts_set_gateway_name( syn_opts, string_or_null( opts.get("gateway_name") ) ) 
+      md_opts_set_ms_url( syn_opts, string_or_null( opts.get("ms_url") ) )
       
-      syn_opts.gateway_pkey_pem.ptr = string_or_null( opts.get("gateway_pkey_pem") )
-      syn_opts.gateway_pkey_pem.len = strlen_or_zero( opts.get("gateway_pkey_pem") )
-
-      syn_opts.gateway_pkey_decryption_password.ptr = string_or_null( opts.get("gateway_pkey_decryption_password") )
-      syn_opts.gateway_pkey_decryption_password.len = strlen_or_zero( opts.get("gateway_pkey_decryption_password") )
-
-      syn_opts.volume_pubkey_pem = string_or_null( opts.get("volume_pubkey_pem") )
-      syn_opts.syndicate_pubkey_pem = string_or_null( opts.get("syndicate_pubkey_pem") )
-
-      syn_opts.tls_pkey_path = string_or_null( opts.get("tls_pkey_path") )
-      syn_opts.tls_cert_path = string_or_null( opts.get("tls_cert_path") )
-
-      syn_opts.read_stdin = bool_or_false( opts.get("read_stdin") )
-      syn_opts.debug_level = int_or_zero( opts.get("debug_level") )
-      syn_opts.cache_hard_limit = int_or_zero( opts.get("cache_hard_limit") )
-      syn_opts.cache_soft_limit = int_or_zero( opts.get("cache_soft_limit") )
-      syn_opts.foreground = bool_or_false( opts.get("foreground") )
-      syn_opts.gateway_type = int_or_zero( opts.get("gateway_type") )
-      syn_opts.client = bool_or_false( opts.get("client") )
+      md_opts_set_foreground( syn_opts, bool_or_false( opts.get("foreground") ) )
+      md_opts_set_gateway_type( syn_opts, int_or_zero( opts.get("gateway_type") ) )
+      md_opts_set_client( syn_opts, bool_or_false( opts.get("client") ) )
 
       return syn_opts
       
       
-   def __init__( self, gateway_type=None, anonymous_client=None, args=None, opts=None ):
+   def __init__( self, gateway_type=None, args=None, opts=None ):
       '''
       Initialize a Syndicate gateway.  Pass either a dict of options, or the gateway type, 
       whether or not it is an anonymous client, and a list of command-line options.
@@ -472,7 +296,7 @@ cdef class Syndicate:
 
       rc = 0
       method = None
-      cdef md_opts syndicate_opts
+      cdef md_opts* syndicate_opts = NULL
       cdef char** c_args = NULL
       
       if opts is not None:
@@ -480,14 +304,19 @@ cdef class Syndicate:
          # new from opts
          method = "SG_gateway_init_opts"
          syndicate_opts = self.opts_to_syndicate( opts )
+
+         if syndicate_opts == NULL:
+            raise MemoryError("OOM on parsing options")
          
-         rc = SG_gateway_init_opts( &self.gateway_inst, &syndicate_opts )
+         rc = SG_gateway_init_opts( &self.gateway_inst, syndicate_opts )
+         
+         stdlib.free( syndicate_opts )
 
       else:
          
          # new from argv 
-         if gateway_type is None or anonymous_client is None or args is None:
-            raise SyndicateException("Missing gateway_type, anonymous_client, and/or args")
+         if gateway_type is None or args is None:
+            raise SyndicateException("Missing gateway_type and/or args")
          
          c_args = <char**>stdlib.malloc( (len(args) + 1) * sizeof(char*) )
          if c_args == NULL:
@@ -497,7 +326,7 @@ cdef class Syndicate:
             c_args[i] = PyString_AsString( args[i] )
          
          method = "SG_gateway_init"
-         rc = SG_gateway_init( &self.gateway_inst, gateway_type, anonymous_client, len(args), c_args )
+         rc = SG_gateway_init( &self.gateway_inst, gateway_type, len(args), c_args, NULL )
 
          stdlib.free( c_args )
 
@@ -638,23 +467,23 @@ cdef class Syndicate:
       return False
    
    
-   cpdef get_closure_text( self ):
+   cpdef get_driver_text( self ):
       '''
-         Get a copy of the closure text.
+         Get the byte string of the gateway-owner-supplied driver, base64-encoded.
       '''
       
-      cdef char* c_closure_text = NULL
-      cdef uint64_t c_closure_len = 0
+      cdef char* c_driver_text = NULL
+      cdef uint64_t c_driver_text_len = 0
 
       cdef ms_client* ms = SG_gateway_ms( &self.gateway_inst )
       
-      rc = ms_client_get_closure_text( ms, &c_closure_text, &c_closure_len )
+      rc = ms_client_gateway_get_driver_text( ms, &c_driver_text, &c_driver_text_len )
       
       if rc == 0:
-         py_closure_text = c_closure_text[:c_closure_len]
-         stdlib.free( c_closure_text )
+         py_driver_text = c_driver_text[:c_driver_text_len]
+         stdlib.free( c_driver_text )
          
-         return py_closure_text
+         return py_driver_text
       
       elif rc == -errno.ENOTCONN:
          # something's seriously wrong

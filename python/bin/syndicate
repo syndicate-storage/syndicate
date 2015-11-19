@@ -1,0 +1,736 @@
+#!/usr/bin/env python
+
+"""
+   Copyright 2013 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+import os
+import json
+import subprocess
+
+import sys
+import tempfile
+import base64
+import stat
+
+import syndicate.ms.jsonrpc as jsonrpc
+import syndicate.ms.msconfig as msconfig
+import syndicate.ms.api as api
+
+import syndicate.util.config as conf
+import syndicate.util.storage as storage
+import syndicate.util.objects as object_stub
+import syndicate.util.client as client 
+
+import syndicate.protobufs.ms_pb2 as ms_pb2
+
+import traceback
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+import pprint 
+import urlparse
+import requests 
+import getpass
+import logging
+
+log = conf.log
+
+
+def syndicate_object_name( config ):
+   """
+   Given the config, find the syndicate object name.
+   """
+   return config["syndicate_host"] + ":" + str(config["syndicate_port"])
+
+
+def fetch_syndicate_public_key( config ):
+   """
+   Use a helper program to go and fetch the Syndicate public key.
+   Return the key itself on success.
+   Return None on error
+   """
+   try:
+      assert 'syndicate_host' in config
+      assert 'no_tls' in config
+   except:
+      log.error("Incomplete config")
+      return None 
+   
+   port = config.get("syndicate_port", None)
+   if port is None:
+      port = conf.default_syndicate_port( config['syndicate_host'], config['no_tls'] )
+
+   url = client.make_ms_url( config['syndicate_host'], port, config['no_tls'] )
+ 
+   downloader_path = config['helpers'].get('fetch_syndicate_pubkey')
+   if downloader_path is None:
+      log.error("No 'fetch_syndicate_pubkey' defined in the 'helpers' config section")
+      return None
+
+   if not os.path.exists( downloader_path ):
+      log.error("'%s' does not exist" % downloader_path )
+      return None 
+  
+   downloader = subprocess.Popen( [downloader_path, url], shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE )
+   
+   pubkey_out, pubkey_err = downloader.communicate()
+   
+   downloader.wait()
+   
+   pubkey_pem = pubkey_out.strip()
+   
+   # validate 
+   try:
+      pubkey = CryptoKey.importKey( pubkey_pem )
+   except Exception, e:
+      log.error("Invalid Syndicate public key (from %s)" % url)
+      return None
+   
+   return pubkey.publickey().exportKey()
+
+
+def load_gateway_cert( config, gateway_name ):
+   """
+   Load a gateway certificate from a file.
+   Return the unprotobuf'ed certificate on success 
+   Return None on error, and log an exception.
+   """
+   gateway_cert_bin = None 
+   cert_path = None
+   
+   try:
+      cert_path = conf.object_file_path( config, "gateway", gateway_name )
+      gateway_cert_bin = storage.read_file( cert_path )
+   except Exception, e:
+      log.error("Unable to read %s" % cert_path)
+      return None 
+   
+   # should be a protobuf.  try to load it.
+   try:
+      gateway_cert = ms_pb2.ms_gateway_cert.ParseFromString( gateway_cert_bin )
+   except Exception, e:
+      log.exception(e)
+      return None 
+   
+   return gateway_cert 
+   
+
+def verify_gateway_cert( pubkey_pem, gateway_cert ):
+   """
+   Given an unprotobuf'ed gateway certificate, verify that 
+   the given user's public key (as a PEM-encoded string) signed it.
+   If the volume's public key is given as well, then verify that 
+   it signed off too.
+   
+   Return True if so
+   Return False if not
+   """
+   
+   sigb64 = gateway_cert.signature 
+   sig = base64.b64decode( sigb64 )
+   
+   gateway_cert.signature = ""
+   
+   gateway_cert_bin = gateway_cert.SerializeToString()
+   rc = api.verify_data( pubkey_pem, gateway_cert_bin, sig )
+   
+   gateway_cert.signature = sigb64
+   
+   return rc
+   
+   
+# -------------------
+# TODO: use a helper program
+def download_gateway_cert( config, gateway_name ):
+   """
+   Go download a gateway's certificate from the MS.
+   Return the unprotobufed certificate on success 
+   Return None on error
+   """
+   
+   cert_url = client.make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'], urlpath="PUBKEY" )
+   
+   cert_req = requests.get( url, allow_redirects=True )
+   
+   if cert_req.status_code != 200:
+      log.error("Failed to get gateway certificate from %s, HTTP status %s" % (url, pubkey_req.status_code) )
+      return None
+   
+   cert = None
+   cert_bin = pubkey_req.content 
+   try:
+      cert = ms_pb2.ms_gateway_cert.ParseFromString( cert_bin )
+   except Exception, e:
+      log.error("Malformed certificate from %s" % url)
+      log.exception(e)
+      return None
+   
+   return cert 
+
+
+# -------------------
+def get_gateway_cert( config, volume_name, gateway_name, download=True ):
+   """
+   Top-level method for getting a gateway's certificate.
+   Try to load it from local disk first, and then try to download it.
+   NOTE: does *not* check version information--caller needs to do so against a cert bundle 
+   
+   Return the unprotobufed cert on success.
+   Return None on error.
+   """
+   
+   user_pubkey_pem = storage.load_public_key( config, "user", config['username'] )
+   if user_pubkey_pem is None:
+      log.error("Failed to load public key for '%s'" % config['username'] )
+      return None 
+   
+   volume_pubkey_pem = storage.load_public_key( config, "volume", volume_name )
+   if volume_pubkey_pem is None:
+      log.warning("Failed to load public key for '%s'" % volume_name )
+   
+   gateway_cert = load_gateway_cert( config, gateway_name )
+   
+   if gateway_cert is None and download:
+      
+      log.debug("Certificate for '%s' is not local; downloading..." % gateway_name )
+      
+      # try to download 
+      gateway_cert = download_gateway_cert( config, gateway_name )
+      if gateway_cert is None:
+         
+         log.error("Unable to obtain certificate for '%s'" % gateway_name)
+         return None
+      
+   # try to validate
+   rc = verify_gateway_cert( user_pubkey_pem, gateway_cert )
+   if not rc:
+      
+      print "\n\nFailed to verify user '%s''s signature on gateway certificate for '%s' (at %s)." % (config['username'], gateway_name, conf.object_file_path( config, 'gateway', gateway_name ))
+      print "If this is expected, then the certificate on file is stale and should be removed."
+      return None
+   
+   return gateway_cert
+
+
+# -------------------
+def save_gateway_cert( config, gateway_name, gateway_cert ):
+   """
+   Store the gateway certificate locally, given the unserialized cert.
+   Return True on success.
+   Return False on error.
+   """
+   
+   gateway_cert_bin = gateway_cert.SerializeToString()
+   gateway_cert_path = conf.object_file_path( config, 'gateway', gateway_name )
+   return storage.write_file( gateway_cert_path, gateway_cert_bin )
+
+
+# -------------------
+def prompt_trust_public_key( name, port, pubkey ):
+   """
+   Ask the user if the given public key should be trusted 
+   for the given server hostname and port.
+   Return True if the user trusts it.
+   Return False if not.
+   """
+   print """
+Syndicate at %s:%s accessed for the first time!
+
+To securely access Syndicate at %s:%s automatically, do you wish to remember its 
+public key?  Only say 'yes' if you are sure this is the *right* public key.
+
+The public key is:
+   
+%s
+""" % (name, port, name, port, pubkey)
+
+   prompt = "Trust this key? (Y/n): "
+   while True:
+      trust = raw_input(prompt)
+      if trust not in ['Y', 'y', 'N', 'n']:
+         prompt = "Please enter 'Y' or 'N': "
+         continue
+      
+      break
+   
+   if trust in ['Y', 'y']:
+      return True 
+   else:
+      return False
+
+
+# -------------------
+def call_method( config, client, method_name, args, kw ):
+   # which key do we use?
+   # what object signing key are we working on?
+   log.debug("as %s: call %s( args=%s, kw=%s )" % (config['username'], method_name, args, kw) )
+   
+   method = getattr( client, method_name )
+   
+   return method( *args, **kw )
+   
+   
+# -------------------
+def serialize_positional_arg( value ):
+   # try to cast value to something for a positional argument (not a keyword argument)
+   if "." in value or "e" in value:
+      # float?
+      try:
+         value = float(value)
+         return value
+      except:
+         pass
+
+   if value == "True" or value == "False":
+      # bool?
+      try:
+         value = eval(value)
+         return value 
+      except:
+         pass
+   
+   if value.strip().startswith("{") or value.strip().startswith("["):
+      # dict or list?
+      try:
+         value = eval(value)
+         return value
+      except:
+         pass
+   
+   try:
+      # integer?
+      value = int(value)
+      return value
+   except:
+      pass
+   
+   
+   if value.find("=") == -1:
+      # string?
+      return value
+   
+   raise Exception("Could not parse '%s'" % param)
+   
+
+# -------------------
+def read_params( params ):
+   if len(params) == 0:
+      return (None, None, None)
+   
+   method_name = params[0]
+   params = params[1:]
+   args = []
+   kw = {}
+   for param in params:
+      try:
+         serialized_arg = serialize_positional_arg( param )
+      except:
+         # is this a keyword argument?
+         param_parts = param.split("=")
+         if len(param_parts) > 1:
+            kw[param_parts[0]] = serialize_positional_arg( "=".join( param_parts[1:] ) )
+         else:
+            raise Exception("Malformed parameter '%s'" % param)
+      else:
+         args.append( serialized_arg )
+
+   return (method_name, args, kw)
+   
+   
+# -------------------
+def make_object_directories( config ):
+   """
+   Create directories for each kind of object in the 
+   ~/.syndicate config directory, if they don't exist already.
+   * gateways
+   * users 
+   * volumes 
+   * syndicate instances 
+   """
+   # validate directories
+   for obj_type, obj_dirname in conf.OBJECT_DIR_NAMES.items():
+      obj_dirname = conf.OBJECT_DIR_NAMES.get(obj_type)
+      if obj_dirname is None:
+         # forgot to add an entry in OBJECT_DIR_NAMES for the given key type
+         raise Exception("BUG: unknown object type %s" % obj_type)
+      
+      obj_dir = config.get(obj_dirname, None)
+      if obj_dir is None:
+         # forgot to set the path to this directory in the config
+         raise Exception("BUG: unknown directory %s" % obj_dirname)
+      
+      ret = storage.make_or_check_object_directory( obj_dir )
+      if not ret:
+         raise Exception("Failed to set up key directories")
+   
+   return True
+
+
+def parse_argv( argv ):
+   """
+   Given argv, extract the options, method name, positional args, and keyword args.
+   """
+    
+   parser = conf.build_parser( argv[0], conf.CONFIG_DESCRIPTION, conf.CONFIG_OPTIONS )
+   opts, _ = parser.parse_known_args( argv[1:] )
+   
+   # load everything into a dictionary and return it
+   config_str = None
+   config_file_path = None
+   
+   if hasattr( opts, "config" ) and opts.config != None:
+      config_file_path = opts.config[0]
+   else:
+      config_file_path = conf.CONFIG_FILENAME
+   
+   config_str = storage.read_file( config_file_path )
+   
+   method_name, args, kw = read_params( getattr(opts, 'params', [] ) )
+   
+   opts.config_file_path = config_file_path 
+   
+   return (opts, method_name, args, kw )
+
+
+# -------------------
+def init_config( opts, method_name ):
+   """
+   Given parsed options, load the config.
+   Return a dict with our config options set on success.
+   Return None on error
+   """
+
+   config_str = storage.read_file( opts.config_file_path )
+   if config_str is None:
+       log.error("Failed to read '%s'" % opts.config_file_path)
+       return None 
+  
+   # get syndicate options...
+   config = conf.load_config( opts.config_file_path, config_str, opts, "syndicate", conf.CONFIG_OPTIONS )
+   if config is None:
+       log.error("Failed to parse configuration section 'syndicate' from '%s'" % opts.config_file_path)
+       return None
+
+   # helpers..
+   helper_config = conf.load_config( opts.config_file_path, config_str, opts, "helpers", conf.HELPER_OPTIONS )
+   if helper_config is None:
+       log.error("Failed to parse configuration section 'helpers' from '%s'" % opts.config_file_path )
+       return None
+
+   config['helpers'] = helper_config
+   config['params'] = getattr( opts, 'params', [] )
+   
+   # set up the directories
+   make_object_directories( config )
+   
+   # generate syndicate_host and syndicate_port from URL, if needed
+   if config.get('MS_url', None) is not None:
+      # use https if no :// is given 
+      url = config['MS_url']
+      
+      host, port, no_tls = client.parse_url( url )
+      
+      config['syndicate_host'] = host 
+      config['syndicate_port'] = port
+      config['no_tls'] = no_tls
+      
+   # do we need the private key?
+   config['user_pkey'] = storage.load_private_key( config, "user", config['username'] )
+   if config['user_pkey'] is None:
+      log.error("Failed to load user private key for '%s'" % config['username'])
+      return None 
+    
+   # obtain syndicate public key 
+   syndicate_pubkey = storage.load_public_key( config, "syndicate", syndicate_object_name( config ) )
+   if syndicate_pubkey is None:
+       
+       # go get it 
+       syndicate_pubkey_pem = fetch_syndicate_public_key( config )
+       
+       try:
+           syndicate_pubkey = CryptoKey.importKey( syndicate_pubkey_pem )
+       except Exception, e:
+           log.error("Failed to parse downloaded public key")
+           return None 
+       
+       trust = prompt_trust_public_key( config["syndicate_host"], config["syndicate_port"], syndicate_pubkey_pem )
+       if not trust:
+           log.error("Will NOT trust public key")
+           return None
+       
+       else:
+           # store it 
+           storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_pubkey_pem )
+       
+   config['syndicate_public_key'] = syndicate_pubkey
+   config['syndicate_public_key_pem'] = syndicate_pubkey.exportKey()
+   
+   return config
+
+
+def do_method_help( config, method_name ):
+   """
+   Print a method's documentation and exit, given the  
+   method parameters (including its name).
+   """
+   try:
+      method_help = api.method_help_from_method_name( method_name )
+   except Exception, e:
+      log.exception(e)
+      method_help = "FIXME: General HELP goes here..."
+      
+   print "Help for '%s':\n%s" % (method_name, method_help)
+   sys.exit(0)
+
+
+def do_setup( config, admin_privkey_path ):
+   """
+   Do one-time initial setup:
+   * create the ~/.syndicate directory 
+   * fill in ~/.syndicate/ with object directories.
+   * generate a config file in ~/.syndicate
+   * grab the MS's public key and ask to trust it, if it isn't here already.
+   * activate the admin's account on the MS.
+   * store the admin's ID
+   """
+   
+   # if the config file already exists, then bail
+   if os.path.exists( conf.CONFIG_FILENAME ):
+      raise Exception("Syndicate is already set up (in %s)" % conf.CONFIG_DIR)
+   
+   # get admin private key 
+   admin_privkey_pem = storage.load_file( admin_privkey_path )
+   if admin_privkey_pem is None:
+      raise Exception("Unable to load '%s'" % admin_privkey_path )
+  
+   try:
+      admin_privkey = CryptoKey.importKey( admin_privkey_pem )
+   except:
+      if config['debug']:
+          traceback.print_exc()
+      
+      raise Exception("Unable to parse '%s'" % admin_privkey_path )
+   
+   if not admin_privkey.has_private():
+      raise Exception("Not a private key: '%s'" % admin_privkey_path )
+   
+   key_dirs = {}
+   
+   # generate a default config...
+   write_config = {}
+   for key_type, key_dirname in conf.OBJECT_DIR_NAMES.items():
+      key_dirs[key_type] = key_dirname + "/"
+   
+   # generate URL if not given already
+   if not config.has_key('MS_url'):
+      config['MS_url'] = client.make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'] )
+   
+   write_config.update( key_dirs )
+   for attr in ['username', 'MS_url']:
+      write_config[attr] = config[attr]
+   
+   config_str = conf.make_config_str( write_config )
+
+   log.debug("Obtaining Syndicate public key...")
+   
+   # go get the public key for Syndicate
+   syndicate_public_key = fetch_syndicate_public_key( config )
+   if syndicate_public_key is None:
+      raise Exception("Failed to obtain Syndicate public key")
+   
+   if not config['trust_public_key']:
+      do_trust = prompt_trust_public_key( config['syndicate_host'], config['syndicate_port'], syndicate_public_key )
+      if not do_trust:
+         log.error("Refusing to trust key.")
+         sys.exit(0)
+   
+   # store the Syndicate public key
+   try:
+      config['syndicate_public_key'] = CryptoKey.importKey( syndicate_public_key )
+      config['syndicate_public_key_pem'] = syndicate_public_key
+   except Exception, e:
+      # shouldn't fail--fetch_syndicate_public_key validates
+      log.error("Invalid public key")
+      log.exception(e)
+      sys.exit(1)
+   
+   log.debug("Storing config...")
+   
+   storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_public_key )
+   
+   # store config
+   try:
+      storage.write_file( conf.CONFIG_FILENAME, config_str )
+   except Exception, e:
+      log.exception(e)
+      print >> sys.stderr, "Failed to write configuration"
+      sys.exit(1)
+      
+   # store first admin ID (always 0)
+   object_stub.store_id( config, "user", config["username"], 0 )
+   storage.store_private_key( config, "user", config["username"], admin_privkey )
+   
+   sys.exit(0)
+
+
+def client_call( CONFIG, method_name, *args, **kw ):
+   """
+   Call a method on the MS (method_name).
+   Take the argument vector *args and dictionary **kw (both taken from sys.argv),
+   look up the method's parser, parse the arguments, and then issue the 
+   RPC call.
+   """
+   
+   called_from_main = False 
+   if CONFIG.has_key('__from_main__'):
+      # we were called from the main method (not from a client program).
+      # This should be remembered, since it determines whether or not we use
+      # the CONFIG-given username if no username can be found.
+      called_from_main = CONFIG['__from_main__']
+      
+   verify_reply = True
+   if CONFIG.has_key('verify_reply'):
+      # do not verify the reply (i.e. we might not know the Syndicate public key)
+      verify_reply = CONFIG['verify_reply']
+   
+   username = CONFIG.get('username', None)
+   if username is None:
+      raise Exception("Invalid config: no username")
+   
+   # parse arguments.
+   # use lib to load and store temporary data for the argument parsers.
+   lib = conf.ArgLib()
+   lib.config = CONFIG
+   lib.username = username
+   
+   try:
+       args, kw, extras = conf.parse_args( CONFIG, method_name, args, kw, lib )
+   except:
+       
+       if CONFIG["debug"]:
+           traceback.print_exc()
+       
+       do_method_help( CONFIG, method_name )
+       sys.exit(1)
+   
+   # make sure we got the right number of arguments 
+   valid = conf.validate_args( method_name, args, kw )
+   if not valid:
+      raise Exception("Invalid arguments for %s" % method_name)
+   
+   # determine the username
+   force_user_name = None 
+   
+   if "username" in CONFIG['_in_argv']:
+      # override username with argv
+      force_user_name = username
+   
+   if CONFIG.has_key('force_user_name'):
+      # override username 
+      force_user_name = CONFIG['force_user_name']
+      
+   if called_from_main and force_user_name is None:
+      # use CONFIG-given username if called from the command-line (main()), but we don't yet know the username from above.
+      force_user_name = username
+      
+      
+   # attempt to read the public key from disk   
+   syndicate_public_key = CONFIG.get("syndicate_public_key", None)
+   
+   # will we trust a downloaded public key automatically, if one is not known?  Default no.
+   trust_public_key = CONFIG.get('trust_public_key', False)
+   
+   # create the RPC client
+   proxy = client.make_rpc_client( CONFIG )
+   
+   # call the method
+   ret = call_method( CONFIG, proxy, method_name, args, kw ) 
+   
+   # failure? 
+   if ret is None:
+      raise Exception("No data returned from server")
+   
+   # process object-specific extra information, based on the returned value of this method.
+   for object_cls in object_stub.object_classes:
+      object_cls.PostProcessResult( extras, CONFIG, method_name, args, kw, ret )
+
+   return ret
+
+
+# -------------------   
+def main( argv ):
+   """
+   Top-level method for calling RPC methods.
+   * Takes an argument vector from the command line, loads up the 
+   config files and keys from persistent storage, and generates our call options.
+   * Looks up the method, parses the arguments with its designated parser.
+   * Fetch the Syndicate public key if it is not yet local, and prmopt the user to trust it.
+   * Generates the request, and either sign it with the user's private key, or 
+   uses OpenID to authenticate the user with the MS's OpenID provider.
+   * Sends the request, receives the response, and performs any method-specific post-processing.
+   """
+   
+   # get opts, methodname, args 
+   opts, method_name, args, kw = parse_argv( argv )
+   
+   CONFIG = init_config( opts, method_name )
+   if CONFIG is None:
+       return None
+
+   # called from main 
+   CONFIG["__from_main__"] = True
+  
+   # special cases
+   if method_name == "setup":
+       do_setup( CONFIG, argv[2] )
+       sys.exit(0)
+   
+   if method_name == "help":
+       
+       if len(args) == 0:
+           conf.usage( argv[0] )
+       
+       else:
+           do_method_help( CONFIG, args[0] )
+           sys.exit(0)
+   
+   # read the config
+   # debug
+   for opt in CONFIG.keys():
+      log.debug( "%s = %s" % (opt, CONFIG[opt] ) )
+   
+   # sanity check
+   if not CONFIG.has_key("username") or not CONFIG.has_key("params"):
+      print >> sys.stderr, "Missing user ID or method"
+      conf.usage( argv[0] )
+      
+   # do the call
+   return client_call( CONFIG, method_name, *args, **kw )
+
+
+if __name__ == "__main__":
+   ret = main( sys.argv )
+   if ret is None:
+       sys.exit(1)
+       
+   pp = pprint.PrettyPrinter()
+   pp.pprint( ret )
+   
+   
+   

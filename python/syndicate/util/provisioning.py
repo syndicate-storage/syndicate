@@ -30,7 +30,6 @@ log = logging.getLogger()
 log.setLevel( logging.INFO )
 
 import syndicate
-import syndicate.ms.syntool as syntool
 import syndicate.ms.api as api
 import syndicate.ms.msconfig as msconfig
 
@@ -82,6 +81,8 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
     Returns None if we can't connect.
     Raises an exception on error.
     We assume that the Volume (and thus user) already exist...if they don't, its an error.
+    
+    key_password is DEPRECATED
     """
     
     try:
@@ -127,7 +128,7 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
         
         # does this gateway match the user and volume it claims to belong to?
         # NOTE: this doesn't check the closure!
-        if msconfig.GATEWAY_TYPE_TO_STR[ gateway["gateway_type"] ] != gateway_type or gateway['owner_id'] != user['owner_id'] or gateway['volume_id'] != volume['volume_id']:
+        if gateway['owner_id'] != user['owner_id'] or gateway['volume_id'] != volume['volume_id']:
             raise Exception("Gateway exists under a different volume (%s) or user (%s)" % (volume['name'], user['email']))
 
         # gateway exists, and is owned by the given volume and user 
@@ -209,10 +210,12 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
     Return the newly-created user, if the user did not exist previously.
     Return None if the user already exists.
     Raise an exception on error.
+    
+    user_openid_url is DEPRECATED
     """
 
     try:
-        new_user = client.create_user( user_email, user_openid_url, user_activate_pw, **user_kw )
+        new_user = client.create_user( user_email, user_activate_pw, **user_kw )
     except Exception, e:
         # transport error, or the user already exists (rare, but possible)
         log.exception(e)
@@ -233,13 +236,13 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
         privkey_pem = None
         generated_keys = False
         
-        if 'signing_private_key' not in user_kw.keys():
+        if 'private_key' not in user_kw.keys():
             log.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
             pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
             generated_keys = True
         
         else:
-            privkey_pem = user_kw['signing_private_key']
+            privkey_pem = user_kw['private_key']
             
             try:
                pubkey_pem = CryptoKey.importKey( observer_pkey_pem ).publickey().exportKey()
@@ -249,7 +252,7 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
                
         # then, activate the account with the keypair
         try:
-            activate_rc = client.register_account( user_email, user_activate_pw, signing_public_key=pubkey_pem )
+            activate_rc = client.register_account( user_email, user_activate_pw, public_key=pubkey_pem )
         except Exception, e:
             # transport error, or the user doesn't exist (rare, but possible)
             log.exception(e)
@@ -258,8 +261,8 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
         else:
             # give back the keys to the caller
             if generated_keys:
-               new_user['signing_public_key'] = pubkey_pem
-               new_user['signing_private_key'] = privkey_pem
+               new_user['public_key'] = pubkey_pem
+               new_user['private_key'] = privkey_pem
                
             return new_user     # success!
 

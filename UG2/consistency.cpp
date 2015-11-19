@@ -17,6 +17,130 @@
 #include "consistency.h"
 #include "read.h"
 
+// ms path entry context 
+struct UG_path_ent_ctx {
+   
+   char* fs_path;               // path to this entry 
+   struct fskit_entry* fent;    // entry
+};
+
+// deferred remove-all context, for cleaning out a tree that has been removed remotely
+struct UG_deferred_remove_ctx {
+
+   struct fskit_core* core;
+   char* fs_path;               // path to the entry to remove
+   fskit_entry_set* children;   // the (optional) children to remove (not yet garbage-collected)
+};
+
+static int UG_consistency_fetchxattrs_all( struct SG_gateway* gateway, ms_path_t* path_remote, struct ms_client_multi_result* remote_inodes );
+
+// helper to asynchronously try to unlink an inode and its children
+static int UG_deferred_remove_cb( struct md_wreq* wreq, void* cls ) {
+
+   struct UG_deferred_remove_ctx* ctx = (struct UG_deferred_remove_ctx*)cls;
+   struct fskit_detach_ctx* dctx = NULL;
+   int rc = 0;
+   
+   SG_debug("DEFERRED: remove '%s'\n", ctx->fs_path );
+   
+   // remove the children 
+   if( ctx->children != NULL ) {
+       
+      dctx = fskit_detach_ctx_new();
+      if( dctx == NULL ) {
+         return -ENOMEM;
+      }
+
+      rc = fskit_detach_ctx_init( dctx );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      // proceed to detach
+      while( true ) {
+         
+         rc = fskit_detach_all_ex( ctx->core, ctx->fs_path, &ctx->children, dctx );
+         if( rc == 0 ) {
+             break;
+         }
+         else if( rc == -ENOMEM ) {
+             continue;
+         }
+         else {
+             break;
+         }
+      }
+      
+      fskit_detach_ctx_free( dctx );
+      SG_safe_free( dctx );
+   }
+
+   SG_safe_free( ctx->fs_path );
+   fskit_entry_set_free( ctx->children );
+   SG_safe_free( ctx );
+   
+   return 0;
+}
+
+
+// Garbage-collect the given inode, and queue it for unlinkage.
+// If the inode is a directory, recursively garbage-collect its children as well, and queue them and their descendents for unlinkage
+// return 0 on success
+// NOTE: child must be write-locked
+int UG_deferred_remove( struct UG_state* state, char const* child_path, struct fskit_entry* child ) {
+
+   struct UG_deferred_remove_ctx* ctx = NULL;
+   struct fskit_core* core = UG_state_fs( state );
+   struct md_wreq* work = NULL;
+   fskit_entry_set* children = NULL;
+   int rc = 0;
+
+   // asynchronously unlink it and its children
+   ctx = SG_CALLOC( struct UG_deferred_remove_ctx, 1 );
+   if( ctx == NULL ) {
+       return -ENOMEM;
+   }
+   
+   work = SG_CALLOC( struct md_wreq, 1 );
+   if( work == NULL ) {
+       
+       SG_safe_free( ctx );
+       return -ENOMEM;
+   }
+   
+   // set up the deferred unlink request 
+   ctx->core = core;
+   ctx->fs_path = strdup( child_path );
+   
+   if( ctx->fs_path == NULL ) {
+       
+       SG_safe_free( work );
+       SG_safe_free( ctx );
+       return -ENOMEM;
+   }
+   
+   // garbage-collect this child
+   rc = fskit_entry_tag_garbage( child, &children );
+   if( rc != 0 ) {
+       
+       SG_safe_free( ctx );
+       SG_safe_free( work );
+       
+       SG_error("fskit_entry_garbage_collect('%s') rc = %d\n", child_path, rc );
+       return rc;
+   }
+   
+   ctx->children = children;
+   
+   // deferred removal 
+   md_wreq_init( work, UG_deferred_remove_cb, ctx, 0 );
+   md_wq_add( UG_state_wq( state ), work );
+   
+   return 0;
+}
+
+
+
 // download a manifest, synchronously.  Try from each gateway in gateway_ids, in order.
 // return 0 on success, and populate *manifest 
 // return -ENOMEM on OOM 
@@ -240,160 +364,6 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
 }
 
 
-// common fskit entry initialization from an exported inode
-// return 0 on success (always succeeds)
-static int UG_consistency_fskit_common_init( struct fskit_entry* fent, struct md_entry* inode_data ) {
-   
-   struct timespec ts;
-   
-   // set ctime, mtime
-   ts.tv_sec = inode_data->mtime_sec;
-   ts.tv_nsec = inode_data->mtime_nsec;
-   fskit_entry_set_mtime( fent, &ts );
-   
-   ts.tv_sec = inode_data->ctime_sec;
-   ts.tv_nsec = inode_data->ctime_nsec;
-   fskit_entry_set_ctime( fent, &ts );
-   
-   // set size
-   fskit_entry_set_size( fent, inode_data->size );
-   
-   return 0;
-}
-
-// generate a new fskit entry for a directory 
-// return 0 on success 
-// return -ENOMEM on OOM 
-// return -EINVAL if inode_data doesn't represent a file
-static int UG_consistency_fskit_dir_init( struct fskit_entry* fent, struct fskit_entry* parent, struct md_entry* inode_data ) {
-   
-   int rc = 0;
-   
-   // sanity check 
-   if( inode_data->type != MD_ENTRY_DIR ) {
-      return -EINVAL;
-   }
-   
-   rc = fskit_entry_init_dir( fent, parent, inode_data->file_id, inode_data->name, inode_data->owner, inode_data->volume, inode_data->mode );
-   if( rc != 0 ) {
-      
-      return rc;
-   }
-   
-   UG_consistency_fskit_common_init( fent, inode_data );
-   
-   return 0;
-}
-
-// generate a new fskit entry for a regular file 
-// return 0 on success
-// return -ENOMEM on OOM 
-// return -EINVAL if inode_data doesn't represent a file
-static int UG_consistency_fskit_file_init( struct fskit_entry* fent, struct md_entry* inode_data ) {
-   
-   int rc = 0;
-   
-   // sanity 
-   if( inode_data->type != MD_ENTRY_FILE ) {
-      return -EINVAL;
-   }
-   
-   rc = fskit_entry_init_file( fent, inode_data->file_id, inode_data->name, inode_data->owner, inode_data->volume, inode_data->mode );
-   if( rc != 0 ) {
-      
-      return rc;
-   }
-   
-   UG_consistency_fskit_common_init( fent, inode_data );
-   
-   return 0;
-}
-
-
-// build an fskit entry from an exported inode and a manifest 
-// return 0 on success
-// return -ENOMEM on OOM 
-static int UG_consistency_fskit_entry_init( struct fskit_core* fs, struct fskit_entry* fent, struct fskit_entry* parent, struct md_entry* inode_data, struct SG_manifest* manifest ) {
-   
-   int rc = 0;
-   struct UG_inode* inode = NULL;
-   bool manifest_alloced = false;
-   
-   // going from file to directory?
-   if( inode_data->type == MD_ENTRY_FILE ) {
-      
-      // turn the inode into a directory, and blow away the file's data
-      // set up the file 
-      rc = UG_consistency_fskit_file_init( fent, inode_data );
-      if( rc != 0 ) {
-         
-         return rc;
-      }
-   }
-   else {
-      
-      // going to make a directory, and replace this file.
-      // set up the directory 
-      rc = UG_consistency_fskit_dir_init( fent, parent, inode_data );
-      if( rc != 0 ) {
-         
-         return rc;
-      }
-   }
-   
-   // build the inode
-   inode = UG_inode_alloc( 1 );
-   if( inode == NULL ) {
-      
-      fskit_entry_destroy( fs, fent, false );
-      return -ENOMEM;
-   }
-   
-   if( manifest == NULL ) {
-      
-      // build a manifest
-      manifest = SG_CALLOC( struct SG_manifest, 1 );
-      if( manifest == NULL ) {
-         
-         SG_safe_free( inode );
-         fskit_entry_destroy( fs, fent, false );
-         return -ENOMEM;
-      }
-      
-      rc = SG_manifest_init( manifest, inode_data->volume, inode_data->coordinator, inode_data->file_id, inode_data->version );
-      if( rc != 0 ) {
-         
-         SG_safe_free( inode );
-         SG_safe_free( manifest );
-         fskit_entry_destroy( fs, fent, false );
-         return rc;
-      }
-      
-      manifest_alloced = true;
-   }
-   
-   // set up the inode 
-   rc = UG_inode_init_from_export( inode, inode_data, manifest, fent );
-   if( rc != 0 ) {
-      
-      if( manifest_alloced ) {
-         
-         SG_manifest_free( manifest );
-         SG_safe_free( manifest );
-      }
-      
-      fskit_entry_destroy( fs, fent, false );
-      
-      return rc;
-   }
-   
-   // put the inode into the fent 
-   fskit_entry_set_user_data( fent, inode );
-   
-   return 0;
-}     
-
-
 // replace one fskit_entry with another.
 // deferred-delete the old fent.
 // return 0 on success
@@ -407,24 +377,32 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    
+   char* basename = fskit_basename( fs_path, NULL );
+   if( basename == NULL ) { 
+       return -ENOMEM;
+   }
+   
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
    
-   // blow away this file/directory and replace it with the file/directory
-   rc = fskit_entry_detach_lowlevel_force( parent, fent );
+   // blow away this file/directory and its children
+   rc = UG_deferred_remove( ug, fs_path, fent );
    if( rc != 0 ) {
       
-      SG_error("fskit_entry_detach_lowlevel_force( '%s' ) rc = %d\n", fs_path, rc );
+      SG_error("UG_deferred_remove( '%s' ) rc = %d\n", fs_path, rc );
       
       fskit_entry_destroy( fs, new_fent, false );
       SG_safe_free( new_fent );
+      SG_safe_free( basename );
       
       return rc;
    }
    
    // put the new one in place
-   rc = fskit_entry_attach_lowlevel( parent, new_fent );
+   rc = fskit_entry_attach_lowlevel( parent, new_fent, basename );
+   SG_safe_free( basename );
+   
    if( rc != 0 ) {
       
       SG_error("fskit_entry_attach_lowlevel( '%s' ) rc = %d\n", fs_path, rc );
@@ -436,21 +414,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
       return rc;
    }
    
-   // attached
-   // remember the parent 
-   // new_fent->entry_parent = parent;
-   
-   // blow away the old fskit entry
-   if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_DIR ) {
-      
-      rc = fskit_deferred_remove_all( fs, fs_path, fent );
-   }
-   else {
-      
-      rc = fskit_deferred_remove( fs, fs_path, fent );
-   }
-   
-   // blow away the inode and all its cached data
+   // blow away the inode's cached data
    // (NOTE: don't care if this fails--it'll get reaped eventually)
    md_cache_evict_file( cache, fskit_entry_get_file_id( fent ), UG_inode_file_version( inode ) );
    
@@ -459,7 +423,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
    
    if( rc != 0 ) {
       
-      SG_error("fskit_deferred_remove(_all)( '%s' ) rc = %d\n", fs_path, rc );
+      SG_error("UG_deferred_remove('%s') rc = %d\n", fs_path, rc );
    }
    
    return rc;
@@ -469,7 +433,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
 // reload a single inode's metadata.
 // * if the types don't match, the inode (and its children) will be dropped and a new inode with the new type will be created in its place.
 // * if the versions don't match, then the inode will be reversioned 
-// * for regular files, if the sizes don't match, then the inode will be truncated (i.e. evicting blocks if need be)
+// * for regular files, if the size changed, then the inode will be truncated (i.e. evicting blocks if the size shrank)
 // * if the names don't match, the name will be changed.
 // NOTE: fent must be write-locked
 // NOTE: parent must be write-locked
@@ -478,7 +442,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
 // return 1 if fent got replaced 
 // return -ENOMEM on OOM
 // return -errno on error
-static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path, struct fskit_entry* parent, struct fskit_entry* fent, struct md_entry* inode_data ) {
+static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path, struct fskit_entry* parent, struct fskit_entry* fent, char const* fent_name, struct md_entry* inode_data ) {
    
    int rc = 0;
    struct fskit_entry* new_fent = NULL;
@@ -498,16 +462,19 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    if( !UG_inode_export_match_type( inode, inode_data ) ) {
       
       // make a new fskit entry for this
-      new_fent = SG_CALLOC( struct fskit_entry, 1 );
+      new_fent = fskit_entry_new();
       if( new_fent == NULL ) {
          return -ENOMEM;
       }
       
       // build the new fent
-      rc = UG_consistency_fskit_entry_init( fs, new_fent, parent, inode_data, NULL );
+      rc = UG_inode_fskit_entry_init( fs, new_fent, parent, inode_data );
       if( rc != 0 ) {
          
+         SG_error("UG_inode_fskit_entry_init( '%s' (%" PRIX64 ") ) rc = %d\n", inode_data->name, inode_data->file_id, rc );
+         
          // OOM 
+         fskit_entry_destroy( fs, new_fent, false );
          SG_safe_free( new_fent );
          return rc;
       }
@@ -591,10 +558,11 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    if( UG_inode_export_match_name( inode, inode_data ) <= 0 ) {
       
       // inode got renamed 
-      rc = fskit_entry_rename_in_directory( parent, fent, inode_data->name );
+      rc = fskit_entry_rename_in_directory( parent, fent, fent_name, inode_data->name );
       if( rc != 0 ) {
          
          // OOM 
+         SG_error("fskit_entry_rename_in_directory( '%s' ) rc = %d\n", inode_data->name, rc );
          return rc;
       }
    }
@@ -606,10 +574,10 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       SG_manifest_set_stale( UG_inode_manifest( inode ), true );
    }
    
-   // xattr nonces don't match?
-   if( inode_data->xattr_nonce != UG_inode_xattr_nonce( inode ) ) {
+   // change of coordinator?
+   if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && inode_data->coordinator != SG_gateway_id( gateway ) ) {
       
-      // clear them out 
+      // uncache xattrs--we're not the authoritative source any longer
       fskit_fremovexattr_all( fs, fent );
    }
    
@@ -626,10 +594,14 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       UG_inode_set_refresh_time( inode, &refresh_time );
       
       // only update the manifest refresh time if we're NOT the coordinator
-      if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) { 
+      if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) { 
          
          SG_manifest_set_modtime( UG_inode_manifest( inode ), inode_data->manifest_mtime_sec, inode_data->manifest_mtime_nsec );
       }
+   }
+   else {
+      
+      SG_error("UG_inode_import( '%s' (%" PRIX64 ") ) rc = %d\n", inode_data->name, inode_data->file_id, rc );
    }
    
    return rc;
@@ -638,7 +610,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
 
 // free a graft--a chain of fskit_entry structures built from UG_consistency_fskit_path_graft_build.
 // do not detach the inodes--we don't want to run the unlink routes.
-// alwyas succeeds
+// destroys graft_parent and all of its children.
+// always succeeds
 static int UG_consistency_fskit_path_graft_free( struct fskit_core* fs, struct fskit_entry* graft_parent, struct md_entry* path_data, size_t path_len ) {
    
    if( graft_parent == NULL ) {
@@ -672,11 +645,14 @@ static int UG_consistency_fskit_path_graft_free( struct fskit_core* fs, struct f
 
 
 // construct a graft--a chain of fskit_entry structures--from an ordered list of inode metadata.
-// do not attach it to fskit; just build it up 
+// do not attach it to fskit; just build it up.
+// remote_path->at(i) should match path_data[i].
+// if remote_path->at(i) is bound to anything, it should be bound to a malloc'ed fskit_xattr_set that contains the node's xattrs (fetched if this gateway is the coordinator)
 // return 0 on success, and set *graft_root to be the root of the graft.  graft_root will have no parent (i.e. a NULL parent for "..")
 // return -EINVAL on invalid data (i.e. the path_data contains a non-leaf directory, etc.)
 // return -ENOMEM on OOM
-static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, struct md_entry* path_data, size_t path_len, struct fskit_entry** graft_root ) {
+// NOTE: don't destroy path_data just yet--keep it around so we know how to look up and free the graft later on, if need be
+static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, ms_path_t* remote_path, struct md_entry* path_data, size_t path_len, struct fskit_entry** graft_root ) {
    
    int rc = 0;
    
@@ -685,9 +661,13 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, st
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
+   struct UG_inode* inode = NULL;
+   
+   fskit_xattr_set* xattrs = NULL;
+   fskit_xattr_set* old_xattrs = NULL;
    
    // sanity check--all path_data elements except the leaf must be directories
-   for( size_t i = 0; i < path_len - 1; i++ ) {
+   for( int i = 0; i < (int)path_len - 1; i++ ) {
       
       if( path_data[i].type != MD_ENTRY_DIR ) {
          
@@ -698,33 +678,77 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, st
    for( size_t i = 0; i < path_len; i++ ) {
       
       // next child 
-      graft_child = SG_CALLOC( struct fskit_entry, 1 );
+      graft_child = fskit_entry_new();
       if( graft_child == NULL ) {
          
          rc = -ENOMEM;
-         UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
+         
+         if( *graft_root != NULL ) {
+            UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
+         }
          
          return rc;
       }
       
+      SG_debug("Graft %s %" PRIX64 "\n", (path_data[i].type == MD_ENTRY_DIR ? "directory" : "file"), path_data[i].file_id );
+      
       // build the inode
-      rc = UG_consistency_fskit_entry_init( fs, graft_child, graft_parent, &path_data[i], NULL );
+      rc = UG_inode_fskit_entry_init( fs, graft_child, graft_parent, &path_data[i] );
       if( rc != 0 ) {
          
-         SG_error("UG_consistency_fskit_entry_init( %" PRIX64 " (%s) ) rc = %d\n", path_data[i].file_id, path_data[i].name, rc );
+         SG_error("UG_inode_fskit_entry_init( %" PRIX64 " (%s) ) rc = %d\n", path_data[i].file_id, path_data[i].name, rc );
          
-         UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
+         fskit_entry_destroy( fs, graft_child, false );
+         
+         if( *graft_root != NULL ) {
+            UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
+         }
+         
          return rc;
       }
+      
+      inode = (struct UG_inode*)fskit_entry_get_user_data( graft_child );
+      
+      if( path_data[i].type == MD_ENTRY_FILE ) {
+          
+          // file manifest should be stale, since we only have metadata
+          SG_manifest_set_stale( UG_inode_manifest( inode ), true );
+      }
+      else {
+          
+          // directory children should be stale, since we only have metadata 
+          struct timespec zero;
+          memset( &zero, 0, sizeof(struct timespec) );
+          
+          UG_inode_set_children_refresh_time( inode, &zero );
+      }
+      
+      // metadata is fresh 
+      UG_inode_set_read_stale( inode, false );
+      
+      // transfer xattrs 
+      xattrs = (fskit_xattr_set*)ms_client_path_ent_get_cls( &remote_path->at(i) );
+      if( xattrs != NULL ) {
+          
+          old_xattrs = fskit_entry_swap_xattrs( graft_child, xattrs );
+          
+          if( old_xattrs != NULL ) {
+              fskit_xattr_set_free( old_xattrs );
+              old_xattrs = NULL;
+          }
+      }
+      
+      ms_client_path_ent_set_cls( &remote_path->at(i), NULL );
       
       // insert the inode into its parent (except for the root, which we'll do later)
       if( graft_parent != NULL ) {
             
-         rc = fskit_entry_attach_lowlevel( graft_parent, graft_child );
+         rc = fskit_entry_attach_lowlevel( graft_parent, graft_child, path_data[i].name );
          if( rc != 0 ) {
             
             SG_error("fskit_entry_attach_lowlevel( %" PRIX64 " --> %" PRIX64 " (%s) ) rc = %d\n", fskit_entry_get_file_id( graft_parent ), path_data[i].file_id, path_data[i].name, rc );
             
+            fskit_entry_destroy( fs, graft_child, false );
             UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
             return rc;
          }
@@ -752,31 +776,32 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, st
 // return -EEXIST if there is an existing entry with graft_root's name 
 // return -ENOTDIR if the parent is not a directory
 // return -ENOMEM on OOM 
-static int UG_consistency_fskit_path_graft_attach( struct SG_gateway* gateway, char const* fs_path, uint64_t parent_id, struct fskit_entry* graft_root ) {
+static int UG_consistency_fskit_path_graft_attach( struct SG_gateway* gateway, char const* fs_path, uint64_t parent_id, char const* graft_root_name, struct fskit_entry* graft_root ) {
    
    int rc = 0;
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    
-   // struct UG_inode* graft_root_inode = NULL;
-   
-   char* graft_root_name = NULL;
    bool attached = false;
    
-   struct fskit_path_iterator itr;
+   struct fskit_path_iterator* itr = NULL;
    
-   graft_root_name = fskit_entry_get_name( graft_root );
-   if( graft_root_name == NULL ) {
+   if( graft_root == NULL ) {
+      return -EINVAL;
+   }
+   
+   // find the attachment point
+   itr = fskit_path_begin( fs, fs_path, true );
+   if( itr == NULL ) {
       
       return -ENOMEM;
    }
    
-   // find the attachment point
-   for( itr = fskit_path_begin( fs, fs_path, true ); !fskit_path_end( &itr ); fskit_path_next( &itr ) ) {
+   for( ; !fskit_path_end( itr ); fskit_path_next( itr ) ) {
       
       // current entry 
-      struct fskit_entry* cur = fskit_path_iterator_entry( &itr );
+      struct fskit_entry* cur = fskit_path_iterator_entry( itr );
       struct fskit_entry* collision = NULL;
       
       if( fskit_entry_get_file_id( cur ) == parent_id ) {
@@ -793,19 +818,19 @@ static int UG_consistency_fskit_path_graft_attach( struct SG_gateway* gateway, c
          if( collision != NULL ) {
             
             // exists 
+            char* tmppath = fskit_path_iterator_path( itr );
+            SG_error("Directory '%s' has child '%s' already!\n", tmppath, graft_root_name );
+            SG_safe_free( tmppath );
+            
             rc = -EEXIST;
             break;
          }
          
          // attach!
-         rc = fskit_entry_attach_lowlevel( cur, graft_root );
+         rc = fskit_entry_attach_lowlevel( cur, graft_root, graft_root_name );
          
          if( rc == 0 ) {
             attached = true;
-            
-            // remember the parent
-            // graft_root_inode = (struct UG_inode*)fskit_entry_get_user_data( graft_root );
-            // graft_root_inode->entry_parent = cur;
          }
          
          break;
@@ -813,9 +838,7 @@ static int UG_consistency_fskit_path_graft_attach( struct SG_gateway* gateway, c
    }
    
    // done with this iterator
-   fskit_path_iterator_release( &itr );
-   
-   SG_safe_free( graft_root_name );
+   fskit_path_iterator_release( itr );
    
    if( rc == 0 && !attached ) {
       
@@ -827,32 +850,99 @@ static int UG_consistency_fskit_path_graft_attach( struct SG_gateway* gateway, c
 }
 
 
-// build up an ms_path_t of locally-cached but stale fskit entries 
+// free a path's associated path contexts, and unref its entries
+// return 0 on success 
+static int UG_consistency_path_free( struct fskit_core* core, ms_path_t* path ) {
+    
+    // unref all 
+    for( unsigned int i = 0; i < path->size(); i++ ) {
+        
+        struct UG_path_ent_ctx* ent_ctx = (struct UG_path_ent_ctx*)ms_client_path_ent_get_cls( &path->at(i) );
+        if( ent_ctx == NULL ) {
+            continue;
+        }
+        
+        fskit_entry_unref( core, ent_ctx->fs_path, ent_ctx->fent );
+        SG_safe_free( ent_ctx->fs_path );
+        
+        ms_client_path_ent_set_cls( &path->at(i), NULL );
+    }
+    
+    ms_client_free_path( path, NULL );
+    return 0;
+}
+
+
+// build up an ms_path_t of locally-cached but stale fskit entries.
+// for each entry in path_local, bind the associated the fskit entry to the path.
+// NOTE: path_local is not guaranteed to be a contiguous path--we will skip fresh entries
 // return 0 on success 
 // return -ENOMEM on OOM 
-static int UG_consistency_path_local_stale( struct SG_gateway* gateway, char const* fs_path, struct timespec* refresh_begin, ms_path_t* path_local ) {
+static int UG_consistency_path_find_local_stale( struct SG_gateway* gateway, char const* fs_path, struct timespec* refresh_begin, ms_path_t* path_local ) {
    
    int rc = 0;
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    
-   struct fskit_path_iterator itr;
+   struct fskit_path_iterator* itr = NULL;
    
-   for( itr = fskit_path_begin( fs, fs_path, false ); !fskit_path_end( &itr ); fskit_path_next( &itr ) ) {
+   itr = fskit_path_begin( fs, fs_path, true );
+   if( itr == NULL ) {
       
-      struct fskit_entry* cur = fskit_path_iterator_entry( &itr );
+      return -ENOMEM;
+   }
+   
+   for( ; !fskit_path_end( itr ); fskit_path_next( itr ) ) {
+      
+      struct fskit_entry* cur = fskit_path_iterator_entry( itr );
+      struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( cur );
       
       struct ms_path_ent path_ent;
-      
-      struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( cur );
+      struct UG_path_ent_ctx* path_ctx = NULL;  // remember the entries we reference
       
       // is this inode stale?  skip if not
       if( !UG_inode_is_read_stale( inode, refresh_begin ) ) {
+         
+         char* name = fskit_path_iterator_name( itr );
+         SG_debug("fresh: '%s' /%" PRIu64 "/%" PRIX64 ".%" PRId64 ", %" PRId64 "\n", name, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ) );
+         SG_safe_free( name );
+   
          continue;
       }
+      else {
+         
+         char* name = fskit_path_iterator_name( itr );
+         struct timespec refresh_time = UG_inode_refresh_time( inode );
+         
+         SG_debug("stale: '%s' /%" PRIu64 "/%" PRIX64 ".%" PRId64 ", %" PRId64 " (mtime: %" PRId64 ".%ld, refresh_begin: %" PRId64 ".%ld, diff = %" PRId64 ", max = %d, is_stale = %d)\n",
+                  name, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ),
+                  refresh_time.tv_sec, refresh_time.tv_nsec, refresh_begin->tv_sec, refresh_begin->tv_nsec, md_timespec_diff_ms( refresh_begin, &refresh_time ),
+                  UG_inode_max_read_freshness( inode ), UG_inode_is_read_stale( inode, NULL ) );
+         
+         SG_safe_free( name );
+      }
       
-      rc = ms_client_getattr_request( &path_ent, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ), NULL );
+      path_ctx = SG_CALLOC( struct UG_path_ent_ctx, 1 );
+      if( path_ctx == NULL ) {
+         rc = -ENOMEM;
+         break;
+      }
+      
+      char* cur_path = fskit_path_iterator_path( itr );
+      if( cur_path == NULL ) {
+         SG_safe_free( path_ctx );
+         rc = -ENOMEM;
+         break;
+      }
+      
+      // keep this fent around 
+      fskit_entry_ref_entry( cur );
+      
+      path_ctx->fent = cur;
+      path_ctx->fs_path = cur_path;
+      
+      rc = ms_client_getattr_request( &path_ent, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ), path_ctx );
       if( rc != 0 ) {
          
          // OOM 
@@ -871,7 +961,13 @@ static int UG_consistency_path_local_stale( struct SG_gateway* gateway, char con
    }
    
    // done with this iterator
-   fskit_path_iterator_release( &itr );
+   fskit_path_iterator_release( itr );
+   
+   if( rc != 0 ) {
+       
+       // unref all 
+       UG_consistency_path_free( fs, path_local );
+   }
    
    return rc;
 }
@@ -883,92 +979,151 @@ static int UG_consistency_path_local_stale( struct SG_gateway* gateway, char con
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EINVAL if the order of inode_data is out-of-whack with fskit
-static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char const* fs_path, struct md_entry* inode_data, size_t num_inodes ) {
+static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char const* fs_path, ms_path_t* path_stale, struct md_entry* inode_data, size_t num_inodes ) {
    
    int rc = 0;
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    char* name = NULL;           // inode name in fskit
+   uint64_t file_id = 0;        // inode ID
    size_t inode_i = 0;          // indexes inode_data
+   struct UG_inode* inode = NULL;
+   bool skip = false;
    
    if( num_inodes == 0 ) {
       return 0;
    }
    
-   struct fskit_path_iterator itr;
+   struct fskit_path_iterator* itr = NULL;
    
    // reload each stale inode 
-   for( itr = fskit_path_begin( fs, fs_path, true ); !fskit_path_end( &itr ); fskit_path_next( &itr ) ) {
+   itr = fskit_path_begin( fs, fs_path, true );
+   if( itr == NULL ) {
       
-      struct fskit_entry* cur = fskit_path_iterator_entry( &itr );
-      struct fskit_entry* parent = fskit_path_iterator_entry_parent( &itr );
+      return -ENOMEM;
+   }
+   
+   for( ; !fskit_path_end( itr ); fskit_path_next( itr ) ) {
+      
+      struct fskit_entry* cur = fskit_path_iterator_entry( itr );
+      char* cur_name = fskit_path_iterator_name( itr );
+      struct fskit_entry* parent = fskit_path_iterator_entry_parent( itr );
+      
+      file_id = fskit_entry_get_file_id( cur );
+      inode = (struct UG_inode*)fskit_entry_get_user_data( cur );
+      
+      // if not stale, then skip 
+      skip = true;
+      for( unsigned int j = 0; j < path_stale->size(); j++ ) {
+          if( path_stale->at(j).file_id == file_id ) {
+              skip = false;
+              break;
+          }
+      }
+      
+      if( skip ) {
+          // this inode is fresh
+          continue;
+      }
+      
+      if( inode_i >= num_inodes ) {
+         
+         SG_error("overflow: counted %zu inodes\n", inode_i );
+         rc = -EINVAL;
+         break;
+      }
       
       // next datum 
       struct md_entry* inode_datum = &inode_data[ inode_i ];
       
       // is this the fskit entry to reload?
-      if( fskit_entry_get_file_id( cur ) != inode_datum->file_id ) {
+      if( file_id != inode_datum->file_id ) {
          
-         // nope--this one's fresh 
+         // nope--this one's fresh. dig deeper
+         SG_debug("skip: '%s' (%" PRIX64 ")\n", cur_name, file_id );
+         SG_safe_free( cur_name );
+         
          continue;
       }
+      
+      SG_debug("Consider %" PRIX64 ".%" PRId64 ".%" PRId64 "\n",
+               inode_data[inode_i].file_id, inode_data[inode_i].version, inode_data[inode_i].write_nonce );
       
       // is there any change to reload?
       if( inode_datum->error == MS_LISTING_NOCHANGE ) {
          
          // nope--nothing to do 
          inode_i++;
+         
+         // mark fresh
+         UG_inode_set_read_stale( inode, false );
+         
+         /////////////////////////////////////
+         SG_debug("nochange: '%s' (%" PRIX64 ")\n", cur_name, file_id );
+         /////////////////////////////////////
+         
+         SG_safe_free( cur_name );
          continue;
       }
       
+      
+      /////////////////////////////////////
+      
+      char* tmp = NULL;
+      char* tmppath = NULL;
+      rc = md_entry_to_string( inode_datum, &tmp );
+      if( rc == 0 && tmp != NULL ) {
+         tmppath = fskit_path_iterator_path( itr );
+         if( tmppath != NULL ) {
+            SG_debug("Reloading '%s' with:\n%s\n", tmppath, tmp );
+            SG_safe_free( tmppath );
+         }
+         SG_safe_free( tmp );
+      }
+      
+      /////////////////////////////////////
+         
       // does this inode exist on the MS?
       if( inode_datum->error == MS_LISTING_NONE ) {
          
+         SG_safe_free( cur_name );
+          
          // nope--this inode and everything beneath it got unlinked remotely
          // blow them all away locally
-         char const* method = NULL;
-         
-         char* path_stump = fskit_path_iterator_path( &itr );
+         char* path_stump = fskit_path_iterator_path( itr );
          if( path_stump == NULL ) {
             
             rc = -ENOMEM;
             break;
          }
          
-         if( fskit_entry_get_type( cur ) == FSKIT_ENTRY_TYPE_FILE ) {
-            
-            method = "fskit_deferred_remove";
-            rc = fskit_deferred_remove( fs, path_stump, cur );
-         }
-         else {
-            
-            method = "fskit_deferred_remove_all";
-            rc = fskit_deferred_remove_all( fs, path_stump, cur );
-         }
-         
+         rc = UG_deferred_remove( ug, path_stump, cur );
          if( rc != 0 ) {
             
-            SG_error( "%s('%s') rc = %d\n", method, path_stump, rc );
+            SG_error( "UG_deferred_remove('%s') rc = %d\n", path_stump, rc );
          }
          
          SG_safe_free( path_stump );
          
          // done iterating
-         fskit_path_iterator_release( &itr );
+         fskit_path_iterator_release( itr );
          return rc;
       }
       
       // name of this inode, in case it gets blown away?
-      name = fskit_entry_get_name( cur );
+      name = SG_strdup_or_null( inode_datum->name );
       if( name == NULL ) {
          
          rc = -ENOMEM;
+         SG_safe_free( cur_name );
+         
          break;
       }
          
       // reload 
-      rc = UG_consistency_inode_reload( gateway, fs_path, parent, cur, inode_datum );
+      rc = UG_consistency_inode_reload( gateway, fs_path, parent, cur, cur_name, inode_datum );
+      SG_safe_free( cur_name );
    
       if( rc < 0 ) {
          
@@ -1002,36 +1157,36 @@ static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char co
    }
    
    // done iterating
-   fskit_path_iterator_release( &itr );
+   fskit_path_iterator_release( itr );
    
    return rc;
 }
 
 
 // build up a path of download requests for remote entries
-// return 0 on success, and fill in *path_remote with remote paths
+// return 0 on success, and fill in *path_remote with remote inode data (could be empty)
 // return -ENOMEM on OOM 
-static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* fs_path, ms_path_t* path_remote ) {
+static int UG_consistency_path_find_remote( struct SG_gateway* gateway, char const* fs_path, ms_path_t* path_remote ) {
 
    int rc = 0;
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
-   char* path_dup = NULL;
    
    struct UG_inode* inode = NULL;
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
-   struct fskit_path_iterator itr;
+   struct fskit_path_iterator* itr = NULL;
    
    struct ms_path_ent deepest_ent;
    uint64_t deepest_ent_parent_id = 0;
    uint64_t deepest_ent_file_id = 0;
-   char* deepest_ent_name = NULL;
-   
+   char* remote_head = NULL;
+   int itr_error = 0;
    int depth = 0;
+   
    char** names = NULL;
 
    // in order to build up the contents of path_remote, we need
@@ -1040,59 +1195,70 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
    // the remaining entries only need names and volume_id.
    // find this parent, and populate it.
    // This means, find the entry at the end of the locally-cached path, but keep track of how deep it is too.
-   for( itr = fskit_path_begin( fs, fs_path, false ); !fskit_path_end( &itr ); fskit_path_next( &itr ) ) {
+   itr = fskit_path_begin( fs, fs_path, false );
+   if( itr == NULL ) {
+      return -ENOMEM;
+   }
+   
+   for( ; !fskit_path_end( itr ); fskit_path_next( itr ) ) {
       
-      struct fskit_entry* cur = fskit_path_iterator_entry( &itr );
+      struct fskit_entry* cur = fskit_path_iterator_entry( itr );
       
-      char* name = fskit_entry_get_name( cur );
-      if( name == NULL ) {
-         
-         // OOM!
-         rc = -ENOMEM;
-         break;
-      }
-      
-      SG_safe_free( deepest_ent_name );
+      inode = (struct UG_inode*)fskit_entry_get_user_data( cur );
       
       deepest_ent_parent_id = deepest_ent_file_id;
       deepest_ent_file_id = UG_inode_file_id( inode );
-      deepest_ent_name = name;
       
       depth++;
    }
    
+   itr_error = fskit_path_iterator_error( itr );
+   
    // done iterating
-   fskit_path_iterator_release( &itr );
+   fskit_path_iterator_release( itr );
    
    // failed?
    if( rc != 0 ) {
       
-      SG_safe_free( deepest_ent_name );
       return rc;
    }
    
-   // should have hit ENOENT...
-   if( fskit_path_iterator_error( &itr ) == 0 ) {
+   // should have hit ENOENT if we had anything remote
+   if( itr_error == 0 ) {
       
       // nothing to do!
-      SG_safe_free( deepest_ent_name );
       return 0;
    }
-   else if( fskit_path_iterator_error( &itr ) != -ENOENT ) {
+   else if( itr_error != -ENOENT ) {
       
       // some other error...
-      SG_error("fskit_path_iterator_error('%s') rc = %d\n", fs_path, fskit_path_iterator_error( &itr ) );
-      SG_safe_free( deepest_ent_name );
-      return fskit_path_iterator_error( &itr );
+      SG_error("fskit_path_iterator_error('%s') rc = %d\n", fs_path, itr_error );
+      return itr_error;
    }
    
    // build the head of the remote path 
-   rc = ms_client_path_download_ent_head( &deepest_ent, volume_id, deepest_ent_file_id, deepest_ent_parent_id, deepest_ent_name, NULL );
-   SG_safe_free( deepest_ent_name );
+   // the first name is the first non-local entry 
+   remote_head = SG_strdup_or_null( fs_path );
+   if( remote_head == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   rc = fskit_path_split( remote_head, &names );
+   if( rc != 0 ) {
+      
+      SG_safe_free( remote_head );
+      return -ENOMEM;
+   }
+   
+   // head is the deepest local entry, who's child is remote
+   rc = ms_client_path_download_ent_head( &deepest_ent, volume_id, deepest_ent_file_id, deepest_ent_parent_id, names[depth-1], NULL );
    
    if( rc != 0 ) {
       
       // OOM 
+      SG_safe_free( remote_head );
+      SG_safe_free( names );
       return rc;
    }
    
@@ -1103,22 +1269,8 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
    catch( bad_alloc& ba ) {
       
       ms_client_free_path_ent( &deepest_ent, NULL );
-      return -ENOMEM;
-   }
-   
-   // get tail names
-   path_dup = SG_strdup_or_null( fs_path );
-   if( path_dup == NULL ) {
-      
-      ms_client_free_path( path_remote, NULL );
-      return -ENOMEM;
-   }
-   
-   rc = fskit_path_split( path_dup, &names );
-   if( rc != 0 ) {
-      
-      SG_safe_free( path_dup );
-      ms_client_free_path( path_remote, NULL );
+      SG_safe_free( remote_head );
+      SG_safe_free( names );
       return -ENOMEM;
    }
    
@@ -1127,11 +1279,17 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
       
       struct ms_path_ent ms_ent;
       
+      // skip .
+      if( strcmp(names[i], ".") == 0 ) {
+         continue;
+      }
+      
       rc = ms_client_path_download_ent_tail( &ms_ent, volume_id, names[i], NULL );
       if( rc != 0 ) {
          
          ms_client_free_path( path_remote, NULL );
-         SG_safe_free( path_dup );
+         SG_safe_free( remote_head );
+         SG_safe_free( names );
          return rc;
       }
       
@@ -1142,15 +1300,49 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
       catch( bad_alloc& ba ) {
          
          ms_client_free_path( path_remote, NULL );
-         SG_safe_free( path_dup );
+         SG_safe_free( remote_head );
+         SG_safe_free( names );
          return -ENOMEM;
       }
    }
    
-   SG_safe_free( path_dup );
+   SG_safe_free( remote_head );
+   SG_safe_free( names );
    
    // built!
    return 0;
+}
+
+
+// clean up a remote path entry:
+// * if it contains anything, it will be an fskit_xattr_set.  free it.
+static void UG_consistency_path_free_remote( void* cls ) {
+    
+    if( cls != NULL ) {
+        
+        fskit_xattr_set* xattrs = (fskit_xattr_set*)cls;
+        fskit_xattr_set_free( xattrs );
+    }
+}
+
+
+// merge unchanged path data into a multi-result 
+// always succeeds 
+static void UG_consistency_path_merge_nochange( ms_path_t* path, struct ms_client_multi_result* result ) {
+    
+    for( int i = 0; i < result->num_processed; i++ ) {
+        
+        if( result->ents[i].error == MS_LISTING_NOCHANGE ) {
+            
+            result->ents[i].file_id = path->at(i).file_id;
+            result->ents[i].version = path->at(i).version;
+            result->ents[i].write_nonce = path->at(i).write_nonce;
+            result->ents[i].parent_id = path->at(i).parent_id;
+            result->ents[i].num_children = path->at(i).num_children;
+            result->ents[i].generation = path->at(i).generation;
+            result->ents[i].capacity = path->at(i).capacity;
+        }
+    }
 }
 
 
@@ -1163,6 +1355,7 @@ static int UG_consistency_path_remote( struct SG_gateway* gateway, char const* f
 int UG_consistency_path_ensure_fresh( struct SG_gateway* gateway, char const* fs_path ) {
    
    int rc = 0;
+   bool not_found = false;      // set if we get ENOENT on a remote path 
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
@@ -1174,49 +1367,99 @@ int UG_consistency_path_ensure_fresh( struct SG_gateway* gateway, char const* fs
    
    struct timespec refresh_start;
    
-   struct ms_client_multi_result remote_inodes;
+   struct ms_client_multi_result remote_inodes_stale;           // for revalidating stale data
+   struct ms_client_multi_result remote_inodes_downloaded;      // for fetching unexplored data
+   
+   memset( &remote_inodes_stale, 0, sizeof(struct ms_client_multi_result) );
+   memset( &remote_inodes_downloaded, 0, sizeof(struct ms_client_multi_result) );
    
    struct fskit_entry* graft_root = NULL;
    
    clock_gettime( CLOCK_REALTIME, &refresh_start );
    
-   // find all local stale nodes 
-   rc = UG_consistency_path_local_stale( gateway, fs_path, &refresh_start, &path_local );
+   // find all local stale nodes.
+   // each entry in path_local will be bound to its ref'ed fskit_entry
+   rc = UG_consistency_path_find_local_stale( gateway, fs_path, &refresh_start, &path_local );
    if( rc != 0 ) {
       
-      SG_error("UG_consistency_path_local_stale( '%s' ) rc = %d\n", fs_path, rc );
+      SG_error("UG_consistency_path_find_local_stale( '%s' ) rc = %d\n", fs_path, rc );
       return rc;
    }
    
-   // refresh stale data 
-   rc = ms_client_getattr_multi( ms, &path_local, &remote_inodes );
-   ms_client_free_path( &path_local, NULL );
+   SG_debug("Will fetch %zu stale inodes for '%s'\n", path_local.size(), fs_path );
    
-   if( rc != 0 ) {
+   // refresh stale data 
+   rc = ms_client_getattr_multi( ms, &path_local, &remote_inodes_stale );
+   
+   if( rc != 0 && rc != -ENOENT ) {
+      
+      UG_consistency_path_free( fs, &path_local );
       
       SG_error("ms_client_getattr_multi('%s') rc = %d\n", fs_path, rc );
       return rc;
    }
+   else if( rc == -ENOENT ) {
+       
+      not_found = true;
+   }
+   
+   // ensure that even for unchanged inodes, we have enough inode information to find and merge the fresh data into our cached tree.
+   // UG_consistency_path_merge_nochange( &path_local, &remote_inodes_stale );
+   
+   /////////////////////////////////////////////////////////////
+   
+   SG_debug("Fetched %d stale inodes for '%s'\n", remote_inodes_stale.num_processed, fs_path );
+   for( int i = 0; i < remote_inodes_stale.num_processed; i++ ) {
+      
+      char* inode_str = NULL;
+      if( remote_inodes_stale.ents[i].error == MS_LISTING_NEW ) {
+         rc = md_entry_to_string( &remote_inodes_stale.ents[i], &inode_str );
+         if( rc == 0 ) {
+            
+            SG_debug("REFRESHED entry %d:\n%s\n", i, inode_str );
+            SG_safe_free( inode_str );
+         }
+      }
+   }
+   
+   /////////////////////////////////////////////////////////////
    
    // load downloaded inodes into the fskit filesystem tree 
-   rc = UG_consistency_path_stale_reload( gateway, fs_path, remote_inodes.ents, remote_inodes.num_ents );
+   if( remote_inodes_stale.num_processed > 0 ) {
+      
+      // prune absent entries and reload still-existing ones
+      rc = UG_consistency_path_stale_reload( gateway, fs_path, &path_local, remote_inodes_stale.ents, remote_inodes_stale.num_processed );
+      
+      ms_client_multi_result_free( &remote_inodes_stale );
+      UG_consistency_path_free( fs, &path_local );
+      
+      if( rc != 0 ) {
+         
+         SG_error("UG_consistency_path_stale_reload('%s') rc = %d\n", fs_path, rc );
+         return rc;
+      }
+   }
+   else {
+       ms_client_multi_result_free( &remote_inodes_stale );
+       UG_consistency_path_free( fs, &path_local );
+   }
+   
+   if( not_found ) {
+       
+       // done 
+       ms_client_multi_result_free( &remote_inodes_stale );
+       return -ENOENT;
+   }
+   
+   // which inodes do we not have locally cached?
+   rc = UG_consistency_path_find_remote( gateway, fs_path, &path_remote );
    if( rc != 0 ) {
       
-      SG_error("UG_consistency_path_stale_reload('%s') rc = %d\n", fs_path, rc );
-        
+      SG_error("UG_consistency_path_find_remote('%s') rc = %d\n", fs_path, rc );
       return rc;
    }
    
-   ms_client_multi_result_free( &remote_inodes );
-   
-   // which inodes are remote?
-   rc = UG_consistency_path_remote( gateway, fs_path, &path_remote );
-   if( rc != 0 ) {
-      
-      SG_error("UG_consistency_path_remote('%s') rc = %d\n", fs_path, rc );
-      
-      return rc;
-   }
+   SG_debug("Will fetch %zu remote inodes for '%s'\n", path_remote.size(), fs_path );
    
    // are any remote?
    if( path_remote.size() == 0 ) {
@@ -1226,43 +1469,78 @@ int UG_consistency_path_ensure_fresh( struct SG_gateway* gateway, char const* fs
    }
    
    // fetch remote inodes
-   rc = ms_client_path_download( ms, &path_remote, &remote_inodes );
-   if( rc != 0 ) {
+   rc = ms_client_path_download( ms, &path_remote, &remote_inodes_downloaded );
+   if( rc != 0 && rc != -ENOENT ) {
+      
+      ms_client_free_path( &path_remote, NULL );
+      ms_client_multi_result_free( &remote_inodes_downloaded );
       
       SG_error("ms_client_download_path('%s') rc = %d\n", fs_path, rc );
       
       return rc;
    }
+   else if( rc == -ENOENT ) {
+       
+      not_found = true;
+   }
    
-   // build a graft from them 
-   rc = UG_consistency_fskit_path_graft_build( gateway, remote_inodes.ents, remote_inodes.num_ents, &graft_root );
+   // fetch the xattrs for all remote inodes we received for which we are the coordinator.
+   // we will have received the xattr hash in the remote_inodes_downloaded.ents listing.
+   // the xattrs in each case will be attached to path_remote's entries
+   rc = UG_consistency_fetchxattrs_all( gateway, &path_remote, &remote_inodes_downloaded );
    if( rc != 0 ) {
       
-      ms_client_free_path( &path_remote, NULL );
+      ms_client_free_path( &path_remote, UG_consistency_path_free_remote );
+      ms_client_multi_result_free( &remote_inodes_downloaded );
+      
+      SG_error("UG_consistency_fetchxattrs_all('%s') rc = %d\n", fs_path, rc );
+      
+      return rc;
+   }
+   
+   SG_debug("Fetched %d remote inode(s) for '%s'\n", remote_inodes_downloaded.num_processed, fs_path );
+   
+   // build a graft from all absent entries downloaded, as well as any xattrs we just downloaded
+   rc = UG_consistency_fskit_path_graft_build( gateway, &path_remote, remote_inodes_downloaded.ents, remote_inodes_downloaded.num_processed, &graft_root );
+   
+   if( rc != 0 ) {
+      
+      ms_client_free_path( &path_remote, UG_consistency_path_free_remote );
+      ms_client_multi_result_free( &remote_inodes_downloaded );
       
       SG_error("UG_consistency_fskit_path_graft_build('%s') rc = %d\n", fs_path, rc );
       return rc;
    }
    
    // graft absent inodes into fskit 
-   rc = UG_consistency_fskit_path_graft_attach( gateway, fs_path, path_remote.at(0).parent_id, graft_root );
-   if( rc != 0 ) {
-      
-      UG_consistency_fskit_path_graft_free( fs, graft_root, remote_inodes.ents, remote_inodes.num_ents );
-      
-      char* tmp = fskit_entry_get_name( graft_root );
-      SG_error("UG_consistency_fskit_path_graft_attach('%s' (at %" PRIX64 " (%s)) ) rc = %d\n", fs_path, fskit_entry_get_file_id( graft_root ), tmp, rc );
-      
-      SG_safe_free( tmp );
-      ms_client_free_path( &path_remote, NULL );
-   
-      return rc;
+   if( graft_root != NULL ) {
+            
+       rc = UG_consistency_fskit_path_graft_attach( gateway, fs_path, path_remote.at(0).parent_id, remote_inodes_downloaded.ents[0].name, graft_root );
+       if( rc != 0 ) {
+            
+           ////////////////////////////////////////////////////////////////////
+           SG_error("UG_consistency_fskit_path_graft_attach('%s' (at %" PRIX64 " (%s)) ) rc = %d\n", fs_path, fskit_entry_get_file_id( graft_root ), remote_inodes_downloaded.ents[0].name, rc );
+           ////////////////////////////////////////////////////////////////////
+            
+           UG_consistency_fskit_path_graft_free( fs, graft_root, remote_inodes_downloaded.ents, remote_inodes_downloaded.num_processed );
+           ms_client_multi_result_free( &remote_inodes_downloaded );
+            
+           ms_client_free_path( &path_remote, UG_consistency_path_free_remote );
+        
+           return rc;
+       }
    }
    
    // finished!
    ms_client_free_path( &path_remote, NULL );
+   ms_client_multi_result_free( &remote_inodes_downloaded );
    
-   return 0;
+   if( not_found ) {
+       return -ENOENT;
+   }
+   else {
+       return 0;
+   }
 }
 
 
@@ -1283,13 +1561,15 @@ static int UG_consistency_dir_merge( struct SG_gateway* gateway, char const* fs_
    // set up the fs_path buffer 
    for( size_t i = 0; i < num_ents; i++ ) {
       
-      size_t len = strlen( ents[i].name );
-      if( len > max_name_len ) {
-         max_name_len = len;
+      if( ents[i].name != NULL ) {
+         size_t len = strlen( ents[i].name );
+         if( len > max_name_len ) {
+             max_name_len = len;
+         }
       }
    }
    
-   fs_path = SG_CALLOC( char, strlen(fs_path_dir) + 1 + max_name_len + 1 );
+   fs_path = SG_CALLOC( char, strlen(fs_path_dir) + 1 + max_name_len + 2 );
    if( fs_path == NULL ) {
       
       return -ENOMEM;
@@ -1326,7 +1606,7 @@ static int UG_consistency_dir_merge( struct SG_gateway* gateway, char const* fs_
          if( md_timespec_diff_ms( &ctime, keep_cutoff ) < 0 ) {
             
             // fent was created before the reload, and is in conflict.  reload
-            rc = UG_consistency_inode_reload( gateway, fs_path, dent, fent, ent );
+            rc = UG_consistency_inode_reload( gateway, fs_path, dent, fent, ent->name, ent );
             if( rc < 0 ) {
                
                SG_error("UG_consistency_inode_reload('%s') rc = %d\n", fs_path, rc );
@@ -1352,23 +1632,24 @@ static int UG_consistency_dir_merge( struct SG_gateway* gateway, char const* fs_
       else {
          
          // insert this entry 
-         fent = SG_CALLOC( struct fskit_entry, 1 );
+         fent = fskit_entry_new();
          if( fent == NULL ) {
             
             rc = -ENOMEM;
             break;
          }
          
-         rc = UG_consistency_fskit_entry_init( fs, fent, dent, ent, NULL );
+         rc = UG_inode_fskit_entry_init( fs, fent, dent, ent );
          if( rc != 0 ) {
             
-            SG_error("UG_consistency_fskit_entry_init('%s') rc = %d\n", fs_path, rc );
+            SG_error("UG_inode_fskit_entry_init('%s') rc = %d\n", fs_path, rc );
             
+            fskit_entry_destroy( fs, fent, false );
             SG_safe_free( fent );
             break;
          }
          
-         rc = fskit_entry_attach_lowlevel( dent, fent );
+         rc = fskit_entry_attach_lowlevel( dent, fent, ent->name );
          if( rc != 0 ) {
             
             SG_error("fskit_entry_attach_lowlevel('%s', '%s') rc = %d\n", fs_path_dir, ent->name, rc );
@@ -1404,6 +1685,7 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    
    struct timespec now;
    struct timespec dir_refresh_time;
+   struct timespec children_refresh_time;
    
    struct ms_client_multi_result results;
    
@@ -1432,11 +1714,13 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    
    dir_refresh_time = UG_inode_refresh_time( inode );
    max_read_freshness = UG_inode_max_read_freshness( inode );
+   children_refresh_time = UG_inode_children_refresh_time( inode );
    
    // is the inode's directory listing still fresh?
-   if( md_timespec_diff_ms( &now, &dir_refresh_time ) <= max_read_freshness ) {
+   if( md_timespec_diff_ms( &now, &dir_refresh_time ) <= max_read_freshness && md_timespec_diff_ms( &now, &children_refresh_time ) <= max_read_freshness ) {
       
       // still fresh 
+      SG_debug("'%s' is fresh\n", fs_path );
       fskit_entry_unlock( dent );
       return 0;
    }
@@ -1453,7 +1737,7 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    fskit_entry_unlock( dent );
 
    // have we listed before?
-   if( least_unknown_generation == 0 ) {
+   if( least_unknown_generation <= 1 ) {
       
       // nope--full download
       method = "ms_client_listdir";
@@ -1470,6 +1754,8 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
       SG_error("%s('%s') rc = %d\n", method, fs_path, rc );
       fskit_entry_unref( fs, fs_path, dent );
       
+      ms_client_multi_result_free( &results );
+      
       return rc;
    }
    
@@ -1477,6 +1763,8 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
       
       SG_error("%s('%s') reply_error = %d\n", method, fs_path, rc );
       fskit_entry_unref( fs, fs_path, dent );
+      
+      ms_client_multi_result_free( &results );
       
       return rc;
    }
@@ -1487,7 +1775,18 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    // load them in 
    rc = UG_consistency_dir_merge( gateway, fs_path, dent, results.ents, results.num_ents, &now );
    
+   if( rc == 0 ) {
+      
+      // set refresh time 
+      clock_gettime( CLOCK_REALTIME, &now );
+      inode = (struct UG_inode*)fskit_entry_get_user_data( dent );
+      
+      UG_inode_set_children_refresh_time( inode, &now );
+   }
+   
    fskit_entry_unlock( dent );
+   
+   ms_client_multi_result_free( &results );
    
    if( rc != 0 ) {
       
@@ -1498,3 +1797,93 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    return rc;
 }
 
+
+// fetch all xattrs for a file inode.
+// this is necessary for when we are the coordinator of the file, or are about to become it.
+// return 0 on success, and set *xattr_names, *xattr_values, and *xattr_value_lengths 
+// return -ENOMEM on OOM 
+// return -ENODATA if we failed to fetch the xattr bundle from the MS, for whatever reason
+// return -errno on network-level error 
+int UG_consistency_fetchxattrs( struct SG_gateway* gateway, uint64_t file_id, int64_t xattr_nonce, unsigned char* xattr_hash, fskit_xattr_set** ret_xattrs ) {
+   
+   int rc = 0;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+   
+   char** xattr_names = NULL;
+   char** xattr_values = NULL;
+   size_t* xattr_value_lengths = NULL;
+   fskit_xattr_set* xattr_set = NULL;
+   
+   rc = ms_client_fetchxattrs( ms, volume_id, file_id, xattr_nonce, xattr_hash, &xattr_names, &xattr_values, &xattr_value_lengths );
+   if( rc != 0 ) {
+      
+      SG_error("ms_client_fetchxattrs(/%" PRIu64 "/%" PRIX64 ".%" PRId64 ") rc = %d\n", volume_id, file_id, xattr_nonce, rc );
+      return -ENODATA;
+   }
+   
+   // load them into an xattr set to be fed into the inode 
+   xattr_set = fskit_xattr_set_new();
+   if( xattr_set == NULL ) {
+      
+      SG_FREE_LIST( xattr_names, free );
+      SG_FREE_LIST( xattr_values, free );
+      SG_safe_free( xattr_value_lengths );
+      return -ENOMEM;
+   }
+   
+   for( size_t i = 0; xattr_names[i] != NULL; i++ ) {
+      
+      rc = fskit_xattr_set_insert( &xattr_set, xattr_names[i], xattr_values[i], xattr_value_lengths[i], 0 );
+      if( rc != 0 ) {
+         
+         break;
+      }
+   }
+   
+   if( rc != 0 ) {
+      
+      fskit_xattr_set_free( xattr_set );
+      SG_FREE_LIST( xattr_names, free );
+      SG_FREE_LIST( xattr_values, free );
+      SG_safe_free( xattr_value_lengths );
+      return rc;
+   }
+   
+   *ret_xattrs = xattr_set;
+   return 0;
+}
+
+
+// fetch all xattrs for the files for which we are the coordinator, and merge them into the path.
+// remote_inodes->ents[i] will match path_remote->at(i), and we will put the resulting xattr bundle into path_remote->at(i)
+// we do not have the xattr hash for these nodes yet, so just go with the one from the signed MS entry we put there.
+// return 0 on success, and pair the fskit_xattr_set with each inode's data in the result.
+// return -ENOMEM on OOM
+// return -ENODATA if we failed to fetch the xattr bundle from the MS, for whatever reason 
+// return -errno on network-level error 
+static int UG_consistency_fetchxattrs_all( struct SG_gateway* gateway, ms_path_t* path_remote, struct ms_client_multi_result* remote_inodes ) {
+   
+   int rc = 0;
+   for( size_t i = 0; i < path_remote->size() && remote_inodes->num_processed > 0 && i < (unsigned)remote_inodes->num_processed; i++ ) {
+      
+      fskit_xattr_set* xattrs = NULL;
+      
+      // only do this if we're the coordinator, and if there is xattr data at all
+      if( SG_gateway_id( gateway ) == remote_inodes->ents[i].coordinator && remote_inodes->ents[i].xattr_hash != NULL ) {
+         
+         SG_debug("Fetch xattrs for %" PRIX64 "\n", remote_inodes->ents[i].file_id );
+         rc = UG_consistency_fetchxattrs( gateway, (*path_remote)[i].file_id, remote_inodes->ents[i].xattr_nonce, remote_inodes->ents[i].xattr_hash, &xattrs );
+         if( rc != 0 ) {
+             
+             SG_error("UG_consistency_fetchxattrs(%" PRIX64 ") rc = %d\n", (*path_remote)[i].file_id, rc );
+             return rc;
+         }
+         
+         // associate the xattrs with this path entry 
+         ms_client_path_ent_set_cls( &path_remote->at(i), xattrs );
+      }
+   }
+   
+   return 0;
+}

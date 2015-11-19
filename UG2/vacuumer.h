@@ -30,7 +30,6 @@ struct UG_vacuum_context {
    
    struct timespec old_manifest_timestamp;      // timestamp of the old manifest (to be vacuumed)
    struct SG_manifest old_blocks;               // old info for blocks to be vacuumed
-   ms::ms_reply* vacuum_ticket;                 // ticket from the MS to pass along to the RG to prove that we can vacuum
    
    char* fs_path;                               // path to the inode
    struct md_entry inode_data;                  // exported inode

@@ -81,6 +81,12 @@ static void* md_wq_main( void* cls ) {
    return NULL;
 }
 
+
+// alloc work queues
+struct md_wq* md_wq_new( int count ) {
+   return SG_CALLOC( struct md_wq, count );
+}
+
 // set up a work queue, but don't start it.
 // return 0 on success
 // return negative on failure:

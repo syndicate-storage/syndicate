@@ -18,7 +18,6 @@
 #define _LIBSYNDICATE_DOWNLOAD_H_
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/closure.h"
 #include "libsyndicate/util.h"
 
 #include <set>
@@ -113,7 +112,7 @@ struct md_download_loop {
    
    struct md_downloader* dl;
    
-   struct md_download_context* downloads;
+   struct md_download_context** downloads;
    int num_downloads;
    
    struct md_download_set dlset;

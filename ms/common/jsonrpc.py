@@ -16,6 +16,8 @@
    limitations under the License.
 """
 
+# NOTE: shared between the MS and the Syndicate python package
+
 """
 JSON RPC client and server.
 We carry our own implementation because we require each request and response to 
@@ -61,8 +63,10 @@ ERROR_MESSAGE = {
     SERVER_ERROR_SIGNATURE_ERROR: 'Signature verification error'              # unofficial, Syndicate-specific
 }
 
-# ----------------------------------
 def insert_syndicate_json( json_data, api_version, username, sig ):
+   """
+   Insert extra Syndicate-specific JSON into a JSONRPC request.
+   """
    data = {
       "api_version": str(api_version)
    }
@@ -76,8 +80,18 @@ def insert_syndicate_json( json_data, api_version, username, sig ):
    json_data['Syndicate'] = data
 
 
-# ----------------------------------
 def extract_syndicate_json( json_data, api_version ):
+   """
+   Get Syndicate-specific data fields out of a JSONRPC request.
+   Removes it from json_data if present.
+   
+   Returns {
+      "signature": signature over the request,
+      "username": caller username,
+      "api_version": version of the API 
+   }
+   """
+   
    if not json_data.has_key( 'Syndicate' ):
       log.error("No Syndicate data given")
       return None
@@ -88,8 +102,8 @@ def extract_syndicate_json( json_data, api_version ):
       log.error("No API version")
       return None
    
-   if syndicate_data['api_version'] != api_version:
-      log.error("Invalid API version '%s'" % api_version)
+   if str(syndicate_data['api_version']) != str(api_version):
+      log.error("Invalid API version '%s'" % syndicate_data['api_version'])
       return None
    
    del json_data['Syndicate']
@@ -100,15 +114,16 @@ def extract_syndicate_json( json_data, api_version ):
    return syndicate_data
 
 
-# ----------------------------------
 def json_stable_serialize( json_data ):
-   # convert a dict into json, ensuring that key-values are serialized in a stable order
+   """
+   Convert a dict or list into json, ensuring that key-values are serialized in a stable order.
+   """
    if isinstance( json_data, list ) or isinstance( json_data, tuple ):
       json_serialized_list = []
       for json_element in json_data:
          json_serialized_list.append( json_stable_serialize( json_element ) )
       
-      json_serialized_list.sort()
+      # json_serialized_list.sort()
       return "[" + ", ".join( json_serialized_list ) + "]"
    
    elif isinstance( json_data, dict ):
@@ -369,6 +384,7 @@ class Server(object):
               method_args = syndicate_method_args
            
         if self.verifier:
+            
             data_text = json_stable_serialize( data )
             
             """
@@ -400,14 +416,13 @@ class Client(object):
     # NOTE: this class will not be used on the MS.
     # only used in client endpoints.
     
-    def __init__(self, uri, api_version, username=None, password=None, signer=None, verifier=None, headers={}):
+    def __init__(self, uri, api_version, username=None, signer=None, verifier=None, headers={}):
         self.uri = uri
         self.api_version = api_version
         self.headers = headers
         self.signer = signer
         self.verifier = verifier
         self.username = username
-        self.password = password
         self.syndicate_data = None      # stores syndicate data from the last call
 
     def set_signer( self, signer ):
@@ -431,9 +446,9 @@ class Client(object):
         return self.default
      
     def request(self):
-        # sanity check: need a signer OR a username/password combo
-        if self.signer is None and (self.username is None or self.password is None):
-           raise Exception("Need either an RPC signing callback or a username/password pair!")
+        # sanity check: need a signer
+        if self.signer is None:
+           raise Exception("Need an RPC signing callback!")
         
         parameters = {
             'id': str(uuid.uuid4()),
@@ -468,23 +483,10 @@ class Client(object):
             "Content-Type": "application/json"
         }
         
-        response = None
-        if self.username is not None and self.password is not None:
-           # openid authentication!
-           import syndicate.syndicate as c_syndicate
-           
-           rc, response = c_syndicate.openid_rpc( self.uri, self.username, self.password, "json", data )
-        
-           if rc != 0:
-              log.error("MS OpenID RPC rc = %s" % rc)
-              return None
-        
-        else:
-           # public-key authentication!
-           headers = dict(headers.items() + self.headers.items())
-           req = urllib2.Request(self.uri, data, headers)
+        headers = dict(headers.items() + self.headers.items())
+        req = urllib2.Request(self.uri, data, headers)
 
-           response = urllib2.urlopen(req).read()
+        response = urllib2.urlopen(req).read()
         
         try:
             result = json.loads(response)
@@ -535,6 +537,7 @@ class Client(object):
             data = None
             if "data" in result['error']:
                data = result['error']['data']
+               
             raise Exception('%s Code: %s, Data: %s' % (result['error']['message'], result['error']['code'], data))
          
          

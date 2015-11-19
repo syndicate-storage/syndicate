@@ -1,0 +1,5 @@
+{
+   "STORAGE_DIR": "/tmp/syndicate-storage",
+   "EXEC_FMT":    "/usr/bin/python -m syndicate.rg.gateway",
+   "DRIVER":      "syndicate.rg.drivers.disk"
+}

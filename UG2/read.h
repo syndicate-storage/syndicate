@@ -39,6 +39,9 @@ int UG_read_aligned_setup( struct UG_inode* inode, char* buf, size_t buf_len, of
 // get list of gateways to download from, starting with the coordinator
 int UG_read_download_gateway_list( struct SG_gateway* gateway, uint64_t coordinator_id, uint64_t** gateway_ids, size_t* num_gateway_ids );
 
+// read dirty blocks in RAM
+int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG_dirty_block_map_t* blocks, struct SG_manifest* absent );
+
 // read locally-cached blocks 
 int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, UG_dirty_block_map_t* blocks, struct SG_manifest* blocks_not_local );
 

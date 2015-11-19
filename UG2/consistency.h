@@ -29,6 +29,8 @@
 #include <libsyndicate/ms/getattr.h>
 #include <libsyndicate/ms/listdir.h>
 
+#include <fskit/fskit.h>
+
 extern "C" {
    
 // get the manifest from one of a list of gateways
@@ -42,6 +44,9 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
 
 // reload an inode's manifest
 int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const* fs_path );
+
+// fetch the xattrs for an inode 
+int UG_consistency_fetchxattrs( struct SG_gateway* gateway, uint64_t file_id, int64_t xattr_nonce, unsigned char* xattr_hash, fskit_xattr_set** ret_xattrs );
 
 }
 

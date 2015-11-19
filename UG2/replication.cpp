@@ -18,6 +18,41 @@
 #include "inode.h"
 #include "core.h"
 #include "sync.h"
+#include "client.h"
+
+// gateway_id --> string
+typedef map< uint64_t, char* > UG_replica_metadata_map_t;
+
+// snapshot of inode fields needed for replication and garbage collection 
+struct UG_replica_context {
+   
+   struct UG_state* state;              // ref to the gateway state 
+   
+   char* fs_path;                       // path to the file to replicate
+   
+   struct md_entry inode_data;          // exported inode
+   
+   struct SG_manifest manifest;         // exported manifest to replicate
+   
+   UG_dirty_block_map_t* blocks;        // blocks to replicate
+   
+   UG_replica_metadata_map_t* metadata; // per-gateway metadata to include in the replication request 
+   
+   uint64_t* affected_blocks;           // IDs of the blocks affected by this replica (to be sent to the MS)
+   size_t num_affected_blocks;          // length of affected_blocks 
+   
+   struct UG_block_gateway_pair* chunk_queue;   // set of {gateway IDs} X {block IDs}
+   size_t chunk_queue_len;              
+   
+   bool flushed_blocks;                 // if true, then the blocks have all been flushed to disk and can be replicated 
+   
+   bool sent_vacuum_log;                // if true, then we've told the MS about the manifest and blocks we're about to replicate 
+   
+   bool replicated_blocks;              // if true, then we've replicated blocks and manifests
+   
+   bool sent_ms_update;                 // if true, then we've sent the new inode metadata to the MS
+};
+
 
 // block replication context
 struct UG_chunk_replication_context {
@@ -27,10 +62,29 @@ struct UG_chunk_replication_context {
    
    SG_messages::Request* request;
    size_t chunk_queue_idx;
+
+   struct SG_chunk chunk;
+   bool free_chunk;     // set to determine whether or not to free the chunk above
 };
 
 typedef map< struct md_download_context*, struct UG_chunk_replication_context > UG_chunk_replication_set_t;
 
+
+// new replica context 
+struct UG_replica_context* UG_replica_context_new() {
+   
+   return SG_CALLOC( struct UG_replica_context, 1 );
+}
+
+// get blocks 
+UG_dirty_block_map_t* UG_replica_context_blocks( struct UG_replica_context* rctx ) {
+   return rctx->blocks;
+}
+
+// get inode data 
+struct md_entry* UG_replica_context_inode_data( struct UG_replica_context* rctx ) {
+   return &rctx->inode_data;
+}
 
 // set up a block replication context 
 // always succeeds
@@ -41,6 +95,35 @@ int UG_chunk_replication_context_init( struct UG_chunk_replication_context* chun
    chunk_ctx->manifest = manifest;
    chunk_ctx->request = request;
    chunk_ctx->chunk_queue_idx = chunk_queue_idx;
+
+   if( manifest != NULL ) {
+
+      // serialize 
+      SG_messages::Manifest mmsg;
+      int rc = 0;
+      char* manifest_txt = NULL;
+      size_t manifest_txt_len = 0;
+     
+      rc = SG_manifest_serialize_to_protobuf( chunk_ctx->manifest, &mmsg );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      rc = md_serialize< SG_messages::Manifest >( &mmsg, &manifest_txt, &manifest_txt_len );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      chunk_ctx->chunk.data = manifest_txt;
+      chunk_ctx->chunk.len = manifest_txt_len;
+      chunk_ctx->free_chunk = true;
+   }
+   else {
+        
+      chunk_ctx->chunk = *UG_dirty_block_buf( block );
+      chunk_ctx->free_chunk = false;
+   }
+
    return 0;
 }
 
@@ -49,22 +132,70 @@ int UG_chunk_replication_context_init( struct UG_chunk_replication_context* chun
 int UG_chunk_replication_context_free( struct UG_chunk_replication_context* chunk_ctx ) {
    
    SG_safe_delete( chunk_ctx->request );
+
+   if( chunk_ctx->free_chunk ) {
+      SG_chunk_free( &chunk_ctx->chunk );
+   }
    
    memset( chunk_ctx, 0, sizeof(struct UG_chunk_replication_context) );
    
    return 0;
 }
 
+// serialize a chunk ctx
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -EINVAL on bad input
+int UG_chunk_replication_serialize( struct UG_chunk_replication_context* chunk_ctx, struct SG_chunk* out, bool* do_free ) {
+    
+   if( chunk_ctx->block != NULL ) {
+      
+      // use the dirty block data 
+      *do_free = false;
+      memcpy( out, UG_dirty_block_buf( chunk_ctx->block ), sizeof(struct SG_chunk) );
+      return 0;
+   }
+   else if( chunk_ctx->manifest != NULL ) {
 
-// set up a replica context from an inode's dirty blocks and manifest
+      // serialize 
+      *do_free = true;
+      SG_messages::Manifest mmsg;
+      int rc = 0;
+      char* manifest_txt = NULL;
+      size_t manifest_txt_len = 0;
+     
+      rc = SG_manifest_serialize_to_protobuf( chunk_ctx->manifest, &mmsg );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      rc = md_serialize< SG_messages::Manifest >( &mmsg, &manifest_txt, &manifest_txt_len );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      out->data = manifest_txt;
+      out->len = manifest_txt_len;
+      return 0;
+   }
+   else {
+
+      return -EINVAL;
+   }
+}
+
+
+// set up a replica context from an inode's dirty blocks and its current (whole) manifest.
 // flushed_blocks is allowed to be NULL, in which case only the manifest will be replicated.
+// the chunk_queue will contain metadata for both the blocks and the manifest--the manifest's info will be marked with SG_INVALID_BLOCK_ID hint
 // NOTE: rctx takes onwership of flushed_blocks--the caller must NOT free them
 // NOTE: inode->entry should be read-locked
 // NOTE: flushed_blocks must be in-RAM, and must all be dirty
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -EINVAL if at least one of the dirty blocks has not been flushed to disk, or is not in fact dirty
-int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* ug, char const* fs_path, struct UG_inode* inode, struct SG_manifest* manifest, struct timespec* old_manifest_timestamp, UG_dirty_block_map_t* flushed_blocks ) {
+int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* ug,
+                             char const* fs_path, struct UG_inode* inode, struct SG_manifest* manifest, UG_dirty_block_map_t* flushed_blocks ) {
    
    int rc = 0;
    uint64_t* rg_ids = NULL;
@@ -89,17 +220,20 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
       
       // sanity check 
       for( UG_dirty_block_map_t::iterator itr = flushed_blocks->begin(); itr != flushed_blocks->end(); itr++ ) {
-         
+        
+         /* 
          // in-RAM?
          if( UG_dirty_block_buf( &itr->second )->data == NULL ) {
             
+            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] not in RAM\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( &itr->second ) );
             SG_safe_free( affected_blocks );
             return -EINVAL;
          }
-         
+         */
          // not dirty?
          if( !UG_dirty_block_dirty( &itr->second ) ) {
          
+            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] not dirty\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( &itr->second ) );
             SG_safe_free( affected_blocks );
             return -EINVAL;
          }
@@ -122,7 +256,7 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
    }
    
    // snapshot the inode 
-   rc = UG_inode_export( &rctx->inode_data, inode, 0, NULL );
+   rc = UG_inode_export( &rctx->inode_data, inode, 0 );
    if( rc != 0 ) {
       
       SG_safe_free( affected_blocks );
@@ -161,7 +295,7 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
    
    rctx->chunk_queue_len = num_rgs * num_chunks;
    
-   // generate manifest queue
+   // generate manifest queue entries
    for( size_t i = 0; i < num_rgs; i++ ) {
       
       rctx->chunk_queue[ i ].gateway_id = rg_ids[i];
@@ -183,13 +317,12 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
       }
    }
    
-   // push the timestamp into the manifest 
-   SG_manifest_set_modtime( &rctx->manifest, old_manifest_timestamp->tv_sec, old_manifest_timestamp->tv_nsec );
-   
    SG_safe_free( rg_ids );
    
    rctx->affected_blocks = affected_blocks;
    rctx->num_affected_blocks = num_affected_blocks;
+   
+   rctx->state = ug;
    
    return rc;
 }
@@ -220,12 +353,12 @@ int UG_replica_context_free( struct UG_replica_context* rctx ) {
    return 0;
 }
 
-// append a file's replication log on the MS
+// append a file's vacuum log on the MS
 // does *NOT* set rctx->sent_vacuum_log
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -errno on connection errors 
-static int UG_replicate_manifest_log( struct SG_gateway* gateway, struct UG_replica_context* rctx ) {
+static int UG_replicate_vacuum_log( struct SG_gateway* gateway, struct UG_replica_context* rctx ) {
    
    int rc = 0;
    uint64_t* affected_blocks = NULL;
@@ -251,9 +384,9 @@ static int UG_replicate_manifest_log( struct SG_gateway* gateway, struct UG_repl
          i++;
       }
    }
-      
+   
    // set up the vacuum entry
-   rc = ms_client_vacuum_entry_init( &ve, rctx->inode_data.volume, rctx->inode_data.file_id, rctx->inode_data.version,
+   rc = ms_client_vacuum_entry_init( &ve, rctx->inode_data.volume, rctx->inode_data.coordinator, rctx->inode_data.file_id, rctx->inode_data.version,
                                      rctx->inode_data.manifest_mtime_sec, rctx->inode_data.manifest_mtime_nsec, affected_blocks, num_affected_blocks );
    
    if( rc != 0 ) {
@@ -263,7 +396,7 @@ static int UG_replicate_manifest_log( struct SG_gateway* gateway, struct UG_repl
       SG_safe_free( affected_blocks );
       return rc;
    }
-        
+    
    // send it off
    rc = ms_client_append_vacuum_log_entry( ms, &ve );
    if( rc != 0 ) {
@@ -295,32 +428,6 @@ static int UG_replicate_block_setup( struct SG_gateway* gateway, struct UG_repli
       return rc;
    }
    
-   // next block context
-   UG_chunk_replication_context_init( chunk_ctx, NULL, block, request, chunk_queue_idx );
-   
-   // next request 
-   rc = SG_request_data_init_block( gateway, rctx->fs_path, rctx->inode_data.file_id, rctx->inode_data.version, UG_dirty_block_id( block ), UG_dirty_block_version( block ), &reqdat );
-   if( rc != 0 ) {
-      
-      // OOM
-      SG_safe_free( request );
-      return rc;
-   }
-   
-   // remote gateway 
-   reqdat.coordinator_id = remote_gateway_id;
-   
-   // set up the request itself 
-   rc = SG_client_request_PUTBLOCK_setup( gateway, request, &reqdat, UG_dirty_block_info( block ) );
-   
-   SG_request_data_free( &reqdat );
-   
-   if( rc != 0 ) {
-      
-      SG_safe_free( request );
-      return rc;
-   }
-   
    // mmap block from disk, if we need to
    if( UG_dirty_block_buf( block )->data == NULL && !UG_dirty_block_mmaped( block ) ) {
       
@@ -349,6 +456,37 @@ static int UG_replicate_block_setup( struct SG_gateway* gateway, struct UG_repli
       return rc;
    }
    
+   // next block context
+   rc = UG_chunk_replication_context_init( chunk_ctx, NULL, block, request, chunk_queue_idx );
+   if( rc != 0 ) {
+
+      SG_safe_free( request );
+      return rc;
+   }
+   
+   // next request 
+   rc = SG_request_data_init_block( gateway, rctx->fs_path, rctx->inode_data.file_id, rctx->inode_data.version, UG_dirty_block_id( block ), UG_dirty_block_version( block ), &reqdat );
+   if( rc != 0 ) {
+      
+      // OOM
+      SG_safe_free( request );
+      return rc;
+   }
+   
+   // remote gateway 
+   reqdat.coordinator_id = remote_gateway_id;
+   
+   // set up the request itself 
+   rc = SG_client_request_PUTBLOCK_setup( gateway, request, &reqdat, UG_dirty_block_info( block ) );
+   
+   SG_request_data_free( &reqdat );
+   
+   if( rc != 0 ) {
+      
+      SG_safe_free( request );
+      return rc;
+   }
+  
    // success!
    return rc;
 }
@@ -362,6 +500,9 @@ static int UG_replicate_manifest_setup( struct SG_gateway* gateway, struct UG_re
 
    int rc = 0;
    SG_messages::Request* request = NULL;                // request buffer
+   struct SG_client_WRITE_data* write_data = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t volume_id = ms_client_get_volume_id( ms );
    
    // next request buffer 
    request = SG_safe_new( SG_messages::Request() );
@@ -371,15 +512,35 @@ static int UG_replicate_manifest_setup( struct SG_gateway* gateway, struct UG_re
       return rc;
    }
    
+   // next write data 
+   write_data = SG_client_WRITE_data_new();
+   if( write_data == NULL ) {
+       
+       rc = -ENOMEM;
+       SG_safe_delete( request );
+       return -ENOMEM;
+   }
+   
+   SG_client_WRITE_data_init( write_data );
+   SG_client_WRITE_data_set_write_delta( write_data, manifest );
+   SG_client_WRITE_data_set_routing_info( write_data, volume_id, remote_gateway_id, SG_manifest_get_file_id( manifest ), SG_manifest_get_file_version( manifest ) );
+   
    // next block context
-   UG_chunk_replication_context_init( chunk_ctx, manifest, NULL, request, queue_idx );
+   rc = UG_chunk_replication_context_init( chunk_ctx, manifest, NULL, request, queue_idx );
+   if( rc != 0 ) {
+
+      SG_safe_free( request );
+      SG_safe_free( write_data );
+      return rc;
+   }
    
    // set up the request itself 
-   rc = SG_client_request_WRITE_setup( gateway, request, rctx->fs_path, manifest, NULL, NULL, NULL );
+   rc = SG_client_request_WRITE_setup( gateway, request, rctx->fs_path, write_data );
    
    if( rc != 0 ) {
       
-      SG_safe_free( request );
+      SG_safe_free( write_data );
+      SG_safe_delete( request );
       return rc;
    }
    
@@ -399,30 +560,34 @@ static int UG_replicate_chunk_start( struct SG_gateway* gateway, struct UG_repli
    
    int rc = 0;
    struct UG_chunk_replication_context chunk_ctx;
-   const char* method = NULL;
    struct md_download_context* dlctx = NULL;
    
    if( manifest != NULL && block != NULL ) {
       return -EINVAL;
    }
-   
+  
+   if( manifest == NULL && block == NULL ) {
+      return -EINVAL;
+   } 
+
    // set up chunck context
    if( block != NULL ) {
       
-      method = "UG_replicate_block_setup";
       rc = UG_replicate_block_setup( gateway, rctx, remote_gateway_id, queue_idx, block, &chunk_ctx );
+
+      if( rc != 0 ) {
+         SG_error("UG_replicate_block_setup rc = %d\n", rc );
+         return rc;
+      }
    }
    else {
       
-      method = "UG_replicate_manifest_setup";
       rc = UG_replicate_manifest_setup( gateway, rctx, remote_gateway_id, queue_idx, manifest, &chunk_ctx );
-   }
-   
-   if( rc != 0 ) {
-      
-      SG_error("%s rc = %d\n", method, rc );
-      
-      return rc;
+
+      if( rc != 0 ) {
+         SG_error("UG_replicate_manifest_setup rc = %d\n", rc );
+         return rc;
+      }
    }
    
    // next download slot
@@ -437,6 +602,7 @@ static int UG_replicate_chunk_start( struct SG_gateway* gateway, struct UG_repli
       }
       
       SG_error("md_download_loop_next rc = %d\n", rc );
+
       return rc;
    }
    
@@ -454,7 +620,8 @@ static int UG_replicate_chunk_start( struct SG_gateway* gateway, struct UG_repli
    }
    
    // start sending it 
-   rc = SG_client_request_send_async( gateway, remote_gateway_id, chunk_ctx.request, UG_dirty_block_buf( block ), dlloop, dlctx );
+   rc = SG_client_request_send_async( gateway, remote_gateway_id, chunk_ctx.request, &chunk_ctx.chunk, dlloop, dlctx );
+   
    if( rc != 0 ) {
       
       // clear out and try again later 
@@ -535,6 +702,10 @@ static int UG_replicate_chunk_finish( struct SG_gateway* gateway, struct UG_repl
    // done with this request
    UG_chunk_replication_context_free( &chunk_ctx );
    
+   // finished this (block, gateway) pair!
+   rctx->chunk_queue[ finished_chunk_idx ].gateway_id = 0;
+   rctx->chunk_queue[ finished_chunk_idx ].block_id = 0;
+
    // status?
    if( reply.error_code() != 0 ) {
       
@@ -550,16 +721,13 @@ static int UG_replicate_chunk_finish( struct SG_gateway* gateway, struct UG_repl
       return reply.error_code();
    }
    
-   // finished this (block, gateway) pair!
-   rctx->chunk_queue[ finished_chunk_idx ].gateway_id = 0;
-   rctx->chunk_queue[ finished_chunk_idx ].block_id = 0;
-   
    return rc;
 }
 
 
 // finish at least one outstanding request.  Remove them from *replicating
 // return 0 on success
+// return 1 if finished
 // return -errno on failure 
 static int UG_replicate_chunks_finish( struct SG_gateway* gateway, struct UG_replica_context* rctx, struct md_download_loop* dlloop, UG_chunk_replication_set_t* replicating ) {
    
@@ -568,13 +736,17 @@ static int UG_replicate_chunks_finish( struct SG_gateway* gateway, struct UG_rep
    // run replications
    rc = md_download_loop_run( dlloop );
    if( rc != 0 ) {
-      
-      SG_error("md_download_loop_run rc = %d\n", rc );
+     
+      if( rc < 0 ) {
+
+         SG_error("md_download_loop_run rc = %d\n", rc );
+      }
+
       return rc;
    }
    
    // finish replications 
-   while( true ) {
+   while( replicating->size() > 0 ) {
       
       rc = UG_replicate_chunk_finish( gateway, rctx, dlloop, replicating );
       if( rc != 0 ) {
@@ -589,6 +761,8 @@ static int UG_replicate_chunks_finish( struct SG_gateway* gateway, struct UG_rep
          SG_error("UG_replicate_chunk_finish rc = %d\n", rc );
          break;
       }
+
+      SG_debug("%" PRIX64 ": %zu chunks replicating\n", rctx->inode_data.file_id, replicating->size() );
    }
    
    return rc;
@@ -660,20 +834,26 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
             if( dirty_block_itr == rctx->blocks->end() ) {
                
                // shouldn't happen...
-               chunk_queue_idx++;
-               continue;
+               SG_error("FATAL BUG: missing block %" PRId64 "\n", block_id );
+               exit(1);
             }
             
             manifest = NULL;
             dirty_block = &dirty_block_itr->second;
+
+            SG_debug("Replicate block %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] to %" PRIu64 "\n", 
+                      rctx->inode_data.file_id, rctx->inode_data.version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rctx->chunk_queue[ chunk_queue_idx ].gateway_id );
          }
          else {
             
             // send the manifest 
             manifest = &rctx->manifest;
             dirty_block = NULL;
+               
+            SG_debug("Replicate manifest %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d to %" PRIu64 "\n", 
+                     rctx->inode_data.file_id, rctx->inode_data.version, SG_manifest_get_modtime_sec( manifest ), SG_manifest_get_modtime_nsec( manifest ), rctx->chunk_queue[ chunk_queue_idx ].gateway_id );
          }
-         
+
          rc = UG_replicate_chunk_start( gateway, rctx, chunk_queue_idx, gateway_id, manifest, dirty_block, &dlloop, &replicating );
          if( rc != 0 ) {
             
@@ -685,11 +865,11 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
             }
             
             if( manifest == NULL ) {
-               SG_error("UG_replicate_chunk_start( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) to %" PRIX64 " rc = %d\n", 
+               SG_error("UG_replicate_chunk_start( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) to %" PRIu64 " rc = %d\n", 
                         rctx->inode_data.file_id, rctx->inode_data.version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rctx->chunk_queue[ chunk_queue_idx ].gateway_id, rc );
             }
             else {
-               SG_error("UG_replicate_chunk_start( %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d ) to %" PRIX64 " rc = %d\n", 
+               SG_error("UG_replicate_chunk_start( %" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d ) to %" PRIu64 " rc = %d\n", 
                         rctx->inode_data.file_id, rctx->inode_data.version, SG_manifest_get_modtime_sec( manifest ), SG_manifest_get_modtime_nsec( manifest ), rctx->chunk_queue[ chunk_queue_idx ].gateway_id, rc );
             }
             
@@ -715,23 +895,33 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
       
       // finish at least one replication 
       rc = UG_replicate_chunks_finish( gateway, rctx, &dlloop, &replicating );
-      if( rc != 0 ) {
+      if( rc < 0 ) {
          
          SG_error("UG_replicate_chunks_finish rc = %d\n", rc );
+         break;
+      }
+      else if( rc > 0 ) {
+
+         SG_debug("%" PRIX64 ": finished all chunks\n", rctx->inode_data.file_id );
+         rc = 0;
          break;
       }
       
    } while( md_download_loop_running( &dlloop ) );
    
    if( rc != 0 ) {
-      
+     
+      md_download_loop_abort( &dlloop );
+      /* 
+      SG_debug("Will quiesce remaining requests on %" PRIX64 "\n", rctx->inode_data.file_id );
+
       // finish the remaining running replications
       while( replicating.size() > 0 ) {
          
          int quiesce_rc = 0;
          
          quiesce_rc = UG_replicate_chunks_finish( gateway, rctx, &dlloop, &replicating );
-         if( quiesce_rc != 0 ) {
+         if( quiesce_rc < 0 ) {
             
             SG_error("UG_replicate_chunks_finish rc = %d\n", quiesce_rc );
             
@@ -740,8 +930,16 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
             
             break;
          }
+
+         else if( quiesce_rc > 0 ) {
+
+            SG_debug("Quiesced requests on %" PRIX64 "\n", rctx->inode_data.file_id );
+
+            quiesce_rc = 0;
+            break;
+         }
       }
-      
+      */
       // clear up outstanding requests 
       for( replicating_itr = replicating.begin(); replicating_itr != replicating.end(); replicating_itr++ ) {
          
@@ -749,6 +947,8 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
       }
       
       replicating.clear();
+
+      SG_debug("Quiesced remaining requests on %" PRIX64 "\n", rctx->inode_data.file_id );
    }
    
    // clean up
@@ -771,18 +971,22 @@ static int UG_replicate_chunks( struct SG_gateway* gateway, struct UG_replica_co
 // return -ENOMEM on OOM
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EREMOTEIO if the HTTP error is >= 500
+// return -EINVAL for improper arguments
 // return between -499 and -400 if the HTTP error was in the range 400 to 499
 // return other -errno on socket- and recv-related errors
 int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) {
    
    int rc = 0;
    
-   struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t gateway_id = SG_gateway_id( gateway );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t volume_id = ms_client_get_volume_id( ms );
       
    // (0) flush remaining dirty blocks to disk, if need be
    if( !rctx->flushed_blocks && rctx->blocks != NULL ) {
-      
+     
+      SG_debug("%" PRIX64 ": flush blocks\n", rctx->inode_data.file_id );
+
       rc = UG_sync_blocks_flush_async( gateway, rctx->fs_path, rctx->inode_data.file_id, rctx->inode_data.version, rctx->blocks );
       if( rc != 0 ) {
          
@@ -804,11 +1008,21 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    // (1) make sure the MS knows about this replication request, if we're the coordinator
    if( !rctx->sent_vacuum_log && rctx->inode_data.coordinator == gateway_id ) {
       
-      rc = UG_replicate_manifest_log( gateway, rctx );
+      SG_debug("%" PRIX64 ": replicate vacuum log\n", rctx->inode_data.file_id );
+
+      rc = UG_replicate_vacuum_log( gateway, rctx );
       if( rc != 0 ) {
          
-         SG_error("UG_replicate_manifest_log( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, rctx->fs_path, rc );
-         return -EAGAIN;
+         SG_error("UG_replicate_vacuum_log( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, rctx->fs_path, rc );
+         if( rc == -EINVAL ) {
+
+            // indicates a bug 
+            SG_error("BUG: UG_replicate_vacuum_log rc = %d\n", rc );
+            return -EINVAL;
+         }
+         else {
+            return -EAGAIN;
+         }
       }
       else {
          
@@ -820,6 +1034,8 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    // (2) replicate the manifest and each block to each gateway
    if( !rctx->replicated_blocks ) {
       
+      SG_debug("%" PRIX64 ": replicate manifest and blocks\n", rctx->inode_data.file_id );
+
       // send off to all RGs
       rc = UG_replicate_chunks( gateway, rctx );
       if( rc != 0 ) {
@@ -835,39 +1051,34 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    }
    
    // (3) update the record on the MS
-   if( !rctx->sent_ms_update && rctx->inode_data.coordinator == gateway_id ) {
+   if( !rctx->sent_ms_update ) {
       
-      struct ms_client_request request;
-      struct ms_client_request_result result;
+      SG_debug("%" PRIX64 ": send MS updates\n", rctx->inode_data.file_id );
+
+      // send it to the MS if we're the coordinator, 
+      // or send it to the coordinator itself.
+      struct SG_client_WRITE_data* write_data = SG_client_WRITE_data_new();
+      struct timespec mtime;
       
-      rc = ms_client_update_request( ms, &rctx->inode_data, &request );
+      if( write_data == NULL ) {
+          return -ENOMEM;
+      }
+      
+      mtime.tv_sec = rctx->inode_data.mtime_sec;
+      mtime.tv_nsec = rctx->inode_data.mtime_nsec;
+      
+      SG_client_WRITE_data_init( write_data );
+      SG_client_WRITE_data_set_mtime( write_data, &mtime );
+      SG_client_WRITE_data_set_write_delta( write_data, &rctx->manifest );
+      SG_client_WRITE_data_set_routing_info( write_data, volume_id, rctx->inode_data.coordinator, rctx->inode_data.file_id, rctx->inode_data.version );
+      
+      rc = UG_update( rctx->state, rctx->fs_path, write_data );
       if( rc != 0 ) {
-         
-         SG_error("ms_client_update_request( %" PRIX64 ".%" PRId64 " ) rc = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, rc );
-         return rc;
+          
+         SG_error("UG_update('%s') rc = %d\n", rctx->fs_path, rc );
       }
       
-      rc = ms_client_single_rpc( ms, &request, &result );
-      if( rc != 0 ) {
-         
-         SG_error("ms_client_single_rpc( %" PRIX64 ".%" PRId64 " ) rc = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, rc );
-      }
-      
-      if( result.reply_error != 0 ) {
-         
-         rc = result.reply_error;
-         
-         SG_error("ms_client_single_rpc( %" PRIX64 ".%" PRId64 " ) result reply_error = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, result.reply_error );
-      }
-      
-      else if( result.rc != 0 ) {
-         
-         rc = result.rc;
-         
-         SG_error("ms_client_single_rpc( %" PRIX64 ".%" PRId64 " ) result rc = %d\n", rctx->inode_data.file_id, rctx->inode_data.version, result.rc );
-      }
-      
-      ms_client_request_result_free( &result );
+      SG_safe_free( write_data );
    }
    
    // done!
@@ -895,7 +1106,7 @@ int UG_replicate_run( struct SG_gateway* gateway, struct UG_replica_context* rct
          
          if( rc != 0 ) {
             
-            SG_error("UG_replicate('%s') rc = %d\n", rctx->fs_path, rc );
+            SG_error("UG_replicate_run('%s') rc = %d\n", rctx->fs_path, rc );
          }
          
          break;

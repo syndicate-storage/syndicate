@@ -22,7 +22,7 @@
 struct ms_client_get_metadata_context {
    
    char* url;
-   char* auth_header
+   char* auth_header;
    int request_id;
 }; 
 
@@ -55,10 +55,10 @@ static int ms_client_get_metadata_begin( struct ms_client* client, struct ms_pat
    
    // make the URL 
    if( !do_getchild ) {
-      url = ms_client_file_getattr_url( client->url, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce );
+      url = ms_client_file_getattr_url( client->url, path_ent->volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ), path_ent->file_id, path_ent->version, path_ent->write_nonce );
    }
    else {
-      url = ms_client_file_getchild_url( client->url, path_ent->volume_id, path_ent->parent_id, path_ent->name );
+      url = ms_client_file_getchild_url( client->url, path_ent->volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ), path_ent->parent_id, path_ent->name );
    }
    
    if( url == NULL ) {
@@ -167,7 +167,13 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
          SG_error("ms_client_download_parse_errors( %p ) rc = %d\n", dlctx, rc );
       }
       
-      md_download_context_free( dlctx, &curl );
+      md_download_context_set_cls( dlctx, NULL );
+      int unref_rc = md_download_context_unref( dlctx );
+
+      if( unref_rc > 0 ) {
+          md_download_context_free( dlctx, &curl );
+      }
+
       ms_client_get_metadata_context_free( dlstate );
       
       // TODO connection pool 
@@ -183,9 +189,16 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
    
    // done with the download 
    // TODO connection pool
-   md_download_context_free( dlctx, &curl );
+   md_download_context_set_cls( dlctx, NULL );
+   int unref_rc = md_download_context_unref( dlctx );
+   if( unref_rc > 0 ) {
+       
+       // safe to free 
+       md_download_context_free( dlctx, &curl );
+       curl_easy_cleanup( curl );
+   }
+   
    ms_client_get_metadata_context_free( dlstate );
-   curl_easy_cleanup( curl );
    
    if( rc != 0 ) {
       
@@ -205,12 +218,18 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
       
       SG_warn("no data for %" PRIX64 "\n", path->at(ent_idx).file_id );
       
+      memset( &result_ents[ent_idx], 0, sizeof(struct md_entry) );
+      
+      result_ents[ent_idx].file_id = path->at(ent_idx).file_id;
       result_ents[ent_idx].error = MS_LISTING_NONE;
    }
    else if( listing_error == MS_LISTING_NOCHANGE ) {
       
       SG_warn("no change in %" PRIX64 "\n", path->at(ent_idx).file_id );
       
+      memset( &result_ents[ent_idx], 0, sizeof(struct md_entry) );
+      
+      result_ents[ent_idx].file_id = path->at(ent_idx).file_id;
       result_ents[ent_idx].error = MS_LISTING_NOCHANGE;
    }
    else if( listing_error == MS_LISTING_NEW ) {
@@ -358,7 +377,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
          
          // next finished download 
          rc = md_download_loop_finished( &dlloop, &dlctx );
-         if( rc != 0 ) {
+         if( rc < 0 ) {
             
             if( rc == -EAGAIN) {
                // drained 

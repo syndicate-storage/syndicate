@@ -85,6 +85,9 @@ cdef extern from "libsyndicate/libsyndicate.h":
       int64_t capacity     # // maximum index number a child can have 
       uint64_t parent_id  # // id of this file's parent directory
       char* parent_name   # // name of this file's parent directory
+      unsigned char* xattr_hash;   # // hash over sorted (xattr name, xattr value) pairs
+      unsigned char* ent_sig;      # // signature over this entry from the coordinator
+      size_t ent_sig_len;
 
    cdef int MD_ENTRY_FILE 
    cdef int MD_ENTRY_DIR
@@ -121,8 +124,6 @@ cdef extern from "syndicate-ug/client.h":
 
    ctypedef _UG_handle UG_handle_t
    
-   ctypedef md_entry** UG_dir_listing_t
-
    int UG_stat( UG_state* state, const char* path, stat *statbuf )
    int UG_mkdir( UG_state* state, const char* path, mode_t mode )
    int UG_unlink( UG_state* state, const char* path )
@@ -145,18 +146,45 @@ cdef extern from "syndicate-ug/client.h":
    int UG_fstat( UG_state* state, stat *statbuf, UG_handle_t *fi )
 
    UG_handle_t* UG_opendir( UG_state* state, const char* path, int* rc )
-   int UG_readdir( UG_state* state, UG_dir_listing_t* listing, size_t num_children, UG_handle_t *fi )
+   int UG_readdir( UG_state* state, md_entry*** listing, size_t num_children, UG_handle_t *fi )
    int UG_rewinddir( UG_handle_t* fi )
    off_t UG_telldir( UG_handle_t* fi )
    int UG_seekdir( UG_handle_t* fi, off_t loc )
    int UG_closedir( UG_state* state, UG_handle_t *fi )
-   void UG_free_dir_listing( UG_dir_listing_t listing )
+   void UG_free_dir_listing( md_entry** listing )
 
    int UG_setxattr( UG_state* state, const char* path, const char* name, const char* value, size_t size, int flags )
    int UG_getxattr( UG_state* state, const char* path, const char* name, char *value, size_t size )
    int UG_listxattr( UG_state* state, const char* path, char *list, size_t size )
    int UG_removexattr( UG_state* state, const char* path, const char* name )
-   int UG_chownxattr( UG_state* state, const char* path, const char* name, uint64_t new_owner )
-   int UG_chmodxattr( UG_state* state, const char* path, const char* name, mode_t mode )
-   int UG_getsetxattr( UG_state* state, const char* path, const char* name, const char* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode )
 
+# ------------------------------------------
+cdef class VolumeHandle:
+   cpdef uintptr_t handle_ptr
+
+   cdef Init( self, UG_handle_t* handle )
+   cpdef Get( self )
+
+# ------------------------------------------
+cdef class Volume:
+
+   cdef UG_state* state_inst
+
+   cpdef create( self, path, mode )
+   cpdef open( self, path, flags )
+   cpdef read( self, handle, size )
+   cpdef write( self, handle, buf )
+   cpdef seek( self, handle, offset, whence )
+   cpdef close( self, handle )
+   cpdef fsync( self, handle )
+   cpdef stat( self, path )
+   cpdef mkdir( self, path, mode )
+   cpdef unlink( self, path )
+   cpdef rmdir( self, path )
+   cpdef opendir( self, path )
+   cpdef readdir( self, handle, count )
+   cpdef closedir( self, handle )
+   cpdef setxattr( self, path, name, value, flags )
+   cpdef getxattr( self, path, name, size )
+   cpdef listxattr( self, path, size )
+   cpdef removexattr( self, path, name )

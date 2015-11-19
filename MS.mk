@@ -1,8 +1,7 @@
 # MS build parameters 
 
-MS_APP_ADMIN_EMAIL				?= judecn@gmail.com
+MS_APP_ADMIN_EMAIL				?= jcnelson@cs.princeton.edu
 MS_APP_ADMIN_REGISTER_PASSWD	?= letmein
-MS_APP_ADMIN_OPENID_URL			?= https://vicci.org/id/jcnelson
 MS_APP_ADMIN_PUBLIC_KEY			?= $(BUILD_MS)/admin.pub
 MS_APP_ADMIN_PRIVATE_KEY		?= $(BUILD_MS)/admin.pem
 

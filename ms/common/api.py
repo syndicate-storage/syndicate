@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2015 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -16,10 +16,7 @@
    limitations under the License.
 """
 
-"""
-Front-end API
-NOTE: this gets copied to both the MS and the Syndicate Python package
-"""
+# NOTE: shared between the MS and the Syndicate python package
 
 in_client = True
 log = None
@@ -36,20 +33,93 @@ if not in_client:
    # in the MS
    from msconfig import *
    import storage.storage as storage
-   from MS.volume import Volume, VolumeAccessRequest
+   from MS.volume import Volume
    from MS.user import SyndicateUser
    from MS.gateway import Gateway
    from MS.auth import *
    from admin_info import SYNDICATE_PRIVKEY
    
 else:
-   # in syntool 
-   import log as Log
-   log = Log.get_logger()
-   import syndicate.ms.msconfig as msconfig
-   from syndicate.ms.storage_stub import StorageStub as storage
-   from syndicate.ms.object_stub import *
-   from syndicate.ms.auth_stub import *
+    
+   import inspect 
+   
+   # in client program.
+   # stub everything out
+   class StorageStub( object ):
+      def __init__(self, *args, **kw ):
+         pass
+    
+      def __getattr__(self, attrname ):
+         def stub_storage(*args, **kw):
+            logging.warn("Stub '%s'" % attrname)
+            return None
+         
+         return stub_storage
+   
+    
+   def assert_public_method( method ):
+        return (method != None)
+
+   class AuthMethod( object ):
+        def __init__(self, method_func, authenticated_caller):
+            self.method_func = method_func
+        
+        def __call__(self, *args, **kw):
+            return self.method_func( *args, **kw )
+    
+    
+   class StubAuth( object ):
+        admin_only = False
+        
+        def __init__(self, *args, **kw ):
+            self.admin_only = kw.get('admin_only', False)
+            self.parse_args = kw.get('parse_args', None)
+        
+        def __call__(self, func):
+            
+            def inner( *args, **kw ):
+                return func(*args, **kw)
+            
+            inner.__name__ = func.__name__
+            inner.__doc__ = func.__doc__
+            inner.admin_only = self.admin_only
+            inner.argspec = inspect.getargspec( func )
+            inner.parse_args = self.parse_args
+            
+            return inner
+
+   class CreateAPIGuard( StubAuth ):
+        pass
+
+   class ReadAPIGuard( StubAuth ):
+        pass
+
+   class UpdateAPIGuard( StubAuth ):
+        pass
+
+   class DeleteAPIGuard( StubAuth ):
+        pass
+
+   class ListAPIGuard( StubAuth ):
+        pass
+
+   class BindAPIGuard( StubAuth ):
+        pass
+
+   class Authenticate( StubAuth ):
+        
+        def __call__(self, func):
+            func.is_public = True
+            return func
+   
+   storage = StorageStub
+   
+   from syndicate.util.objects import *
+   
+   import syndicate.util.config
+   log = syndicate.util.config.log
+   from syndicate.ms.msconfig import *
+   
    SYNDICATE_PRIVKEY = "Syndicate's private key is only available to the MS!"
    
 # ----------------------------------
@@ -74,7 +144,6 @@ def generate_key_pair( key_size ):
    return (public_key_pem, private_key_pem)
 
 
-# NOTE: this is duplicated from storagetypes.  DRY this up
 def sign_data( private_key_str, data ):
    try:
       key = CryptoKey.importKey( private_key_str )
@@ -100,64 +169,44 @@ def verify_data( pubkey_str, data, signature ):
    ret = verifier.verify( h, signature )
    return ret
 
+
 # ----------------------------------
 # The User API.
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
-def create_user( email, openid_url, activate_password, activate_password_hash=None, activate_password_salt=None, **attrs ):
+@Authenticate()
+@CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs, caller_user="caller_user" )
+def create_user( email, private_key, **attrs ):
    """
    Create a user.
    
-   Requred arguments:
+   Requred positional arguments:
       email (str): 
          The email address of the new user.  It will
          serve as the user's identifier, so it must 
          be unique.
-                   
-      openid_url (str):
-         URL to your OpenID identity page.
-         
-      activate_password (str):
-         A one-time-use password the user will use to call
-         register_account().
-         
-         Your client will use this argument to generate values for
-         registration_password_hash and registration_password_salt
-         (see below).
       
+      private_key (str)
+         The PEM-encoded private key that the MS will
+         use to authenticate a client program that wishes
+         to access this user.  The client program must use 
+         the key to sign requests to the MS, in order to
+         prove to the MS that the program is acting on
+         behalf of the owner of this user account. 
+         Currently, this must be a 4096-bit RSA key.
+         
+         Pass "AUTO" if you want Syndicate to automatically
+         generate a key pair for you, in which case the private 
+         key will be stored to your Syndicate key directory
+         on successful return of this method.
+         
    Optional keyword arguments:
+      
       max_volumes=int: (default: 10)
          Maximum number of Volumes this user may own.
          -1 means infinite.
       
-      max_UGs=int: (default: 10)
-         Maximum number of User Gateways this user may own.
-         -1 means infinite.
-      
-      max_RGs=int: (default: 10)
-         Maximum number of Replica Gateways this user may own.
-         -1 means infinite.
-         
-      activate_password_hash (default: None):
-         Do not pass anything for this unless you know what 
-         you're doing.  Syntool will fill this in automatically
-         from the 'registration_password' argument.
-         
-         This is the iterated SHA256 hash of the registration 
-         salt concatenated with the password (iterated for
-         MS.common.PASSWORD_HASH_ITERS times).  It must be 
-         a hexadecimal string for encoding purposes.
-         
-      activate_password_salt (default: None):
-         Do not pass anything for this unless you know what
-         you're doing.  Syntool will fill this in automatically
-         from the 'registration_password' argument.
-         
-         This is a salt to be used to generate the value for 
-         registration_password_hash.  It must be 32 bytes, but
-         represented as a hexadecimal string (64 characters) for
-         encoding purposes.
+      max_gateways=int: (default: 10)
+         Maximum number of gateways this user can own.
          
       is_admin=bool: (default: False)
          Whether or not this user will be a Syndicate admin.
@@ -169,14 +218,20 @@ def create_user( email, openid_url, activate_password, activate_password_hash=No
       
    Authorization:
       Only an administrator can create new users.
+      
+   Remarks:
+      Syndicate will generate a protobuf'ed certificate and send it 
+      as a keyword argument called 'user_cert_b64'.  It will contain 
+      the new user's ID, email, and public key.
+      
+      Syndicate does *not* send the private key.  It stores it locally 
+      instead.
    """
    
-   return storage.create_user( email, openid_url, activate_password_hash=activate_password_hash,
-                                                  activate_password_salt=activate_password_salt,
-                                                  **attrs )
+   return storage.create_user( email, **attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ReadAPIGuard( SyndicateUser, parse_args=SyndicateUser.ParseArgs )
 def read_user( email_or_user_id ):
    """
@@ -198,53 +253,9 @@ def read_user( email_or_user_id ):
    return storage.read_user( email_or_user_id )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
-def update_user( email, **attrs ):
-   """
-   Update a user.
-   
-   Positional arguments:
-      email (str):
-         The email address of the desired user.
-      
-   Optional keyword arguments:
-      max_volumes=int:
-         Maximum number of Volumes this user may own.
-         -1 means infinite.
-      
-      max_UGs=int:
-         Maximum number of User Gateways this user may own.
-         -1 means infinite.
-      
-      max_RGs=int:
-         Maximum number of Replica Gateways this user may own.
-         -1 means infinite.
-      
-      is_admin=bool:
-         Whether or not this user will be a Syndicate admin.
-      
-      openid_url=str:
-         The URL of the OpenID provider to use to 
-         authenticate this user using password 
-         authentication.
-         
-   Returns:
-      True on success, or an exception if the user
-      does not exist or the caller is not authorized
-      to write one or more of the given fields.
-   
-   Authorization:
-      An administrator can update any user.
-      A user can only change its openid_url.
-   """
-      
-   return storage.update_user( email, **attrs )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@DeleteAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
-def delete_user( email ):
+@Authenticate()
+@DeleteAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs, caller_user="caller_user" )
+def delete_user( email, **kw ):
    """
    Delete a user.
    
@@ -261,10 +272,10 @@ def delete_user( email ):
       An administrator can delete any user.
       A user can only delete itself.
    """
-   return storage.delete_user( email )
+   return storage.delete_user( email, **kw )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
 def list_users( query_attrs ):
    """
@@ -293,58 +304,9 @@ def list_users( query_attrs ):
    return storage.list_users( query_attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD] )
-@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs, check_write_attrs=False )
-def register_account( email, password, signing_public_key=SyndicateUser.USER_KEY_UNSET ):
-   """
-   Register a recently-created user account.
-   
-   Positional arguments:
-      email (str):
-         The email of the desired user. 
-         
-      password (str):
-         Password to change the signing key.
-
-   Optional keyword arguments:
-      signing_public_key (default: "unset"):
-         The PEM-encoded public key that the MS will
-         use to authenticate a client program that wishes
-         to access this user.  The client program must use 
-         the corresponding private key (the "signing key")
-         to sign requests to the MS, in order to prove to
-         the MS that the program is acting on behalf of the
-         owner of this user account.  Currently, this must be 
-         a 4096-bit RSA key.
-         
-         Pass MAKE_SIGNING_KEY if you want syntool to 
-         generate one for you, in which case the private 
-         signing key will be stored to your Syndicate key directory
-         on successful return of this method.
-         
-   Returns:
-      True on success, or an exception if the user does 
-      not exist or the caller is not authorized to set 
-      the API field.
-   
-   Authorization:
-      An administrator can set any user's public signing key.
-      A user can only set its own public signing key.
-      
-   Remarks:
-      For a normal user, this method can only be called successfully once.
-      Any subsequent calls will fail.  Usually, the user calls this method
-      just after having their account created (i.e. "password" can be used 
-      to construct a one-time registration URL).  In the event of a key
-      compromise, the administrator can unset the key and change the
-      password (see reset_account_credentials).
-   """
-   return storage.register_account( email, password, signing_public_key=signing_public_key )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @UpdateAPIGuard( SyndicateUser, admin_only=True, target_object_name="email", parse_args=SyndicateUser.ParseArgs, caller_user="caller_user" )
-def reset_account_credentials( email, registration_password, registration_password_hash=None, registration_password_salt=None ):
+def reset_user( email, password, **kwargs ):
    """
    Reset a user's account credentials.  Set a new one-time-use registration key,
    so the user can re-upload a public signing key.
@@ -357,27 +319,6 @@ def reset_account_credentials( email, registration_password, registration_passwo
          A one-time-use password the user will use to 
          register a new signing public key.
          
-   Optional keyword arguments:
-      registration_password_hash (default: None):
-         Do not pass anything for this unless you know what 
-         you're doing.  Your client will fill this in automatically
-         from the 'registration_password' argument.
-         
-         This is the iterated SHA256 hash of the registration 
-         salt concatenated with the password (iterated for
-         MS.common.PASSWORD_HASH_ITERS times).  It must be 
-         a hexadecimal string for encoding purposes.
-         
-      registration_password_salt (default: None):
-         Do not pass anything for this unless you know what
-         you're doing.  Your client will fill this in automatically
-         from the 'registration_password' argument.
-         
-         This is a salt to be used to generate the value for 
-         registration_password_hash.  It must be 32 bytes, but
-         represented as a hexadecimal string (64 characters) for
-         encoding purposes.
-         
    Returns:
       True on success, or an exception if the user does 
       not exist or the caller is not authorized to set 
@@ -385,12 +326,18 @@ def reset_account_credentials( email, registration_password, registration_passwo
    
    Authorization:
       Only an administrator can call this method.
+      
+   Remarks:
+      Syndicate does not send a value for registration_password.
+      It instead sends 'user_cert_b64' as a keyword argument, which 
+      contains a serialized certificate signed by the admin that 
+      contains the email and registration password hash and salt.
    """
-   return storage.reset_account_credentials( email, registration_password_salt, registration_password_hash )
+   return storage.reset_user( email, **kwargs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( SyndicateUser, pass_caller_user="caller_user", parse_args=SyndicateUser.ParseArgs )
+@Authenticate()
+@ListAPIGuard( SyndicateUser, caller_user="caller_user", parse_args=SyndicateUser.ParseArgs )
 def list_volume_user_ids( volume_name_or_id, **attrs ):
    """
    List the emails of the users that can access data
@@ -417,25 +364,25 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 # ----------------------------------
 # The Volume API.
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
-def create_volume( email, name, description, blocksize, metadata_private_key="MAKE_METADATA_KEY", **attrs ):
+@Authenticate()
+@CreateAPIGuard( Volume, caller_user="caller_user", parse_args=Volume.ParseArgs )
+def create_volume( **attrs ):
    """
    Create a Volume.  It will be owned by the calling user, or, if the caller is an admin, the user identified by the given email address.
    
-   Positional arguments:
-      email (str):
+   Required keyword arguments:
+      email=str:
          The email of the user to own this Volume.
       
-      name (str):
+      name=str:
          The name of this volume.  It must be unique.
          It is recommend that it be human-readable, so other 
          users can request to join it.
       
-      description (str):
+      description=str:
          A human-readable description of the Volume's contents.
          
-      blocksize (int)
+      blocksize=int
          The size of a block in this Volume.  Each block will
          be cached as an HTTP object in the underlying Web 
          caches, so it is probably best to pick block sizes between 
@@ -447,50 +394,12 @@ def create_volume( email, name, description, blocksize, metadata_private_key="MA
          will not be able to request access to it.  This value
          is True by default.
          
-      metadata_private_key=str (default: MAKE_METADATA_KEY)
-         The PEM-encoded private key the Volume will use to sign 
-         metadata served to User Gateways.  It must be a 4096-bit
-         RSA key.
-         
-         If pass "MAKE_METADATA_KEY" (the default), a key
-         pair will be generated for you.  The private key will 
-         be passed as this argument, and the public key will 
-         be stored locally to validate Volume data.
-      
-      store_private_key=bool (default: False)
-         If True, store the metadata private key to the local 
-         key directory.
-         
       archive=bool (default: False)
-         If True, only an Acquisition Gateway owned by the given 
-         user may write metadata to this Volume.  It will be read-
-         only to every other Gateway.
+         If True, then there can be exactly one writer gateway for 
+         this volume.  It will be read-only to every other Gateway.
          
-      active=bool (default: True)
-         If True, this Volume will be accessible by gateways immediately.
-         If False, it will not be.
-         
-      default_gateway_caps=(str or int)
-         Default capability bits for User Gateways when they are 
-         added to this Volume.  By default, User Gateways are 
-         given read-only access to data and metadata.
-         
-         Valid capability bits are:
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_METADATA
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_COORDINATE
-      
-         You can pass capability bits by name and bitwise OR them
-         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
-         
-         You can also pass one of these aliases to common sets of
-         capability bits.  These are:
-         
-         ALL            Set all capabilities
-         READWRITE      Set all but GATEWAY_CAP_COORDINATE
-         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
+      allow_anon=bool (default: false)
+         If True, anonymous gateways can read this volume.
          
    Returns:
       On success, this method returns a Volume.  On failure, it
@@ -499,19 +408,27 @@ def create_volume( email, name, description, blocksize, metadata_private_key="MA
    Authorization:
       An administrator can create an unlimited number of volumes.
       A user can only create as many as allowed by its max_volumes value.
+   
+   Remarks:
+      In practice, Syndicate will generate two keyword arguments: 'volume_cert_b64'
+      and 'cert_bundle_b64'.  'volume_cert_b64' is a serialized protobuf containing
+      the above keywords, in an ms_pb2.ms_volume_metadata structure signed by 
+      the user that created the volume.  'cert_bundle_b64' is a serialized protobuf 
+      containing the new volume certificate bundle version vector, signed by 
+      the same user.
    """
-   return storage.create_volume( email, name, description, blocksize, metadata_private_key=metadata_private_key, **attrs )
+   return storage.create_volume( **attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ReadAPIGuard( Volume, parse_args=Volume.ParseArgs )
-def read_volume( volume_name_or_id ):
+def read_volume( name ):
    """
    Read a Volume.
    
    Positional arguments:
-      volume_name_or_id (str or int):
-         The name or ID of the Volume to read.
+      name (str):
+         The name of the Volume to read.
    
    Returns:
       On success, this method returns the Volume data.  On failure, it 
@@ -521,24 +438,20 @@ def read_volume( volume_name_or_id ):
       An administrator can read any Volume.
       A user can only read Volumes that (s)he owns.
    """
-   return storage.read_volume( volume_name_or_id )
+   return storage.read_volume( name )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@UpdateAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )
-def update_volume( volume_name_or_id, **attrs ):
+@Authenticate()
+@UpdateAPIGuard( Volume, target_object_name="name", caller_user="caller_user", parse_args=Volume.ParseArgs )
+def update_volume( name, **attrs ):
    """
    Update a Volume.
    
    Positional arguments:
-      volume_name_or_id (str or int):
-         The name or ID of the Volume to update.
+      name (str):
+         The name of the Volume to update.
       
    Optional keyword arguments:
-      active=bool:
-         If True, this Volume will be available for Gateways to access.
-         If False, they will be unable to interact with the Volume.
-      
       description=str:
          The human-readable description of what this Volume is
          used for.
@@ -553,48 +466,33 @@ def update_volume( volume_name_or_id, **attrs ):
          The soft limit on the number of files and directories 
          that can exist in this Volume.  Pass -1 for infinte.
       
-      default_gateway_caps=(str or int):
-         Default capability bits for User Gateways when they are 
-         added to this Volume.  By default, User Gateways are 
-         given read-only access to data and metadata.
-         
-         Valid capability bits are:
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_METADATA
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_COORDINATE
-      
-         You can pass capability bits by name and bitwise OR them
-         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
-         
-         You can also pass one of these aliases to common sets of
-         capability bits.  These are:
-         
-         ALL            Set all capabilities
-         READWRITE      Set all but GATEWAY_CAP_COORDINATE
-         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
-   
    Returns:
       If successful, returns True.  Raises an exception on failure.
    
    Authorization:
       An administrator can update any Volume.
       A user can only update Volumes (s)he owns.
+      
+   Remakrs:
+      In implementation, Syndicate will send along 'volume_cert_b64' and 
+      'cert_bundle_b64' as keywords.  The former is a protobuf'ed ms_gateway_metadata 
+      structure containing the above keywords, signed by the volume owner.  The 
+      latter is the current version vector for all gateway and volume certs, signed 
+      by the volume owner.
    """
-   return storage.update_volume( volume_name_or_id, **attrs )
+   return storage.update_volume( name, **attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@DeleteAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )
-def delete_volume( volume_name_or_id ):
+@Authenticate()
+@DeleteAPIGuard( Volume, target_object_name="name", caller_user="caller_user", parse_args=Volume.ParseArgs )
+def delete_volume( name, **attrs ):
    """
    Delete a Volume.  Every file and directory within the Volume
    will also be deleted.
    
    Positional arguments:
-      volume_name_or_id (str or int)
-         The name or ID of the Volume to delete.
+      name (str)
+         The name of the Volume to delete.
 
    Returns:
       If successful, returns True.  Raises an exception on failure.
@@ -609,10 +507,10 @@ def delete_volume( volume_name_or_id ):
       Be sure to revoke the Volume's metadata key pair after 
       calling this method.  Syntool will do this automatically.
    """
-   return storage.delete_volume( volume_name_or_id )
+   return storage.delete_volume( name, **attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( Volume, admin_only=True, parse_args=Volume.ParseArgs )
 def list_volumes( query_attrs ):
    """
@@ -639,52 +537,7 @@ def list_volumes( query_attrs ):
    return storage.list_volumes( query_attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( Volume, parse_args=Volume.ParseArgs, pass_caller_user="caller_user" )
-def list_accessible_volumes( email, **caller_user_dict ):   
-   """
-   List the Volumes that a given user is allowed to access via User Gateways.
-   
-   Positional arguments:
-      email (str):
-         The email address of the user.
-   
-   Returns:
-      On success, a list of Volumes that the identified user can access.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can list any user's accessible Volumes.
-      A user can only his/her their own accessible Volumes.
-   """
-      
-   return storage.list_accessible_volumes( email, **caller_user_dict )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( Volume, parse_args=Volume.ParseArgs, pass_caller_user="caller_user" )
-def list_pending_volumes( email, **caller_user_dict ):   
-   """
-   List the Volumes that a given user has requested to join, but the Volume owner
-   or administrator has not yet acted upon.
-   
-   Positional arguments:
-      email (str):
-         The email address of the user.
-   
-   Returns:
-      On success, a list of Volumes that the identified user has requested to access.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can list any user's access requests.
-      A user can only his/her their own access requests.
-   """
-      
-   return storage.list_pending_volumes( email, **caller_user_dict )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def list_public_volumes():
    """
@@ -701,7 +554,7 @@ def list_public_volumes():
    return storage.list_public_volumes()
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def list_archive_volumes():
    """
@@ -717,308 +570,50 @@ def list_archive_volumes():
    """
    return storage.list_archive_volumes()
 
-# ----------------------------------
-# The Volume Access Request API.
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
-def remove_volume_access( email, volume_name_or_id, **caller_user_dict ):
-   """
-   Remove a given user's access capabilities from a given volume.
-   
-   Positional arguments:
-      email (str):
-         Email address of the user
-      
-      volume_name_or_id (str or int):
-         Name or ID of the volume
-      
-   Returns:
-      True on success
-      Raises an exception on error
-   
-   Authorization:
-      The administrator can remove any user from any volume.
-      A volume owner can remove any user from any volume he/she owns.
-      A user cannot remove him/herself.
-   
-   Remarks:
-      This method is idempotent.  It will succeed even if the user
-      is not allowed to create gateways in the volume.
-   """
-   return storage.remove_volume_access( email, volume_name_or_id, **caller_user_dict )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
-def request_volume_access( email, volume_name_or_id, allowed_gateways, caps, message ):
-   """
-   Request permission to create Gateways for a Volume.  The Volume owner 
-   will be able to read the request, and decide whether or not to allow 
-   the user to do so.
-   
-   Positional arguments:
-      email (str):
-         Email address of the user
-      
-      volume_name_or_id (str or int):
-         Name or ID of the volume to join
-         
-      allowed_gateways (str or int):
-         Which Gateways the requester will be allowed to create.
-         Bit-wise OR of:
-            1 << GATEWAY_TYPE_UG
-            1 << GATEWAY_TYPE_RG
-            1 << GATEWAY_TYPE_AG
-            
-         You can pass them as a string, and they will be parsed 
-         into the appropriate bit vector.
-      
-      caps (str or int)
-         Default capability bits for Gateways when they are 
-         added to this Volume.  By default, Gateways are 
-         given read-only access to data and metadata.
-         
-         Valid capability bits are:
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_METADATA
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_COORDINATE
-      
-         You can pass capability bits by name and bitwise OR them
-         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
-         
-         You can also pass one of these aliases to common sets of
-         capability bits.  These are:
-         
-         ALL            Set all capabilities
-         READWRITE      Set all but GATEWAY_CAP_COORDINATE
-         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
-         
-         The Volume owner or admin can override this on a per-UG basis with 
-         set_gateway_caps().
-
-      message (str)
-         Message to the volume owner, explaining the nature of the request.
-         
-   Returns:
-      True on success.
-      Raises an exception on error.
-   
-   Authorization:
-      Any user can request to join any volume.
-      FIXME: users are limited in the number of outstanding requests they may have
-      FIXME: requests expire after a time if they are not acted upon.
-   """   
-   return storage.request_volume_access( email, volume_name_or_id, allowed_gateways, caps, message )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
-def list_volume_access_requests( volume_name_or_id, **attrs ):
-   """
-   List the set of pending access requests on a particular volume.
-   
-   Positional arguments:
-      volume_name_or_id (str or int):
-         Name or ID of the Volume to query
-   
-   Returns:
-      A list of pending access requests on success.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can list access requests for any volume.
-      A volume owner can only list access requests for his/her volume.
-      Normal users cannot list volume access requests.
-   """
-   return storage.list_volume_access_requests( volume_name_or_id, **attrs )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
-def list_volume_access( volume_name_or_id, **attrs ):
-   """
-   List the set of users that can create gateways for a particular volume.
-   
-   Positional arguments:
-      volume_name_or_id (str or int):
-         Name or ID of the volume to query
-      
-   Returns:
-      A list of users that can access the givne volume.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can list the users of any volume.
-      A volume owner can list the users of his/her volumes.
-      Normal users cannot list volume users.
-   """
-   return storage.list_volume_access( volume_name_or_id, **attrs )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( VolumeAccessRequest, parse_args=VolumeAccessRequest.ParseArgs )
-def list_user_access_requests( email ):
-   """
-   List the set of requests this user has issued, that have not been revoked.
-   This includes both pending requests and granted requests.
-   
-   Positional arguments:
-      email (str):
-         Email address of the user
-    
-   Returns:
-      A list of pending and granted volume requests.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can list any users' requests.
-      A user may only list his/her own requests.
-   """
-   return storage.list_user_access_requests( email )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_source=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
-def set_volume_access( email, volume_name_or_id, allowed_gateways, caps, **caller_user_dict ):
-   """
-   Set the types of Gateways a user may create in a Volume, and if User Gateways 
-   are allowed, set what access capabilities they will have.
-   
-   Positional arguments:
-      email (str):
-         Email address of the user
-      
-      volume_name_or_id (str or int):
-         Name or ID of the volume to add the user to
-      
-      allowed_gateways (str or int):
-         Which Gateways the requester will be allowed to create.
-         Bit-wise OR of:
-            GATEWAY_TYPE_UG
-            GATEWAY_TYPE_RG
-            GATEWAY_TYPE_AG
-            
-         You can pass them as a string, and they will be parsed 
-         into the appropriate bit vector.
-         
-      caps (str or int):
-         Default capability bits for Gateways when they are 
-         added to this Volume.  By default, Gateways are 
-         given read-only access to data and metadata.
-         
-         Valid capability bits are:
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_METADATA
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_COORDINATE
-      
-         You can pass capability bits by name and bitwise OR them
-         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
-         
-         You can also pass one of these aliases to common sets of
-         capability bits.  These are:
-         
-         ALL            Set all capabilities
-         READWRITE      Set all but GATEWAY_CAP_COORDINATE
-         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
-         
-         The Volume owner or admin can override this on a per-UG basis with 
-         set_gateway_caps().
-
-   Returns:
-      True on success.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can set the capabilities of any user in any volume.
-      A volume owner can set the capabilities of any user in the volumes he/she owns.
-      A user cannot set their own capabilities.
-   
-   Remarks:
-      This method is idempotent.
-   """
-      
-   return storage.set_volume_access( email, volume_name_or_id, allowed_gateways, caps, **caller_user_dict )
-
 
 # ----------------------------------
 # The Gateway API
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
-# NOTE: due to lexigraphically-ordered handling of keyword arguments, and the fact that if we're going to generate keys we must have before we can
-# encrypt and host them, the argument for obtaining the public key must lexigraphically proceed the argument for indicating whether or not we should host the private key.
-# For this reason, it's *e*ncryption_password, *g*ateway_public_key, *h*ost_private_key.
-# NOTE: encryption_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
+@Authenticate()
+@CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs, caller_user="caller_user" )
+def create_gateway( **kw ):
    """
    Create a Gateway.  It will be owned by the given user (which must be the same as the calling user, if the calling user is not admin).
    If it is a User Gateway, it will have the capabilities defined in the calling user's VolumeAccessRequest record (created via 
    set_volume_access()).
    
-   Positional arguments:
-      volume_name_or_id (str or int):
-         The name or ID of the Volume in which to create this Gateway.
-         Some clients will only accept a name, and others only an ID.
+   This method takes only keyword arguments, because what's supposed to happen behind the scenes is the front-end will translate 
+   the keyword arguments into a user-signed gateway certificate.  This method really just takes the serialized certificate for this
+   gateway, constructs a gateway record, and keeps the certificate around for other gateways to fetch.
+   
+   Required Keyword arguments:
+   
+      email=str:
+         Email address of the user that will own this Gateway.
          
-      email (str):
-         The email address of the user to own this Gateway.
+      volume=str:
+         Name of the Volume to which the Gateway will be attached.
       
-      gateway_type (str):
-         The type of Gateway to create.
-         Pass UG for user gateway.
-         Pass RG for replica gateway.
-         Pass AG for acquisition gateway.
+      name=str:
+         Name of the Gateway.  Must be unique for this Volume.
+         
+      public_key=str:
+         PEM-encoded RSA 4096-bit public ke for this Gateway.
+         Pass "auto" to have Syndicate generate one and store 
+         the corresponding private key locally.
       
-      name (str):
-         The human-readable name of this Gateway.
-      
-      host (str):
-         The hostname that should be resolved to contact this Gateway.
-      
-      port (int):
-         The port number this Gateway should listen on.
-      
-
    Optional keyword arguments:
-      closure=str:
-         This is a serialized JSON structure that stores gateway-
-         specific data.  Currently, this is only meaningful for 
-         replica gateways.
+      
+      type=int (Default: 0)
+         Gateway type.  Used to identify deployment-specific
+         categories of Gateways.
+      
+      driver=str
+         Serialized driver data for this Gateway, or a path to 
+         a driver's directory on disk.
          
-         If you want to use syntool to generate a replica gateway's
-         closure from a Python module, pass the path to the
-         directory containing the module's files.
-         
-      gateway_public_key=str (default: MAKE_AND_HOST_GATEWAY_KEY):
-         Path to this Gateway's PEM-encoded public key.  The MS will
-         distribute this public key to all other Gateways in
-         the Volume, so they can use to authenticate messages sent 
-         from this particular Gateway.  You will need to give
-         the Gateway the corresponding private key at runtime.
-         
-         If you pass "MAKE_AND_HOST_GATEWAY_KEY" (the default), a key
-         pair will be generated for you.  The private key will 
-         be sealed with your current password and uploaded to the MS.
-         The key will also be stored to your local Syndicate key directory.
-         This gives you the convenience of not having to distribute 
-         Gateway private keys yourself, but carries the risks of 
-         disclosing the ciphertext to unauthorized readers and 
-         of making your keys inaccessible if you forget your password.
-         
-         If you pass "MAKE_GATEWAY_KEY" instead, a key pair will
-         be generated for you, but the private key will be written 
-         to your local Syndicate key directory.
-         
-      host_gateway_key=str (default: None)
-         If set, this is the path to the corresponding gateway public key.
-         The private key will be sealed with your password and uploaded
-         to the MS, so your Gateway can download and unseal it when it 
-         starts.
+      port=int (Default: 31111)
+         Port this Gateway listens on.
          
    Returns:
       On success, this method returns a Gateway.  On failure, it 
@@ -1032,20 +627,31 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       its access rights (set in a previous call to set_volume_access()).
       
       A user may be subject to a quota enforced for each type of Gateway.
+      
+   Remarks:
+      Syndicate takes all of the keyword arguments and generates a keyword 
+      argument called 'gateway_cert_b64', which is a base64-encoded serialized
+      protobuf string that contains all of the above keyword arguments plus
+      the user's signature over them.  It also contains 'cert_bundle_b64', 
+      which is a base64-encoded serialized protobuf string that contains 
+      the current volume certificate version vector (which must be updated 
+      by the volume owner whenever a gateway is added or removed.
+      
+      The kw args optionally contains 'driver_text' which contains the
+      JSON-serialized driver.
    """
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port,
-                                  encryption_password=encryption_password, encrypted_gateway_private_key=host_gateway_key, gateway_public_key=gateway_public_key, **attrs )
+   return storage.create_gateway( **kw  )
    
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ReadAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
-def read_gateway( g_name_or_id ):
+def read_gateway( name ):
    """
    Read a gateway.
    
    Positional arguments:
-      g_name_or_id (str):
-         The name or ID of the desired gateway.
+      name (str):
+         The name of the desired gateway.
 
    Returns:
       On success, the gateway data.
@@ -1056,18 +662,18 @@ def read_gateway( g_name_or_id ):
       A user can only read gateways (s)he owns.
    """
    
-   return storage.read_gateway( g_name_or_id )
+   return storage.read_gateway( name )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
-def update_gateway( g_name_or_id, **attrs ):
+@Authenticate()
+@UpdateAPIGuard( Gateway, target_object_name="name", parse_args=Gateway.ParseArgs, caller_user="caller_user" )
+def update_gateway( name, **attrs ):
    """
    Update a gateway.
    
    Positional arguments:
-      g_name_or_id (str):
-         The name or ID of the gateway to update.
+      name (str):
+         The name of the gateway to update.
       
    Optional keyword arguments:
       host=str:
@@ -1080,83 +686,63 @@ def update_gateway( g_name_or_id, **attrs ):
          Date when this gateway's certificate expires, in seconds
          since the epoch.
          
-      closure=str:
-         This is a serialized JSON structure that stores gateway-
-         specific data and storage logic.
-         
-         If you want to use syntool to generate a gateway's
-         closure from a directory, pass the path to the
-         directory containing the closure's files.
+      driver=str:
+         This is serialized JSON string that contains this gateway's 
+         driver logic.  The contents are specific to the gateway 
+         implementation. 
       
+      caps=str|int:
+         This is the capabilities string (or value) for this gateway.
+         Capabilities are a bit-field of the following:
+         
+         GATEWAY_CAP_READ_DATA          Gateway can read data
+         GATEWAY_CAP_WRITE_DATA         Gateway can write data
+         GATEWAY_CAP_READ_METADATA      Gateway can read metadata
+         GATEWAY_CAP_WRITE_METADATA     Gateway can write metadta
+         GATEWAY_CAP_COORDINATE         Gateway can coordinate writes
+         
+         The volume owner sets a whitelist of allowed capabilities in
+         create_gateway.  The user can only enable these white-listed 
+         capabilities.  Only the volume owner can change the capability
+         white-list.
+         
    Returns:
       On success, this method returns True.
       Raises an exception on error.
    
    Authorization:
       An administrator can update any gateway.
-      A user can only update his/her own gateways.
-   """
-   return storage.update_gateway( g_name_or_id, **attrs )
-
-
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
-def set_gateway_caps( g_name_or_id, caps ):
-   """
-   Set a gateway's capabilities.
-   
-   Positional arguments:
-      g_name_or_id (str):
-         The name or ID of the gateway to update.
+      A volume owner can update any gateway in the volumes (s)he owns.
+      A user cannot update the gateway.
       
-      caps (str or int):
-         Capability bits for UGs.  Valid capability bits are:
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_METADATA
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_COORDINATE
-      
-         You can pass capability bits by name and bitwise OR them
-         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
-         
-         You can also pass one of these aliases to common sets of
-         capability bits.  These are:
-         
-         ALL            Set all capabilities
-         READWRITE      Set all but GATEWAY_CAP_COORDINATE
-         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
-   
-   Returns:
-      True on success.
-      Raises an exception on error.
-   
-   Authorization:
-      An administrator can set the capabilities of any gateway.
-      
-      A user must not only own the gateway to set its capabilities, but
-      also own the Volume in which the gateway resides.  This is to prevent
-      an arbitrary user from gaining unwarranted capabilities.
-   
    Remarks:
-      This method only makes sense for User Gateways.  An Acquisition Gateway
-      is only supposed to be able to write metadata into its Volume, and a Replica
-      Gateway never needs to access a Volume.  Attempts to give AGs or RGs 
-      different capabilities will silently fail.
-   """
+      Syndicate sends 'gateway_cert_b64' as a keyword argument that contains 
+      the user-signed base64-encoded gateway certificate which contains all of the 
+      keyword arguments.  Syndicate will merge the keyword arguments with the 
+      gateway certificate stored locally.  If the gateway certificate is not 
+      stored locally, it will try to use the cached copy on the MS.
       
-   return storage.set_gateway_caps( g_name_or_id, caps )
+      Syndicate may optionally send 'cert_bundle_b64' as a keyword argument as well,
+      which will contain a serialized, volume owner-signed certificate bundle 
+      for all gateways in the volume.  This will only be passed if the volume 
+      owner is altering a gateway's capability whitelist.
+      
+      In addition, kw may contain 'driver_text'--the JSON-encoded driver for 
+      the gateway--as well as 'cert_bundle_b64' (the new volume cert 
+      bundle version vector, base64-encoded).
+   """
+   return storage.update_gateway( name, **attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@DeleteAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
-def delete_gateway( g_name_or_id ):
+@Authenticate()
+@DeleteAPIGuard( Gateway, target_object_name="name", parse_args=Gateway.ParseArgs )
+def delete_gateway( name, **kw ):
    """
    Delete a gateway.
    
    Positional arguments:
-      g_name_or_id (str):
-         The name or ID of the gateway to delete.
+      name (str):
+         The name of the gateway to delete.
    
    Returns:
       True on success.
@@ -1164,13 +750,19 @@ def delete_gateway( g_name_or_id ):
    
    Authorization:
       An administrator can delete any gateway.
-      A user can only delete a gateway (s)he owns.
+      A volume oner can delete any gateway in the volumes (s)he owns.
+      A user cannot delete the gateway.
+      
+   Remarks:
+      Syndicate should generate 'cert_bundle_b64'
+      as a keyword argument, which contains the base64-encoded serialized 
+      cert bundle version vector for this volume.
    """
    
-   return storage.delete_gateway( g_name_or_id )  
+   return storage.delete_gateway( name, **kw )  
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( Gateway, admin_only=True, parse_args=Gateway.ParseArgs )
 def list_gateways( query_attrs ):
    """
@@ -1197,8 +789,8 @@ def list_gateways( query_attrs ):
    return storage.list_gateways( query_attrs )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
+@Authenticate()
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, caller_user="caller_user" )
 def list_gateways_by_user( email, **caller_user_dict ):
    """
    List the gateways owned by a particular user.
@@ -1219,7 +811,7 @@ def list_gateways_by_user( email, **caller_user_dict ):
    return storage.list_gateways_by_user( email, **caller_user_dict )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @ListAPIGuard( Gateway, admin_only=True, parse_args=Gateway.ParseArgs )
 def list_gateways_by_host( host ):
    """
@@ -1239,8 +831,8 @@ def list_gateways_by_host( host ):
    return storage.list_gateways_by_host( host )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
+@Authenticate()
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, caller_user="caller_user" )
 def list_gateways_by_volume( volume_name_or_id, **caller_user_dict ):
    """
    List gateways in a Volume.
@@ -1260,8 +852,8 @@ def list_gateways_by_volume( volume_name_or_id, **caller_user_dict ):
    return storage.list_gateways_by_volume( volume_name_or_id, **caller_user_dict )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
+@Authenticate()
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, caller_user="caller_user" )
 def list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_dict ):
    """
    List gateways in a Volume that belong to a particular user.
@@ -1285,7 +877,7 @@ def list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_di
    return storage.list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_dict )
 
 
-@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@Authenticate()
 @DeleteAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )        # caller must own the Volume
 def remove_user_from_volume( email, volume_name_or_id ):
    """
@@ -1325,65 +917,21 @@ class API( object ):
       Verify a request from a user, using public-key signature verification.
       """
       if not isinstance( method, AuthMethod ):
-         raise Exception("Invalid method")
+         log.error("Invalid method '%s'" % method)
+         return False
       
       username = syndicate_data.get("username")
       sig = syndicate_data.get("signature")
       
-      # do we need to perform an authentication here?
-      if not method.method_func.need_authentication:
-         # the method will perform its own authentication.  Just get the requested object
-         authenticated_user = SyndicateUser.Read( username )
-         if not authenticated_user:
-            log.error("No such user %s" % (username) )
-            return False
+      authenticated_user = SyndicateUser.Authenticate( username, request_body, sig )
          
-         else:
-            method.authenticated_user = authenticated_user
-            return True
-      
-      else:
-         authenticated_user = SyndicateUser.Authenticate( username, request_body, sig )
-         
-         if not authenticated_user:
-            # failed to authenticate via keys.
-            log.error("Failed to authenticate user %s" % (username))
-            return False 
-         
-         method.authenticated_user = authenticated_user
-         return True
-   
-   
-   @classmethod
-   def openid_verifier( cls, method, args, kw, request_body, syndicate_data, data, **verifier_kw ):
-      """
-      Verify an OpenID request.  This is really a matter of ensuring the OpenID user matches the user that sent the request.
-      """
-      
-      if not isinstance( method, AuthMethod ):
-         raise Exception("Invalid method")
-      
-      given_username = verifier_kw.get("username")
-      username = syndicate_data.get("username")
-      
-      if username is None:
-         log.error("No username given in method call")
-         return None
-      
-      if username != given_username:
-         log.error("Username mismatch: method call username: %s, OpenID username: %s" % (username, given_username))
-         return None
-      
-      # user is already authenticated with OpenID, so we're good!
-      authenticated_user = SyndicateUser.Read( username )
       if not authenticated_user:
-         log.error("No such user %s" % (username) )
-         return False
-      
-      else:
-         method.authenticated_user = authenticated_user
-         return True
-      
+          # failed to authenticate via keys.
+          log.error("Failed to authenticate user %s" % (username))
+          return False 
+         
+      method.authenticated_user = authenticated_user
+      return True
    
    @classmethod
    def signer( cls, method, data ):

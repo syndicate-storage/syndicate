@@ -16,7 +16,7 @@
 
 #include "libsyndicate/client.h"
 #include "libsyndicate/server.h"
-
+#include "libsyndicate/proc.h"
 #include "libsyndicate/ms/gateway.h"
 #include "libsyndicate/url.h"
 #include "libsyndicate/ms/url.h"
@@ -24,12 +24,35 @@
 static char const* SG_post_field_data = SG_SERVER_POST_FIELD_DATA_PLANE;
 static char const* SG_post_field_control = SG_SERVER_POST_FIELD_CONTROL_PLANE;
 
+// extra data to include in a write
+struct SG_client_WRITE_data {
+    
+    bool has_write_delta;
+    struct SG_manifest* write_delta;
+    
+    bool has_mtime;
+    struct timespec mtime;
+    
+    bool has_mode;
+    mode_t mode;
+    
+    bool has_owner_id;
+    uint64_t owner_id;
+    
+    // routing information--can be set separately, but will be imported from write_delta if not given 
+    bool has_routing_information;
+    uint64_t coordinator_id;
+    uint64_t volume_id;
+    uint64_t file_id;
+    int64_t file_version;
+};
 
 // per-request state to be preserved for running multiple requests 
 struct SG_client_request_cls {
    
    uint64_t chunk_id;                   // ID of the chunk we're transfering
    SG_messages::Request* message;       // the original control-plane message (if uploading)
+   uint64_t dest_gateway_id;            // gateway that was supposed to receive the message
    char* serialized_message;            // serialized control-plane message (if uploading)
    struct curl_httppost* form_begin;    // curl forms (if uploading)
    char* url;                           // target URL 
@@ -52,24 +75,29 @@ void SG_client_request_cls_free( struct SG_client_request_cls* cls ) {
 }
 
 
-// download a manifest (from the caches) using an initialized curl handle.  verify it came from remote_gateway_id and parse it.
+// download a manifest (from the caches) using an initialized curl handle.  verify it came from remote_gateway_id.
 // return 0 on success
 // return -ENOMEM on OOM
 // return -EAGAIN if the remote gateway is not known to us (i.e. we can't make a manifest url, and we should reload)
 // return -EINVAL if we failed to parse the message 
 // return -ETIMEDOUT if the request timed out 
 // return -EREMOTEIO if the request failed with HTTP 500 or higher
-// return between -499 and -400 if the request failed with an HTTP 400-level error code
+// return -EPROTO on an HTTP 400-level error
 // return -errno on socket- and recv-related errors
 // NOTE: does *not* check if the manifest came from a different gateway than the one given here (remote_gateway_id)
-static int SG_client_get_manifest_curl( struct ms_client* ms, CURL* curl, uint64_t remote_gateway_id, struct SG_manifest* manifest ) {
+static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_request_data* reqdat, CURL* curl, uint64_t remote_gateway_id, struct SG_manifest* manifest ) {
    
    int rc = 0;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    char* serialized_manifest = NULL;
    off_t serialized_manifest_len = 0;
+   char* manifest_str = NULL;
+   off_t manifest_strlen = 0;
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
    SG_messages::Manifest mmsg;
+   struct SG_chunk serialized_manifest_chunk;
+   struct SG_chunk manifest_chunk;
    
    // download!
    rc = md_download_run( curl, SG_MAX_MANIFEST_LEN, &serialized_manifest, &serialized_manifest_len );
@@ -78,12 +106,42 @@ static int SG_client_get_manifest_curl( struct ms_client* ms, CURL* curl, uint64
       // download failed 
       SG_error("md_download_run rc = %d\n", rc );
       
+      if( rc >= -499 && rc <= -400 ) {
+         rc = -EPROTO;
+      }
+      
       return rc;
    }
    
-   // parse 
-   rc = md_parse< SG_messages::Manifest >( &mmsg, serialized_manifest, serialized_manifest_len );
+   // deserialize 
+   serialized_manifest_chunk.data = serialized_manifest;
+   serialized_manifest_chunk.len = serialized_manifest_len;
+   
+   rc = SG_gateway_impl_deserialize( gateway, reqdat, &serialized_manifest_chunk, &manifest_chunk );
    SG_safe_free( serialized_manifest );
+
+   if( rc == -ENOSYS ) {
+
+      // no effect
+      serialized_manifest_chunk.data = NULL;
+      serialized_manifest_chunk.len = 0;
+
+      manifest_chunk.data = serialized_manifest;
+      manifest_chunk.len = serialized_manifest_len;
+   }
+   else if( rc != 0 ) {
+
+      // error 
+      SG_error("SG_gateway_impl_deserialize rc = %d\n", rc );
+      return rc;
+   }
+
+   manifest_str = manifest_chunk.data;
+   manifest_strlen = manifest_chunk.len;
+
+   // parse 
+   rc = md_parse< SG_messages::Manifest >( &mmsg, manifest_str, manifest_strlen );
+   SG_safe_free( manifest_str );
    
    if( rc != 0 ) {
       
@@ -121,9 +179,9 @@ static int SG_client_get_manifest_curl( struct ms_client* ms, CURL* curl, uint64
 // return -EAGAIN if the remote gateway is not known to us (i.e. we can't make a manifest url, and we should reload)
 // return -ETIMEDOUT if the request timed out 
 // return -EREMOTEIO if the request failed with HTTP 500 or higher
-// return between -499 and -400 if the request failed with an HTTP 400-level error code
+// return -EPROTO on HTTP 400-level message
 // return -errno on socket- and recv-related errors
-// return non-zero if the gateway's closure method to connect to the cache fails
+// return non-zero if the gateway's driver method to connect to the cache fails
 // NOTE: does *not* check if the manifest came from a different gateway than the one given here (remote_gateway_id)
 int SG_client_get_manifest( struct SG_gateway* gateway, struct SG_request_data* reqdat, uint64_t remote_gateway_id, struct SG_manifest* manifest ) {
    
@@ -183,12 +241,14 @@ int SG_client_get_manifest( struct SG_gateway* gateway, struct SG_request_data* 
    md_init_curl_handle( conf, curl, manifest_url, conf->connect_timeout );
    
    // connect to caches 
-   rc = SG_gateway_closure_connect_cache( gateway, curl, manifest_url );
-   
-   if( rc != 0 ) {
+   rc = SG_gateway_impl_connect_cache( gateway, curl, manifest_url );
+   if( rc == -ENOSYS ) {
+      rc = 0;
+   }
+   else if( rc != 0 ) {
       
       // failed 
-      SG_error("SG_gateway_closure_connect_cache('%s') rc = %d\n", manifest_url, rc );
+      SG_error("SG_gateway_impl_connect_cache('%s') rc = %d\n", manifest_url, rc );
       
       curl_easy_cleanup( curl );
       SG_safe_free( manifest_url );
@@ -196,7 +256,7 @@ int SG_client_get_manifest( struct SG_gateway* gateway, struct SG_request_data* 
       return rc;
    }
    
-   rc = SG_client_get_manifest_curl( ms, curl, remote_gateway_id, manifest );
+   rc = SG_client_get_manifest_curl( gateway, reqdat, curl, remote_gateway_id, manifest );
    if( rc != 0 ) {
       
       // failed 
@@ -263,12 +323,14 @@ int SG_client_download_async_start( struct SG_gateway* gateway, struct md_downlo
    md_init_curl_handle( conf, curl, url, conf->connect_timeout );
    
    // connect to caches 
-   rc = SG_gateway_closure_connect_cache( gateway, curl, url );
-   
-   if( rc != 0 ) {
+   rc = SG_gateway_impl_connect_cache( gateway, curl, url );
+   if( rc == -ENOSYS ) {
+      rc = 0;
+   }
+   else if( rc != 0 ) {
       
       // failed 
-      SG_error("SG_gateway_closure_connect_cache('%s') rc = %d\n", url, rc );
+      SG_error("SG_gateway_impl_connect_cache('%s') rc = %d\n", url, rc );
       
       curl_easy_cleanup( curl );
       SG_safe_free( reqcls );
@@ -354,18 +416,12 @@ void SG_client_download_async_cleanup( struct md_download_context* dlctx ) {
          // TODO: connection pool 
          curl_easy_cleanup( curl );
       }
-   }
-   else {
-      
-      // shouldn't get here...
-      SG_warn( "Download %p not fully unrefrenced\n", dlctx );
-      
-      // strip the request cls
-      md_download_context_set_cls( dlctx, NULL );
-   }
    
-   SG_client_request_cls_free( reqcls );
-   SG_safe_free( reqcls );
+      if( reqcls != NULL ) {
+         SG_client_request_cls_free( reqcls );
+         SG_safe_free( reqcls );
+      }
+   }
    
    return;
 }
@@ -401,6 +457,12 @@ int SG_client_download_async_wait( struct md_download_context* dlctx, uint64_t* 
    int rc = 0;
    int http_status = 0;
    struct SG_client_request_cls* reqcls = (struct SG_client_request_cls*)md_download_context_get_cls( dlctx );
+
+   if( reqcls == NULL ) {
+
+      SG_error("FATAL BUG: not a download: %p\n", dlctx );
+      exit(1);
+   }
    
    // are we ready?
    if( !md_download_context_finalized( dlctx ) ) {
@@ -436,7 +498,7 @@ int SG_client_download_async_wait( struct md_download_context* dlctx, uint64_t* 
       return rc;
    }
    
-   // get the chunk ID from the download's closure
+   // get the chunk ID from the download's driver
    *chunk_id = reqcls->chunk_id;
    
    if( cls != NULL ) {
@@ -510,7 +572,6 @@ int SG_client_get_block_async( struct SG_gateway* gateway, struct SG_request_dat
 }
 
 
-
 // log a block hash mismatch 
 // always succeeds
 static void SG_client_get_block_log_hash_mismatch( struct SG_manifest* manifest, uint64_t block_id, unsigned char* block_hash ) {
@@ -550,36 +611,30 @@ static void SG_client_get_block_log_hash_mismatch( struct SG_manifest* manifest,
    
    return;
 }
-   
 
 
 // parse a block from a download context, and use the manifest to verify it's integrity 
 // if the block is still downloading, wait for it to finish (indefinitely). Otherwise, load right away.
+// deserialize the block once we have it.
 // return 0 on success, and populate *block with its contents 
 // return -ENOMEM on OOM 
 // return -EINVAL if the request is not for a block
 // return -ENODATA if the download context did not successfully finish
 // return -EBADMSG if the block's authenticity could not be verified with the manifest
-int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* manifest, struct md_download_context* dlctx, uint64_t* block_id, struct SG_chunk* block ) {
+int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* manifest, struct md_download_context* dlctx, uint64_t* block_id, struct SG_chunk* deserialized_block ) {
    
    int rc = 0;
-   char* serialized_block_buf = NULL;
-   off_t serialized_block_len = 0;
-   
-   struct SG_chunk serialized_block;
-   
    char* block_buf = NULL;
-   ssize_t block_len = 0;
-   
+   off_t block_len = 0;
+
    unsigned char* block_hash = NULL;
    
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t block_size = ms_client_get_volume_blocksize( ms );
-   
    struct SG_request_data* reqdat = NULL;
+
+   struct SG_chunk block_chunk;
    
    // get the data; recover the original reqdat
-   rc = SG_client_download_async_wait( dlctx, block_id, &serialized_block_buf, &serialized_block_len, (void**)&reqdat );
+   rc = SG_client_download_async_wait( dlctx, block_id, &block_buf, &block_len, (void**)&reqdat );
    if( rc != 0 ) {
       
       SG_error("SG_client_download_async_wait( %p ) rc = %d\n", dlctx, rc );
@@ -588,11 +643,11 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
    }
    
    // get the hash 
-   block_hash = sha256_hash_data( serialized_block_buf, serialized_block_len );
+   block_hash = sha256_hash_data( block_buf, block_len );
    if( block_hash == NULL ) {
       
       // OOM 
-      SG_safe_free( serialized_block_buf );      
+      SG_safe_free( block_buf );      
       
       SG_request_data_free( reqdat );
       SG_safe_free( reqdat );
@@ -607,7 +662,7 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
       // error 
       SG_error("SG_manifest_block_hash_eq( %" PRIu64 " ) rc = %d\n", *block_id, rc );
       
-      SG_safe_free( serialized_block_buf );
+      SG_safe_free( block_buf );
       SG_safe_free( block_hash );
       
       SG_request_data_free( reqdat );
@@ -620,7 +675,7 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
       // mismatch 
       SG_client_get_block_log_hash_mismatch( manifest, *block_id, block_hash );
       
-      SG_safe_free( serialized_block_buf );
+      SG_safe_free( block_buf );
       SG_safe_free( block_hash );
       
       SG_request_data_free( reqdat );
@@ -630,54 +685,266 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
    }
    
    SG_safe_free( block_hash );
-   
-   // hash matches!  run it through the driver 
-   SG_chunk_init( &serialized_block, serialized_block_buf, serialized_block_len );
-   
-   block_buf = SG_CALLOC( char, block_size );
-   if( block_buf == NULL ) {
-      
-      SG_chunk_free( &serialized_block );
-      
-      SG_request_data_free( reqdat );
-      SG_safe_free( reqdat );
-      return -ENOMEM;
-   }
-   
-   block_len = block_size;
-   
-   // set up the actual block 
-   SG_chunk_init( block, block_buf, block_len );
-   
-   // unserialize
-   block_len = SG_gateway_closure_get_block( gateway, reqdat, &serialized_block, block );
-   
-   SG_chunk_free( &serialized_block );
-   
-   if( block_len < 0 || (unsigned)block_len != block_size ) {
-      
-      // failed 
-      SG_error("SG_gateway_closure_get_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (size = %zu) ) rc = %zd\n", 
-               reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, block->len, block_len );
-      
-      SG_chunk_free( block );
-      
-      if( block_len >= 0 && (unsigned)block_len != block_size ) {
-         
-         // not enough data given 
-         rc = -ENODATA;
-      }
-   }
-   else {
-      
-      rc = 0;
-   }
-   
-   // done with this request
+
+   // deserialize... 
+   block_chunk.data = block_buf;
+   block_chunk.len = block_len;
+
+   rc = SG_gateway_impl_deserialize( gateway, reqdat, &block_chunk, deserialized_block );
+
+   SG_safe_free( block_buf );
    SG_request_data_free( reqdat );
    SG_safe_free( reqdat );
-   
+
+   if( rc != 0 ) {
+    
+       SG_error("SG_gateway_impl_deserialize( %" PRIu64 " ) rc = %d\n", *block_id, rc );
+   }
+
    return rc;
+}
+
+
+// get an xattr by name 
+// return 0 on success, and set *xattr_value and *xattr_value_len
+// return -ENOMEM on OOM 
+// return -ENOMEM on OOM
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request, or if we don't know about gateway_id
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO for HTTP 400-level error
+int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, uint64_t xattr_nonce, char** xattr_value, size_t* xattr_len ) {
+    
+    int rc = 0;
+    char* xattr_url = NULL;
+    struct ms_client* ms = SG_gateway_ms( gateway );
+    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
+    CURL* curl = NULL;
+    SG_messages::Reply reply;
+    struct ms_gateway_cert* gateway_cert = NULL;
+    
+    char* buf = NULL;
+    off_t len = 0;
+    
+    ms_client_config_rlock( ms );
+    
+    gateway_cert = ms_client_get_gateway_cert( ms, gateway_id );
+    
+    ms_client_config_unlock( ms );
+    
+    // gateway exists?
+    if( gateway_cert == NULL ) {
+        return -EAGAIN;
+    }
+    
+    gateway_cert = NULL;
+    
+    // TODO: connection pool 
+    curl = curl_easy_init();
+    if( curl == NULL ) {
+        return -ENOMEM;
+    }
+    
+    rc = md_url_make_getxattr_url( ms, fs_path, gateway_id, file_id, file_version, xattr_name, xattr_nonce, &xattr_url );
+    if( rc != 0 ) {
+        
+        curl_easy_cleanup( curl );
+        return rc;
+    }
+    
+    md_init_curl_handle( conf, curl, xattr_url, conf->connect_timeout );
+    
+    rc = md_download_run( curl, SG_MAX_XATTR_LEN, &buf, &len );
+    curl_easy_cleanup( curl );
+    
+    if( rc != 0 ) {
+        
+        SG_error("md_download_run('%s') rc = %d\n", xattr_url, rc );
+        SG_safe_free( xattr_url );
+        
+        if( rc >= -499 && rc <= -400 ) {
+            rc = -EPROTO;
+        }
+        
+        return rc;
+    }
+    
+    // parse reply 
+    rc = md_parse< SG_messages::Reply >( &reply, buf, len );
+    SG_safe_free( buf );
+    
+    if( rc != 0 ) {
+        
+        SG_error("md_parse('%s') rc = %d\n", xattr_url, rc );
+        SG_safe_free( xattr_url );
+        return rc;
+    }
+    
+    SG_safe_free( xattr_url );
+    
+    ms_client_config_rlock( ms );
+    
+    gateway_cert = ms_client_get_gateway_cert( ms, gateway_id );
+    if( gateway_cert == NULL ) {
+        
+        ms_client_config_unlock( ms );
+        return -EAGAIN;
+    }
+    
+    // verify reply 
+    rc = md_verify< SG_messages::Reply >( ms_client_gateway_pubkey( gateway_cert ), &reply );
+    ms_client_config_unlock( ms );
+    
+    if( rc != 0 ) {
+        
+        // invalid reply
+        return rc;
+    }
+    
+    // validate reply 
+    if( !reply.has_xattr_value() ) {
+        
+        // invalid reply 
+        return rc;
+    }
+    
+    *xattr_value = SG_strdup_or_null( reply.xattr_value().c_str() );
+    if( *xattr_value == NULL ) {
+        
+        // OOM 
+        return -ENOMEM;
+    }
+    
+    
+    *xattr_len = reply.xattr_value().size();
+    return 0;
+}
+
+
+// get a list of xattrs by name 
+// return 0 on success, and set *xattr_value and *xattr_value_len
+// return -ENOMEM on OOM 
+// return -ENOMEM on OOM
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO for HTTP 400-level error
+int SG_client_listxattrs( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t xattr_nonce, char** xattr_list, size_t* xattr_list_len ) {
+    
+    int rc = 0;
+    char* xattr_url = NULL;
+    struct ms_client* ms = SG_gateway_ms( gateway );
+    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
+    CURL* curl = NULL;
+    SG_messages::Reply reply;
+    struct ms_gateway_cert* gateway_cert = NULL;
+    off_t off = 0;
+    
+    char* buf = NULL;
+    off_t len = 0;
+    
+    ms_client_config_rlock( ms );
+    
+    gateway_cert = ms_client_get_gateway_cert( ms, gateway_id );
+    
+    ms_client_config_unlock( ms );
+    
+    // gateway exists?
+    if( gateway_cert == NULL ) {
+        return -EAGAIN;
+    }
+    
+    gateway_cert = NULL;
+    
+    // TODO: connection pool 
+    curl = curl_easy_init();
+    if( curl == NULL ) {
+        return -ENOMEM;
+    }
+    
+    rc = md_url_make_listxattr_url( ms, fs_path, gateway_id, file_id, file_version, xattr_nonce, &xattr_url );
+    if( rc != 0 ) {
+        
+        curl_easy_cleanup( curl );
+        return rc;
+    }
+    
+    md_init_curl_handle( conf, curl, xattr_url, conf->connect_timeout );
+    
+    rc = md_download_run( curl, SG_MAX_XATTR_LEN, &buf, &len );
+    curl_easy_cleanup( curl );
+    
+    if( rc != 0 ) {
+        
+        SG_error("md_download_run('%s') rc = %d\n", xattr_url, rc );
+        SG_safe_free( xattr_url );
+        
+        if( rc >= -499 && rc <= -400 ) {
+            rc = -EPROTO;
+        }
+        
+        return rc;
+    }
+    
+    // parse reply 
+    rc = md_parse< SG_messages::Reply >( &reply, buf, len );
+    SG_safe_free( buf );
+    
+    if( rc != 0 ) {
+        
+        SG_error("md_parse('%s') rc = %d\n", xattr_url, rc );
+        SG_safe_free( xattr_url );
+        return rc;
+    }
+    
+    SG_safe_free( xattr_url );
+    
+    ms_client_config_rlock( ms );
+    
+    gateway_cert = ms_client_get_gateway_cert( ms, gateway_id );
+    if( gateway_cert == NULL ) {
+        
+        ms_client_config_unlock( ms );
+        return -EAGAIN;
+    }
+    
+    // verify reply 
+    rc = md_verify< SG_messages::Reply >( ms_client_gateway_pubkey( gateway_cert ), &reply );
+    ms_client_config_unlock( ms );
+    
+    if( rc != 0 ) {
+        
+        // invalid reply
+        return rc;
+    }
+    
+    if( reply.xattr_names_size() == 0 ) {
+        
+        // no xattrs 
+        return 0;
+    }
+    
+    // how many bytes?
+    *xattr_list_len = 0;
+    for( int i = 0; i < reply.xattr_names_size(); i++ ) {
+        
+        *xattr_list_len += reply.xattr_names(i).size() + 1;
+    }
+    
+    *xattr_list = SG_CALLOC( char, *xattr_list_len );
+    if( *xattr_list == NULL ) {
+        
+        // OOM 
+        return -ENOMEM;
+    }
+    
+    for( int i = 0; i < reply.xattr_names_size(); i++ ) {
+        
+        memcpy( *xattr_list + off, reply.xattr_names(i).c_str(), reply.xattr_names(i).size() );
+        off += (reply.xattr_names(i).size() + 1);
+    }
+    
+    return 0;
 }
 
 
@@ -898,7 +1165,7 @@ int SG_client_deserialize_signed_block( struct SG_gateway* gateway, struct SG_re
 // return 0 on success 
 // return -EINVAL if reqdat doesn't have file_id, file_version, coordinator_id, or fs_path set
 // return -ENOMEM on OOM 
-static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, uint64_t dest_gateway_id ) {
+static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat ) {
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    
@@ -924,7 +1191,6 @@ static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Req
       
       request->set_user_id( user_id );
       request->set_src_gateway_id( gateway_id );
-      request->set_dest_gateway_id( dest_gateway_id );
       request->set_message_nonce( md_random64() );
       
       request->set_fs_path( string(reqdat->fs_path) );
@@ -937,57 +1203,137 @@ static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Req
 }
 
 
+// allocate a write request 
+struct SG_client_WRITE_data* SG_client_WRITE_data_new(void) {
+    return SG_CALLOC( struct SG_client_WRITE_data, 1 );
+}
+
+// set up a write reqeust 
+int SG_client_WRITE_data_init( struct SG_client_WRITE_data* dat ) {
+    memset( dat, 0, sizeof(struct SG_client_WRITE_data) );
+    return 0;
+}
+
+// set write data manifest.
+// NOTE: shallow copy 
+int SG_client_WRITE_data_set_write_delta( struct SG_client_WRITE_data* dat, struct SG_manifest* write_delta ) {
+    dat->write_delta = write_delta;
+    dat->has_write_delta = true;
+    return 0;
+}
+
+// set write data mtime 
+int SG_client_WRITE_data_set_mtime( struct SG_client_WRITE_data* dat, struct timespec* mtime ) {
+    dat->mtime = *mtime;
+    dat->has_mtime = true;
+    return 0;
+}
+
+// set write data mode 
+int SG_client_WRITE_data_set_mode( struct SG_client_WRITE_data* dat, mode_t mode ) {
+    dat->mode = mode;
+    dat->has_mode = true;
+    return 0;
+}
+
+// set write data owner ID
+int SG_client_WRITE_data_set_owner_id( struct SG_client_WRITE_data* dat, uint64_t owner_id ) {
+    dat->owner_id = owner_id;
+    dat->has_owner_id = true;
+    return 0;
+}
+
+// set routing info
+int SG_client_WRITE_data_set_routing_info( struct SG_client_WRITE_data* dat, uint64_t volume_id, uint64_t coordinator_id, uint64_t file_id, int64_t file_version ) {
+    
+    dat->coordinator_id = coordinator_id;
+    dat->file_id = file_id;
+    dat->volume_id = volume_id;
+    dat->file_version = file_version;
+    dat->has_routing_information = true;
+    return 0;
+}
+
+// merge data into an md_entry from a WRITE data struct 
+int SG_client_WRITE_data_merge( struct SG_client_WRITE_data* dat, struct md_entry* ent ) {
+    
+    if( dat->has_owner_id ) {
+        ent->owner = dat->owner_id;
+    }
+    if( dat->has_mtime ) {
+        ent->mtime_sec = dat->mtime.tv_sec;
+        ent->mtime_nsec= dat->mtime.tv_nsec;
+    }
+    if( dat->has_mode ) {
+        ent->mode = dat->mode;
+    }
+    
+    return 0;
+}
+
 // make a signed WRITE message--that is, send over new block information for a file, encoded as a manifest.
 // the destination gateway is the coordinator ID in the manifest.
 // write-delta must be non-NULL
 // if new_owner and/or new_mode are non-NULL, they will be filled in as well
 // return 0 on success 
 // return -ENOMEM on OOM 
-// return -EINVAL if reqdat does not encode manifest data
-int SG_client_request_WRITE_setup( struct SG_gateway* gateway, SG_messages::Request* request, char const* fs_path, struct SG_manifest* write_delta, uint64_t* new_owner, mode_t* new_mode, struct timespec* new_mtime ) {
+// return -EINVAL if we don't have any routing information set in dat
+int SG_client_request_WRITE_setup( struct SG_gateway* gateway, SG_messages::Request* request, char const* fs_path, struct SG_client_WRITE_data* dat ) {
    
    int rc = 0;
+   
+   // sanity check...
+   if( !dat->has_routing_information ) {
+       SG_error("BUG: no routing information for '%s'\n", fs_path);
+       return -EINVAL;
+   }
    
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
    struct SG_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
    
-   reqdat.coordinator_id = write_delta->coordinator_id;
+   reqdat.coordinator_id = dat->coordinator_id;
    reqdat.fs_path = (char*)fs_path;
-   reqdat.volume_id = write_delta->volume_id;
-   reqdat.file_id = write_delta->file_id;
-   reqdat.file_version = write_delta->file_version;
+   reqdat.volume_id = dat->volume_id;
+   reqdat.file_id = dat->file_id;
+   reqdat.file_version = dat->file_version;
    
-   rc = SG_client_request_setup( gateway, request, &reqdat, write_delta->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, &reqdat );
    if( rc != 0 ) {
       
+      SG_error("SG_client_request_setup('%s') rc = %d\n", fs_path, rc );
       return rc;
    }
    
    request->set_request_type( SG_messages::Request::WRITE );
    
-   rc = SG_manifest_serialize_blocks_to_request_protobuf( write_delta, request );
-   if( rc != 0 ) {
+   if( dat->has_write_delta ) {
+       
+       // sending a manifest write delta
+       rc = SG_manifest_serialize_blocks_to_request_protobuf( dat->write_delta, request );
+       if( rc != 0 ) {
       
-      return rc;
+           SG_error("SG_manifest_serialize_blocks_to_request_protobuf('%s') rc = %d\n", fs_path, rc );
+           return rc;
+       }
+   
+       request->set_new_manifest_mtime_sec( dat->write_delta->mtime_sec );
+       request->set_new_manifest_mtime_nsec( dat->write_delta->mtime_nsec );
    }
    
-   request->set_new_manifest_mtime_sec( write_delta->mtime_sec );
-   request->set_new_manifest_mtime_nsec( write_delta->mtime_nsec );
-   
-   if( new_owner != NULL ) {
-      request->set_new_owner_id( *new_owner );
+   if( dat->has_owner_id ) {
+      request->set_new_owner_id( dat->owner_id );
    }
    
-   if( new_mode != NULL ) {
-      request->set_new_mode( *new_mode );
+   if( dat->has_mode ) {
+      request->set_new_mode( dat->mode );
    }
    
-   if( new_mtime != NULL ) {
+   if( dat->has_mtime ) {
       
-      request->set_new_mtime_sec( new_mtime->tv_sec );
-      request->set_new_mtime_nsec( new_mtime->tv_nsec );
+      request->set_new_mtime_sec( dat->mtime.tv_sec );
+      request->set_new_mtime_nsec( dat->mtime.tv_nsec );
    }
    
    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
@@ -1001,8 +1347,10 @@ int SG_client_request_WRITE_setup( struct SG_gateway* gateway, SG_messages::Requ
 }
 
 
-// make a signed TRUNCATE message
+// make a signed TRUNCATE message, from an initialized reqdat.
+// the reqdat must be for a manifest
 // return 0 on success 
+// return -EINVAL if the reqdat is not for a manifest
 // return -ENOMEM on OOM 
 int SG_client_request_TRUNCATE_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, off_t new_size ) {
    
@@ -1010,8 +1358,12 @@ int SG_client_request_TRUNCATE_setup( struct SG_gateway* gateway, SG_messages::R
    
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
+   if( !SG_request_is_manifest( reqdat ) ) {
+      return -EINVAL;
+   }
+   
    // basics 
-   rc = SG_client_request_setup( gateway, request, reqdat, reqdat->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, reqdat );
    if( rc != 0 ) {
       
       return rc;
@@ -1031,8 +1383,10 @@ int SG_client_request_TRUNCATE_setup( struct SG_gateway* gateway, SG_messages::R
 }
 
 
-// make a signed RENAME request 
+// make a signed RENAME request, from an initialized reqdat.
+// the reqdat must be for a manifest
 // return 0 on success 
+// return -EINVAL if teh reqdat is not for a manifest
 // return -ENOMEM on OOM 
 int SG_client_request_RENAME_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, char const* new_path ) {
    
@@ -1040,8 +1394,12 @@ int SG_client_request_RENAME_setup( struct SG_gateway* gateway, SG_messages::Req
    
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
+   if( !SG_request_is_manifest( reqdat ) ) {
+      return -EINVAL;
+   }
+   
    // basics 
-   rc = SG_client_request_setup( gateway, request, reqdat, reqdat->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, reqdat );
    if( rc != 0 ) {
       
       return rc;
@@ -1067,29 +1425,28 @@ int SG_client_request_RENAME_setup( struct SG_gateway* gateway, SG_messages::Req
 }
 
 
-// make a signed DETACH request, optionally with an MS-given vacuum ticket
+// make a signed DETACH request from an initialized reqdat, optionally with an MS-given vacuum ticket
+// the reqdat must be for a manifest
 // return 0 on success 
+// return -EINVAL if the reqdat is not for a manifest
 // return -ENOMEM on OOM 
-int SG_client_request_DETACH_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, ms::ms_reply* vacuum_ticket ) {
+int SG_client_request_DETACH_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
+   if( !SG_request_is_manifest( reqdat ) ) {
+      return -EINVAL;
+   }
+   
    // basics 
-   rc = SG_client_request_setup( gateway, request, reqdat, reqdat->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, reqdat );
    if( rc != 0 ) {
       
       return rc;
    }
    
    request->set_request_type( SG_messages::Request::DETACH );
-   
-   // clone vcuum ticket, if given
-   if( vacuum_ticket != NULL ) {
-      
-      ms::ms_reply* mutable_ticket = request->mutable_vacuum_ticket();
-      mutable_ticket->CopyFrom( *vacuum_ticket );
-   }
    
    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
    if( rc != 0 ) {
@@ -1111,7 +1468,7 @@ int SG_client_request_PUTBLOCK_setup( struct SG_gateway* gateway, SG_messages::R
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
    // basics 
-   rc = SG_client_request_setup( gateway, request, reqdat, reqdat->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, reqdat );
    if( rc != 0 ) {
       
       return rc;
@@ -1147,29 +1504,22 @@ int SG_client_request_PUTBLOCK_setup( struct SG_gateway* gateway, SG_messages::R
 }
 
 
-// make a signed DELETEBLOCK request, optionally with a vacuum ticket from the MS
+// make a signed DELETEBLOCK request
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* block_info, ms::ms_reply* vacuum_ticket ) {
+int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* block_info ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
    
    // basics 
-   rc = SG_client_request_setup( gateway, request, reqdat, reqdat->coordinator_id );
+   rc = SG_client_request_setup( gateway, request, reqdat );
    if( rc != 0 ) {
       
       return rc;
    }
    
    request->set_request_type( SG_messages::Request::DELETEBLOCK );
-   
-   // clone vacuum ticket, if given
-   if( vacuum_ticket != NULL ) {
-      
-      ms::ms_reply* mutable_ticket = request->mutable_vacuum_ticket();
-      mutable_ticket->CopyFrom( *vacuum_ticket );
-   }
    
    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
    if( rc != 0 ) {
@@ -1179,6 +1529,78 @@ int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages
    }
    
    return rc;
+}
+
+
+// make a signed SETXATTR request
+// return 0 on success 
+// return -ENOMEM on OOM 
+int SG_client_request_SETXATTR_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int flags ) {
+    
+    int rc = 0;
+    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
+   
+    // basics 
+    rc = SG_client_request_setup( gateway, request, reqdat );
+    if( rc != 0 ) {
+      
+       return rc;
+    }
+    
+    request->set_request_type( SG_messages::Request::SETXATTR );
+    
+    try {
+        request->set_xattr_name( string(xattr_name) );
+        request->set_xattr_value( string(xattr_value, xattr_value_len) );
+        request->set_xattr_flags( flags );
+    }
+    catch( bad_alloc& ba ) {
+        return -ENOMEM;
+    }
+    
+    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
+    if( rc != 0 ) {
+      
+       SG_error("md_sign rc = %d\n", rc );
+       return rc;
+    }
+   
+    return rc;
+}
+
+
+// make a signed REMOVEXATTR request 
+// return 0 on success 
+// return -ENOMEM on OOM 
+int SG_client_request_REMOVEXATTR_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, char const* xattr_name ) {
+    
+    int rc = 0;
+    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
+    
+    // basics 
+    rc = SG_client_request_setup( gateway, request, reqdat );
+    if( rc != 0 ) {
+        
+        return rc;
+    }
+    
+    request->set_request_type( SG_messages::Request::REMOVEXATTR );
+    
+    try {
+        request->set_xattr_name( string(xattr_name) );
+    }
+    catch( bad_alloc& ba ) {
+        return -ENOMEM;
+    }
+    
+    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
+    if( rc != 0 ) {
+      
+       SG_error("md_sign rc = %d\n", rc );
+       return rc;
+    }
+   
+    return rc;
 }
 
 
@@ -1266,6 +1688,7 @@ static int SG_client_request_begin( struct SG_gateway* gateway, uint64_t dest_ga
    reqcls->form_begin = form_begin;
    reqcls->serialized_message = serialized_message;
    reqcls->message = control_plane;
+   reqcls->dest_gateway_id = dest_gateway_id;
    
    return 0;
 }
@@ -1291,9 +1714,9 @@ static int SG_client_request_end( struct SG_gateway* gateway, struct SG_chunk* s
    }
    
    // did it come from the request's destination?
-   if( reply->gateway_id() != control_plane->dest_gateway_id() ) {
+   if( reply->gateway_id() != reqcls->dest_gateway_id ) {
       
-      SG_error("Coordinator mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", control_plane->dest_gateway_id(), reply->gateway_id() );
+      SG_error("Gateway mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", reqcls->dest_gateway_id, reply->gateway_id() );
       return -EBADMSG;
    }
    
@@ -1304,10 +1727,10 @@ static int SG_client_request_end( struct SG_gateway* gateway, struct SG_chunk* s
    }
    
    // verify signature 
-   rc = ms_client_verify_gateway_message< SG_messages::Reply >( ms, volume_id, control_plane->dest_gateway_id(), reply );
+   rc = ms_client_verify_gateway_message< SG_messages::Reply >( ms, volume_id, reqcls->dest_gateway_id, reply );
    if( rc != 0 ) {
       
-      SG_error("ms_client_verify_gateway_message( from=%" PRIu64 " ) rc = %d\n", control_plane->dest_gateway_id(), rc );
+      SG_error("ms_client_verify_gateway_message( from=%" PRIu64 " ) rc = %d\n", reqcls->dest_gateway_id, rc );
       return -EBADMSG;
    }
    
@@ -1318,10 +1741,10 @@ static int SG_client_request_end( struct SG_gateway* gateway, struct SG_chunk* s
 
 // determine whether or not a call to SG_client_request_send or SG_client_request_send_finish indicates
 // that the remote gateway is down.  That is, the error is one of the following:
-// -EBADMSG, -ENODATA, -ETIMEDOUT, or between -400 and -499.
+// -EBADMSG, -EPROTO, -ETIMEDOUT
 bool SG_client_request_is_remote_unavailable( int error ) {
    
-   return (error == -EBADMSG || error == -ETIMEDOUT || (error >= -499 && error <= -400));
+   return (error == -EBADMSG || error == -ETIMEDOUT || error == -EPROTO);
 }
 
 // send a message as a (control plane, data plane) pair, synchronously, to another gateway 
@@ -1329,8 +1752,8 @@ bool SG_client_request_is_remote_unavailable( int error ) {
 // return -ENOMEM if OOM 
 // return -EAGAIN if the request should be retried.  This could be because dest_gateway_id is not known to us, but could become known if we refreshed the volume config.
 // return -ETIMEDOUT on connection timeout 
-// return -EREMOTEIO if the HTTP status was >= 500 
-// return between -499 and -400 if the request failed with an HTTP 400-level error code
+// return -EREMOTEIO if the HTTP status was >= 500 (indicates server-side I/O error)
+// return -EPROTO if HTTP status was between 400 or 499 (indicates a misconfiguration--they should never happen)
 // return -errno on socket- and recv-related errors
 int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id, SG_messages::Request* control_plane, struct SG_chunk* data_plane, SG_messages::Reply* reply ) {
    
@@ -1366,6 +1789,18 @@ int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id
    
    // run the transfer 
    rc = md_download_run( curl, SG_CLIENT_MAX_REPLY_LEN, &serialized_reply.data, &serialized_reply.len );
+   
+   if( rc >= -499 && rc <= -400 ) {
+      
+      // 400-level HTTP error 
+      SG_error("md_download_run('%s') HTTP status %d\n", reqcls.url, -rc );
+      
+      curl_easy_cleanup( curl );
+      
+      SG_client_request_cls_free( &reqcls );
+      
+      return -EPROTO;
+   }
    
    if( rc != 0 ) {
       
@@ -1505,12 +1940,13 @@ int SG_client_request_send_finish( struct SG_gateway* gateway, struct md_downloa
    reqcls = (struct SG_client_request_cls*)md_download_context_get_cls( dlctx );
    if( reqcls == NULL ) {
       
-      // not a download 
-      return -EINVAL;
+      // not a download
+      SG_error("FATAL BUG: not a download: %p\n", dlctx );
+      exit(1);
    }
    
    // wait for this download to finish 
-   rc = md_download_context_wait( dlctx, conf->transfer_timeout );
+   rc = md_download_context_wait( dlctx, conf->transfer_timeout * 1000 );
    if( rc != 0 ) {
    
       SG_error("md_download_context_wait( %p ) rc = %d\n", dlctx, rc );
@@ -1558,199 +1994,5 @@ int SG_client_request_send_finish( struct SG_gateway* gateway, struct md_downloa
    SG_client_download_async_cleanup( dlctx );
    
    return rc;
-}
-
-
-// synchronously download a cert bundle manfest
-// be sure to request our certificate
-// return 0 on success 
-// return -ENOMEM on OOM 
-// return -EBADMSG if the downloaded manifest's file version does not match the cert version, or the coordinator ID is not the MS
-// return negative on download failure
-int SG_client_cert_manifest_download( struct SG_gateway* gateway, uint64_t cert_version, struct SG_manifest* manifest ) {
-   
-   int rc = 0;
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   uint64_t gateway_id = SG_gateway_id( gateway );
-   struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
-   
-   char* url = ms_client_cert_manifest_url( ms->url, volume_id, cert_version, gateway_id );
-   
-   if( url == NULL ) {
-      return -ENOMEM;
-   }
-   
-   // TODO: connection pool 
-   CURL* curl = curl_easy_init();
-   if( curl == NULL ) {
-      
-      SG_safe_free( url );
-      return -ENOMEM;
-   }
-   
-   // set up CURL handle...
-   md_init_curl_handle( conf, curl, url, conf->connect_timeout );
-   
-   // connect to caches 
-   rc = SG_gateway_closure_connect_cache( gateway, curl, url );
-   if( rc != 0 ) {
-      
-      // TODO: connection pool 
-      curl_easy_cleanup( curl );
-      SG_safe_free( url );
-      return rc;
-   }
-   
-   // do the download 
-   rc = SG_client_get_manifest_curl( ms, curl, 0, manifest );
-   
-   curl_easy_cleanup( curl );
-   
-   if( rc != 0 ) {
-      
-      SG_error("SG_client_get_manifest_curl( '%s' ) rc = %d\n", url, rc );
-      SG_safe_free( url );
-      
-      return rc;
-   }
-   
-   SG_safe_free( url );
-   
-   // verify that the manifest's coordinator is the MS
-   if( manifest->coordinator_id != 0 ) {
-      
-      SG_error("Cert bundle has coordinator %" PRIu64 ", expected %d\n", manifest->coordinator_id, 0 );
-      
-      SG_manifest_free( manifest );
-      return -EBADMSG;
-   }
-   
-   // verify certificate version--it must be at least as new as ours
-   if( (uint64_t)manifest->file_version < cert_version ) {
-      
-      SG_error("Cert bundle version mismatch: expected %" PRIu64 ", got %" PRIu64 "\n", cert_version, (uint64_t)manifest->file_version );
-      
-      SG_manifest_free( manifest );
-      return -EBADMSG;
-   }
-   
-   return rc;
-}
-
-
-// begin downloading a certificate from the MS for a given gateway
-// return 0 on success
-// return -EINVAL if the cert was malformed 
-// return negative on download error
-int SG_client_cert_download_async( struct SG_gateway* gateway, struct SG_manifest* cert_manifest, uint64_t gateway_id, struct md_download_loop* dlloop, struct md_download_context* dlctx ) {
-   
-   int rc = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   
-   char* url = NULL;
-   
-   int64_t gateway_cert_version = 0;
-   uint64_t gateway_type = ms->gateway_type;
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   uint64_t volume_cert_version = (uint64_t)cert_manifest->file_version;
-   
-   rc = SG_manifest_get_block_version( cert_manifest, gateway_id, &gateway_cert_version );
-   if( rc != 0 ) {
-      
-      // not found 
-      SG_error("SG_manifest_get_block_version( %" PRIu64 " ) rc = %d\n", gateway_id, rc );
-      return rc;
-   }
-   
-   // get the url to the cert 
-   url = ms_client_cert_url( ms->url, volume_id, volume_cert_version, gateway_type, gateway_id, (uint64_t)gateway_cert_version );
-   if( url == NULL ) {
-      
-      // OOM 
-      return -ENOMEM;
-   }
-   
-   // GOGOGO!
-   rc = SG_client_download_async_start( gateway, dlloop, dlctx, gateway_id, url, SG_MAX_CERT_LEN, NULL );
-   
-   if( rc != 0 ) {
-      
-      SG_error("SG_client_download_async_start('%s') rc = %d\n", url, rc );
-      SG_safe_free( url );
-      
-      return rc;
-   }
-   
-   return rc;
-}
-
-
-// finish downloading a certificate from the MS.  Parse and validate it, and free up the download handle.
-// return 0 on success, and fill in cert 
-// return -errno if the download failed 
-// return -EBADMSG if the message could not be parsed, or could not be verified
-// return -ENODATA if the request did not succeed with HTTP 200
-// return -ENOMEM on OOM
-int SG_client_cert_download_finish( struct SG_gateway* gateway, struct md_download_context* dlctx, uint64_t* cert_gateway_id, struct ms_gateway_cert* cert ) {
-   
-   int rc = 0;
-   
-   ms::ms_gateway_cert certmsg;
-   
-   char* serialized_cert = NULL;
-   off_t serialized_cert_len = 0;
-   
-   uint64_t gateway_id = SG_gateway_id( gateway );
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   
-   // get the data, and free up the handle
-   rc = SG_client_download_async_wait( dlctx, cert_gateway_id, &serialized_cert, &serialized_cert_len, NULL );
-   if( rc != 0 ) {
-      
-      SG_error("SG_client_download_async_wait( %p ) rc = %d\n", dlctx, rc );
-      return rc;
-   }
-   
-   // parse 
-   rc = md_parse< ms::ms_gateway_cert >( &certmsg, serialized_cert, serialized_cert_len );
-   
-   SG_safe_free( serialized_cert );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_parse( %p ) rc = %d\n", dlctx, rc );
-      return -EBADMSG;
-   }
-   
-   // verify--did it come from this volume?
-   // NOTE: have to rlock ms, so the volume public key doesn't disappear on us 
-   // TODO: verify against user key as well!
-   ms_client_config_rlock( ms );
-   
-   rc = md_verify< ms::ms_gateway_cert >( ms->volume->volume_public_key, &certmsg );
-   
-   ms_client_config_unlock( ms );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_verify( %p ) rc = %d\n", dlctx, rc );
-      return EBADMSG;
-   }
-   
-   // load the cert from the protobuf 
-   rc = ms_client_gateway_cert_init( cert, gateway_id, &certmsg );
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_gateway_cert_init rc = %d\n", rc );
-      return rc;
-   }
-   
-   // got it!
-   return 0;
 }
 

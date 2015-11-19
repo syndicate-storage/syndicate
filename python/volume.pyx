@@ -36,7 +36,7 @@ cdef class VolumeHandle:
       Python wrapper around UG_handle_t
    """
 
-   cpdef uintptr_t handle_ptr
+   # cpdef uintptr_t handle_ptr
 
    cdef Init( self, UG_handle_t* handle ):
       self.handle_ptr = <uintptr_t>handle
@@ -46,12 +46,21 @@ cdef class VolumeHandle:
 
 # ------------------------------------------
 VolumeEntry = collections.namedtuple( "VolumeEntry", ["type", "name", "file_id", "ctime", "mtime", "manifest_mtime", "write_nonce", "xattr_nonce", "version",
-                                                      "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size", "generation", "capacity", "num_children"] )
+                                                      "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size", "generation", "capacity", "num_children",
+                                                      "xattr_hash", "ent_sig"] )
 
 cdef md_entry_to_VolumeEntry( md_entry* ent ):
    py_name = None 
    if ent.name != NULL:
       py_name = ent.name[:]
+
+   py_xattr_hash = None 
+   if ent.xattr_hash != NULL:
+      py_sig = ent.xattr_hash[:32]      # SHA256
+
+   py_ent_sig = None
+   if ent.ent_sig != NULL:
+      py_ent_sig = ent.ent_sig[:ent.ent_sig_len]
 
    ve = VolumeEntry( type = ent.type,
                      name = py_name,
@@ -69,7 +78,9 @@ cdef md_entry_to_VolumeEntry( md_entry* ent ):
                      mode = ent.mode,
                      generation = ent.generation,
                      capacity = ent.capacity,
-                     num_children = ent.num_children )
+                     num_children = ent.num_children,
+                     xattr_hash = py_xattr_hash,
+                     ent_sig = py_ent_sig )
 
    return ve
 
@@ -82,7 +93,7 @@ cdef class Volume:
    VOLUME_ENTRY_TYPE_FILE = MD_ENTRY_FILE
    VOLUME_ENTRY_TYPE_DIR = MD_ENTRY_DIR
    
-   cdef UG_state* state_inst
+   # cdef UG_state* state_inst
    
    # ------------------------------------------
    def __cinit__(self):
@@ -277,7 +288,7 @@ cdef class Volume:
       cpdef uintptr_t tmp = handle.Get()
       cdef UG_handle_t* c_handle = <UG_handle_t*>tmp
 
-      cdef UG_dir_listing_t c_dirs = NULL
+      cdef md_entry** c_dirs = NULL
 
       cdef int rc = UG_readdir( self.state_inst, &c_dirs, count, c_handle )
       if rc != 0:
@@ -377,55 +388,6 @@ cdef class Volume:
          raise VolumeException( "UG_removexattr rc = %s" % rc )
 
       return rc
-   
-   # ------------------------------------------
-   cpdef chownxattr( self, path, name, new_owner ):
-      cdef rc = 0
-      cdef char* c_path = path 
-      cdef char* c_name = name
-      cdef uint64_t c_new_owner = new_owner 
-
-      rc = UG_chownxattr( self.state_inst, c_path, c_name, c_new_owner )
-      if rc < 0:
-         raise VolumeException( "UG_chownxattr rc = %s" % rc )
-
-      return rc
-   
-   # ------------------------------------------
-   cpdef chmodxattr( self, path, name, mode ):
-      cdef rc = 0
-      cdef char* c_path = path 
-      cdef char* c_name = name
-      cdef mode_t c_mode = mode 
-      
-      rc = UG_chmodxattr( self.state_inst, c_path, c_name, c_mode )
-      if rc < 0:
-         raise VolumeException( "UG_chmodxattr rc = %s" % rc )
-
-      return rc
-
-   # ------------------------------------------
-   cpdef getsetxattr( self, path, name, new_value, mode ):
-      cdef rc = 0
-      cdef char* c_path = path 
-      cdef char* c_name = name
-      cdef char* c_new_value = new_value 
-      cdef size_t c_new_value_len = len(new_value)
-      cdef char* c_value = NULL
-      cdef size_t c_value_len = 0
-      cdef mode_t c_mode = 0
-
-      rc = UG_getsetxattr( self.state_inst, c_path, c_name, c_new_value, c_new_value_len, &c_value, &c_value_len, mode )
-      if rc < 0:
-         raise VolumeException( "UG_getsetxattr rc = %s" % rc )
-
-      if c_value != NULL:
-         ret_value = c_value[:]
-         stdlib.free( c_value )
-         return ret_value 
-      
-      else:
-         return None
       
       
    

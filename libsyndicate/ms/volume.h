@@ -28,23 +28,22 @@ struct ms_volume {
    char* name;                   // name of the volume
    
    EVP_PKEY* volume_public_key;  // Volume public key 
-   bool reload_volume_key;       // do we reload this public key if we get it from the MS?  Or do we trust the one given locally?
    
    uint64_t volume_version;      // version of the above information
    
-   struct md_entry* root;        // serialized root fs_entry
+   ms::ms_volume_metadata* volume_md;   // the signed cert for the above
 };
 
 extern "C" {
    
-int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem, struct md_syndicate_conf* conf, EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_privkey );
-void ms_volume_free( struct ms_volume* vol );
+int ms_client_volume_init( struct ms_volume* vol, ms::ms_volume_metadata* volume_md );
+void ms_client_volume_free( struct ms_volume* vol );
 
 // download 
-int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem );
+// int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem );
 
 // consistency 
-int ms_client_reload_volume( struct ms_client* client, uint64_t* ret_new_cert_version );
+// int ms_client_reload_volume( struct ms_client* client, uint64_t* ret_new_cert_version );
 
 }
 

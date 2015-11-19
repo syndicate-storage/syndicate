@@ -21,6 +21,7 @@
 #include <libsyndicate/gateway.h>
 #include <libsyndicate/manifest.h>
 #include <libsyndicate/util.h>
+#include <libsyndicate/ms/ms-client.h>
 
 #include <fskit/fskit.h>
 
@@ -60,9 +61,11 @@ struct UG_file_handle {
 extern "C" {
    
 // initialization
-int UG_inode_init( struct UG_inode* inode, struct fskit_entry* entry, uint64_t volume_id, uint64_t coordinator_id, int64_t file_version );
+struct UG_inode* UG_inode_alloc( int count );
+int UG_inode_init( struct UG_inode* inode, char const* name, struct fskit_entry* entry, uint64_t volume_id, uint64_t coordinator_id, int64_t file_version );
 int UG_inode_init_from_protobuf( struct UG_inode* inode, struct fskit_entry* entry, ms::ms_entry* msent, SG_messages::Manifest* mmsg );
-int UG_inode_init_from_export( struct UG_inode* inode, struct md_entry* inode_data, struct SG_manifest* manifest, struct fskit_entry* fent );
+int UG_inode_init_from_export( struct UG_inode* inode, struct md_entry* inode_data, struct fskit_entry* fent );
+int UG_inode_fskit_entry_init( struct fskit_core* fs, struct fskit_entry* fent, struct fskit_entry* parent, struct md_entry* inode_data );
 
 // free 
 int UG_inode_free( struct UG_inode* inode );
@@ -74,8 +77,10 @@ int UG_file_handle_init( struct UG_file_handle* fh, struct UG_inode* inode, int 
 int UG_file_handle_free( struct UG_file_handle* fh );
 
 // export an inode 
-int UG_inode_export( struct md_entry* dest, struct UG_inode* src, uint64_t parent_id, char const* parent_name );
+int UG_inode_export( struct md_entry* dest, struct UG_inode* src, uint64_t parent_id );
 int UG_inode_export_fs( struct fskit_core* fs, char const* fs_path, struct md_entry* inode_data );
+int UG_inode_export_xattrs( struct fskit_core* fs, struct UG_inode* inode, char*** ret_xattr_names, char*** ret_xattr_values, size_t** ret_xattr_value_lengths );
+int UG_inode_export_xattr_hash( struct fskit_core* fs, uint64_t gateway_id, struct UG_inode* inode, unsigned char* xattr_hash );
 
 // sanity checks in import
 int UG_inode_export_match_name( struct UG_inode* dest, struct md_entry* src );
@@ -119,7 +124,6 @@ bool UG_inode_manifest_is_newer_than( struct SG_manifest* manifest, int64_t mtim
 // extraction 
 int UG_inode_dirty_blocks_extract_modified( struct UG_inode* inode, UG_dirty_block_map_t* modified );
 int UG_inode_dirty_blocks_return( struct UG_inode* inode, UG_dirty_block_map_t* extracted );
-int UG_inode_replaced_blocks_clear( struct UG_inode* inode, UG_dirty_block_map_t* dirty_blocks );
 
 // sync
 int UG_inode_sync_queue_push( struct UG_inode* inode, struct UG_sync_context* sync_context );
@@ -128,13 +132,14 @@ int UG_inode_clear_replaced_blocks( struct UG_inode* inode );
 UG_dirty_block_map_t* UG_inode_replace_dirty_blocks( struct UG_inode* inode, UG_dirty_block_map_t* new_dirty_blocks );
 
 // getters 
-struct UG_inode* UG_inode_alloc( int count );
 uint64_t UG_inode_volume_id( struct UG_inode* inode );
 uint64_t UG_inode_coordinator_id( struct UG_inode* inode );
+char* UG_inode_name( struct UG_inode* inode );
 uint64_t UG_inode_file_id( struct UG_inode* inode );
 int64_t UG_inode_file_version( struct UG_inode* inode );
 int64_t UG_inode_write_nonce( struct UG_inode* inode );
 int64_t UG_inode_xattr_nonce( struct UG_inode* inode );
+void UG_inode_ms_xattr_hash( struct UG_inode* inode, unsigned char* ms_xattr_hash );
 struct SG_manifest* UG_inode_manifest( struct UG_inode* inode );
 struct SG_manifest* UG_inode_replaced_blocks( struct UG_inode* inode );
 UG_dirty_block_map_t* UG_inode_dirty_blocks( struct UG_inode* inode );
@@ -150,18 +155,28 @@ uint32_t UG_inode_max_write_freshness( struct UG_inode* inode );
 int64_t UG_inode_generation( struct UG_inode* inode );
 struct timespec UG_inode_refresh_time( struct UG_inode* inode );
 struct timespec UG_inode_manifest_refresh_time( struct UG_inode* inode );
+struct timespec UG_inode_children_refresh_time( struct UG_inode* inode );
 size_t UG_inode_sync_queue_len( struct UG_inode* inode );
+bool UG_inode_creating( struct UG_inode* inode );
 
 // setters
+void UG_inode_set_file_version( struct UG_inode* inode, int64_t version );
 void UG_inode_set_write_nonce( struct UG_inode* inode, int64_t wn );
 void UG_inode_set_refresh_time( struct UG_inode* inode, struct timespec* ts );
 void UG_inode_set_manifest_refresh_time( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_children_refresh_time( struct UG_inode* inode, struct timespec* ts ) ;
 void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts );
 void UG_inode_set_max_read_freshness( struct UG_inode* inode, uint32_t rf );
 void UG_inode_set_max_write_freshness( struct UG_inode* inode, uint32_t wf );
 void UG_inode_set_read_stale( struct UG_inode* inode, bool val );
 void UG_inode_set_deleting( struct UG_inode* inode, bool val );
 void UG_inode_set_dirty( struct UG_inode* inode, bool val );
+void UG_inode_set_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent );
+void UG_inode_set_creating( struct UG_inode* inode, bool creating );
+
+void UG_inode_bind_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent );
+
+void UG_inode_load_xattrs( struct UG_inode* inode, fskit_xattr_set* xattr_set );
 
 }
 

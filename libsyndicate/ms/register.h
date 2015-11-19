@@ -19,13 +19,17 @@
 
 #include "libsyndicate/ms/core.h"
 
+// DEPRECATED 
+/*
 extern "C" {
    
 // registration
-int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem, char const* key_password );
-int ms_client_anonymous_gateway_register( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem );
-int ms_client_public_key_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* user_privkey_pem, char const* volume_pubkey_pem, char const* key_password );
+// int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem );
+int ms_client_mount_anonymous( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem );
+int ms_client_mount_public_key( struct ms_client* client, char const* gateway_name, char const* username, char const* user_privkey_pem, char const* volume_pubkey_pem );
 
 }
+
+*/
 
 #endif

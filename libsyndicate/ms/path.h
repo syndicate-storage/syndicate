@@ -78,5 +78,11 @@ void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) );
 // serialization
 char* ms_path_to_string( ms_path_t* ms_path, int max_index );
 
+// getters 
+void* ms_client_path_ent_get_cls( struct ms_path_ent* ent );
+
+// setters 
+void ms_client_path_ent_set_cls( struct ms_path_ent* ent, void* cls );
+
 }
 #endif

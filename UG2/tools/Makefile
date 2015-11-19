@@ -1,6 +1,6 @@
 include ../../buildconf.mk
 
-LIB   	:= -lsyndicate -lfskit
+LIB   	:= -lsyndicate -lfskit -lprotobuf
 C_SRCS	:= $(wildcard *.c)
 CXSRCS	:= $(wildcard *.cpp)
 
@@ -11,21 +11,24 @@ UG_COMMON_OBJ  := $(patsubst $(UG_COMMON)/%.c,$(BUILD_UG)/%.o,$(wildcard $(UG_CO
 OBJ				:= $(patsubst %.c,$(BUILD_UG_TOOLS)/%.o,$(C_SRCS)) \
 						$(patsubst %.cpp,$(BUILD_UG_TOOLS)/%.o,$(CXSRCS))
 
-TOOLS		:= $(BUILD_UG_TOOLS)/syndicate-ls
+TOOL_NAMES := syndicate-ls syndicate-mkdir syndicate-rmdir syndicate-touch syndicate-put
+TOOLS := $(patsubst %,$(BUILD_UG_TOOLS)/%,$(TOOL_NAMES))
+COMMON_SRC := common.cpp
+COMMON_OBJ := $(patsubst %.cpp,$(BUILD_UG_TOOLS)/%.o,$(COMMON_SRC))
 
 all: $(TOOLS)
 
-$(BUILD_UG_TOOLS)/syndicate-% : $(BUILD_UG_TOOLS)/syndicate-%.o
+$(BUILD_UG_TOOLS)/syndicate-% : $(BUILD_UG_TOOLS)/syndicate-%.o $(UG_COMMON_OBJ) $(COMMON_OBJ)
 	@mkdir -p $(shell dirname "$@")
-	$(CPP) -o $@ $(INC) $(LIBINC) $(LIB) $(OBJ) $(UG_COMMON_OBJ)
+	$(CPP) -o "$@" $(INC) "$<" $(UG_COMMON_OBJ) $(COMMON_OBJ) $(LIBINC) $(LIB)
 
 $(BUILD_UG_TOOLS)/%.o : %.c
 	@mkdir -p $(shell dirname "$@")
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+	$(CPP) -o "$@" $(INC) -c $< $(DEFS)
 
 $(BUILD_UG_TOOLS)/%.o : %.cpp
 	@mkdir -p $(shell dirname "$@")
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+	$(CPP) -o "$@" $(INC) -c $< $(DEFS)
 
 .PHONY: clean
 clean:

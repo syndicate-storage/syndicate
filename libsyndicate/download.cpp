@@ -122,14 +122,15 @@ int md_downloader_init( struct md_downloader* dl, char const* name ) {
 // return -1 if we failed to start the thread, or if we're already running 
 int md_downloader_start( struct md_downloader* dl ) {
    
+   int rc = 0;
    if( !dl->running ) {
       
       dl->running = true;
       
-      dl->thread = md_start_thread( md_downloader_main, dl, false );
-      if( dl->thread == (pthread_t)(-1) ) {
+      rc = md_start_thread( &dl->thread, md_downloader_main, dl, false );
+      if( rc < 0 ) {
          
-         SG_error("%s: failed to start\n", dl->name);
+         SG_error("%s: md_start_thread rc = %d\n", dl->name, rc);
          dl->running = false;
          return -1;
       }
@@ -755,7 +756,7 @@ int md_download_context_ref( struct md_download_context* dlctx ) {
 // return 1 on success, in which case the caller should follow up this call with a call to md_download_context_free.
 int md_download_context_unref( struct md_download_context* dlctx ) {
    
-   pthread_mutex_unlock( &dlctx->finalize_lock );
+   pthread_mutex_lock( &dlctx->finalize_lock );
    
    dlctx->ref_count--;
    if( dlctx->ref_count <= 0 ) {
@@ -1202,6 +1203,7 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    // sanity check 
    if( md_download_context_finalized( dlctx ) ) {
       
+      SG_debug("Download context %p already finalized\n", dlctx ); 
       pthread_mutex_unlock( &dlctx->finalize_lock );
       return 0;
    }
@@ -1243,8 +1245,7 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
       url_dup = SG_strdup_or_null( url );
       if( url_dup == NULL ) {
          
-         pthread_mutex_unlock( &dlctx->finalize_lock );
-         return -ENOMEM;
+         os_errno = -ENOMEM;
       }
    }
    
@@ -1373,8 +1374,6 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
             // wake up the set waiting on this dlctx 
             if( dlset != NULL ) {
                
-               SG_debug("Wake up download set %p\n", dlset );
-               
                rc = md_download_set_wakeup( dlset );
                if( rc != 0 ) {
                   
@@ -1403,6 +1402,7 @@ static void* md_downloader_main( void* arg ) {
    int rc = 0;
    
    while( dl->running ) {
+      
       md_downloader_downloading_wlock( dl );
       
       // add all pending downloads to this downloader 
@@ -1699,15 +1699,33 @@ int md_download_loop_init( struct md_download_loop* dlloop, struct md_downloader
    
    memset( dlloop, 0, sizeof(struct md_download_loop) );
    
-   dlloop->downloads = SG_CALLOC( struct md_download_context, num_downloads );
+   dlloop->downloads = SG_CALLOC( struct md_download_context*, num_downloads );
    if( dlloop->downloads == NULL ) {
       
       return -ENOMEM;
+   }
+
+   for( int i = 0; i < num_downloads; i++ ) {
+      dlloop->downloads[i] = SG_CALLOC( struct md_download_context, 1 );
+      if( dlloop->downloads[i] == NULL ) {
+
+         // clean up 
+         for( int j = 0; j < i; j++ ) {
+            SG_safe_free( dlloop->downloads[i] );
+         }
+         
+         SG_safe_free( dlloop->downloads );
+         return -ENOMEM;
+      }
    }
    
    int rc = md_download_set_init( &dlloop->dlset );
    if( rc != 0 ) {
       
+      // clean up 
+      for( int j = 0; j < num_downloads; j++ ) {
+         SG_safe_free( dlloop->downloads[j] );
+      }
       SG_safe_free( dlloop->downloads );
       return rc;
    }
@@ -1722,7 +1740,24 @@ int md_download_loop_init( struct md_download_loop* dlloop, struct md_downloader
 // free a download loop
 // always succeeds
 int md_download_loop_free( struct md_download_loop* dlloop ) {
-   
+ 
+   int rc = 0; 
+   for( int i = 0; i < dlloop->num_downloads; i++ ) {
+
+      if( md_download_context_initialized( dlloop->downloads[i] ) ) {
+          rc = md_download_context_unref( dlloop->downloads[i] );
+          if( rc > 0 ) {
+
+             md_download_context_free( dlloop->downloads[i], NULL );
+             dlloop->downloads[i] = NULL;
+          }
+      }
+      else {
+        
+         SG_safe_free( dlloop->downloads[i] );
+      }
+   }
+
    SG_safe_free( dlloop->downloads );
    md_download_set_free( &dlloop->dlset );
    
@@ -1739,9 +1774,9 @@ int md_download_loop_next( struct md_download_loop* dlloop, struct md_download_c
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      if( !md_download_context_initialized( &dlloop->downloads[i] ) ) {
+      if( !md_download_context_initialized( dlloop->downloads[i] ) ) {
          
-         *dlctx = &dlloop->downloads[i];
+         *dlctx = dlloop->downloads[i];
          
          return 0;
       }
@@ -1752,23 +1787,25 @@ int md_download_loop_next( struct md_download_loop* dlloop, struct md_download_c
 
 
 // have the download loop process the download when it runs, so md_download_loop_run knows to return if the given download finishes.
+// this increments the reference count on the dlctx.  it will be decremeneted on md_download_loop_finished
 // return 0 on success
 // return -ENOMEM on OOM
 int md_download_loop_watch( struct md_download_loop* dlloop, struct md_download_context* dlctx ) {
-   
+   md_download_context_ref( dlctx );
    return md_download_set_add( &dlloop->dlset, dlctx );
 }
 
 
 // run the download loop, until at least one download completes
 // return 0 on success
+// return 1 if there are no more downloads
 // return -errno on critical failure to wait
 int md_download_loop_run( struct md_download_loop* dlloop ) {
    
    int rc = 0;
    dlloop->started = true;
-   
-   while( true ) {
+  
+   while( dlloop->dlset.waiting->size() > 0 ) {
       
       // wait for some downloads to finish, but be resillent against deadlock
       rc = md_download_context_wait_any( &dlloop->dlset, 10000 );
@@ -1787,19 +1824,22 @@ int md_download_loop_run( struct md_download_loop* dlloop ) {
       
       return rc;
    }
+
+   return 1;
 }
 
 
 // find a finished download
+// caller must unref and free when done with it
 // return 0 on success, and set *dlctx to point to the finished download 
 // return -EAGAIN if there are no finished downloads 
 int md_download_loop_finished( struct md_download_loop* dlloop, struct md_download_context** dlctx ) {
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      if( md_download_context_initialized( &dlloop->downloads[i] ) && md_download_context_finalized( &dlloop->downloads[i] ) ) {
+      if( md_download_context_initialized( dlloop->downloads[i] ) && md_download_context_finalized( dlloop->downloads[i] ) ) {
          
-         *dlctx = &dlloop->downloads[i];
+         *dlctx = dlloop->downloads[i];
          
          md_download_set_clear( &dlloop->dlset, *dlctx );
          
@@ -1819,7 +1859,7 @@ int md_download_loop_num_running( struct md_download_loop* dlloop ) {
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      if( md_download_context_running( &dlloop->downloads[i] ) ) {
+      if( md_download_context_running( dlloop->downloads[i] ) ) {
          
          ret++;
       }
@@ -1837,7 +1877,7 @@ int md_download_loop_num_initialized( struct md_download_loop* dlloop ) {
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      if( md_download_context_initialized( &dlloop->downloads[i] ) ) {
+      if( md_download_context_initialized( dlloop->downloads[i] ) ) {
          
          ret++;
       }
@@ -1863,7 +1903,7 @@ int md_download_loop_abort( struct md_download_loop* dlloop ) {
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      dlctx = &dlloop->downloads[i];
+      dlctx = dlloop->downloads[i];
       
       if( !dlctx->initialized ) {
          continue;
@@ -1893,7 +1933,7 @@ int md_download_loop_cleanup( struct md_download_loop* dlloop, md_download_curl_
    
    for( int i = 0; i < dlloop->num_downloads; i++ ) {
       
-      dlctx = &dlloop->downloads[i];
+      dlctx = dlloop->downloads[i];
       
       if( !dlctx->initialized ) {
          continue;
@@ -1925,9 +1965,9 @@ struct md_download_context* md_download_loop_next_initialized( struct md_downloa
    if( i == NULL ) {
       for( int j = 0; j < dlloop->num_downloads; j++ ) {
          
-         if( dlloop->downloads[j].initialized ) {
+         if( dlloop->downloads[j]->initialized ) {
             
-            return &dlloop->downloads[j];
+            return dlloop->downloads[j];
          }
       }
       
@@ -1935,7 +1975,7 @@ struct md_download_context* md_download_loop_next_initialized( struct md_downloa
    }
    else {
       
-      while( *i < dlloop->num_downloads && !dlloop->downloads[*i].initialized ) {
+      while( *i < dlloop->num_downloads && !dlloop->downloads[*i]->initialized ) {
          (*i)++;
       }
       
@@ -1943,7 +1983,7 @@ struct md_download_context* md_download_loop_next_initialized( struct md_downloa
          return NULL;
       }
       else {
-         return &dlloop->downloads[*i];
+         return dlloop->downloads[*i];
       }
    }
 }

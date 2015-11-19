@@ -24,17 +24,21 @@
 #define SG_SERVER_POST_FIELD_CONTROL_PLANE      "control-plane"
 #define SG_SERVER_POST_FIELD_DATA_PLANE         "data-plane"
 
+#define SG_SERVER_IO_READ                       1       // I/O completion will take a name and return a record 
+#define SG_SERVER_IO_WRITE                      2       // I/O completion will take a record and return a status code
+
 // server connection state
 struct SG_server_connection {
    
    struct SG_gateway* gateway;
 };
 
-typedef int (*SG_server_IO_completion)( struct SG_gateway*, struct SG_request_data*, SG_messages::Request*, struct md_HTTP_connection_data* con_data );
+typedef int (*SG_server_IO_completion)( struct SG_gateway*, struct SG_request_data*, SG_messages::Request*, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp );
 
 // server I/O request completion context 
 struct SG_server_io {
    
+   int io_type;                                 // "read" or "write" I/O
    struct SG_gateway* gateway;
    struct SG_request_data* reqdat;
    SG_messages::Request* request_msg;
@@ -57,7 +61,8 @@ void SG_server_HTTP_cleanup( void *con_cls );
 int SG_server_HTTP_install_handlers( struct md_HTTP* http );
 
 // server I/O workqueue interfacing
-int SG_server_HTTP_IO_start( struct SG_gateway* gateway, SG_server_IO_completion io_cb, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp );
+int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_completion io_cb, struct SG_request_data* reqdat, SG_messages::Request* request_msg,
+                             struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp );
 int SG_server_HTTP_IO_finish( struct md_wreq* wreq, void* cls );
 
 }

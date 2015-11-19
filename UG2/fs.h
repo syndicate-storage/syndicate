@@ -29,6 +29,9 @@ int UG_fs_install_methods( struct fskit_core* fs );
 // unlink the UG from fskit 
 int UG_fs_uninstall_methods( struct fskit_core* fs );
 
+// install methods for shutting down
+int UG_fs_install_shutdown_methods( struct fskit_core* fs );
+
 }
 
 #endif 

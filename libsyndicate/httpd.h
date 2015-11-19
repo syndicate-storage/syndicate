@@ -151,10 +151,6 @@ struct md_HTTP {
    
    bool running;
 
-   // TLS key pair
-   char* server_cert;
-   char* server_pkey;
-   
    // connection setup/cleanup
    int  (*HTTP_connect)( struct md_HTTP_connection_data* md_con_data, void** cls );
    void (*HTTP_cleanup)( void* cls );
@@ -254,7 +250,7 @@ int md_HTTP_connection_resume( struct md_HTTP_connection_data* con_data, struct 
 
 // init/start/stop/shutdown
 int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls );
-int md_HTTP_start( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf );
+int md_HTTP_start( struct md_HTTP* http, int portnum );
 int md_HTTP_stop( struct md_HTTP* http );
 int md_HTTP_free( struct md_HTTP* http );
 
@@ -265,7 +261,10 @@ char const* md_HTTP_header_lookup( struct md_HTTP_header** headers, char const* 
 int md_HTTP_header_add( struct md_HTTP_response* resp, char const* header, char const* value );
 
 // path parsing 
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, uint64_t* _file_id, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_ts );
+int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out );
+int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp );
+int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version );
+int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_t* _file_id, int64_t* _file_version );
 
 // memory management
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );

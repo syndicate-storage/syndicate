@@ -18,6 +18,26 @@
 #include "core.h"
 #include "xattr.h"
 
+
+typedef ssize_t (*UG_xattr_get_handler_t)( struct fskit_core*, struct fskit_entry*, char const*, char*, size_t );
+typedef int (*UG_xattr_set_handler_t)( struct fskit_core*, struct fskit_entry*, char const*, char const*, size_t, int );
+typedef int (*UG_xattr_delete_handler_t)( struct fskit_core*, struct fskit_entry*, char const* );
+
+struct UG_xattr_handler_t {
+   char const* name;
+   UG_xattr_get_handler_t get;
+   UG_xattr_set_handler_t set;
+   UG_xattr_delete_handler_t del;
+};
+
+struct UG_xattr_namespace_handler {
+   char const* prefix;
+   UG_xattr_get_handler_t get;
+   UG_xattr_set_handler_t set;
+   UG_xattr_delete_handler_t del;
+};
+
+
 // general purpose handlers...
 int UG_xattr_set_undefined( struct fskit_core* core, struct fskit_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
    return -ENOTSUP;
@@ -160,7 +180,7 @@ static ssize_t UG_xattr_get_cached_blocks( struct fskit_core* core, struct fskit
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
-   off_t num_blocks = (fent->size / block_size) + ((fent->size % block_size) == 0 ? 0 : 1);
+   off_t num_blocks = (fskit_entry_get_size( fent ) / block_size) + ((fskit_entry_get_size( fent ) % block_size) == 0 ? 0 : 1);
    
    if( (size_t)num_blocks >= buf_len + 1 ) {
       
@@ -447,154 +467,23 @@ static int UG_xattr_set_write_ttl( struct fskit_core* core, struct fskit_entry* 
 }
 
 
-// go and get an xattr from the MS
-// return the length of *value on success, and allocate *value and copy the xattr data into it.
-// return -ENOMEM if out of memory
-// return -ENOENT if the file doesn't exist
-// return -EACCES if we're not allowed to read the file
-// return -ETIMEDOUT if the tranfser could not complete in time 
-// return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-// return other -errno on socket- and recv-related errors
-int UG_xattr_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value ) {
-   
-   char* val = NULL;
-   size_t val_len = 0;
-   int ret = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   
-   ret = ms_client_getxattr( ms, volume, file_id, name, &val, &val_len );
-   if( ret < 0 ) {
-      
-      SG_error("ms_client_getxattr( %" PRIX64 " %s ) rc = %d\n", file_id, name, ret );
-      
-      if( ret == -404 ) {
-         // no such file 
-         ret = -ENOENT;
-      }
-      
-      else {
-         // no such attr/no data
-         ret = -ENOATTR;
-      }
-   }
-   else {
-      
-      *value = val;
-      ret = (int)val_len;
-   }
-   
-   return ret;
-}
-
-
-// fgetxattr(2), but with the option to unlock the inode during the network I/O.  If so, it will be ref'ed, unlocked, re-locked, and unref'ed (the xattr nonce will be preserved across the lock to ensure coherency)
-// regardless, this method either uses a builtin getxattr handler, or downloads the xattr from the MS and caches it locally.
-// return the length of the xattr, and allocate *value to contain the value
-// return -ENOMEM if out of memory
-// return -ERANGE if *value is not NULL but the xattr is too big to fit (the xattr will be cached locally nevertheless, so a subsequent fgetxattr will hit the cache)
-// return -ENOENT if the file doesn't exist
-// return -EACCES if we're not allowed to read the file
-// return -ETIMEDOUT if the tranfser could not complete in time 
-// return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-// return other -errno on socket- and recv-related errors
-// NOTE: fent must be write-locked
-ssize_t UG_xattr_fgetxattr_ex( struct SG_gateway* gateway, char const* path, struct fskit_entry* fent, char const *name, char *value, size_t size, uint64_t user, uint64_t volume, bool do_unlock ) {
-   
-   int rc = 0;
-   uint64_t file_id = 0;
-   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct fskit_core* fs = UG_state_fs( ug );
-   struct UG_xattr_handler_t* xattr_handler = UG_xattr_lookup_handler( name );
-   char* value_buf = NULL;
-   ssize_t value_buf_len = 0;
-   
-   // built-in handler?
-   if( xattr_handler != NULL ) {
-      
-      rc = (*xattr_handler->get)( fs, fent, name, value, size );
-      return rc;
-   }
-   
-   // cached locally?
-   file_id =  fskit_entry_get_file_id( fent );
-   
-   rc = fskit_fgetxattr( fs, fent, name, value, size );
-   if( rc < 0 && rc != -ENOATTR && rc != -ERANGE ) {
-      
-      // error besides 'not found' or 'buffer not big enough'
-      return rc;
-   }
-   
-   if( do_unlock ) {
-      
-      // keep this entry around, but we don't really need it to remain locked while we get the xattr
-      fskit_entry_ref_entry( fent );
-      fskit_entry_unlock( fent );
-   }
-   
-   // check on the MS
-   value_buf_len = UG_xattr_download_xattr( gateway, volume, file_id, name, &value_buf );
-   if( value_buf_len < 0 ) {
-      
-      SG_error("UG_xattr_download_xattr('%s'.'%s') rc = %d\n", path, name, (int)value_buf_len );
-      
-      if( do_unlock ) {
-         fskit_entry_unref( fs, path, fent );
-      }
-      
-      return rc;
-   }
-   
-   if( do_unlock ) {
-      fskit_entry_wlock( fent );
-   }
-   
-   rc = 0;
-   if( fskit_fgetxattr( fs, fent, name, NULL, 0 ) == -ENOATTR ) {
-      
-      // cache it, if we didn't receive one from the client intermittently
-      rc = fskit_fsetxattr( fs, fent, name, value_buf, value_buf_len, 0 );
-      if( rc < 0 ) {
-         
-         SG_warn("fskit_fsetxattr( %" PRIX64 ".'%s' ) rc = %d\n", fskit_entry_get_file_id( fent ), name, rc );
-         rc = 0;
-      }
-   }
-   
-   SG_safe_free( value_buf );
-   
-   if( rc >= 0 ) {
-         
-      // now that we've revalidated the xattr, get it.
-      rc = fskit_fgetxattr( fs, fent, name, value, size );
-   }
-   
-   if( do_unlock ) {
-      fskit_entry_unlock( fent );
-      fskit_entry_unref( fs, path, fent );
-   }
-   
-   return rc;
-}
-
 // getxattr(2)
+// return the length of the xattr value on success
+// return the length of the xattr value if *value is NULL, but we were able to get the xattr
 // return -ENOMEM on OOM 
 // return -ENOENT if the file doesn't exist
 // return -EACCES if we're not allowed to read the file or the attribute
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
+// return -EPROTO on HTTP 400-level error
 ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
+   char* value_buf = NULL;
+   size_t xattr_buf_len = 0;
    
    // revalidate...
    rc = UG_consistency_path_ensure_fresh( gateway, path );
@@ -604,22 +493,155 @@ ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char co
    }
    
    // look up...
-   struct fskit_entry* fent = fskit_entry_resolve_path( fs, path, user, volume, true, &rc );
+   struct fskit_entry* fent = fskit_entry_resolve_path( fs, path, user, volume, false, &rc );
    if( fent == NULL ) {
       
       return rc;
    }
    
-   // get the xattr, and cache it locally if need be
-   rc = UG_xattr_fgetxattr_ex( gateway, path, fent, name, value, size, user, volume, true );
+   struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   uint64_t coordinator_id = UG_inode_coordinator_id( inode );
+   uint64_t file_id = UG_inode_file_id( inode );
+   int64_t file_version = UG_inode_file_version( inode );
+   int64_t xattr_nonce = UG_inode_xattr_nonce( inode );
    
    fskit_entry_unlock( fent );
+   
+   // go get the xattr 
+   rc = SG_client_getxattr( gateway, coordinator_id, path, file_id, file_version, name, xattr_nonce, &value_buf, &xattr_buf_len );
+   if( rc != 0 ) {
+       
+       SG_error("SG_client_getxattr('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, file_id, file_version, xattr_nonce, name, rc );
+       return rc;
+   }
+   
+   if( value != NULL ) {
+       
+      if( xattr_buf_len <= size ) {
+         memcpy( value, value_buf, xattr_buf_len );
+      }
+      else {
+          
+         rc = -ERANGE;
+      }
+   }
+   else {
+      
+      rc = xattr_buf_len;
+   }
+   
+   SG_safe_free( value_buf );
    
    return rc;
 }
 
 
-// setxattr, with xattr modes
+// local setxattr, for when we're the coordinator of the file.
+// NOTE: the xattr must already be present in inode->entry's xattr set
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EEXIST if the XATTR_CREATE flag was set but the attribute existed 
+// return -ENOATTR if the XATTR_REPLACE flag was set but the attribute did not exist
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO on HTTP 400-level error
+// NOTE: inode->entry must be at least read-locked
+static int UG_xattr_setxattr_local( struct SG_gateway* gateway, char const* path, struct UG_inode* inode, char const* name, char const* value, size_t value_len, int flags ) {
+    
+    int rc = 0;
+    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+    struct fskit_core* fs = UG_state_fs( ug );
+    struct ms_client* ms = SG_gateway_ms( gateway );
+    struct md_entry inode_data;
+    unsigned char xattr_hash[ SHA256_DIGEST_LENGTH ];
+    
+    memset( &inode_data, 0, sizeof(struct md_entry) );
+    
+    // get inode info
+    rc = UG_inode_export( &inode_data, inode, 0 );
+    if( rc != 0 ) {
+
+        return rc;
+    }
+
+    // get new xattr hash 
+    rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), inode, xattr_hash );
+    if( rc != 0 ) {
+        
+        md_entry_free( &inode_data );
+        return rc;
+    }
+
+    // propagate new xattr hash
+    inode_data.xattr_hash = xattr_hash;
+    
+    // put on the MS...
+    rc = ms_client_putxattr( ms, &inode_data, name, value, value_len, xattr_hash );
+    
+    inode_data.xattr_hash = NULL;       // NOTE: don't free this 
+    
+    if( rc != 0 ) {
+        
+        SG_error("ms_client_putxattr('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, inode_data.file_id, inode_data.version, inode_data.xattr_nonce, name, rc );
+    }
+    
+    md_entry_free( &inode_data );
+    
+    return rc;
+}
+
+
+// remote setxattr, for when we're NOT the coordinator of the file 
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EEXIST if the XATTR_CREATE flag was set but the attribute existed 
+// return -ENOATTR if the XATTR_REPLACE flag was set but the attribute did not exist
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO on HTTP 400-level error
+// NOTE: inode->entry must be at least read-locked
+static int UG_xattr_setxattr_remote( struct SG_gateway* gateway, char const* path, struct UG_inode* inode, char const* name, char const* value, size_t value_len, int flags ) {
+    
+    int rc = 0;
+    SG_messages::Request request;
+    SG_messages::Reply reply;
+    struct SG_request_data reqdat;
+    
+    uint64_t file_id = UG_inode_file_id( inode );
+    uint64_t coordinator_id = UG_inode_coordinator_id( inode );
+    int64_t file_version = UG_inode_file_version( inode );
+    int64_t xattr_nonce = UG_inode_xattr_nonce( inode );
+    
+    rc = SG_request_data_init_setxattr( gateway, path, file_id, file_version, xattr_nonce, name, value, value_len, &reqdat );
+    if( rc != 0 ) {
+        return rc;
+    }
+    
+    rc = SG_client_request_SETXATTR_setup( gateway, &request, &reqdat, name, value, value_len, flags );
+    if( rc != 0 ) {
+        
+        SG_request_data_free( &reqdat );
+        return rc;
+    }
+    
+    rc = SG_client_request_send( gateway, coordinator_id, &request, NULL, &reply );
+    SG_request_data_free( &reqdat );
+    
+    if( rc != 0 ) {
+        
+        SG_error("SG_client_send_request(SETXATTR %" PRIu64 ", '%s') rc = %d\n", coordinator_id, name, rc );
+        return rc;
+    }
+    
+    // success!
+    return rc;
+}
+
+
+
+// setxattr(2)
 // return the length of the value written on success
 // return -ENOMEM on OOM 
 // return -ENOENT if the file doesn't exist
@@ -629,17 +651,17 @@ ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char co
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_xattr_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
+// return -EPROTO on HTTP 400-level error
+int UG_xattr_setxattr( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    struct fskit_entry* fent = NULL;
    struct UG_inode* inode = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct ms_client* ms = SG_gateway_ms( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    struct UG_xattr_handler_t* xattr_handler = UG_xattr_lookup_handler( name );
-   struct md_entry inode_data;
+   char* old_xattr_value = NULL;
+   size_t old_xattr_value_len = 0;
    
    if( SG_gateway_id( gateway ) == SG_GATEWAY_ANON ) {
       return -EPERM;
@@ -665,185 +687,96 @@ int UG_xattr_setxattr_ex( struct SG_gateway* gateway, char const* path, char con
       return rc;
    }
    
+   // not a built-in
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   // nope; upload to MS
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
-   if( rc != 0 ) {
-      
-      fskit_entry_unlock( fent );
-      return rc;
-   }
+   uint64_t coordinator_id = UG_inode_coordinator_id( inode );
+   uint64_t file_id = UG_inode_file_id( inode );
+   int64_t file_version = UG_inode_file_version( inode );
+   int64_t xattr_nonce = UG_inode_xattr_nonce( inode );
    
-   rc = ms_client_setxattr( ms, &inode_data, name, value, size, mode, flags );
-   if( rc < 0 ) {
-      
-      SG_error("ms_client_setxattr('%s'.'%s') rc = %d\n", path, name, rc );
+   // if we're the coordinator, then preserve old xattr, in case we have to replace it on failure 
+   if( coordinator_id == SG_gateway_id( gateway ) ) {
+       
+        rc = fskit_fgetxattr( fs, fent, name, NULL, 0 );
+        if( rc < 0 ) {
+            
+            // not present; we're good 
+            rc = 0;
+        }
+        else {
+            
+            old_xattr_value_len = rc;
+            old_xattr_value = SG_CALLOC( char, old_xattr_value_len );
+            if( old_xattr_value == NULL ) {
+                
+                fskit_entry_unlock( fent );
+                return -ENOMEM;
+            }
+            
+            rc = fskit_fgetxattr( fs, fent, name, old_xattr_value, old_xattr_value_len );
+            if( rc < 0 ) {
+                
+                // weird error 
+                SG_error("fskit_entry_fgetxattr('%s' '%s') rc = %d\n", path, name, rc );
+                fskit_entry_unlock( fent );
+                return rc;
+            }
+        }
+
+        // set locally 
+        rc = fskit_fsetxattr( fs, fent, name, value, size, flags );
+        if( rc != 0 ) {
+            
+            fskit_entry_unlock( fent );
+            SG_safe_free( old_xattr_value );
+            return rc;
+        }
+
+        // set the xattr on the MS
+        rc = UG_xattr_setxattr_local( gateway, path, inode, name, value, size, flags );
+        if( rc != 0 ) {
+            
+            SG_error("UG_xattr_setxattr_local('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, file_id, file_version, xattr_nonce, name, rc );
+        }
+        else {
+            
+            rc = size;
+        }
    }
    else {
-      
-      // cache!
-      rc = fskit_fsetxattr( fs, fent, name, value, size, flags );
-      if( rc < 0 ) {
-         
-         SG_error("fskit_fsetxattr('%s'.%s') rc = %d\n", path, name, rc );
-      }
+       
+       // if we're not the coordinator, send the xattr to the coordinator 
+       rc = UG_xattr_setxattr_remote( gateway, path, inode, name, value, size, flags );
+       if( rc != 0 ) {
+           
+           SG_error("UG_xattr_setxattr_remote('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, file_id, file_version, xattr_nonce, name, rc );
+       }
+       else {
+           
+           rc = size;
+       }
+   }
+   
+   if( rc < 0 && old_xattr_value != NULL ) {
+       
+       // failed; restore old xattr 
+       int restore_rc = fskit_fsetxattr( fs, fent, name, old_xattr_value, old_xattr_value_len, 0 );
+       if( restore_rc < 0 ) {
+           
+           SG_error("fskit_entry_fsetxattr(RESTORE '%s', '%s') rc = %d\n", path, name, rc );
+       }
    }
    
    fskit_entry_unlock( fent );
+   SG_safe_free( old_xattr_value );
    return rc;
 }
 
-
-// setxattr(2), with default xattr mode 
-int UG_xattr_setxattr( struct SG_gateway* gateway, char const* path, char const* name, char const* value, size_t size, int flags, uint64_t user, uint64_t volume ) {
-   return UG_xattr_setxattr_ex( gateway, path, name, value, size, flags, user, volume, 0744 );
-}
-
-
-// try to get an xattr, but set it if it is not defined.  There will be only one "set" winner globally, but "get" might return nothing (since the get and set do not occur as an atomic action)
-// return 0 on success, and put the attr's value into *value and its length into *value_len.  The buffer will be malloc'ed by this call.
-// return -EPERM if this is an anonymous gateway
-// return -ENOMEM on OOM 
-// return -ENOENT if the file doesn't exist
-// return -EACCES if we're not allowed to write to the file
-// return -ETIMEDOUT if the tranfser could not complete in time 
-// return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-// NOTE: fent must be write-locked
-int UG_xattr_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode ) {
-   
-   int rc = 0;
-   char* val = NULL;
-   ssize_t vallen = 0;
-   bool try_get = false;
-   struct md_entry inode_data;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct fskit_core* fs = UG_state_fs( ug );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   struct UG_xattr_handler_t* xattr_handler = NULL;
-   
-   struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   if( SG_gateway_id( gateway ) == SG_GATEWAY_ANON ) {
-      return -EPERM;
-   }
-   
-   // find the xattr handler for this attribute
-   xattr_handler = UG_xattr_lookup_handler( name );
-   if( xattr_handler == NULL ) {
-      
-      // attempt to set, but fail if we don't create.
-      rc = UG_inode_export( &inode_data, inode, 0, NULL );
-      if( rc != 0 ) {
-         
-         // OOM 
-         return rc;
-      }
-      
-      rc = ms_client_setxattr( ms, &inode_data, name, proposed_value, proposed_value_len, XATTR_CREATE, mode );
-      if( rc < 0 ) {
-         
-         if( rc != -EEXIST ) {
-            SG_error("ms_client_setxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( inode ), name, rc );
-         }
-         else {
-            
-            try_get = true;
-         }
-      }
-      else {
-         
-         // succeeded!
-         // put it 
-         rc = fskit_fsetxattr( fs, fent, name, proposed_value, proposed_value_len, 0 );
-         if( rc < 0 ) {
-            
-            SG_error("fskit_fsetxattr(%" PRIX64 ".'%s') rc = %d\n", UG_inode_file_id( inode ), name, rc );
-         }
-         
-         *value = SG_CALLOC( char, proposed_value_len );
-         if( *value == NULL ) {
-            
-            // OOM
-            rc = -ENOMEM;
-         }
-         else {
-            
-            memcpy( *value, proposed_value, proposed_value_len );
-            *value_len = proposed_value_len;
-         }
-      }
-      
-      md_entry_free( &inode_data );
-      
-      if( rc < 0 ) {
-         
-         // had an error...         
-         return rc;
-      }
-      
-      if( try_get ) {
-         
-         // failed to set.  try to get the attribute instead...
-         vallen = UG_xattr_download_xattr( gateway, volume_id, UG_inode_file_id( inode ), name, &val );
-         if( vallen < 0 ) {
-            
-            SG_error("UG_xattr_download_xattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, (int)vallen);
-            return vallen;
-         }
-         
-         // cache it
-         rc = fskit_fsetxattr( fs, fent, name, val, vallen, 0 );
-         if( rc < 0 ) {
-            
-            // not strictly an error, since we can go get it later
-            SG_warn("fskit_fsetxattr( %" PRIX64 ".'%s' ) rc = %d\n", UG_inode_file_id( inode ), name, rc );
-            rc = 0;
-         }
-         
-         // save it!
-         *value = val;
-         *value_len = (size_t)vallen;
-      }
-   }
-   else {
-      // built-in handler.
-      while( true ) {
-         
-         vallen = (*xattr_handler->get)( fs, fent, name, NULL, 0 );
-         
-         val = SG_CALLOC( char, vallen + 1 );
-         if( val == NULL ) {
-            
-            rc = -ENOMEM;
-            break;
-         }
-         
-         rc = (*xattr_handler->get)( fs, fent, name, val, vallen );
-         if( rc == -ERANGE ) {
-            
-            // try again 
-            SG_safe_free( val );
-            continue;
-         }
-         
-         *value = val;
-         *value_len = (size_t)rc;
-         break;
-      }
-   }
-   
-   return rc;
-}
-   
 
 // listxattr(2)--get back a list of xattrs from the MS
-// return 0 on success, and fill in *list (if non-null) with \0-separated names for xattrs (up to size bytes)
+// return the number of bytes copied on success, and fill in *list (if non-null) with \0-separated names for xattrs (up to size bytes)
+// return the number of bytes needed for *list, if *list is NULL
 // return -ENOMEM on OOM 
 // return -ENOENT if the file doesn't exist
 // return -ERANGE if list is not NULL, but too small
@@ -851,25 +784,24 @@ int UG_xattr_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* f
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
+// return -EPROTO on HTTP 400-level error
 ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
    
-   struct ms_client* ms = SG_gateway_ms( gateway );
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
    struct fskit_entry* fent = NULL;
+   char* list_buf = NULL;
+   size_t list_buf_len = 0;
    
    uint64_t file_id = 0;
-   uint64_t volume_id = ms_client_get_volume_id( ms );
+   int64_t file_version = 0;
+   int64_t xattr_nonce = 0;
+   uint64_t coordinator_id = 0;
+   size_t builtin_len = UG_xattr_len_all();
    
    struct UG_inode* inode = NULL;
-   
-   char* remote_xattr_names = NULL;
-   size_t remote_xattr_names_len = 0;
-   
-   ssize_t builtin_len = 0;
    
    rc = UG_consistency_path_ensure_fresh( gateway, path );
    if( rc != 0 ) {
@@ -887,44 +819,151 @@ ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
    file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+   xattr_nonce = UG_inode_xattr_nonce( inode );
+   coordinator_id = UG_inode_coordinator_id( inode );
    
-   // don't allow this entry to get deleted...
-   fskit_entry_unlock( fent );
-   
-   // check on the MS
-   rc = ms_client_listxattr( ms, volume_id, file_id, &remote_xattr_names, &remote_xattr_names_len );
-   if( rc < 0 ) {
-      
-      SG_error("ms_client_listxattr('%s') rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   if( size <= 0 || list == NULL ) {
-      
-      // buffer size query 
-      rc = UG_xattr_len_all() + remote_xattr_names_len;
+   if( coordinator_id == SG_gateway_id( gateway ) ) {
+       
+       // we have the xattrs already. provide them.
+       rc = fskit_flistxattr( fs, fent, list, size );
+       
+       fskit_entry_unlock( fent );
    }
    else {
-      
-      // get the built-in attributes, and copy them into list
-      builtin_len = UG_xattr_get_builtin_names( list, size );
-      if( builtin_len < 0 || remote_xattr_names_len + builtin_len > size ) {
-         
-         // buffer not big enough
-         rc = -ERANGE;
-      }
-      
-      else {
-      
-         // combine built-in and remote 
-         memcpy( list + builtin_len, remote_xattr_names, remote_xattr_names_len );
-         rc = builtin_len + remote_xattr_names_len;
-      }
+
+       fskit_entry_unlock( fent );
+       
+       // ask the coordinator 
+       rc = SG_client_listxattrs( gateway, coordinator_id, path, file_id, file_version, xattr_nonce, &list_buf, &list_buf_len );
+       if( rc != 0 ) {
+           
+           SG_error("SG_client_listxattrs('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ")) rc = %d\n", path, file_id, file_version, xattr_nonce, rc );
+       }
+       else {
+           
+           rc = list_buf_len;
+       }
+       
+       if( list != NULL ) {
+           
+           if( list_buf_len + builtin_len <= size ) {
+               
+               UG_xattr_get_builtin_names( list, size );
+               memcpy( list + builtin_len, list_buf, list_buf_len );
+           }
+           else {
+               
+               rc = -ERANGE;
+           }
+       }
    }
    
-   SG_safe_free( remote_xattr_names );
-   
    return rc;
+}
+
+
+// local removexattr, for when we're the coordinator of the file.
+// NOTE: the xattr must have already been removed from the file
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EEXIST if the XATTR_CREATE flag was set but the attribute existed 
+// return -ENOATTR if the XATTR_REPLACE flag was set but the attribute did not exist
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO on HTTP 400-level error
+// NOTE: inode->entry must be at least read-locked
+static int UG_xattr_removexattr_local( struct SG_gateway* gateway, char const* path, struct UG_inode* inode, char const* name ) {
+    
+    int rc = 0;
+    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+    struct fskit_core* fs = UG_state_fs( ug );
+    struct ms_client* ms = SG_gateway_ms( gateway );
+    struct md_entry inode_data;
+    unsigned char xattr_hash[ SHA256_DIGEST_LENGTH ];
+    
+    memset( &inode_data, 0, sizeof(struct md_entry) );
+    
+    // get inode info
+    rc = UG_inode_export( &inode_data, inode, 0 );
+    if( rc != 0 ) {
+
+        return rc;
+    }
+
+    // get new xattr hash 
+    rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), inode, xattr_hash );
+    if( rc != 0 ) {
+        
+        md_entry_free( &inode_data );
+        return rc;
+    }
+
+    // propagate new xattr hash
+    inode_data.xattr_hash = xattr_hash;
+    
+    // put on the MS...
+    rc = ms_client_removexattr( ms, &inode_data, name, xattr_hash );
+    
+    inode_data.xattr_hash = NULL;       // NOTE: don't free this 
+    
+    if( rc != 0 ) {
+        
+        SG_error("ms_client_removexattr('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, inode_data.file_id, inode_data.version, inode_data.xattr_nonce, name, rc );
+    }
+    
+    md_entry_free( &inode_data );
+    
+    return rc;
+}
+
+
+// remote removexattr, for when we're NOT the coordinator of the file 
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EEXIST if the XATTR_CREATE flag was set but the attribute existed 
+// return -ENOATTR if the XATTR_REPLACE flag was set but the attribute did not exist
+// return -ETIMEDOUT if the tranfser could not complete in time 
+// return -EAGAIN if we were signaled to retry the request 
+// return -EREMOTEIO if the HTTP error is >= 500 
+// return -EPROTO on HTTP 400-level error
+// NOTE: inode->entry must be at least read-locked
+static int UG_xattr_removexattr_remote( struct SG_gateway* gateway, char const* path, struct UG_inode* inode, char const* name ) {
+    
+    int rc = 0;
+    SG_messages::Request request;
+    SG_messages::Reply reply;
+    struct SG_request_data reqdat;
+    
+    uint64_t file_id = UG_inode_file_id( inode );
+    uint64_t coordinator_id = UG_inode_coordinator_id( inode );
+    int64_t file_version = UG_inode_file_version( inode );
+    int64_t xattr_nonce = UG_inode_xattr_nonce( inode );
+    
+    rc = SG_request_data_init_removexattr( gateway, path, file_id, file_version, xattr_nonce, name, &reqdat );
+    if( rc != 0 ) {
+        return rc;
+    }
+    
+    rc = SG_client_request_REMOVEXATTR_setup( gateway, &request, &reqdat, name );
+    if( rc != 0 ) {
+        
+        SG_request_data_free( &reqdat );
+        return rc;
+    }
+    
+    rc = SG_client_request_send( gateway, coordinator_id, &request, NULL, &reply );
+    SG_request_data_free( &reqdat );
+    
+    if( rc != 0 ) {
+        
+        SG_error("SG_client_send_request(REMOVEXATTR %" PRIu64 ", '%s') rc = %d\n", coordinator_id, name, rc );
+        return rc;
+    }
+    
+    // success!
+    return rc;
 }
 
 
@@ -938,27 +977,22 @@ ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
+// return -EPROTO on HTTP 400-level error
 int UG_xattr_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume ) {
    
    int rc = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct fskit_core* fs = UG_state_fs( ug );
-   struct fskit_entry* fent = NULL;
-   
-   struct UG_inode* inode = NULL;
-   struct md_entry inode_data;
-   
-   struct UG_xattr_handler_t* xattr_handler = NULL;
+   struct UG_xattr_handler_t* xattr_handler = UG_xattr_lookup_handler( name );
+   char* old_xattr_value = NULL;
+   size_t old_xattr_value_len = 0;
    
    if( SG_gateway_id( gateway ) == SG_GATEWAY_ANON ) {
-      
       return -EPERM;
    }
    
-   // refresh...
    rc = UG_consistency_path_ensure_fresh( gateway, path );
    if( rc != 0 ) {
       
@@ -971,175 +1005,91 @@ int UG_xattr_removexattr( struct SG_gateway* gateway, char const* path, char con
       return rc;
    }
    
-   // built-in?
-   xattr_handler = UG_xattr_lookup_handler( name );
+   // built-in handler?
    if( xattr_handler != NULL ) {
       
       rc = (*xattr_handler->del)( fs, fent, name );
-   }
-   else {
-      
-      // ask the MS
-      
-      rc = UG_inode_export( &inode_data, inode, 0, NULL );
-      if( rc != 0 ) {
-         
-         fskit_entry_unlock( fent );
-         return rc;
-      }
-      
-      rc = ms_client_removexattr( ms, &inode_data, name );
-      if( rc < 0 ) {
-         
-         SG_error("ms_client_removexattr( '%s'.'%s' ) rc = %d\n", path, name, rc );
-      }
-      
-      md_entry_free( &inode_data );
-   }
-   
-   if( rc == 0 ) {
-      
-      // successfully removed; uncache 
-      fskit_fremovexattr( fs, fent, name );
-   }
-   
-   fskit_entry_unlock( fent );
-
-   return rc;
-}
-
-
-// change ownership of an xattr 
-// return 0 on success
-// return -ENOMEM on OOM 
-// return -EPERM if this is an anonymous gateway
-// return -ENOENT if the file doesn't exist
-// return -EACCES if we're not the owner
-// return -ETIMEDOUT if the tranfser could not complete in time 
-// return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_xattr_chownxattr( struct SG_gateway* gateway, char const* path, char const* name, uint64_t new_user ) {
-   
-   int rc = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct fskit_core* fs = UG_state_fs( ug );
-   struct fskit_entry* fent = NULL;
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   struct UG_inode* inode = NULL;
-   struct md_entry inode_data;
-   
-   if( SG_gateway_id( gateway ) == SG_GATEWAY_ANON ) {
-      
-      return -EPERM;
-   }
-   
-   rc = UG_consistency_path_ensure_fresh( gateway, path );
-   if( rc != 0 ) {
-      
-      return rc;
-   }
-   
-   fent = fskit_entry_resolve_path( fs, path, SG_gateway_user_id( gateway ), volume_id, true, &rc );
-   if( fent == NULL ) {
-      
-      return rc;
-   }
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
-   if( rc != 0 ) {
-      
       fskit_entry_unlock( fent );
       return rc;
    }
    
-   // change ownership!
-   rc = ms_client_chownxattr( ms, &inode_data, name, new_user );
-   if( rc < 0 ) {
-      
-      SG_error("ms_client_chownxattr( '%s'.'%s' to %" PRIu64 " ) rc = %d\n", path, name, new_user, rc );
-   }
-   else {
-      
-      // uncache
-      fskit_fremovexattr( fs, fent, name );
-   }
-   
-   fskit_entry_unlock( fent );
-   return rc;
-}
-
-
-// change mode of an xattr 
-// return 0 on success
-// return -ENOMEM on OOM 
-// return -EPERM if this is an anonymous gateway
-// return -ENOENT if the file doesn't exist
-// return -EACCES if we're not the owner
-// return -ETIMEDOUT if the tranfser could not complete in time 
-// return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return between -499 and -400 if the HTTP error was in the range 400 to 499
-int UG_xattr_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode ) {
-   
-   
-   int rc = 0;
-   
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct fskit_core* fs = UG_state_fs( ug );
-   struct fskit_entry* fent = NULL;
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   struct UG_inode* inode = NULL;
-   struct md_entry inode_data;
-   
-   if( SG_gateway_id( gateway ) == SG_GATEWAY_ANON ) {
-      
-      return -EPERM;
-   }
-   
-   rc = UG_consistency_path_ensure_fresh( gateway, path );
-   if( rc != 0 ) {
-      
-      return rc;
-   }
-   
-   fent = fskit_entry_resolve_path( fs, path, SG_gateway_user_id( gateway ), volume_id, true, &rc );
-   if( fent == NULL ) {
-      
-      return rc;
-   }
-   
+   // not a built-in
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
-   if( rc != 0 ) {
-      
-      fskit_entry_unlock( fent );
-      return rc;
-   }
+   uint64_t coordinator_id = UG_inode_coordinator_id( inode );
+   uint64_t file_id = UG_inode_file_id( inode );
+   int64_t file_version = UG_inode_file_version( inode );
+   int64_t xattr_nonce = UG_inode_xattr_nonce( inode );
    
-   // change ownership!
-   rc = ms_client_chmodxattr( ms, &inode_data, name, new_mode );
-   if( rc < 0 ) {
-      
-      SG_error("ms_client_chmodxattr( '%s'.'%s' to %o ) rc = %d\n", path, name, new_mode, rc );
+   // if we're the coordinator, then preserve old xattr, in case we have to replace it on failure 
+   if( coordinator_id == SG_gateway_id( gateway ) ) {
+        
+        rc = fskit_fgetxattr( fs, fent, name, NULL, 0 );
+        if( rc < 0 ) {
+            
+            // not present; we're good 
+            rc = 0;
+        }
+        else {
+            
+            old_xattr_value_len = rc;
+            old_xattr_value = SG_CALLOC( char, old_xattr_value_len );
+            if( old_xattr_value == NULL ) {
+                
+                fskit_entry_unlock( fent );
+                return -ENOMEM;
+            }
+            
+            rc = fskit_fgetxattr( fs, fent, name, old_xattr_value, old_xattr_value_len );
+            if( rc < 0 ) {
+                
+                // weird error 
+                SG_error("fskit_entry_fgetxattr('%s' '%s') rc = %d\n", path, name, rc );
+                fskit_entry_unlock( fent );
+                return rc;
+            }
+        }
+        
+        
+   
+        // remove locally 
+        rc = fskit_fremovexattr( fs, fent, name );
+        if( rc != 0 ) {
+            
+            fskit_entry_unlock( fent );
+            SG_safe_free( old_xattr_value );
+            return rc;
+        }
+
+
+        // if we're the coordinator, remove the xattr on the MS
+        rc = UG_xattr_removexattr_local( gateway, path, inode, name );
+        if( rc != 0 ) {
+            
+            SG_error("UG_xattr_removexattr_local('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, file_id, file_version, xattr_nonce, name, rc );
+        }
    }
    else {
-      
-      // uncache
-      fskit_fremovexattr( fs, fent, name );
+       
+       // if we're not the coordinator, send the remove request to the coordinator 
+       rc = UG_xattr_removexattr_remote( gateway, path, inode, name );
+       if( rc != 0 ) {
+           
+           SG_error("UG_xattr_removexattr_remote('%s' (%" PRIX64 ".%" PRId64 ".%" PRId64 ") '%s') rc = %d\n", path, file_id, file_version, xattr_nonce, name, rc );
+       }
+   }
+   
+   if( rc != 0 && old_xattr_value != NULL ) {
+       
+       // restore old xattr 
+       int restore_rc = fskit_fsetxattr( fs, fent, name, old_xattr_value, old_xattr_value_len, 0 );
+       if( restore_rc < 0 ) {
+           
+           SG_error("fskit_entry_fsetxattr(RESTORE '%s', '%s') rc = %d\n", path, name, rc );
+       }
    }
    
    fskit_entry_unlock( fent );
+   SG_safe_free( old_xattr_value );
    return rc;
-   
 }

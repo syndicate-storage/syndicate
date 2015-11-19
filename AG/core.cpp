@@ -125,11 +125,11 @@ int AG_get_spec_file_text_from_MS( struct ms_client* client, char** out_specfile
    }
    
    // extract from json 
-   rc = md_closure_load_AG_specfile( specfile_text_json, specfile_text_json_len, &specfile_text, &specfile_text_len );
+   rc = md_closure_load_binary_field( specfile_text_json, specfile_text_json_len, "spec", &specfile_text, &specfile_text_len );
    free( specfile_text_json );
    
    if( rc != 0 ) {
-      SG_error("md_closure_load_AG_specfile rc = %d\n", rc );
+      SG_error("md_closure_load_binary_field rc = %d\n", rc );
       
       return rc;
    }
@@ -835,11 +835,11 @@ int AG_start( struct AG_state* state ) {
    // start the reloader 
    SG_debug("%s", "Starting specfile reload thread\n");
    
-   state->specfile_reload_thread = md_start_thread( AG_reload_thread_main, state, false );
+   rc = md_start_thread( &state->specfile_reload_thread, AG_reload_thread_main, state, false );
    
-   if( state->specfile_reload_thread < 0 ) {
-      SG_error("ERR: md_start_thread rc = %d\n", (int)state->specfile_reload_thread );
-      return (int)state->specfile_reload_thread;
+   if( rc < 0 ) {
+      SG_error("ERR: md_start_thread rc = %d\n", rc );
+      return -EPERM;
    }
 
    state->running = true;

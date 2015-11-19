@@ -20,6 +20,7 @@
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/download.h"
 
+/* DEPRECATED 
 #define MS_OPENID_USERNAME_FIELD "openid_username"
 
 #define MS_OPENID_MAX_RESPOSNE_LEN      102400          // 100KB
@@ -41,5 +42,6 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
                           char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
 
 }
+*/
 
 #endif

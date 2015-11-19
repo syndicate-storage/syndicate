@@ -156,6 +156,7 @@ int UG_dirty_block_deepcopy( struct UG_dirty_block* dest, struct UG_dirty_block*
 
 
 // load a block from the cache, into dirty_block->buf
+// transform it using the driver
 // do NOT mark it dirty.
 // if the buffer is already allocated and is big enough, then copy the block data directly in.
 // if the buffer is too small, or is NULL, then (re)allocate it.
@@ -201,14 +202,14 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
    // zero-copy initialize a request
    SG_request_data_init_block( gateway, fs_path, file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), &reqdat );
    
-   rc = SG_gateway_cached_block_get( gateway, &reqdat, &dirty_block->buf );
+   rc = SG_gateway_cached_block_get_raw( gateway, &reqdat, &dirty_block->buf );
    
    if( rc != 0 ) {
       
       if( rc != -ENOENT ) {
          
          // some other error 
-         SG_error( "SG_gateway_cached_block_get( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
+         SG_error( "SG_gateway_cached_block_get_raw( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
                    file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
       }
       
@@ -219,7 +220,10 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
       
       SG_request_data_free( &reqdat );
    }
-   
+    
+   // transform the block with the driver 
+   // TODO DRIVER
+
    return rc;
 }
 
@@ -372,12 +376,11 @@ int UG_dirty_block_set_dirty( struct UG_dirty_block* dirty_block, bool dirty ) {
 
 // flush a block to disk, if it is dirty.  If it is not dirty, do nothing and return 0
 // if the block was in RAM, create a cache future and put it into *block_fut 
-// if the block was on disk, then no action is taken.  *ret_block_fut will be set to NULL, and this method succeeds.
-// return 0 on success
+// return 0 on success, put the cache-write future into *dirty_block, and re-calculate the hash over the block's driver-serialized form
 // return -EINPROGRESS if this block is already being flushed
-// return -EINVAL if the block was already flushed, or is mmaped
+// return -EINVAL if the block was already flushed, or is not in RAM
 // return -errno on cache failure
-// NOTE: be careful not to free dirty_block until the future (*ret_block_fut) has been finalized!
+// NOTE: be careful not to free dirty_block until the future has been finalized!
 // NOTE: not thread-safe--don't try flushing the same block twice
 int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct UG_dirty_block* dirty_block ) {
    
@@ -391,6 +394,11 @@ int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path,
       return -EINPROGRESS;
    }
    
+   if( !UG_dirty_block_in_RAM( dirty_block ) ) {
+      // can't flush
+      return -EINVAL;
+   }
+
    if( dirty_block->mmaped || dirty_block->block_fd >= 0 ) {
       
       // already on disk
@@ -406,13 +414,44 @@ int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path,
    if( dirty_block->buf.data != NULL ) {
       
       // set up a reqdat 
-      SG_request_data_init_block( gateway, fs_path, file_id, file_version, dirty_block->info.block_id, dirty_block->info.block_version, &reqdat );
+      rc = SG_request_data_init_block( gateway, fs_path, file_id, file_version, dirty_block->info.block_id, dirty_block->info.block_version, &reqdat );
+      if( rc != 0 ) {
+         return -ENOMEM;
+      }
       
-      rc = SG_gateway_cached_block_put_async( gateway, &reqdat, &dirty_block->buf, 0, &fut );
+      // TODO: serialize through the driver 
+      // TODO DRIVER 
+      
+      struct SG_chunk serialized_chunk;
+      size_t serialized_data_len = dirty_block->buf.len;
+      char* serialized_data = md_memdup( dirty_block->buf.data, dirty_block->buf.len );
+      if( serialized_data == NULL ) {
+
+         // OOM 
+         SG_request_data_free( &reqdat );
+         return -ENOMEM;
+      }
+
+      serialized_chunk.data = serialized_data;
+      serialized_chunk.len = serialized_data_len;
+      
+      // recalculate the hash for this block, over its serialized form 
+      rc = UG_dirty_block_rehash( dirty_block, serialized_data, serialized_data_len );
+      if( rc != 0 ) {
+         
+         SG_error("UG_inode_dirty_block_rehash( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
+               file_id, file_version, UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+
+         SG_request_data_free( &reqdat );
+         return -ENOMEM;
+      }
+       
+      // gift the serialized data to the cache
+      rc = SG_gateway_cached_block_put_raw_async( gateway, &reqdat, &serialized_chunk, SG_GATEWAY_CACHE_UNSHARED, &fut );
       
       if( rc != 0 ) {
          
-         SG_error("SG_gateway_cached_block_put_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", 
+         SG_error("SG_gateway_cached_block_put_raw_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", 
                   file_id, file_version, dirty_block->info.block_id, dirty_block->info.block_version, rc );
       }
       
@@ -478,7 +517,6 @@ int UG_dirty_block_flush_finish_ex( struct UG_dirty_block* dirty_block, bool fre
    }
    
    md_cache_block_future_free( block_fut );
-   SG_safe_free( block_fut );
    
    dirty_block->block_fut = NULL;
    
@@ -653,4 +691,31 @@ bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk ) {
 
 bool UG_dirty_block_mmaped( struct UG_dirty_block* blk ) {
    return blk->mmaped;
+}
+
+bool UG_dirty_block_in_RAM( struct UG_dirty_block* blk ) {
+   return (blk->mmaped || blk->buf.data != NULL);
+}
+
+
+// re-calculate the hash of the block
+// the block must be resident in memory (mmaped or otherwise)
+// store it into its block info
+// NOT ATOMIC
+// return 0 on success
+// return -ENOMEM on OOM
+int UG_dirty_block_rehash( struct UG_dirty_block* blk, char const* serialized_data, size_t serialized_data_len ) {
+
+   int rc = 0;
+
+   if( blk->hash == NULL ) {
+
+      blk->hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+      if( blk->hash == NULL ) {
+         return -ENOMEM;
+      }
+   }
+
+   sha256_hash_buf( serialized_data, serialized_data_len, blk->hash );
+   return 0;
 }

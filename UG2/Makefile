@@ -1,6 +1,6 @@
 include ../buildconf.mk
 
-LIB   	:= -lsyndicate
+LIB   	:= -lsyndicate -lprotobuf
 C_SRCS	:= $(wildcard *.c)
 CXSRCS	:= $(wildcard *.cpp)
 OBJ      := $(patsubst %.c,$(BUILD_UG)/%.o,$(C_SRCS)) $(patsubst %.cpp,$(BUILD_UG)/%.o,$(CXSRCS))
@@ -23,12 +23,12 @@ libs: $(OBJ)
 	$(MAKE) -C $(LIBS)
 
 $(BUILD_UG)/%.o : %.c 
-	@mkdir -p $(shell dirname $@)
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+	@mkdir -p "$(shell dirname "$@")"
+	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
 $(BUILD_UG)/%.o : %.cpp 
-	@mkdir -p $(shell dirname $@)
-	$(CPP) -o $@ $(INC) -c $< $(DEFS)
+	@mkdir -p "$(shell dirname "$@")"
+	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
 .PHONY: clean 
 clean:

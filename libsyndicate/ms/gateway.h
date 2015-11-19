@@ -30,12 +30,16 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 uint64_t ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id );
 uint64_t ms_client_get_gateway_id( struct ms_client* client );
 uint64_t ms_client_get_owner_id( struct ms_client* client );
+uint64_t ms_client_get_gateway_cert_version( struct ms_client* client, uint64_t g_id );
 int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_id, uint64_t* user_id );
 int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_id, uint64_t* volume_id );
 int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_id, char** gateway_name );
+int ms_client_get_gateway_driver_hash( struct ms_client* client, uint64_t gateway_id, unsigned char* hash_buf );
 int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_id, uint64_t caps );
+
+// get information about *this* gateway
 int ms_client_gateway_key_pem( struct ms_client* client, char** buf, size_t* len );
-int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
+int ms_client_gateway_get_driver_text( struct ms_client* client, char** driver_text, size_t* driver_text_len );
 
 char* ms_client_get_gateway_url( struct ms_client* client, uint64_t gateway_id );
 

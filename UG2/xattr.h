@@ -37,45 +37,13 @@
 #define UG_XATTR_READ_TTL          "user.syndicate_read_ttl"
 #define UG_XATTR_WRITE_TTL         "user.syndicate_write_ttl"
 
-#define UG_XATTR_NAMESPACE_RG            "user.syndicate_RG."
-#define UG_XATTR_NAMESPACE_RG_SECRET     "user.syndicate_RG_secret."
-
-#define UG_XATTR_NAMESPACE_UG            "user.syndicate_UG."
-#define UG_XATTR_NAMESPACE_UG_SECRET     "user.syndicate_UG_secret."
-
-typedef ssize_t (*UG_xattr_get_handler_t)( struct fskit_core*, struct fskit_entry*, char const*, char*, size_t );
-typedef int (*UG_xattr_set_handler_t)( struct fskit_core*, struct fskit_entry*, char const*, char const*, size_t, int );
-typedef int (*UG_xattr_delete_handler_t)( struct fskit_core*, struct fskit_entry*, char const* );
-
-struct UG_xattr_handler_t {
-   char const* name;
-   UG_xattr_get_handler_t get;
-   UG_xattr_set_handler_t set;
-   UG_xattr_delete_handler_t del;
-};
-
-struct UG_xattr_namespace_handler {
-   char const* prefix;
-   UG_xattr_get_handler_t get;
-   UG_xattr_set_handler_t set;
-   UG_xattr_delete_handler_t del;
-};
-
 extern "C" {
 
 // extended attributes
 ssize_t UG_xattr_getxattr( struct SG_gateway* gateway, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume );
 int UG_xattr_setxattr( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume );
-int UG_xattr_setxattr_ex( struct SG_gateway* gateway, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode );
 ssize_t UG_xattr_listxattr( struct SG_gateway* gateway, char const* path, char *list, size_t size, uint64_t user, uint64_t volume );
 int UG_xattr_removexattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t user, uint64_t volume );
-
-// not POSIX-y
-int UG_xattr_chownxattr( struct SG_gateway* gateway, char const* path, char const *name, uint64_t new_user );
-int UG_xattr_chmodxattr( struct SG_gateway* gateway, char const* path, char const* name, mode_t new_mode );
-
-int UG_xattr_download_xattr( struct SG_gateway* gateway, uint64_t volume, uint64_t file_id, char const* name, char** value );
-int UG_xattr_get_or_set_xattr( struct SG_gateway* gateway, struct fskit_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode );
 
 }
 

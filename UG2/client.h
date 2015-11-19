@@ -35,6 +35,11 @@
 
 #define UG_TYPE_FILE FSKIT_ENTRY_TYPE_FILE
 #define UG_TYPE_DIR FSKIT_ENTRY_TYPE_DIR
+
+// types known to this gateway 
+#define SYNDICATE_UG 1
+#define SYNDICATE_RG 2
+#define SYNDICATE_AG 3
    
 // macro to try to perform an operation on the MS that can be done either locally (e.g. if we're the coordinator, or the inode is a directory), or remotely
 // If the remote operation fails due to the remote gateway being unavailable, try to become the coordinator.  If we succeed, run the operation locally.
@@ -68,10 +73,17 @@
             _rc = UG_chcoord( _state, (path), &_current_coordinator ); \
             if( _rc != 0 ) { \
                 \
-               *rc = _rc; \
-               /* failed to talk to the MS */ \
-               SG_error("UG_chcoord('%s' to %" PRIu64 ") rc = %d\n", (path), SG_gateway_id( (gateway) ), _rc ); \
-               break; \
+               if( _rc == -EAGAIN ) { \
+                   /* try again */ \
+                   SG_warn("UG_chcoord('%s' to %" PRIu64 ") rc = %d\n", (path), SG_gateway_id( (gateway) ), _rc ); \
+                   continue; \
+               } \
+               else { \
+                   *rc = _rc; \
+                   /* failed to talk to the MS */ \
+                   SG_error("UG_chcoord('%s' to %" PRIu64 ") rc = %d\n", (path), SG_gateway_id( (gateway) ), _rc ); \
+                   break; \
+               } \
             } \
             else { \
                \
@@ -91,6 +103,7 @@
          \
          /* local */ \
          *rc = local_oper; \
+         break; \
       } \
       \
    } while( 0 );
@@ -108,19 +121,21 @@ typedef struct _UG_handle {
    };
 } UG_handle_t;
 
-// NULL-terminated directory listing
-typedef struct md_entry** UG_dir_listing_t;
-
 int UG_stat( struct UG_state* state, char const* path, struct stat *statbuf );
+int UG_stat_raw( struct UG_state* state, char const* path, struct md_entry* ent );
 int UG_mkdir( struct UG_state* state, char const* path, mode_t mode );
 int UG_unlink( struct UG_state* state, char const* path );
 int UG_rmdir( struct UG_state* state, char const* path );
 int UG_rename( struct UG_state* state, char const* path, char const* newpath );
 int UG_chmod( struct UG_state* state, char const* path, mode_t mode );
 int UG_chown( struct UG_state* state, char const* path, uint64_t new_owner );
+int UG_utime( struct UG_state* state, char const* path, struct utimbuf *ubuf );
 int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordinator_response );
 int UG_truncate( struct UG_state* state, char const* path, off_t newsize );
 int UG_access( struct UG_state* state, char const* path, int mask );
+
+// low-level; used internally
+int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data );
 
 UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, int* rc  );
 UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* rc );
@@ -133,20 +148,20 @@ int UG_ftruncate( struct UG_state* state, off_t offset, UG_handle_t *fi );
 int UG_fstat( struct UG_state* state, struct stat *statbuf, UG_handle_t *fi );
 
 UG_handle_t* UG_opendir( struct UG_state* state, char const* path, int* rc );
-int UG_readdir( struct UG_state* state, UG_dir_listing_t* listing, size_t num_children, UG_handle_t *fi );
+int UG_readdir( struct UG_state* state, struct md_entry*** listing, size_t num_children, UG_handle_t *fi );
 int UG_rewinddir( UG_handle_t* fi );
 off_t UG_telldir( UG_handle_t* fi );
 int UG_seekdir( UG_handle_t* fi, off_t loc );
 int UG_closedir( struct UG_state* state, UG_handle_t *fi );
-void UG_free_dir_listing( UG_dir_listing_t listing );
+void UG_free_dir_listing( struct md_entry** listing );
 
 int UG_setxattr( struct UG_state* state, char const* path, char const* name, char const* value, size_t size, int flags );
 int UG_getxattr( struct UG_state* state, char const* path, char const* name, char *value, size_t size );
 int UG_listxattr( struct UG_state* state, char const* path, char *list, size_t size );
 int UG_removexattr( struct UG_state* state, char const* path, char const* name );
-int UG_chownxattr( struct UG_state* state, char const* path, char const* name, uint64_t new_owner );
-int UG_chmodxattr( struct UG_state* state, char const* path, char const* name, mode_t mode );
-int UG_getsetxattr( struct UG_state* state, char const* path, char const* name, char const* new_value, size_t new_value_len, char** value, size_t* value_len, mode_t mode );
+
+// low-level; used internally
+int UG_send_WRITE( struct UG_state* state, char const* fs_path, struct SG_client_WRITE_data* write_data, struct md_entry* inode_out );
 
 }
 

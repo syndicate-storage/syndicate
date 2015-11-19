@@ -102,6 +102,10 @@ bool UG_dirty_block_unshared( struct UG_dirty_block* blk );
 bool UG_dirty_block_dirty( struct UG_dirty_block* blk );
 bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk );
 bool UG_dirty_block_mmaped( struct UG_dirty_block* blk );
+bool UG_dirty_block_in_RAM( struct UG_dirty_block* blk );
+
+// hash 
+int UG_dirty_block_rehash( struct UG_dirty_block* blk, char const* serialized_data, size_t serialized_data_len );
 
 }
 

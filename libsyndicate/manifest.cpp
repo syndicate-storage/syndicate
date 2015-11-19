@@ -272,6 +272,7 @@ int SG_manifest_clear_nofree( struct SG_manifest* manifest ) {
 // load a manifest from a protocol buffer 
 // return 0 on success
 // return -ENOMEM on OOM
+// return -EINVAL if an invalid block is encountered
 int SG_manifest_load_from_protobuf( struct SG_manifest* dest, const SG_messages::Manifest* mmsg ) {
    
    int rc = 0;
@@ -1132,6 +1133,8 @@ int SG_manifest_serialize_to_protobuf( struct SG_manifest* manifest, SG_messages
       
       mmsg->set_size( manifest->size );
       mmsg->set_owner_id( manifest->owner_id );
+
+      mmsg->set_signature( string("") );
    }
       
    SG_manifest_unlock( manifest );

@@ -37,6 +37,16 @@ char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char
 // generate a URL to a manifest
 int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url );
 
+// URLs to xattr data in this gateway 
+char* md_url_public_getxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce );
+char* md_url_public_listxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce );
+
+// generate a URL to an xattr 
+int md_url_make_getxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce, char** url );
+
+// generate a URL to a list of xattrs
+int md_url_make_listxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char** url );
+
 // make a URL to the gateway's API server
 int md_url_make_gateway_url( struct ms_client* client, uint64_t gateway_id, char** url );
 

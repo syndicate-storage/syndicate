@@ -55,6 +55,7 @@
 #include <sys/resource.h>
 #include <stdexcept>
 #include <execinfo.h>
+#include <wordexp.h>
 
 using namespace std;
 
@@ -65,6 +66,12 @@ using namespace std;
 
 #define MD_ENTRY_FILE ms::ms_entry::MS_ENTRY_TYPE_FILE
 #define MD_ENTRY_DIR  ms::ms_entry::MS_ENTRY_TYPE_DIR
+
+#define SG_ENTRY_FILE MD_ENTRY_FILE
+#define SG_ENTRY_DIR MD_ENTRY_DIR
+
+#define SG_DEFAULT_CONFIG_DIR   "~/.syndicate"
+#define SG_DEFAULT_CONFIG_PATH  "~/.syndicate/syndicate.conf"
 
 // metadata entry (represents a file or a directory)
 struct md_entry {
@@ -91,31 +98,21 @@ struct md_entry {
    int64_t generation;  // n, as in, the nth item to ever be created in the parent directory
    int64_t num_children; // number of children this entry has (if it's a directory)
    int64_t capacity;    // maximum index number a child can have (i.e. used by listdir())
+   
+   unsigned char* ent_sig;      // signature over this entry from the coordinator, as well as any ancillary data below
+   size_t ent_sig_len;
+   
+   // ancillary data: not always filled in
+   
    uint64_t parent_id;  // id of this file's parent directory
-   char* parent_name;   // name of this file's parent directory
+   
+   // putxattr, removexattr only (and only from the coordinator)
+   unsigned char* xattr_hash;   // hash over (volume ID, file ID, xattr_nonce, sorted(xattr name, xattr value))
 };
 
 #define MD_ENTRY_INITIALIZED( ent ) ((ent).type != 0 && (ent).name != NULL)
 
 typedef list<struct md_entry*> md_entry_list;
-
-
-// metadata update
-struct md_update {
-   char op;               // update operation
-   struct md_entry ent;
-   struct md_entry dest;  // only used by RENAME
-   int error;             // error information
-   int flags;             // op-specific flags
-   char* xattr_name;      // xattr name (setxattr, removexattr)
-   char* xattr_value;     // xattr value (setxattr)
-   size_t xattr_value_len;
-   uint64_t xattr_owner;  // xattr owner (chownxattr)
-   mode_t xattr_mode;     // xattr mode (chmodxattr)
-   
-   uint64_t* affected_blocks;   // blocks affected by a write 
-   size_t num_affected_blocks;  
-};
 
 // metadata update operations
 #define MD_OP_ADD    'A'      // add/replace an entry
@@ -154,112 +151,148 @@ struct md_upload_buf {
 // server configuration
 struct md_syndicate_conf {
    
+   // paths 
+   char* config_file_path;                            // *absolute* path to the config file.
+   char* volumes_path;                                // path to the directory containing volume keys and certs
+   char* gateways_path;                               // path to the directory containing gateway keys and certs 
+   char* users_path;                                  // path to the directory containing user keys and certs 
+   char* drivers_path;                                // path to the directory containing drivers
+   char* syndicate_path;                              // path to the directory containing Syndicate public keys
+   char* logs_path;                                   // path to the logfile directory to store gateway logs
+   char* storage_root;                                // toplevel directory that stores local syndicate metadata (for users, gateways, volums)
+   char* data_root;                                   // root of the path where we store local file blocks
+   
+   // command-line options 
+   char* volume_name;                                 // name of the volume we're connected to
+   char* gateway_name;                                // name of this gateway
+   char* ms_username;                                 // MS username for this user
+   
    // gateway fields
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
-   char* logfile_path;                                // path to the logfile
    bool gather_stats;                                 // gather statistics or not?
-   char* content_url;                                 // what is the URL under which local data can be accessed publicly?.  Must end in /
-   char* storage_root;                                // toplevel directory that stores local syndicate state (blocks, manifests, logs, etc).  Must end in /
-   char* volume_name;                                 // name of the volume we're connected to
-   char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
    int max_read_retry;                                // maximum number of times to retry a read (i.e. fetching a block or manifest) before considering it failed 
    int max_write_retry;                               // maximum number of times to retry a write (i.e. replicating a block or manifest) before considering it failed
    int max_metadata_read_retry;                       // maximum number of times to retry a metadata read before considering it failed 
    int max_metadata_write_retry;                      // maximum number of times to retry a metadata write before considering it failed
-   unsigned int num_http_threads;                     // how many HTTP threads to create
-   char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
-   char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
-   char* local_sd_dir;                                // directory containing local storage drivers (AG only)
-   char* gateway_name;                                // name of this gateway
-   int portnum;                                       // Syndicate-side port number
    int connect_timeout;                               // number of seconds to wait to connect for data
    int transfer_timeout;                              // how long a manifest/block transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers (if using HTTPS to talk to them)
-   char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    uint64_t cache_soft_limit;                         // soft limit on the size in bytes of the cache 
    uint64_t cache_hard_limit;                         // hard limit on the size in bytes of the cache
-   int num_iowqs;                                     // number of I/O work queues
-      
+   char* metadata_url;                                // MS url
+   uint64_t config_reload_freq;                       // how often do we check for a new configuration from the MS?
+   
+   // cert and key processors 
+   char* fetch_user_cert;                             // path to program that fetches a user cert 
+   char* fetch_volume_cert;                           // path to program that fetches a volume cert 
+   char* fetch_gateway_cert;                          // path to program that fetches a gateway cert 
+   char* fetch_cert_bundle;                           // path to program that fetches a cert bundle
+   char* fetch_driver;                                // path to program that fetches a driver, given its hash
+   char* fetch_syndicate_pubkey;                      // path to program that fetches the syndicate public key
+   char* validate_user_cert;                          // path to program that validates a user cert   
+   char** helper_env;                                 // environment variables to pass 
+   size_t num_helper_envs;
+   size_t max_helper_envs;
+   
    // debug
    int debug_lock;                                    // print verbose information on locks
-
-   // MS-related fields
-   char* metadata_url;                                // MS url
-   char* ms_username;                                 // MS username for this SyndicateUser
-   char* ms_password;                                 // MS password for this SyndicateUser
-   uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
-   uint64_t gateway;                                  // what is our gateway ID?
-   uint64_t volume;                                   // what is our volume ID?
-   uint64_t config_reload_freq;                       // how often do we check for a new configuration from the MS?
-   char* syndicate_pubkey_path;                       // location on disk where the MS's public key can be found.
 
    // security fields (loaded at runtime).
    // private keys are all mlock'ed
    char* gateway_key;                                 // gateway private key (PEM format)
    size_t gateway_key_len;
-   char* server_key;                                  // TLS private key (PEM format)
-   size_t server_key_len;
-   char* server_cert;                                 // TLS certificate (PEM format)
-   size_t server_cert_len;
-   char* volume_pubkey;                               // volume metadata public key (PEM format)
-   size_t volume_pubkey_len;
-   char* syndicate_pubkey;                            // Syndicate-specific public key
-   size_t syndicate_pubkey_len;
-   char* user_pkey;                                   // Syndicate User private key 
-   size_t user_pkey_len;
 
    // set at runtime
-   char* data_root;                                   // root of the path where we store local file blocks (a subdirectory of storage_root)
    mode_t usermask;                                   // umask of the user running this program
    char* hostname;                                    // what's our hostname?
+   int portnum;                                       // Syndicate-side port number
+   uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
+   uint64_t gateway;                                  // what is our gateway ID?
+   uint64_t volume;                                   // what is our volume ID?
+   uint64_t gateway_type;                             // type of gateway 
+   int64_t cert_bundle_version;                       // the version of the cert bundle (obtained during initialization)
+   int64_t gateway_version;                           // the version of this gateway's cert (obtained during initialization)
+   int64_t volume_version;                            // the version of the volume (obtained during initialization)
+   uint64_t blocksize;                                // the size in blocks for this volume.  Loaded at runtime.
+   char* content_url;                                 // what is the URL under which local data can be accessed publicly?.  Must end in /
+
+   char* driver_exec_path;                            // what is the path to the driver to execute?
+   char** driver_roles;                               // what are the different role(s) this gateway's driver takes on?
+   size_t num_driver_roles;
+   
+   char* user_pubkey_pem;                             // Syndicate User public key (PEM format) (if the private key is given, this will be generated from it)
+   size_t user_pubkey_pem_len;
+   EVP_PKEY* user_pubkey;
+   char* volume_pubkey_pem;                           // volume metadata public key (PEM format).  Corresponds to the volume owner's public key
+   size_t volume_pubkey_pem_len;
+   EVP_PKEY* volume_pubkey;
    
    // misc
-   uint64_t gateway_type;                                  // type of gateway 
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
 #define SG_USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
 #define SG_GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
+#define SG_GATEWAY_TOOL            (uint64_t)0xFFFFFFFFFFFFFFFELL       // gateway id used by messages from the administrative tool
 
 // config elements 
-#define SG_CONFIG_DEFAULT_READ_FRESHNESS  "DEFAULT_READ_FRESHNESS"
-#define SG_CONFIG_DEFAULT_WRITE_FRESHNESS "DEFAULT_WRITE_FRESHNESS"
-#define SG_CONFIG_CONNECT_TIMEOUT         "CONNECT_TIMEOUT"
-#define SG_CONFIG_MS_USERNAME             "USERNAME"
-#define SG_CONFIG_MS_PASSWORD             "PASSWORD"
-#define SG_CONFIG_RELOAD_FREQUENCY        "RELOAD_FREQUENCY"
-#define SG_CONFIG_TLS_VERIFY_PEER         "TLS_VERIFY_PEER"
-#define SG_CONFIG_MS_URL                  "MS_URL"
-#define SG_CONFIG_LOGFILE_PATH            "LOGFILE"
-#define SG_CONFIG_GATHER_STATS            "GATHER_STATISTICS"
-#define SG_CONFIG_NUM_HTTP_THREADS        "HTTP_THREADPOOL_SIZE"
-#define SG_CONFIG_STORAGE_ROOT            "STORAGE_ROOT"
-#define SG_CONFIG_TLS_PKEY_PATH           "TLS_PKEY"
-#define SG_CONFIG_TLS_CERT_PATH           "TLS_CERT"
-#define SG_CONFIG_GATEWAY_NAME            "GATEWAY_NAME"
-#define SG_CONFIG_GATEWAY_PKEY_PATH       "GATEWAY_PKEY"
-#define SG_CONFIG_SYNDICATE_PUBKEY_PATH   "SYNDICATE_PUBKEY"
-#define SG_CONFIG_VOLUME_NAME             "VOLUME_NAME"
-#define SG_CONFIG_PORTNUM                 "PORTNUM"
-#define SG_CONFIG_PUBLIC_URL              "PUBLIC_URL"
-#define SG_CONFIG_DEBUG_LEVEL             "DEBUG_LEVEL"
-#define SG_CONFIG_LOCAL_DRIVERS_DIR       "LOCAL_DRIVERS_DIR"
-#define SG_CONFIG_TRANSFER_TIMEOUT        "TRANSFER_TIMEOUT"
-#define SG_CONFIG_CACHE_SOFT_LIMIT        "CACHE_SOFT_LIMIT"
-#define SG_CONFIG_CACHE_HARD_LIMIT        "CACHE_HARD_LIMIT"
-#define SG_CONFIG_NUM_IOWQS               "NUM_IO_WQS"
+#define SG_CONFIG_VOLUMES_PATH            "volumes"
+#define SG_CONFIG_GATEWAYS_PATH           "gateways"
+#define SG_CONFIG_USERS_PATH              "users"
+#define SG_CONFIG_LOGS_PATH               "logs"
+#define SG_CONFIG_DRIVERS_PATH            "drivers"
+#define SG_CONFIG_STORAGE_ROOT            "storage"
+#define SG_CONFIG_DATA_ROOT               "data"
+#define SG_CONFIG_SYNDICATE_PATH          "syndicate"
+
+#define SG_CONFIG_FETCH_USER_CERT         "fetch_user_cert"
+#define SG_CONFIG_FETCH_GATEWAY_CERT      "fetch_gateway_cert"
+#define SG_CONFIG_FETCH_VOLUME_CERT       "fetch_volume_cert"
+#define SG_CONFIG_FETCH_CERT_BUNDLE       "fetch_cert_bundle"
+#define SG_CONFIG_FETCH_SYNDICATE_PUBKEY  "fetch_syndicate_pubkey"
+#define SG_CONFIG_FETCH_DRIVER            "fetch_driver"
+#define SG_CONFIG_VALIDATE_USER_CERT      "validate_user_cert"
+#define SG_CONFIG_ENVAR                   "env"
+
+#define SG_CONFIG_DEFAULT_READ_FRESHNESS  "default_read_freshness"
+#define SG_CONFIG_DEFAULT_WRITE_FRESHNESS "default_write_freshness"
+#define SG_CONFIG_GATHER_STATS            "gather_stats"
+#define SG_CONFIG_CONNECT_TIMEOUT         "connect_timeout"
+#define SG_CONFIG_MS_USERNAME             "username"
+#define SG_CONFIG_RELOAD_FREQUENCY        "config_reload"
+#define SG_CONFIG_TLS_VERIFY_PEER         "verify_peer"
+#define SG_CONFIG_MS_URL                  "MS_url"
+#define SG_CONFIG_PUBLIC_URL              "public_url"
+#define SG_CONFIG_DEBUG_LEVEL             "debug_level"
+#define SG_CONFIG_DEBUG_LOCK              "debug_lock"
+#define SG_CONFIG_TRANSFER_TIMEOUT        "transfer_timeout"
+#define SG_CONFIG_CACHE_SOFT_LIMIT        "cache_soft_limit"
+#define SG_CONFIG_CACHE_HARD_LIMIT        "cache_hard_limit"
+#define SG_CONFIG_MAX_READ_RETRY          "max_read_retry"
+#define SG_CONFIG_MAX_WRITE_RETRY         "max_write_retry"
+#define SG_CONFIG_MAX_METADATA_READ_RETRY "max_metadata_read_retry"
+#define SG_CONFIG_MAX_METADATA_WRITE_RETRY "max_metadata_write_retry"
+
 
 // URL protocol prefix for local files
 #define SG_LOCAL_PROTO     "file://"
 
-#define SG_DATA_PREFIX "SYNDICATE-DATA"
+#define SG_DATA_PREFIX "DATA"
+#define SG_GETXATTR_PREFIX "GETXATTR"
+#define SG_LISTXATTR_PREFIX "LISTXATTR"
 
 // check to see if a URL refers to local data
 #define SG_URL_LOCAL( url ) (strlen(url) > strlen(SG_LOCAL_PROTO) && strncmp( (url), SG_LOCAL_PROTO, strlen(SG_LOCAL_PROTO) ) == 0)
 
 // extract the absolute, underlying path from a local url
 #define SG_URL_LOCAL_PATH( url ) ((char*)(url) + strlen(SG_LOCAL_PROTO))
+
+// gateway cert structure
+struct ms_gateway_cert;
+
+// map gateway IDs to certs
+typedef map<uint64_t, struct ms_gateway_cert*> ms_cert_bundle;
 
 extern "C" {
 
@@ -277,14 +310,8 @@ int md_free_conf( struct md_syndicate_conf* conf );
 struct md_entry* md_entry_dup( struct md_entry* src );
 int md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
-
-// serialization
-int md_path_version_offset( char const* path );
-ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
-ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char **buf, struct md_update* (*iterator)( void* ), void* arg );
-char* md_clear_version( char* path );
-void md_update_free( struct md_update* update );
-int md_update_dup2( struct md_update* src, struct md_update* dest );
+int md_entry_sign( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig, size_t* sig_len );
+int ms_entry_verify( struct ms_client* ms, ms::ms_entry* msent );
 
 // path manipulation
 char* md_fullpath( char const* root, char const* path, char* dest );
@@ -297,20 +324,23 @@ char* md_prepend( char const* prefix, char const* str, char* output );
 long md_hash( char const* path );
 int md_path_split( char const* path, vector<char*>* result );
 void md_sanitize_path( char* path );
+int md_expand_path( char const* path, char** expanded, size_t* expanded_len );
 
 // serialization
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
 int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
+int md_entry_to_string( struct md_entry* ent, char** data );
 
 // threading
-pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
+int md_start_thread( pthread_t* th, void* (*thread_func)(void*), void* args, bool detach );
 
 // URL parsing
 char** md_parse_cgi_args( char* query_string );
 char* md_path_from_url( char const* url );
 char* md_flatten_path( char const* path );
-
+char* md_rchomp( char* path, char delim );
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );
+int md_parse_hostname_portnum( char const* url, char** hostname, int* portnum );
 
 // header parsing
 off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name );
@@ -329,8 +359,15 @@ int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md
 int md_init_client( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
 int md_shutdown(void);
-int md_default_conf( struct md_syndicate_conf* conf, uint64_t gateway_type );
-int md_check_conf( struct md_syndicate_conf* conf, bool have_key_password );
+int md_default_conf( struct md_syndicate_conf* conf );
+int md_check_conf( struct md_syndicate_conf* conf );
+
+// load certs 
+int md_certs_reload( struct md_syndicate_conf* conf, EVP_PKEY** syndicate_pubkey, ms::ms_user_cert* user_cert, ms::ms_user_cert* volume_owner_cert, ms::ms_volume_metadata* volume_cert, ms_cert_bundle* gateway_certs );
+int md_driver_reload( struct md_syndicate_conf* conf, struct ms_gateway_cert* cert );
+
+// driver 
+int md_conf_set_driver_params( struct md_syndicate_conf* conf, char const* driver_exec_path, char const** driver_roles, size_t num_roles );
 
 }
 
@@ -391,12 +428,6 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define SG_INVALID_FILE_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_USER_ID SG_INVALID_BLOCK_ID
 
-// gateway types for md_init
-#define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY
-#define SYNDICATE_AG       ms::ms_gateway_cert::ACQUISITION_GATEWAY
-#define SYNDICATE_RG       ms::ms_gateway_cert::REPLICA_GATEWAY
-#define SG_VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
-
 // gateway HTTP error codes (used by the AG and UG)
 #define SG_HTTP_TRYAGAIN    503
 
@@ -410,8 +441,11 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // limits
-#define SG_MAX_MANIFEST_LEN              100000000         // 100MB
+#define SG_MAX_CERT_LEN                  10*1024           // 10kb
+#define SG_MAX_MANIFEST_LEN              1024*1024L         // 1MB
+#define SG_MAX_DRIVER_LEN                10*1024*1024L      // 10MB
+#define SG_MAX_XATTR_LEN                 10*1024*1024L     // 10MB
 #define SG_MAX_BLOCK_LEN_MULTIPLER       5                 // i.e. a block download can't be more than 5x the size of a block
-                                                           // (there are some serious problems with the design of a closure that requires this, IMHO).
+                                                           // (there are some serious problems with the design of a driver that requires this, IMHO).
 
 #endif

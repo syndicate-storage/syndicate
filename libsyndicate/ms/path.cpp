@@ -54,6 +54,7 @@ int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, u
       }
    }
    
+   
    // build up the ms_path as we traverse our cached path
    path_ent->volume_id = volume_id;
    path_ent->file_id = file_id;
@@ -72,7 +73,7 @@ int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, u
 void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)( void* ) ) {
    
    SG_safe_free( path_ent->name );
-   
+
    if( path_ent->cls != NULL && free_cls ) {
       (*free_cls)( path_ent->cls );
       path_ent->cls = NULL;
@@ -89,19 +90,21 @@ void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) ) {
 }
 
 
-// parse an MS listing, initializing the given ms_listing structure
+// parse an MS listing, initializing the given ms_listing structure.
+// entries from the reply must come from their coordinators; we will verify that this is the case.
+// if we can't tell which coordinator signed it, it won't be included in the listing
 // return 0 on success
 // return -ENOMEM if we're out of memory 
-int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
+static int ms_client_parse_listing( struct ms_client* client, struct ms_listing* dst, ms::ms_reply* reply ) {
    
-   const ms::ms_listing& src = reply->listing();
+   ms::ms_listing* src = reply->mutable_listing();
    int rc = 0;
    
    memset( dst, 0, sizeof(struct ms_listing) );
    
-   if( src.status() != ms::ms_listing::NONE ) {
+   if( src->status() != ms::ms_listing::NONE ) {
       
-      dst->status = (src.status() == ms::ms_listing::NEW ? MS_LISTING_NEW : MS_LISTING_NOCHANGE);
+      dst->status = (src->status() == ms::ms_listing::NEW ? MS_LISTING_NEW : MS_LISTING_NOCHANGE);
    }
    else {
       
@@ -110,7 +113,7 @@ int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
 
    if( dst->status == MS_LISTING_NEW ) {
       
-      dst->type = src.ftype();
+      dst->type = src->ftype();
       dst->entries = SG_safe_new( vector<struct md_entry>() );
       
       if( dst->entries == NULL ) {
@@ -118,29 +121,45 @@ int ms_client_parse_listing( struct ms_listing* dst, ms::ms_reply* reply ) {
          return -ENOMEM;
       }
       
-      for( int i = 0; i < src.entries_size(); i++ ) {
+      for( int i = 0; i < src->entries_size(); i++ ) {
          
          struct md_entry ent;
-         rc = ms_entry_to_md_entry( src.entries(i), &ent );
+         
+         // confirm that this entry came from its coordinator
+         rc = ms_entry_verify( client, src->mutable_entries(i) );
+         if( rc != 0 ) {
+            
+            SG_error("Unverifiable entry %" PRIX64 " (rc = %d)\n", src->entries(i).file_id(), rc );
+            
+            ms_client_free_listing( dst );
+            memset( dst, 0, sizeof(struct ms_listing));
+            return -EBADMSG;
+         }
+        
+         rc = ms_entry_to_md_entry( src->entries(i), &ent );
          
          if( rc != 0 ) {
             
             // free all 
-            for( unsigned int i = 0; i < dst->entries->size(); i++ ) {
-               md_entry_free( &dst->entries->at(i) );
-            }
-            
-            SG_safe_delete( dst->entries );
+            ms_client_free_listing( dst );
+            memset( dst, 0, sizeof(struct ms_listing));
             return -ENOMEM;
          }
 
-         dst->entries->push_back( ent );
+         try {
+            dst->entries->push_back( ent );
+         }
+         catch( bad_alloc& ba ) {
+            
+            rc = -ENOMEM;
+            break;
+         }
       }
    }
    
    dst->error = reply->error();
 
-   return 0;
+   return rc;
 }
 
 // extract multiple entries from the listing 
@@ -177,7 +196,7 @@ int ms_client_listing_read_entries( struct ms_client* client, struct md_download
    }
    
    // get listing data 
-   rc = ms_client_parse_listing( &listing, &reply );
+   rc = ms_client_parse_listing( client, &listing, &reply );
    if( rc != 0 ) {
       
       SG_error("ms_client_parse_listing(%p) rc = %d\n", dlctx, rc );
@@ -357,6 +376,11 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct m
       // get the next child 
       memset( &result, 0, sizeof(struct ms_client_multi_result) );
       
+      if( i > 0 ) {
+          // set parent too 
+          (*path)[i].parent_id = (*path)[i-1].file_id;
+      }
+      
       rc = ms_client_getchild( client, &path->at(i), &result );
       
       if( rc != 0 ) {
@@ -379,23 +403,27 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct m
       }
       
       // fill in the information 
-      path->at(i).file_id = result.ents[0].file_id;
-      path->at(i).version = result.ents[0].version;
-      path->at(i).write_nonce = result.ents[0].write_nonce;
-      path->at(i).num_children = result.ents[0].num_children;
-      path->at(i).generation = result.ents[0].generation;
-      path->at(i).capacity = result.ents[0].capacity;
+      SG_debug("Got '%s' %" PRIX64 ".%" PRId64 ".%" PRId64 " (num_children = %" PRIu64 ", generation = %" PRId64 ", capacity = %" PRId64 ")\n",
+               result.ents[0].name, result.ents[0].file_id, result.ents[0].version, result.ents[0].write_nonce, result.ents[0].num_children,
+               result.ents[0].generation, result.ents[0].capacity );
+      
+      (*path)[i].file_id = result.ents[0].file_id;
+      (*path)[i].version = result.ents[0].version;
+      (*path)[i].write_nonce = result.ents[0].write_nonce;
+      (*path)[i].num_children = result.ents[0].num_children;
+      (*path)[i].generation = result.ents[0].generation;
+      (*path)[i].capacity = result.ents[0].capacity;
       
       // preserve this listing--move the data over
       ret_listings->ents[i] = result.ents[0];
-      ret_listings->num_processed = i;
+      ret_listings->num_processed = i+1;
       
       memset( &result.ents[0], 0, sizeof(struct md_entry) );
       
       // provide parent if we can 
       if( i > 0 ) {
          
-         path->at(i).parent_id = path->at(i-1).file_id;
+         (*path)[i].parent_id = path->at(i-1).file_id;
       }
       
       ms_client_multi_result_free( &result );
@@ -470,4 +498,15 @@ char* ms_path_to_string( ms_path_t* ms_path, int max_index ) {
    }
    
    return ret;
+}
+
+
+// get cls 
+void* ms_client_path_ent_get_cls( struct ms_path_ent* ent ) {
+    return ent->cls;
+}
+
+// set cls 
+void ms_client_path_ent_set_cls( struct ms_path_ent* ent, void* cls ) {
+    ent->cls = cls;
 }

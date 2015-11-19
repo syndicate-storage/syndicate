@@ -29,12 +29,14 @@
 // return 0 on success
 // return -ENOMEM on OOM 
 // NOTE: src must be read-locked
-static int UG_fs_export( struct md_entry* dest, struct fskit_entry* src, uint64_t parent_id, char const* parent_name, struct SG_gateway* gateway ) {
+static int UG_fs_export( struct md_entry* dest, char const* name, struct fskit_entry* src, uint64_t parent_id, struct SG_gateway* gateway ) {
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
    
    struct UG_inode* inode = NULL;
+
+   memset( dest, 0, sizeof( struct md_entry ) );
    
    // get type
    int type = fskit_entry_get_type( src );
@@ -50,35 +52,40 @@ static int UG_fs_export( struct md_entry* dest, struct fskit_entry* src, uint64_
       return -EINVAL;
    }
    
-   char* name = fskit_entry_get_name( src );
-   if( name == NULL ) {
+   char* name_dup = strdup( name );
+   if( name_dup == NULL ) {
       
-      return -ENOMEM;
-   }
-   
-   char* parent_name_dup = SG_strdup_or_null( parent_name );
-   if( parent_name_dup == NULL && parent_name != NULL ) {
-      
-      SG_safe_free( name );
       return -ENOMEM;
    }
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( src );
    
    dest->type = type;
-   dest->name = name;
+   dest->name = name_dup;
    dest->file_id = fskit_entry_get_file_id( src );
    
    fskit_entry_get_ctime( src, &dest->ctime_sec, &dest->ctime_nsec );
    fskit_entry_get_mtime( src, &dest->mtime_sec, &dest->mtime_nsec );
    
-   SG_manifest_get_modtime( UG_inode_manifest( inode ), &dest->manifest_mtime_sec, &dest->manifest_mtime_nsec );
+   if( type == FSKIT_ENTRY_TYPE_FILE ) {
+
+      if( inode != NULL && UG_inode_manifest( inode ) != NULL ) {
+
+         // file already exists
+         SG_manifest_get_modtime( UG_inode_manifest( inode ), &dest->manifest_mtime_sec, &dest->manifest_mtime_nsec );
+      }
+      else {
+
+         // new file
+         dest->manifest_mtime_sec = dest->mtime_sec;
+         dest->manifest_mtime_nsec = dest->mtime_nsec;
+      }
+   }
    
-   dest->owner = fskit_entry_get_owner( src );
+   dest->owner = SG_gateway_user_id( gateway );
    dest->mode = fskit_entry_get_mode( src );
    dest->size = fskit_entry_get_size( src );
    dest->parent_id = parent_id;
-   dest->parent_name = parent_name_dup;
    
    dest->max_read_freshness = conf->default_read_freshness;
    dest->max_write_freshness = conf->default_write_freshness;
@@ -93,6 +100,7 @@ static int UG_fs_export( struct md_entry* dest, struct fskit_entry* src, uint64_
 // return 0 on success
 // return -errno on failure (i.e. it exists, we don't have permission, we get a network error, etc.)
 // NOTE: fent will be write-locked by fskit
+// NOTE: for files, this will disable truncate (so the subsequent trunc(2) that follows a creat(2) does not incur an extra round-trip)
 static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, mode_t mode, struct UG_inode** ret_inode_data, bool is_mkdir ) {
    
    int rc = 0;
@@ -104,23 +112,16 @@ static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_meta
    // inode data 
    struct UG_inode* inode = NULL;
    
-   uint64_t file_id = 0;
-   int64_t write_nonce = 0;
-   int64_t file_version = md_random64();
-   
+   struct md_entry inode_data_out;
    struct md_entry inode_data;
-   struct fskit_entry* parent = fskit_route_metadata_parent( route_metadata );
-   char* parent_name = fskit_entry_get_name( parent );
+   struct fskit_entry* parent = fskit_route_metadata_get_parent( route_metadata );
+   char* name = fskit_route_metadata_get_name( route_metadata );
    
-   if( parent_name == NULL ) {
-      
-      return -ENOMEM;
-   }
+   memset( &inode_data, 0, sizeof(struct md_entry) );
+   memset( &inode_data_out, 0, sizeof(struct md_entry) );
    
    // generate the request
-   rc = UG_fs_export( &inode_data, fent, fskit_entry_get_file_id( parent ), parent_name, gateway );
-   
-   SG_safe_free( parent_name );
+   rc = UG_fs_export( &inode_data, fskit_route_metadata_get_name( route_metadata ), fent, fskit_entry_get_file_id( parent ), gateway );
    
    if( rc != 0 ) {
       
@@ -129,32 +130,35 @@ static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_meta
    
    // propagate the caller and Syndicate-specific fields...
    inode_data.mode = mode;
-   inode_data.version = file_version;
-   inode_data.owner = SG_gateway_user_id( gateway );
+   inode_data.version = 1;
+   inode_data.write_nonce = 1;
    
    // make the request
    if( is_mkdir ) {
       
       method_name = "ms_client_mkdir";
-      rc = ms_client_mkdir( ms, &file_id, &write_nonce, &inode_data );   
+      rc = ms_client_mkdir( ms, &inode_data_out, &inode_data );   
    }
    else {
       
       method_name = "ms_client_create";
-      rc = ms_client_create( ms, &file_id, &write_nonce, &inode_data );
+      rc = ms_client_create( ms, &inode_data_out, &inode_data );
    }
    
    md_entry_free( &inode_data );
    
    if( rc != 0 ) {
       
-      SG_error("%s('%s') rc = %d\n", method_name, fskit_route_metadata_path( route_metadata ), rc );
+      SG_error("%s('%s') rc = %d\n", method_name, fskit_route_metadata_get_path( route_metadata ), rc );
       
+      md_entry_free( &inode_data_out );
       return rc;
    }
    
    // update the child with the new inode number 
-   fskit_entry_set_file_id( fent, file_id );
+   fskit_entry_set_file_id( fent, inode_data_out.file_id );
+   fskit_entry_set_mode( fent, inode_data_out.mode );
+   fskit_entry_set_owner( fent, inode_data_out.owner );
    
    // success!  create the inode data 
    inode = UG_inode_alloc( 1 );
@@ -163,17 +167,32 @@ static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_meta
       return -ENOMEM;
    }
    
-   rc = UG_inode_init( inode, fent, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), file_version );
+   rc = UG_inode_init( inode, name, fent, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), inode_data_out.version );
    if( rc != 0 ) {
       
-      SG_error("UG_inode_init('%s') rc = %d\n", fskit_route_metadata_path( route_metadata ), rc );
+      SG_error("UG_inode_init('%s') rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
       
       SG_safe_free( inode );
+      md_entry_free( &inode_data_out );
       return rc;
    }
    
+   UG_inode_set_write_nonce( inode, inode_data_out.write_nonce );
+   UG_inode_set_max_read_freshness( inode, inode_data_out.max_read_freshness );
+   UG_inode_set_max_write_freshness( inode, inode_data_out.max_write_freshness );
+   SG_manifest_set_coordinator_id( UG_inode_manifest( inode ), inode_data_out.coordinator );
+
+   // NOTE: should be equal to file's modtime
+   SG_manifest_set_modtime( UG_inode_manifest( inode ), inode_data.manifest_mtime_sec, inode_data.manifest_mtime_nsec );
+   
    // success!
    *ret_inode_data = inode;
+   md_entry_free( &inode_data_out );
+   
+   UG_inode_bind_fskit_entry( inode, fent );
+
+   // mark as creating, so the following trunc(2) call will avoid an extra network round-trip
+   UG_inode_set_creating( inode, true );
    
    return 0;
 }
@@ -263,10 +282,10 @@ static int UG_fs_open( struct fskit_core* fs, struct fskit_route_metadata* route
    struct UG_inode* inode = NULL;
    
    // refresh path 
-   rc = UG_consistency_path_ensure_fresh( gateway, fskit_route_metadata_path( route_metadata ) );
+   rc = UG_consistency_path_ensure_fresh( gateway, fskit_route_metadata_get_path( route_metadata ) );
    if( rc != 0 ) {
       
-      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", fskit_route_metadata_path( route_metadata ), rc );
+      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
       return rc;
    }
    
@@ -274,10 +293,10 @@ static int UG_fs_open( struct fskit_core* fs, struct fskit_route_metadata* route
    if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_DIR ) {
       
       // ensure the listing is fresh 
-      rc = UG_consistency_dir_ensure_fresh( gateway, fskit_route_metadata_path( route_metadata ) );
+      rc = UG_consistency_dir_ensure_fresh( gateway, fskit_route_metadata_get_path( route_metadata ) );
       if( rc != 0 ) {
          
-         SG_error("UG_consistency_dir_ensure_fresh('%s') rc = %d\n", fskit_route_metadata_path( route_metadata ), rc );
+         SG_error("UG_consistency_dir_ensure_fresh('%s') rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
          return rc;
       }
       
@@ -372,6 +391,7 @@ static int UG_fs_stat( struct fskit_core* fs, struct fskit_route_metadata* route
 // return -EISDIR if the inode is a directory
 // return -errno on network error
 // NOTE: inode->entry must be write-locked (e.g. by fskit)
+// NOTE: this method will do nothing if it is on the creat(2) I/O path, since it doesn't make much sense for Syndicate to truncate immediately after creating.
 static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, off_t new_size ) {
    
    int rc = 0;
@@ -380,15 +400,15 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    struct ms_client* ms = SG_gateway_ms( gateway );
    struct UG_vacuumer* vacuumer = UG_state_vacuumer( ug );
    
-   int64_t new_write_nonce = 0;
+   struct md_entry inode_data_out;
+   memset( &inode_data_out, 0, sizeof(struct md_entry) );
    
    struct SG_manifest new_manifest;     // manifest after truncate
    struct SG_manifest removed;
    
-   struct UG_replica_context rctx;
+   struct UG_replica_context* rctx = NULL;
    struct UG_vacuum_context vctx;
    
-   struct timespec old_manifest_timestamp = UG_inode_old_manifest_modtime( inode );
    struct timespec new_manifest_timestamp;
    
    int64_t new_manifest_timestamp_sec = 0;
@@ -406,6 +426,14 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       
       return -ENOENT;
    }
+
+   // if creating, then this trunc(2) is part of a creat(2).
+   // allow subsequent trunc(2), but claim that this one succeeded.
+   if( UG_inode_creating( inode ) ) {
+      SG_debug("Skip truncate on %" PRIX64 ", since it is being created\n", UG_inode_file_id( inode ));
+      UG_inode_set_creating( inode, false );
+      return 0;
+   }
    
    // can't truncate a directory 
    if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_DIR ) {
@@ -413,7 +441,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return -EISDIR;
    }
    
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
+   rc = UG_inode_export( &inode_data, inode, 0 );
    if( rc != 0 ) {
       
       return rc;
@@ -460,16 +488,28 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return rc;
    }
    
+   // prepare the replication request 
+   rctx = UG_replica_context_new();
+   if( rctx == NULL ) {
+      
+      // OOM 
+      SG_manifest_free( &new_manifest );
+      md_entry_free( &inode_data );
+      UG_vacuum_context_free( &vctx );
+      return -ENOMEM;
+   }
+   
    // replicate truncated manifest...
    SG_manifest_truncate( &new_manifest, new_max_block );
    
-   rc = UG_replica_context_init( &rctx, ug, fs_path, inode, &new_manifest, &old_manifest_timestamp, NULL );
+   rc = UG_replica_context_init( rctx, ug, fs_path, inode, &new_manifest, NULL );
    if( rc != 0 ) {
       
       // OOM 
       SG_manifest_free( &new_manifest );
       UG_vacuum_context_free( &vctx );
       md_entry_free( &inode_data );
+      SG_safe_free( rctx );
       return rc;
    }
    
@@ -479,7 +519,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    
    // update on the MS
    inode_data.size = new_size;
-   inode_data.version = md_random64();  // next version...
+   inode_data.version += 1;     // next version
    inode_data.manifest_mtime_sec = new_manifest_timestamp_sec;          // preserve modtime of manifest we replicated
    inode_data.manifest_mtime_nsec = new_manifest_timestamp_nsec;
    
@@ -487,20 +527,23 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    new_manifest_timestamp.tv_nsec = new_manifest_timestamp_nsec;
    
    // update size and version remotely
-   rc = ms_client_update( ms, &new_write_nonce, &inode_data );
+   rc = ms_client_update( ms, &inode_data_out, &inode_data );
    
    md_entry_free( &inode_data );
    
    if( rc != 0 ) {
       
       UG_vacuum_context_free( &vctx );
+      UG_replica_context_free( rctx );
+      SG_safe_free( rctx );
+      md_entry_free( &inode_data_out );
       
       SG_error("ms_client_update('%s', size=%jd) rc = %d\n", fs_path, new_size, rc );
       return rc;
    }
    
    // replicate truncated manifest to all RGs
-   rc = UG_replicate( gateway, &rctx );
+   rc = UG_replicate( gateway, rctx );
    
    if( rc != 0 ) {
       
@@ -508,11 +551,15 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       SG_error("UG_replicate('%s') rc = %d\n", fs_path, rc );
       
       UG_vacuum_context_free( &vctx );
+      UG_replica_context_free( rctx );
+      SG_safe_free( rctx );
+      md_entry_free( &inode_data_out );
+      
       return rc;
    }
    
    // propagate write nonce and old manifest timestamp...
-   UG_inode_set_write_nonce( inode, new_write_nonce );
+   UG_inode_set_write_nonce( inode, inode_data_out.xattr_nonce );
    UG_inode_set_old_manifest_modtime( inode, &new_manifest_timestamp );
    
    // truncate locally 
@@ -535,6 +582,8 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    }
       
    UG_vacuum_context_free( &vctx );
+   UG_replica_context_free( rctx );
+   SG_safe_free( rctx );
    
    return rc;
 }
@@ -544,6 +593,8 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -EISDIR if the entry is a directory.
+// return -EREMOTEIO on failed network I/O
+// return the non-zero error code from the remote truncate if the remote truncate failed
 // NOTE: inode->entry should be write-locked
 static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, off_t new_size ) {
    
@@ -592,6 +643,17 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
       
       // network error 
       SG_error("SG_client_request_send(TRUNC '%s' %jd) rc = %d\n", fs_path, new_size, rc );
+      
+      // timed out? retry 
+      if( rc == -ETIMEDOUT ) {
+         rc = -EAGAIN;
+      }
+      
+      // propagate retries; everything else is remote I/O error 
+      if( rc != -EAGAIN ) {
+         rc = -EREMOTEIO;
+      }
+      
       return rc;
    }
    
@@ -599,7 +661,7 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
       
       // failed to process
       SG_error("SG_client_request_send(TRUNC '%s' %jd) reply error = %d\n", fs_path, new_size, rc );
-      return rc;
+      return reply.error_code();
    }
    
    // truncate locally 
@@ -624,7 +686,7 @@ static int UG_fs_trunc( struct fskit_core* fs, struct fskit_route_metadata* rout
    
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   char* path = fskit_route_metadata_path( route_metadata );
+   char* path = fskit_route_metadata_get_path( route_metadata );
    
    UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
                          UG_fs_trunc_local( gateway, path, inode, new_size ),
@@ -647,6 +709,7 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    
    struct md_entry inode_data;
+   struct SG_request_data reqdat;       // for the driver
    
    struct UG_vacuum_context vctx;
    
@@ -659,7 +722,7 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    UG_inode_set_deleting( inode, true );
    
    // export...
-   rc = UG_inode_export( &inode_data, inode, 0, NULL );
+   rc = UG_inode_export( &inode_data, inode, 0 );
    if( rc != 0 ) {
       
       UG_inode_set_deleting( inode, false );
@@ -667,8 +730,8 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    }
    
    // if this is a file, and we're the coordinator, vacuum it 
-   if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && fskit_entry_get_file_id( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_FILE ) {
-         
+   if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_FILE ) {
+      
       memset( &vctx, 0, sizeof(struct UG_vacuum_context) );
       
       rc = UG_vacuum_context_init( &vctx, ug, fs_path, inode, UG_inode_replaced_blocks( inode ) );
@@ -677,6 +740,7 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
          SG_error("UG_vacuum_context_init('%s') rc = %d\n", fs_path, rc );
          
          md_entry_free( &inode_data );
+         SG_request_data_free( &reqdat );
          UG_inode_set_deleting( inode, false );
          return rc;
       }
@@ -694,9 +758,9 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
          
          break;
       }
+      
+      UG_vacuum_context_free( &vctx );
    }
-   
-   UG_vacuum_context_free( &vctx );
    
    // delete on the MS
    rc = ms_client_delete( ms, &inode_data );
@@ -704,6 +768,7 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    
    if( rc != 0 ) {
       
+      SG_request_data_free( &reqdat );
       UG_inode_set_deleting( inode, false );
       SG_error("ms_client_delete('%s') rc = %d\n", fs_path, rc );
       return rc;
@@ -723,7 +788,8 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
 // if the inode is a directory, ask the MS directly.
 // return 0 on success
 // return -ENOMEM on OOM 
-// return -errno on network error 
+// return -EREMOTEIO on network error
+// return non-zero error code from the remote unlink if it failed remotely
 static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode ) {
    
    int rc = 0;
@@ -746,7 +812,7 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
    }
    
    // NOTE: no vacuum ticket; the receiving gateway can verify the write-permission with the certificate
-   rc = SG_client_request_DETACH_setup( gateway, &req, &reqdat, NULL );
+   rc = SG_client_request_DETACH_setup( gateway, &req, &reqdat );
    if( rc != 0 ) {
       
       // OOM 
@@ -762,6 +828,17 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
       
       // network error 
       SG_error("SG_client_request_send(DETACH '%s') rc = %d\n", fs_path, rc );
+      
+      // timed out? retry 
+      if( rc == -ETIMEDOUT ) {
+         rc = -EAGAIN;
+      }
+      
+      // propagate retries; everything else is remote I/O error 
+      if( rc != -EAGAIN ) {
+         rc = -EREMOTEIO;
+      }
+      
       return rc;
    }
    
@@ -769,7 +846,7 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
       
       // failed to process
       SG_error("SG_client_request_send(DETACH '%s') reply error = %d\n", fs_path, rc );
-      return rc;
+      return reply.error_code();
    }
    
    // blow away local cached state 
@@ -781,22 +858,49 @@ static int UG_fs_detach_remote( struct SG_gateway* gateway, char const* fs_path,
 
 // fskit route for detaching a file or directory.
 // In the UG, this simply tells the MS to delete the entry.
-// if we're the coordinator, and this is a file, then garbage-collect all of its blocks
+// if we're the coordinator, and this is a file, then garbage-collect all of its blocks.
+// This method is used when the gateway is in operation, since because Syndicate does not 
+// support hard links, this method will get called only when the user unlinks or rmdirs and inode.
+// We switch over to UG_fs_destroy when cleaning up on exit.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EAGAIN if the caller should try detaching again
 // return -errno on failure to connect to the MS 
 // NOTE: fent should not be locked at all (it will be unreferenceable)
-static int UG_fs_detach( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, void* inode_cls ) {
+static int UG_fs_detach_and_destroy( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, void* inode_cls ) {
    
    int rc = 0;
    struct UG_inode* inode = (struct UG_inode*)inode_cls;
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
-   char* path = fskit_route_metadata_path( route_metadata );
+   char* path = fskit_route_metadata_get_path( route_metadata );
    
-   UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
-                         UG_fs_detach_local( gateway, fskit_route_metadata_path( route_metadata ), inode ),
-                         UG_fs_detach_remote( gateway, fskit_route_metadata_path( route_metadata ), inode ), &rc );
+   fskit_entry_rlock( fent );
+   
+   int type = fskit_entry_get_type( fent );
+   
+   fskit_entry_unlock( fent );
+   
+   if( type == FSKIT_ENTRY_TYPE_FILE ) {
+       
+        // route request to coordinator
+        UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
+                              UG_fs_detach_local( gateway, fskit_route_metadata_get_path( route_metadata ), inode ),
+                              UG_fs_detach_remote( gateway, fskit_route_metadata_get_path( route_metadata ), inode ), &rc );
+        
+        if( rc != 0 ) {
+            
+            SG_error("UG_try_or_coordinate( DETACH '%s' ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
+        }
+   }
+   else {
+       
+       // send directly to the MS 
+       rc = UG_fs_detach_local( gateway, fskit_route_metadata_get_path( route_metadata ), inode );
+       if( rc != 0 ) {
+            
+            SG_error("UG_fs_detach_local('%s') rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
+        }
+   }
    
    if( rc == 0 ) {
       
@@ -809,15 +913,41 @@ static int UG_fs_detach( struct fskit_core* fs, struct fskit_route_metadata* rou
 }
 
 
+// fskit route for destroying a file or directory inode data 
+// This is used only for shutting down the gateway and freeing memory.
+// return 0 on success 
+static int UG_fs_destroy( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, void* inode_cls ) {
+   
+   struct UG_inode* inode = (struct UG_inode*)inode_cls;
+   
+   if( inode != NULL ) {
+      UG_inode_free( inode );
+      SG_safe_free( inode );
+      
+      fskit_entry_set_user_data( fent, NULL );
+      
+      SG_debug("freed %p's inode %p\n", fent, inode_cls );
+   }
+   else {
+      
+      SG_warn("entry %p inode already freed\n", fent);
+   }
+   
+   return 0;
+}
+
 // ask the MS to rename an inode for us.
 // old_parent and new_parent must be at least read-locked
+// we must be the coordinator of old_inode
 // return 0 on success
 // return -ENOMEM on OOM
 // return negative on network error
 // NOTE: old_inode->entry should be write-locked by fskit
-static int UG_fs_rename_local( struct SG_gateway* gateway, struct fskit_entry* old_parent, char const* old_path, struct UG_inode* old_inode, struct fskit_entry* new_parent, char const* new_path, struct UG_inode* new_inode ) {
+static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_parent, char const* old_path, struct UG_inode* old_inode, struct fskit_entry* new_parent, char const* new_path, struct UG_inode* new_inode ) {
    
    int rc = 0;
+   
+   struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
    
    struct md_entry old_fent_metadata;
    struct md_entry new_fent_metadata;
@@ -825,30 +955,36 @@ static int UG_fs_rename_local( struct SG_gateway* gateway, struct fskit_entry* o
    uint64_t old_parent_id = fskit_entry_get_file_id( old_parent );
    uint64_t new_parent_id = fskit_entry_get_file_id( new_parent );
    
-   char* old_parent_name = fskit_entry_get_name( old_parent );
-   char* new_parent_name = fskit_entry_get_name( new_parent );
+   unsigned char* old_xattr_hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
    
-   int64_t new_write_nonce = 0;
+   struct md_entry fent_out;
+   memset( &fent_out, 0, sizeof(struct md_entry) );
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    
-   if( old_parent_name == NULL || new_parent_name == NULL ) {
-      
-      SG_safe_free( old_parent_name );
-      SG_safe_free( new_parent_name );
+   if( old_xattr_hash == NULL ) {
       
       return -ENOMEM;
    }
    
-   rc = UG_inode_export( &old_fent_metadata, old_inode, old_parent_id, old_parent_name );
+   rc = UG_inode_export( &old_fent_metadata, old_inode, old_parent_id );
    if( rc != 0 ) {
       
+      SG_safe_free( old_xattr_hash );
+      return rc;
+   }
+   // int UG_inode_export_xattr_hash( struct fskit_core* fs, uint64_t gateway_id, struct UG_inode* inode, unsigned char* xattr_hash );
+   rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), old_inode, old_xattr_hash );
+   if( rc != 0 ) {
+      
+      SG_safe_free( old_xattr_hash );
+      md_entry_free( &old_fent_metadata );
       return rc;
    }
    
    if( new_inode != NULL ) {
       
-      rc = UG_inode_export( &new_fent_metadata, new_inode, new_parent_id, new_parent_name );
+      rc = UG_inode_export( &new_fent_metadata, new_inode, new_parent_id );
       if( rc != 0 ) {
          
          md_entry_free( &old_fent_metadata );
@@ -869,8 +1005,10 @@ static int UG_fs_rename_local( struct SG_gateway* gateway, struct fskit_entry* o
       new_fent_metadata.file_id = 0;
    }
    
+   old_fent_metadata.xattr_hash = old_xattr_hash;
+   
    // do the rename on the MS
-   rc = ms_client_rename( ms, &new_write_nonce, &old_fent_metadata, &new_fent_metadata );
+   rc = ms_client_rename( ms, &fent_out, &old_fent_metadata, &new_fent_metadata );
    
    md_entry_free( &old_fent_metadata );
    md_entry_free( &new_fent_metadata );
@@ -882,6 +1020,8 @@ static int UG_fs_rename_local( struct SG_gateway* gateway, struct fskit_entry* o
       return rc;
    }
    
+   // TODO: propagate fent_out
+   
    return rc;
 }
 
@@ -890,11 +1030,14 @@ static int UG_fs_rename_local( struct SG_gateway* gateway, struct fskit_entry* o
 // if the inode is a directory, just ask the MS directly.
 // return 0 on success 
 // return -ENOMEM on OOM 
-// return -errno if we had a network error 
+// return -EREMOTEIO on failed network I/O
+// return -EAGAIN if the request timed out, or should be retried 
+// return the non-zero error code if the rename failed on the remote gateway
 // NOTE: inode->entry should be write-locked by fskit
-static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* old_parent, char const* fs_path, struct UG_inode* inode, struct fskit_entry* new_parent, char const* new_path, struct UG_inode* new_inode ) {
+static int UG_fs_rename_remote( struct fskit_core* fs, struct fskit_entry* old_parent, char const* fs_path, struct UG_inode* inode, struct fskit_entry* new_parent, char const* new_path, struct UG_inode* new_inode ) {
    
    int rc = 0;
+   struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
    
    SG_messages::Request req;
    SG_messages::Reply reply;
@@ -906,7 +1049,7 @@ static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* 
    // if this is a directory, then this is a "local" rename--i.e. we have the ability to ask the MS directly, since the MS is the coordinator of all directories.
    if( fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_DIR ) {
       
-      return UG_fs_rename_local( gateway, old_parent, fs_path, inode, new_parent, new_path, new_inode );
+      return UG_fs_rename_local( fs, old_parent, fs_path, inode, new_parent, new_path, new_inode );
    }
    
    SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
@@ -934,6 +1077,17 @@ static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* 
       
       // network error 
       SG_error("SG_client_request_send(RENAME '%s' to '%s') rc = %d\n", fs_path, new_path, rc );
+      
+      // timed out? retry 
+      if( rc == -ETIMEDOUT ) {
+         rc = -EAGAIN;
+      }
+      
+      // propagate retries; everything else is remote I/O error 
+      if( rc != -EAGAIN ) {
+         rc = -EREMOTEIO;
+      }
+      
       return rc;
    }
    
@@ -941,7 +1095,7 @@ static int UG_fs_rename_remote( struct SG_gateway* gateway, struct fskit_entry* 
       
       // failed to process
       SG_error("SG_client_request_send(DETACH '%s' to '%s') reply error = %d\n", fs_path, new_path, rc );
-      return rc;
+      return reply.error_code();
    }
    
    return rc;
@@ -959,7 +1113,7 @@ static int UG_fs_rename( struct fskit_core* fs, struct fskit_route_metadata* rou
    struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    struct UG_inode* new_inode = NULL;
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
-   char* path = fskit_route_metadata_path( route_metadata );
+   char* path = fskit_route_metadata_get_path( route_metadata );
    
    if( dest != NULL ) {
       
@@ -967,8 +1121,8 @@ static int UG_fs_rename( struct fskit_core* fs, struct fskit_route_metadata* rou
    }
    
    UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
-                         UG_fs_rename_remote( gateway, fskit_route_metadata_parent( route_metadata ), path, inode, fskit_route_metadata_new_parent( route_metadata ), new_path, new_inode ),
-                         UG_fs_rename_local( gateway, fskit_route_metadata_parent( route_metadata ), path, inode, fskit_route_metadata_new_parent( route_metadata ), new_path, new_inode ),
+                         UG_fs_rename_remote( fs, fskit_route_metadata_get_parent( route_metadata ), path, inode, fskit_route_metadata_get_new_parent( route_metadata ), new_path, new_inode ),
+                         UG_fs_rename_local( fs, fskit_route_metadata_get_parent( route_metadata ), path, inode, fskit_route_metadata_get_new_parent( route_metadata ), new_path, new_inode ),
                          &rc );
    
    return rc;
@@ -1044,14 +1198,23 @@ int UG_fs_install_methods( struct fskit_core* core ) {
       return rh;
    }
    
+   /*
    rh = fskit_route_detach( core, FSKIT_ROUTE_ANY, UG_fs_detach, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
       SG_error("fskit_route_detach(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
       return rh;
    }
+   */
    
-   rh = fskit_route_rename( core, FSKIT_ROUTE_ANY, UG_fs_rename, FSKIT_INODE_SEQUENTIAL );
+   rh = fskit_route_destroy( core, FSKIT_ROUTE_ANY, UG_fs_detach_and_destroy, FSKIT_CONCURRENT );
+   if( rh < 0 ) {
+      
+      SG_error("fskit_route_destroy(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
+      return rh;
+   }
+   
+   rh = fskit_route_rename( core, FSKIT_ROUTE_ANY, UG_fs_rename, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
       SG_error("fskit_route_rename(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
@@ -1061,6 +1224,26 @@ int UG_fs_install_methods( struct fskit_core* core ) {
    return 0;
 }
 
+
+// remove all fskit methods, but install a detach method that simply frees the inode 
+int UG_fs_install_shutdown_methods( struct fskit_core* fs ) {
+   
+   int rc = fskit_unroute_all( fs );
+   if( rc != 0 ) {
+      
+      SG_error("fskit_unroute_all rc = %d\n", rc );
+      return rc;
+   }
+   
+   int rh = fskit_route_destroy( fs, FSKIT_ROUTE_ANY, UG_fs_destroy, FSKIT_CONCURRENT );
+   if( rh < 0 ) {
+      
+      SG_error("fskit_route_detach(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
+      return rh;
+   }
+   
+   return 0;
+}
 
 // remove all fskit methods 
 int UG_fs_uninstall_methods( struct fskit_core* fs ) {

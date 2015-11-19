@@ -145,6 +145,12 @@ unsigned char* sha256_hash_data( char const* input, size_t len ) {
    return obuf;
 }
 
+// hash a string, and put the output in an already-allocated buf 
+// output needs at least SHA256_DIGEST_LENGTH bytes
+void sha256_hash_buf( char const* input, size_t len, unsigned char* output ) {
+   SHA256( (unsigned char*)input, len, output );
+}
+
 size_t sha256_len(void) {
    return SHA256_DIGEST_LENGTH;
 }
@@ -179,6 +185,21 @@ int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 ) {
 
 
 // make a sha-256 hash printable
+// write it to buf (should be at least 2 * SHA256_DIGEST_LENGTH + 1 bytes)
+void sha256_printable_buf( unsigned char const* hash, char* ret ) {
+   
+   char buf[3];
+   for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
+      sprintf(buf, "%02x", hash[i] );
+      ret[2*i] = buf[0];
+      ret[2*i + 1] = buf[1];
+   }
+   
+   ret[ 2*SHA256_DIGEST_LENGTH ] = '\0';
+   return;
+}
+
+// make a sha-256 hash printable
 // return the printable SHA256 on success
 // return NULL on OOM 
 char* sha256_printable( unsigned char const* hash ) {
@@ -188,15 +209,10 @@ char* sha256_printable( unsigned char const* hash ) {
       return NULL;
    }
    
-   char buf[3];
-   for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
-      sprintf(buf, "%02x", hash[i] );
-      ret[2*i] = buf[0];
-      ret[2*i + 1] = buf[1];
-   }
-   
+   sha256_printable_buf( hash, ret );
    return ret;
 }
+
 
 // make a string of data printable
 // return the printable SHA256 on success
@@ -352,16 +368,19 @@ char* md_load_file( char const* path, off_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
    if( rc != 0 ) {
+      *size = -errno;
       return NULL;
    }
    
    char* ret = SG_CALLOC( char, statbuf.st_size );
    if( ret == NULL ) {
+      *size = -ENOMEM;
       return NULL;
    }
    
    FILE* f = fopen( path, "r" );
    if( !f ) {
+      *size = -errno;
       SG_safe_free( ret );
       return NULL;
    }
@@ -369,6 +388,7 @@ char* md_load_file( char const* path, off_t* size ) {
    *size = fread( ret, 1, statbuf.st_size, f );
    
    if( *size != statbuf.st_size ) {
+      *size = -errno;
       SG_safe_free( ret );
       fclose( f );
       return NULL;
@@ -378,7 +398,70 @@ char* md_load_file( char const* path, off_t* size ) {
    return ret;
 }
 
-// read, but mask EINTR 
+
+// write a file from RAM to the given path.
+// the file must not exist previously.
+// this method succeeds in writing the whole file, or no file is written.
+// return 0 on success 
+// return -errno on error (filesystem-related errors)
+int md_write_file( char const* path, char const* data, size_t len, mode_t mode ) {
+   
+   int rc = 0;
+   ssize_t nw = 0;
+   int fd = open( path, O_CREAT | O_EXCL | O_TRUNC | O_WRONLY, mode );
+   
+   if( fd < 0 ) {
+      
+      rc = -errno;
+      SG_error("open('%s') rc = %d\n", path, rc );
+      return rc;
+   }
+   
+   nw = md_write_uninterrupted( fd, data, len );
+   if( nw < 0 ) {
+      
+      unlink( path );
+      close( fd );
+      SG_error("md_write_uninterrupted('%s') rc = %d\n", path, (int)nw );
+      return (int)nw;
+   }
+      
+   if( (unsigned)nw != len ) {
+      
+      unlink( path );
+      close( fd );
+      SG_error("md_write_uninterrupted('%s') rc = %d\n", path, (int)nw );
+      return (int)nw;
+   }
+   
+   rc = fsync( fd );
+   if( rc != 0 ) {
+      
+      rc = -errno;
+      unlink( path );
+      close( fd );
+      
+      SG_error("fsync(%d ('%s')) rc = %d\n", fd, path, rc );
+      return rc;
+   }
+   
+   rc = close( fd );
+   if( rc != 0 ) {
+      
+      rc = -errno;
+      unlink(path);
+      
+      SG_error("unlink(%d ('%s')) rc = %d\n", fd, path, rc );
+      return rc;
+   }
+   
+   return 0;
+}
+
+// read, but mask EINTR
+// return the number of bytes read on success
+// return negative on error
+// return non-negative but less than len on EOF
 ssize_t md_read_uninterrupted( int fd, char* buf, size_t len ) {
    
    ssize_t num_read = 0;
@@ -981,6 +1064,8 @@ static int md_zlib_err( int zerr ) {
 }
 
 // compress a string, returning the compressed string.
+// return 0 on success, and set *out and *out_len to be a malloc'ed buffer containing the deflated data from in.
+// return -ENOMEM on OOM
 int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
    uint32_t out_buf_len = compressBound( in_len );
@@ -1010,6 +1095,8 @@ int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
 }
 
 // decompress a string, returning the normal string 
+// return 0 on success, and set *out and *out_len to refer to a malloc'ed buffer and its length that contain the inflated data from in.
+// return -ENOMEM on OOM
 int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
    
    uLongf out_buf_len = *out_len;
@@ -1222,6 +1309,20 @@ off_t md_response_buffer_size( md_response_buffer_t* rb ) {
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       ret += rb->at(i).second;
    }
+   return ret;
+}
+
+
+// duplicate a buffer of RAM
+// return the new pointer on success
+// return NULL on OOM 
+void* md_memdup( void* buf, size_t len ) {
+   char* ret = SG_CALLOC( char, len );
+   if( ret == NULL ) {
+      return NULL;
+   }
+
+   memcpy( ret, buf, len );
    return ret;
 }
    

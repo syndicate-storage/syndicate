@@ -49,7 +49,7 @@ struct ms_client_listdir_context {
 
 extern "C" {
    
-int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t parent_capacity, struct ms_client_multi_result* results );
+int ms_client_listdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t dir_capacity, struct ms_client_multi_result* results );
 int ms_client_diffdir( struct ms_client* client, uint64_t parent_id, int64_t num_children, int64_t least_unknown_generation, struct ms_client_multi_result* results );
 
 }
