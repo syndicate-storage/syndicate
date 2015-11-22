@@ -552,7 +552,7 @@ static int SG_config_merge_opts( struct md_syndicate_conf* conf, struct md_opts*
 // return -ENOENT if there is no driver for this gateway
 // return -ENOMEM on OOM
 // return -errno on failure to initialize the driver
-int SG_gateway_driver_init_internal( struct ms_client* ms, struct md_syndicate_conf* conf, struct SG_driver* driver ) {
+static int SG_gateway_driver_init_internal( struct ms_client* ms, struct md_syndicate_conf* conf, struct SG_driver* driver, int num_instances ) {
    
    // get the driver text 
    char* driver_text = NULL;
@@ -584,7 +584,7 @@ int SG_gateway_driver_init_internal( struct ms_client* ms, struct md_syndicate_c
    }
    
    // create the driver
-   rc = SG_driver_init( driver, ms->gateway_pubkey, ms->gateway_key, conf->driver_exec_path, conf->driver_roles, conf->num_driver_roles, driver_text, driver_text_len );
+   rc = SG_driver_init( driver, ms->gateway_pubkey, ms->gateway_key, conf->driver_exec_path, conf->driver_roles, conf->num_driver_roles, num_instances, driver_text, driver_text_len );
    
    SG_safe_free( driver_text );
    
@@ -599,7 +599,7 @@ int SG_gateway_driver_init_internal( struct ms_client* ms, struct md_syndicate_c
 // return -ENOMEM on OOM
 // return -errno on failure to initialize the driver
 int SG_gateway_driver_init( struct SG_gateway* gateway, struct SG_driver* driver ) {
-   return SG_gateway_driver_init_internal( SG_gateway_ms( gateway ), SG_gateway_conf( gateway ), driver );
+   return SG_gateway_driver_init_internal( SG_gateway_ms( gateway ), SG_gateway_conf( gateway ), driver, gateway->num_iowqs );
 }
 
 
@@ -810,7 +810,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
       
       goto SG_gateway_init_error;
    }
-   
+  
    // allocate I/O work queues 
    iowqs = SG_CALLOC( struct md_wq, max_num_iowqs );
    
@@ -908,7 +908,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    // load driver 
    if( !opts->ignore_driver ) {
       
-      rc = SG_gateway_driver_init_internal( ms, conf, driver );
+      rc = SG_gateway_driver_init_internal( ms, conf, driver, max_num_iowqs );
       if( rc != 0 && rc != -ENOENT ) {
          
          SG_error("SG_gateway_driver_init_internal rc = %d\n", rc );
@@ -966,7 +966,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    signal( SIGPIPE, SIG_IGN );
 
    // start driver
-   if( driver != NULL ) { 
+   if( driver_inited ) { 
 
       rc = SG_driver_procs_start( driver ); 
       if( rc != 0 ) {
@@ -1138,6 +1138,7 @@ int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, int argc
    md_opts_set_client( &opts, md_opts_get_client( overrides ) );
    md_opts_set_gateway_type( &opts, md_opts_get_gateway_type( overrides ) );
    md_opts_set_ignore_driver( &opts, md_opts_get_ignore_driver( overrides ) );
+   md_opts_set_driver_config( &opts, overrides->driver_exec_str, overrides->driver_roles, overrides->num_driver_roles );
    
    // initialize the gateway 
    rc = SG_gateway_init_opts( gateway, &opts );
@@ -1700,7 +1701,7 @@ static int SG_gateway_cache_get_raw( struct SG_gateway* gateway, struct SG_reque
 
 
 // asynchronously put a driver-transformed chunk of data directly into the cache.
-// chunk must persiste until the future completes, unless the cache is going to get its own copy
+// chunk must persist until the future completes, unless the cache is going to get its own copy
 // (indicated with SG_GATEWAY_CACHE_UNSHARED) or the caller is gifting it (SG_GATEWAY_CACHE_DETACHED)
 // return 0 on success, and set *cache_fut to a newly-allocated future, which the caller can wait on
 // return negative on failure to begin writing the chunk.
@@ -1840,9 +1841,6 @@ int SG_gateway_io_start( struct SG_gateway* gateway, struct md_wreq* wreq ) {
    int wq_num = md_random64() % gateway->num_iowqs;     // NOTE: this is slightly biased
    
    rc = md_wq_add( &gateway->iowqs[wq_num], wreq );
-   
-   // TODO; send the request off to the driver ASAP, and make the driver buffer it up 
-   // make it so we can pick the one of a set of requests that completed 
    return rc;
 }
 
