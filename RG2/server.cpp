@@ -32,15 +32,9 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
    char* request_path = NULL;
+   struct SG_chunk request_path_chunk;
    struct ms_client* ms = SG_gateway_ms( gateway );
    size_t len = ms_client_get_volume_blocksize( ms );
-   
-   char* block_data = SG_CALLOC( char, len );
-   if( block_data == NULL ) {
-      return -ENOMEM;
-   }
-   
-   SG_chunk_init( block, block_data, len );
    
    RG_core_rlock( core );
    
@@ -64,26 +58,17 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
          rc = -ENOMEM;
          goto RG_server_block_get_finish;
       }
-      
+
       // ask for the block 
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), request_path, strlen(request_path) );
+      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
       if( rc < 0 ) {
-         
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", fileno( SG_proc_stdout_f( proc ) ), rc );
-         
+
+         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
          rc = -EIO;
          goto RG_server_block_get_finish;
       }
-      
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), "\n", 1 );
-      if( rc < 0 ) {
-
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-          
-         rc = -EIO;
-         goto RG_server_block_get_finish;
-      }
-
+     
       // get error code 
       rc = SG_proc_read_int64( SG_proc_stdout_f( proc ), &worker_rc );
       if( rc < 0 ) {
@@ -112,19 +97,6 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
          // OOM, EOF, or driver crash (rc is -ENOMEM, -ENODATA, or -EIO, respectively)
          goto RG_server_block_get_finish;
       }
-      
-      // make sure the block is the right size 
-      if( len != (size_t)block->len ) {
-         
-         // nope!
-         SG_chunk_free( block );
-         memset( block, 0, sizeof(struct SG_chunk) );
-         
-         SG_error("md_read_uninterrupted(%d) returned %zu of %zu expected bytes\n", fileno( SG_proc_stdout_f( proc ) ), len, block->len );
-         
-         rc = -EIO;
-         goto RG_server_block_get_finish;
-      }
    }
    else {
       
@@ -139,7 +111,7 @@ RG_server_block_get_finish:
    if( group != NULL && proc != NULL ) {
       SG_proc_group_release( group, proc );
    }
-   
+
    RG_core_unlock( core );
    return rc;
 }
@@ -159,6 +131,7 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
    struct SG_proc* proc = NULL;
    struct SG_chunk chunk;
    char* request_path = NULL;
+   struct SG_chunk request_path_chunk;
    SG_messages::Manifest manifest_message;
    
    memset( &chunk, 0, sizeof(struct SG_chunk) );
@@ -184,22 +157,14 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
          rc = -ENODATA;
          goto RG_server_manifest_get_finish;
       }
-      
-      // ask for the serialized manifest 
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), request_path, strlen(request_path) );
-      if( rc < 0 ) {
-         
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-         
-         rc = -EIO;
-         goto RG_server_manifest_get_finish;
-      }
-     
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), "\n", 1 );
-      if( rc < 0 ) {
 
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-          
+      // ask for the serialized manifest 
+      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
+      if( rc < 0 ) { 
+         
+         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
+         
          rc = -EIO;
          goto RG_server_manifest_get_finish;
       }
@@ -290,6 +255,7 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
    struct SG_proc* proc = NULL;
    
    char* request_path = NULL;
+   struct SG_chunk request_path_chunk;
    
    // generate the request's path
    request_path = SG_driver_reqdat_to_path( reqdat );
@@ -316,21 +282,13 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
       }
       
       // send path
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), request_path, strlen(request_path) );
+      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
       if( rc < 0 ) {
          
          SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc);
          
          rc = -ENODATA;
-         goto RG_server_block_put_finish;
-      }
-         
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), "\n", 1 );
-      if( rc < 0 ) {
-
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-          
-         rc = -EIO;
          goto RG_server_block_put_finish;
       }
 
@@ -449,6 +407,7 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
    int rc = 0;
    int64_t worker_rc = 0;
    char* request_path = NULL;
+   struct SG_chunk request_path_chunk;
    struct SG_proc* proc = NULL;
    struct SG_proc_group* group = NULL;
    
@@ -459,6 +418,8 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
       return -ENOMEM;
    }
    
+   SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
+
    // find a worker...
    group = SG_driver_get_proc_group( SG_gateway_driver(gateway), "delete" );
    if( group != NULL ) {
@@ -473,21 +434,12 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
       }
       
       // send the worker the path to delete 
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), request_path, strlen(request_path) );
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
       if( rc < 0 ) {
          
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
+         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
          
          rc = -ENODATA;
-         goto RG_server_block_delete_finish;
-      }
-      
-      rc = md_write_uninterrupted( SG_proc_stdin( proc ), "\n", 1 );
-      if( rc < 0 ) {
-
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-          
-         rc = -EIO;
          goto RG_server_block_delete_finish;
       }
 
