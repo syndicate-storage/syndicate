@@ -1597,6 +1597,23 @@ void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char con
    md_init_curl_handle2( curl_h, url, query_timeout, conf->verify_peer );
 }
 
+
+// setsockopt for curl 
+static int md_curl_sockopt( void* userdata, curl_socket_t sockfd, curlsocktype purpose ) {
+
+   int rc = CURL_SOCKOPT_OK;
+
+   if( purpose == CURLSOCKTYPE_IPCXN ) {
+    
+      // opening a socket
+      // TODO: experiment with different flags here--maybe TCP_CORK or TCP_NODELAY
+      rc = CURL_SOCKOPT_OK;
+   }
+
+   return rc;
+}
+
+
 // initialze a curl handle
 void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer ) {
    
@@ -1624,8 +1641,11 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 0L );
    }
    
+   curl_easy_setopt( curl_h, CURLOPT_SOCKOPTFUNCTION, md_curl_sockopt );  
+   
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );
 }
+
 
 // interpret error messages from a download context into an apporpriate return code to the downloader.
 // return 0 if there was no error
