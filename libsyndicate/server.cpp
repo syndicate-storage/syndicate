@@ -725,6 +725,12 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
    
    // cache the raw block, asynchronously 
    rc = SG_gateway_cached_block_put_raw_async( gateway, reqdat, &block, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &block_fut );
+   if( rc == -EEXIST ) {
+
+      // this is okay--the block is already present
+      rc = 0;
+      SG_chunk_free( &block );
+   }
    if( rc < 0 ) {
       
       // failure 
@@ -879,6 +885,12 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    // cache (asynchronously)
    // cache takes ownership of the memory 
    rc = SG_gateway_cached_manifest_put_raw_async( gateway, reqdat, &serialized_manifest, SG_CACHE_FLAG_DETACHED | SG_CACHE_FLAG_UNSHARED, &manifest_fut );
+   if( rc == -EEXIST ) {
+      
+      // this is okay--some other thread beat us to it 
+      SG_chunk_free( &serialized_manifest );
+      rc = 0;
+   }
    if( rc != 0 ) {
       
       // failed 
