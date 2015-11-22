@@ -75,6 +75,7 @@ extern int _SG_ERROR_MESSAGES;
 
 #define SG_CALLOC(type, count) (type*)calloc( sizeof(type) * (count), 1 )
 #define SG_FREE_LIST(list, freefunc) do { if( (list) != NULL ) { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { freefunc( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
+#define SG_FREE_LISTV(list, len, freefunc) do { if( (list) != NULL ) { for(unsigned int __i = 0; __i < (unsigned)len; ++ __i) { if( (list)[__i] != NULL ) { freefunc( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } } while(0)
 
 #define SG_strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
 #define SG_strlen_or_zero( str )  (str) != NULL ? strlen(str) : 0
