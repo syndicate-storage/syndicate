@@ -2659,7 +2659,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
    }
 
    if( conf->driver_roles != NULL ) {
-      SG_FREE_LIST( conf->driver_roles, free );
+      SG_FREE_LISTV( conf->driver_roles, conf->num_driver_roles, free );
    }
    
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
@@ -2672,7 +2672,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
 // return 0 on success, and populate *conf
 // return -ENOMEM on OOM
 int md_conf_set_driver_params( struct md_syndicate_conf* conf, char const* driver_exec_path, char const** driver_roles, size_t num_roles ) {
-
+   
    char* driver_exec_path_dup = SG_strdup_or_null( driver_exec_path );
    char** driver_roles_dup = SG_CALLOC( char*, num_roles );
 
@@ -2686,7 +2686,7 @@ int md_conf_set_driver_params( struct md_syndicate_conf* conf, char const* drive
       driver_roles_dup[i] = SG_strdup_or_null( driver_roles[i] );
       if( driver_roles_dup[i] == NULL && driver_roles[i] != NULL ) {
             
-         SG_FREE_LIST( driver_roles_dup, free );
+         SG_FREE_LISTV( driver_roles_dup, num_roles, free );
          SG_safe_free( driver_exec_path_dup );
          return -ENOMEM;
       }
@@ -2697,12 +2697,13 @@ int md_conf_set_driver_params( struct md_syndicate_conf* conf, char const* drive
    }
 
    if( conf->driver_roles != NULL ) {
-      SG_FREE_LIST( conf->driver_roles, free );
+      SG_FREE_LISTV( conf->driver_roles, num_roles, free );
    }
 
    conf->driver_exec_path = driver_exec_path_dup;
    conf->driver_roles = driver_roles_dup;
    conf->num_driver_roles = num_roles;
+
    return 0;
 }
 
