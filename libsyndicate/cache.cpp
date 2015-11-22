@@ -1517,8 +1517,9 @@ void* md_cache_main_loop( void* arg ) {
 // return a future that can be waited on 
 // return NULL on error, and set *_rc to the error code
 // *_rc can be:
-// * -EAGAN if the cache is not running
+// * -EAGAIN if the cache is not running
 // * -ENOMEM if OOM
+// * -EEXIST if the block already exists
 // * negative if we failed to open the block (see md_cache_open_block)
 // NOTE: the given data will be referenced!  Do NOT free it!
 struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_cache* cache,
@@ -1544,7 +1545,7 @@ struct md_cache_block_future* md_cache_write_block_async( struct md_syndicate_ca
    }
    
    // create the block to cache
-   int block_fd = md_cache_open_block( cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
+   int block_fd = md_cache_open_block( cache, file_id, file_version, block_id, block_version, O_CREAT | O_EXCL | O_RDWR | O_TRUNC );
    if( block_fd < 0 ) {
       
       *_rc = block_fd;
