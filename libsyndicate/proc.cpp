@@ -33,7 +33,7 @@ struct SG_proc {
    
    char* exec_str;              // string to feed into exec
    char* exec_arg;              // arg to feed
-   
+
    struct SG_proc* next;        // next process (linked list)
 };
 
@@ -103,6 +103,7 @@ void SG_proc_free_data( struct SG_proc* proc ) {
 }
 
 void SG_proc_free( struct SG_proc* proc ) {
+   SG_debug("SG_proc_free %p\n", proc);
    SG_proc_free_data( proc );
    SG_safe_free( proc );
 }
@@ -224,18 +225,16 @@ struct SG_proc* SG_proc_list_pop( struct SG_proc** list ) {
 // always succeeds
 int SG_proc_list_insert( struct SG_proc** list, struct SG_proc* insert ) {
    
-   if( *list == NULL ) {
-      
+   if( (*list) == NULL ) {
       *list = insert;
       insert->next = NULL;
    }
    else {
-      
-      struct SG_proc* head = *list;
-      *list = insert;
-      insert->next = head;
+      struct SG_proc* p = *list;
+      for( ; p->next != NULL; p = p->next );
+      p->next = insert;
+      insert->next = NULL;
    }
-   
    return 0;
 }
 
@@ -246,7 +245,7 @@ struct SG_proc** SG_proc_group_freelist( struct SG_proc_group* group ) {
 }
 
 
-// send a signal to all processes in a proces group, and remove them from the free list if the signal was delivered
+// send a signal to all processes in a proces group
 // always succeeds
 int SG_proc_group_kill( struct SG_proc_group* group, int signal ) {
    
@@ -257,16 +256,32 @@ int SG_proc_group_kill( struct SG_proc_group* group, int signal ) {
    for( int i = 0; i < group->capacity; i++ ) {
       
       rc = 0;
-      
-      if( group->procs[i] != NULL && group->procs[i]->pid > 1 && getpgid( group->procs[i]->pid ) == getpgid( 0 ) ) {
-            
-         rc = kill( SG_proc_pid( group->procs[i] ), signal );
+      if( group->procs[i] == NULL ) {
+         continue;
+      }
+
+      if( SG_proc_pid( group->procs[i] ) <= 1 ) {
+         continue;
       }
       
+      if( getpgid( group->procs[i]->pid ) == getpgid( 0 ) ) {
+         
+         // in this group
+         rc = kill( SG_proc_pid( group->procs[i] ), signal );
+         if( rc != 0 ) {
+            rc = -errno;
+            SG_warn("kill(%d, %d) rc = %d\n", SG_proc_pid( group->procs[i] ), signal, rc );
+         }
+      }
+     
+      /* 
       if( rc == 0 ) {
          
          SG_proc_list_remove( &group->free, group->procs[i] );
+         SG_proc_free( group->procs[i] );
+         group->procs[i] = NULL;
       }
+      */
    }
    
    SG_proc_group_unlock( group );
@@ -285,8 +300,12 @@ int SG_proc_group_tryjoin( struct SG_proc_group* group ) {
    int rc = 0;
    int num_joined = 0;
    int num_procs = 0;
+
+   struct SG_proc* free_list = NULL;
    
    SG_proc_group_wlock( group );
+
+   SG_debug("join group %p\n", group);
    
    num_procs = group->num_procs;
    
@@ -294,6 +313,8 @@ int SG_proc_group_tryjoin( struct SG_proc_group* group ) {
       
       if( group->procs[i] != NULL ) {
          
+         SG_debug("join %p (group %p)\n", group->procs[i], group);
+
          rc = SG_proc_tryjoin( group->procs[i], NULL );
          if( rc < 0 ) {
             
@@ -305,8 +326,8 @@ int SG_proc_group_tryjoin( struct SG_proc_group* group ) {
             
             // child is dead.  ensure removed.
             SG_proc_list_remove( &group->free, group->procs[i] );
-            
-            SG_proc_free( group->procs[i] );
+            SG_proc_list_insert( &free_list, group->procs[i] );
+
             group->procs[i] = NULL;
             
             num_joined++;
@@ -317,6 +338,14 @@ int SG_proc_group_tryjoin( struct SG_proc_group* group ) {
    
    SG_proc_group_unlock( group );
    
+   for( struct SG_proc* p = free_list; p != NULL; ) {
+
+      struct SG_proc* p2 = p->next;
+
+      SG_proc_free( p );
+      p = p2;
+   }
+
    return num_procs - num_joined;
 }
 
@@ -551,10 +580,12 @@ void SG_proc_group_free( struct SG_proc_group* group ) {
       
       if( group->procs[i] != NULL ) {
          SG_proc_free( group->procs[i] );
+         group->procs[i] = NULL;
       }
    }
    
    SG_safe_free( group->procs );
+   group->procs = NULL;
    
    pthread_rwlock_destroy( &group->lock );
    sem_destroy( &group->num_free );
@@ -564,8 +595,10 @@ void SG_proc_group_free( struct SG_proc_group* group ) {
 
 
 // add a process to a process group, and put the proc into the free list
+// the group takes ownership of proc
 // return 0 on success
 // return -ENOMEM on OOM 
+// return -EEXIST if this process is already in the group
 int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
    
    int rc = 0;
@@ -573,9 +606,10 @@ int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
    bool need_space = true;
    
    SG_proc_group_wlock( group );
-   
+
    if( group->procs == NULL ) {
-      
+     
+      group->num_procs = 0; 
       group->capacity = 2;
       group->procs = SG_CALLOC( struct SG_proc*, group->capacity );
       if( group->procs == NULL ) {
@@ -585,15 +619,26 @@ int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
       else {
          
          group->procs[0] = proc;
+         group->num_procs++;
       }
    }
    else {
+      
+      // sanity check 
+      for( int i = 0; i < group->capacity; i++ ) {
+         if( group->procs[i] == proc ) {
+            
+            SG_proc_group_unlock( group );
+            return -EEXIST;
+         }
+      }
       
       // find a free slot 
       for( int i = 0; i < group->capacity; i++ ) {
          
          if( group->procs[i] == NULL ) {
             group->procs[i] = proc;
+            group->num_procs++;
 
             need_space = false;
             break;
@@ -602,30 +647,32 @@ int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
       
       if( need_space ) {
          
-         // need more space 
-         group->capacity *= 2;
-         
-         new_procs = SG_CALLOC( struct SG_proc*, group->capacity );
+         // need more space
+         new_procs = SG_CALLOC( struct SG_proc*, group->capacity * 2 ); 
          if( new_procs == NULL ) {
             
             rc = -ENOMEM;
          }
          else {
-            
+           
+            memcpy( new_procs, group->procs, sizeof(struct SG_proc*) * group->capacity );
+            SG_safe_free( group->procs );
+
+            // insert new proc
+            group->capacity *= 2;
             group->procs = new_procs;
             group->procs[ group->num_procs ] = proc;
+            group->num_procs++;
          }
       }
    }
    
    if( rc == 0 ) {
 
-       group->num_procs++;
-      
        // insert into the free list
        SG_proc_list_insert( &group->free, proc );
 
-       SG_debug("Process group %p has %d procs\n", group, group->num_procs );
+       SG_debug("Process group %p has %p (%d procs)\n", group, proc, group->num_procs );
    }
 
    SG_proc_group_unlock( group );
@@ -658,6 +705,7 @@ int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
             
             // remove from the free list, if it is there 
             SG_proc_list_remove( &group->free, proc );
+            group->procs[i] = NULL;
             break;
          }
       }
@@ -720,7 +768,7 @@ int SG_proc_read_int64( FILE* f, int64_t* result ) {
 }
 
 
-// get a chunk from the reader worker: size, followed by data.
+// get a chunk from the reader worker: size, newline, data
 // if chunk->data is NULL, it will be malloc'ed.  If not, the existing memory will be used,
 // and this method will error if it receives too much data.
 // return 0 on success, and set up the given SG_chunk (storing the length to chunk->len)
@@ -1246,6 +1294,7 @@ int SG_proc_group_reload( struct SG_proc_group* group, char const* new_exec_str,
             
             SG_proc_stop( new_proc, 0 );
             SG_proc_free( new_proc );
+            new_proc = NULL;
             
             // stop this process instead 
             SG_proc_stop( group->procs[i], 1 );
@@ -1264,6 +1313,7 @@ int SG_proc_group_reload( struct SG_proc_group* group, char const* new_exec_str,
             // stop the old process 
             SG_proc_stop( old_proc, 1 );
             SG_proc_free( old_proc );
+            old_proc = NULL;
          }
       }
    }
