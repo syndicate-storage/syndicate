@@ -35,7 +35,8 @@ struct SG_driver {
    // driver info
    char* exec_str;
    char** roles;
-   size_t num_roles; 
+   size_t num_roles;
+   int num_instances;   // number of instances of each role 
 };
 
 
@@ -353,16 +354,16 @@ static int SG_parse_driver_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_
    return rc;
 }
 
+
 // load a string by key 
 // returns a reference to the value in the json object on success (do NOT free or modify it)
 // return NULL if not found, or if OOM
 static char const* SG_load_json_string_by_key( struct json_object* obj, char const* key, size_t* _val_len ) {
    
    // look up the keyed value
-   // TODO: use json_object_object_get_ex at some point, when we can move away from old libjson
    struct json_object* key_obj = NULL;
    
-   key_obj = json_object_object_get( obj, key );
+   json_object_object_get_ex( obj, key, &key_obj );
    if( key_obj == NULL ) {
       
       SG_error("No such key '%s'\n", key );
@@ -434,7 +435,7 @@ static int SG_parse_json_b64_string( struct json_object* toplevel_obj, char cons
 // A "secrets" field is an base64-encoded *encrypted* string that decrypts to a JSON object that maps string keys to string values.
 //    The ciphertext gets verified with the given public key, and decrypted with the given private key.  It gets parsed to an SG_driver_secrets_t.
 // A "driver" field is a base64-encoded binary string that encodes some gateway-specific functionality.
-// return 0 on success
+// return 0 on success, and populate *driver
 // return -ENOMEM on OOM
 static int SG_parse_driver( struct SG_driver* driver, char const* driver_full, size_t driver_full_len, EVP_PKEY* pubkey, EVP_PKEY* privkey ) {
       
@@ -501,7 +502,7 @@ static int SG_parse_driver( struct SG_driver* driver, char const* driver_full, s
    if( rc == -ENOENT ) {
       rc = 0;
    }
-   else {
+   else if( rc != 0 ) {
       SG_error("SG_parse_json_b64_string('driver') rc = %d\n", rc );
       SG_safe_delete( driver_conf );
       SG_safe_delete( driver_secrets );
@@ -606,7 +607,7 @@ static int SG_driver_init_procs( struct SG_driver* driver, char** const roles, s
 // return -ENOMEM on OOM
 int SG_driver_init( struct SG_driver* driver,
                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
-                    char const* exec_str, char** const roles, size_t num_roles,
+                    char const* exec_str, char** const roles, size_t num_roles, int num_instances,
                     char const* driver_text, size_t driver_text_len ) {
   
    SG_debug("Initialize driver sandbox '%s'\n", exec_str);
@@ -622,7 +623,7 @@ int SG_driver_init( struct SG_driver* driver,
           roles_dup[i] = SG_strdup_or_null( roles[i] );
           if( roles_dup[i] == NULL ) {
 
-             SG_FREE_LIST( roles_dup, free );
+             SG_FREE_LISTV( roles_dup, num_roles, free );
              break;
           }
        }
@@ -655,6 +656,7 @@ int SG_driver_init( struct SG_driver* driver,
    driver->exec_str = exec_str_dup;
    driver->roles = roles_dup;
    driver->num_roles = num_roles;
+   driver->num_instances = num_instances;
    
    return rc;
 }
@@ -666,43 +668,37 @@ int SG_driver_init( struct SG_driver* driver,
 // return -EOVERFLOW if there are too many bytes to serialize
 static int SG_driver_conf_serialize( SG_driver_conf_t* conf, struct SG_chunk* chunk ) {
     
-   uint64_t len = 0;
-   uint64_t off = 0;
    char* data = NULL;
-   char* kv = NULL;
 
-   for( SG_driver_conf_t::iterator itr = conf->begin(); itr != conf->end(); itr++ ) {
-       uint64_t old_len = len;
-
-       // "itr->first":"itr->second",
-       len += 1 + itr->first.size() + 1 + 1 + 1 + itr->second.size() + 1 + 1;
-
-       if( len < old_len ) {
-          return -EOVERFLOW;
-       }
+   // build up a JSON object and serialize it
+   struct json_object* conf_json = json_object_new_object();
+   if( conf_json == NULL ) {
+      return -ENOMEM;
    }
 
-   // {}\0
-   len += 3;
+   for( SG_driver_conf_t::iterator itr = conf->begin(); itr != conf->end(); itr++ ) {
 
-   data = SG_CALLOC( char, len );
-   
+      // serialize
+      struct json_object* strobj = json_object_new_string( itr->second.c_str() );
+      if( strobj == NULL ) {
+
+         json_object_put( conf_json );
+         return -ENOMEM;
+      }
+
+      // put 
+      json_object_object_add( conf_json, itr->first.c_str(), strobj );
+   }
+
+   // serialize...
+   data = SG_strdup_or_null( json_object_to_json_string( conf_json ) );
+   json_object_put( conf_json );
+
    if( data == NULL ) {
       return -ENOMEM;
    }
 
-   data[0] = '{';
-   kv = data + 1;
-
-   for( SG_driver_conf_t::iterator itr = conf->begin(); itr != conf->end(); itr++ ) {
-       int cnt = sprintf( kv + off, "\"%s\":\"%s\",", itr->first.c_str(), itr->second.c_str() );
-       off += cnt;
-   }
-
-   data[len-1] = '}';
-   
-   chunk->data = data;
-   chunk->len = len;
+   SG_chunk_init( chunk, data, strlen(data) );
    return 0;
 } 
 
@@ -722,7 +718,7 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
       return -ENOMEM;
    }
 
-   initial_procs = SG_CALLOC( struct SG_proc*, driver->num_roles );
+   initial_procs = SG_CALLOC( struct SG_proc*, driver->num_roles * driver->num_instances );
    if( initial_procs == NULL ) {
       SG_safe_free( groups );
       return -ENOMEM;
@@ -759,79 +755,88 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
    
    for( size_t i = 0; i < driver->num_roles; i++ ) {
       
+      // each role gets its own group
       groups[i] = SG_proc_group_alloc( 1 );
-      initial_procs[i] = SG_proc_alloc( 1 );
+      if( groups[i] == NULL ) {
 
-      rc = 0;
-
-      if( groups[i] != NULL && initial_procs[i] != NULL ) {
-
-         // set it up too 
-         rc = SG_proc_group_init( groups[i] );
-
-         if( rc != 0 ) {
-            
-            // OOM 
-            for( size_t j = 0; j < i; j++ ) {
-               SG_proc_group_free( groups[i] );
-            }
-         }
-      }
-      
-      if( rc != 0 || groups[i] == NULL || initial_procs[i] == NULL ) {
-         
-         // OOM 
+         // OOM
          rc = -ENOMEM;
-         for( size_t j = 0; j < driver->num_roles; j++ ) {
-            
-            SG_safe_free( groups[j] );
-            SG_safe_free( initial_procs[j] );
+         goto SG_driver_procs_start_finish;
+      }
+         
+      // set it up
+      rc = SG_proc_group_init( groups[i] );
+      if( rc != 0 ) {
+
+         goto SG_driver_procs_start_finish;
+      }
+
+      // create all instances of this role
+      for( int j = 0; j < driver->num_instances; j++ ) {
+
+         int proc_idx = i * driver->num_instances + j;
+
+         // create all instances of this process
+         initial_procs[proc_idx] = SG_proc_alloc( 1 );
+         if( initial_procs[proc_idx] == NULL ) {
+
+            rc = -ENOMEM;
+            goto SG_driver_procs_start_finish;
          }
-         
-         SG_chunk_free( &config );
-         munlock( secrets.data, secrets.len );
-         SG_chunk_free( &secrets );
-         SG_safe_free( groups );
-         SG_safe_free( initial_procs );
-         
-         return rc;
       }
    }
    
    for( size_t i = 0; i < driver->num_roles; i++ ) {
      
-      SG_debug("Start: %s %s\n", driver->exec_str, driver->roles[i] );
+      for( int j = 0; j < driver->num_instances; j++ ) {
 
-      // start this process 
-      rc = SG_proc_start( initial_procs[i], driver->exec_str, driver->roles[i], &config, &secrets, &driver->driver_text );
-      if( rc != 0 ) {
+          int proc_idx = i * driver->num_instances + j;
+
+          SG_debug("Start: %s %s (instance %d)\n", driver->exec_str, driver->roles[i], j );
+
+          // start this process 
+          rc = SG_proc_start( initial_procs[proc_idx], driver->exec_str, driver->roles[i], &config, &secrets, &driver->driver_text );
+          if( rc != 0 ) {
          
-         SG_error("SG_proc_start('%s %s') rc = %d\n", driver->exec_str, driver->roles[i], rc );
-         break;
-      }
+             SG_error("SG_proc_start('%s %s') rc = %d\n", driver->exec_str, driver->roles[i], rc );
+             goto SG_driver_procs_start_finish;
+          }
    
-      rc = SG_proc_group_add( groups[i], initial_procs[i] );
-      if( rc != 0 ) {
+          rc = SG_proc_group_add( groups[i], initial_procs[proc_idx] );
+          if( rc != 0 ) {
          
-         SG_error("SG_proc_group_insert(%zu, %d) rc = %d\n", i, SG_proc_pid( initial_procs[i] ), rc );
-         break;
+             SG_error("SG_proc_group_insert(%zu, %d) rc = %d\n", i, SG_proc_pid( initial_procs[proc_idx] ), rc );
+             goto SG_driver_procs_start_finish;
+          }
       }
    }
    
+SG_driver_procs_start_finish:
+
    if( rc != 0 ) {
       
       // failed to start helpers 
       // shut them all down
       for( size_t i = 0; i < driver->num_roles; i++ ) {
-         
+
+         if( groups[i] == NULL ) {
+            continue;
+         }
+
          if( SG_proc_group_size( groups[i] ) > 0 ) {
             
             SG_proc_group_stop( groups[i], 1 );
          }
+
          else {
-            
-            SG_proc_stop( initial_procs[i], 1 );
-            SG_proc_free( initial_procs[i] );
+           
+            for( int j = 0; j < driver->num_instances; j++ ) { 
+
+                int proc_idx = i * driver->num_instances + j;
+
+                SG_proc_stop( initial_procs[proc_idx], 1 );
+                SG_proc_free( initial_procs[proc_idx] );
+            }
          }
          
          SG_proc_group_free( groups[i] );
@@ -866,7 +871,7 @@ int SG_driver_procs_stop( struct SG_driver* driver ) {
    // ask the workers to stop
    for( size_t i = 0; i < driver->num_roles; i++ ) {
       
-      SG_debug("Stop process group (role %zu)\n", i); 
+      SG_debug("Stop process group (role '%s')\n", driver->roles[i]); 
 
       try {
          group = (*driver->groups)[ string(driver->roles[i]) ];
@@ -874,7 +879,7 @@ int SG_driver_procs_stop( struct SG_driver* driver ) {
       catch( bad_alloc& ba ) {
          return -ENOMEM;
       }
-         
+      
       SG_proc_group_kill( group, SIGINT );
    }
    
@@ -884,28 +889,27 @@ int SG_driver_procs_stop( struct SG_driver* driver ) {
    for( size_t i = 0; i < driver->num_roles; i++ ) {
      
       try {
-         group = (*driver->groups)[ string(driver->roles[i]) ];
+         string role(driver->roles[i]);
+         group = (*driver->groups)[ role ];
+         driver->groups->erase( role );
       }
       catch( bad_alloc& ba ) {
          return -ENOMEM;
       }
-         
+       
       rc = SG_proc_group_tryjoin( group );
       if( rc > 0 ) {
          
          // kill the stragglers 
+         SG_debug("Killing process group (role '%s')\n", driver->roles[i]);
          SG_proc_group_kill( group, SIGKILL );
+
+         SG_proc_group_tryjoin( group );
       }
       
       // clean up 
       SG_proc_group_free( group );
-   }
-
-   // not running anymore 
-   for( SG_driver_proc_group_t::iterator itr = driver->groups->begin(); itr != driver->groups->end(); itr++ ) {
-      
-      SG_safe_free( itr->second );
-      itr->second = NULL;
+      SG_safe_free( group );
    }
 
    SG_safe_delete( driver->groups );
@@ -1007,8 +1011,10 @@ int SG_driver_shutdown( struct SG_driver* driver ) {
       SG_driver_procs_stop( driver );
    }
 
-   SG_FREE_LIST( driver->roles, free );
+   SG_FREE_LISTV( driver->roles, driver->num_roles, free );
    SG_safe_free( driver->exec_str );
+
+   SG_chunk_free( &driver->driver_text );
 
    memset( driver, 0, sizeof(struct SG_driver) );
  

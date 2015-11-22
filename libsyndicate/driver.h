@@ -40,7 +40,7 @@ int SG_driver_unlock( struct SG_driver* driver );
 // initialization, reload, and shutdown 
 int SG_driver_init( struct SG_driver* driver,
                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
-                    char const* exec_str, char** const roles, size_t num_roles,
+                    char const* exec_str, char** const roles, size_t num_roles, int num_instances,
                     char const* driver_text, size_t driver_text_len);
 
 int SG_driver_procs_start( struct SG_driver* driver );
