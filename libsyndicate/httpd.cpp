@@ -460,7 +460,7 @@ int md_HTTP_post_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
    int rc = MHD_YES;
    
    SG_HTTP_post_field_handler_t handler = NULL;
-   SG_HTTP_post_field* field = NULL;
+   struct SG_HTTP_post_field* field = NULL;
    
    try {
       
@@ -575,6 +575,7 @@ static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf )
 // return 0 on success
 // return -EINVAL if cls is NULL
 // return -ENOMEM on OOM 
+// return -EOVERFLOW if the message is too big
 int md_HTTP_post_field_handler_ram( char const* field_name, char const* filename, char const* data, off_t offset, size_t len, void* cls ) {
    
    struct SG_HTTP_post_field* field = (struct SG_HTTP_post_field*)cls;
@@ -588,7 +589,12 @@ int md_HTTP_post_field_handler_ram( char const* field_name, char const* filename
    if( field->rb == NULL ) {
       return -EINVAL;
    }
-   
+
+   // cap size 
+   if( len + field->num_written > field->max_size ) {
+      return -EOVERFLOW;
+   }
+
    // store data
    data_dup = SG_CALLOC( char, len );
    if( data_dup == NULL ) {
@@ -613,6 +619,7 @@ int md_HTTP_post_field_handler_ram( char const* field_name, char const* filename
 // field handler for holding data in a temporary file (disk)
 // return 0 on success
 // return -errno on write error
+// return -EOVERFLOW if the message is too big
 int md_HTTP_post_field_handler_disk( char const* field_name, char const* filename, char const* data, off_t offset, size_t len, void* cls ) {
    
    struct SG_HTTP_post_field* field = (struct SG_HTTP_post_field*)cls;
@@ -626,7 +633,12 @@ int md_HTTP_post_field_handler_disk( char const* field_name, char const* filenam
    if( field->tmpfd < 0 || field->tmpfd_path == NULL ) {
       return -EINVAL;
    }
-   
+
+   // cap size 
+   if( len + field->num_written > field->max_size ) {
+      return -EOVERFLOW;
+   }
+
    // store data 
    nw = md_write_uninterrupted( field->tmpfd, data, len );
    if( nw < 0 || (size_t)nw != len ) {
@@ -843,6 +855,8 @@ static int md_HTTP_connection_setup_upload( struct md_HTTP* http_ctx, struct md_
             rc = -ENOMEM;
             break;
          }
+
+         field.max_size = http_ctx->max_ram_upload_size;
       }
       
       // hold on disk?
@@ -867,6 +881,8 @@ static int md_HTTP_connection_setup_upload( struct md_HTTP* http_ctx, struct md_
             SG_safe_free( field.tmpfd_path );
             break;
          }
+
+         field.max_size = http_ctx->max_disk_upload_size;
       }
       
       try {
@@ -1488,6 +1504,16 @@ int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls ) {
    http->server_type = server_type;
    http->server_cls = server_cls;
    
+   http->max_ram_upload_size = 1024*1024;   // 1MB default
+   http->max_disk_upload_size = 100 * 1024 * 1024;  // 100MB default
+   return 0;
+}
+
+
+// set HTTP limits 
+int md_HTTP_set_limits( struct md_HTTP* http, uint64_t max_ram_upload_size, uint64_t max_disk_upload_size ) {
+   http->max_ram_upload_size = max_ram_upload_size;
+   http->max_disk_upload_size = max_disk_upload_size;
    return 0;
 }
 

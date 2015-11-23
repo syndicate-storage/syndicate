@@ -108,7 +108,10 @@ struct SG_HTTP_post_field {
    md_response_buffer_t* rb;    // for RAM upload 
    
    int tmpfd;                   // temporary file 
-   char* tmpfd_path;      
+   char* tmpfd_path;
+
+   uint64_t num_written;        // number of bytes accepted
+   uint64_t max_size;           // maximum allowed size 
 };
 
 typedef map<string, struct SG_HTTP_post_field> SG_HTTP_post_field_map_t;
@@ -167,6 +170,12 @@ struct md_HTTP {
    
    // upload field handlers
    SG_HTTP_post_field_handler_map_t* upload_field_handlers;
+
+   // maximum RAM upload size per connection
+   uint64_t max_ram_upload_size;
+
+   // maximum disk upload size per connection 
+   uint64_t max_disk_upload_size;
 };
 
 extern char const MD_HTTP_NOMSG[128];
@@ -250,6 +259,7 @@ int md_HTTP_connection_resume( struct md_HTTP_connection_data* con_data, struct 
 
 // init/start/stop/shutdown
 int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls );
+int md_HTTP_set_limits( struct md_HTTP* http, uint64_t max_ram_upload_size, uint64_t max_disk_upload_size );
 int md_HTTP_start( struct md_HTTP* http, int portnum );
 int md_HTTP_stop( struct md_HTTP* http );
 int md_HTTP_free( struct md_HTTP* http );
