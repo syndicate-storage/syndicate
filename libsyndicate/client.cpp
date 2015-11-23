@@ -344,7 +344,7 @@ int SG_client_download_async_start( struct SG_gateway* gateway, struct md_downlo
    reqcls->cls = cls;
    
    // set up 
-   rc = md_download_context_init( dlctx, curl, block_size * SG_MAX_BLOCK_LEN_MULTIPLER, reqcls );
+   rc = md_download_context_init( dlctx, curl, block_size * SG_MAX_BLOCK_LEN_MULTIPLIER, reqcls );
    if( rc != 0 ) {
       
       // failed 
@@ -560,7 +560,7 @@ int SG_client_get_block_async( struct SG_gateway* gateway, struct SG_request_dat
    }
    
    // GOGOO!
-   rc = SG_client_download_async_start( gateway, dlloop, dlctx, reqdat->block_id, block_url, block_size * SG_MAX_BLOCK_LEN_MULTIPLER, reqdat_dup );
+   rc = SG_client_download_async_start( gateway, dlloop, dlctx, reqdat->block_id, block_url, block_size * SG_MAX_BLOCK_LEN_MULTIPLIER, reqdat_dup );
    if( rc != 0 ) {
       
       SG_error("SG_client_download_async_start('%s') rc = %d\n", block_url, rc );
@@ -1459,10 +1459,10 @@ int SG_client_request_DETACH_setup( struct SG_gateway* gateway, SG_messages::Req
 }
 
 
-// make a signed PUTBLOCK request 
+// make a signed PUTCHUNKS request 
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_PUTBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* block_info ) {
+int SG_client_request_PUTCHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
@@ -1474,23 +1474,26 @@ int SG_client_request_PUTBLOCK_setup( struct SG_gateway* gateway, SG_messages::R
       return rc;
    }
    
-   request->set_request_type( SG_messages::Request::PUTBLOCK );
+   request->set_request_type( SG_messages::Request::PUTCHUNKS );
+  
+   for( size_t i = 0; i < num_chunk_info; i++ ) {
+
+       // add block information 
+       SG_messages::ManifestBlock* mblock = NULL;
    
-   // add block information 
-   SG_messages::ManifestBlock* mblock = NULL;
-   
-   try {
+       try {
       
-      mblock = request->add_blocks();
-   }
-   catch( bad_alloc& ba ) {
-      return -ENOMEM;
-   }
+          mblock = request->add_blocks();
+       }
+       catch( bad_alloc& ba ) {
+          return -ENOMEM;
+       }
    
-   rc = SG_manifest_block_serialize_to_protobuf( block_info, mblock );
-   if( rc != 0 ) {
+       rc = SG_manifest_block_serialize_to_protobuf( &chunk_info[i], mblock );
+       if( rc != 0 ) {
       
-      return rc;
+          return rc;
+       }
    }
    
    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
@@ -1507,7 +1510,7 @@ int SG_client_request_PUTBLOCK_setup( struct SG_gateway* gateway, SG_messages::R
 // make a signed DELETEBLOCK request
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* block_info ) {
+int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
@@ -1519,8 +1522,28 @@ int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages
       return rc;
    }
    
-   request->set_request_type( SG_messages::Request::DELETEBLOCK );
+   request->set_request_type( SG_messages::Request::DELETECHUNKS );
    
+   for( size_t i = 0; i < num_chunk_info; i++ ) {
+
+       // add block information 
+       SG_messages::ManifestBlock* mblock = NULL;
+   
+       try {
+      
+          mblock = request->add_blocks();
+       }
+       catch( bad_alloc& ba ) {
+          return -ENOMEM;
+       }
+   
+       rc = SG_manifest_block_serialize_to_protobuf( &chunk_info[i], mblock );
+       if( rc != 0 ) {
+      
+          return rc;
+       }
+   }
+
    rc = md_sign< SG_messages::Request >( gateway_pkey, request );
    if( rc != 0 ) {
       
