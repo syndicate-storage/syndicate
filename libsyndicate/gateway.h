@@ -128,7 +128,7 @@ struct SG_gateway {
    int (*impl_get_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, uint64_t hints, void* );
    
    // put manifest 
-   int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, uint64_t hints, void* );
+   int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, uint64_t hints, void* );
    
    // patch (update) a manifest
    int (*impl_patch_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, void* );
@@ -176,7 +176,7 @@ void SG_impl_get_block( struct SG_gateway* gateway, int (*impl_get_block)( struc
 void SG_impl_put_block( struct SG_gateway* gateway, int (*impl_put_block)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, uint64_t, void* ) );
 void SG_impl_delete_block( struct SG_gateway* gateway, int (*impl_delete_block)( struct SG_gateway*, struct SG_request_data*, void* ) );
 void SG_impl_get_manifest( struct SG_gateway* gateway, int (*impl_get_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, uint64_t, void* ) );
-void SG_impl_put_manifest( struct SG_gateway* gateway, int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, uint64_t, void* ) );
+void SG_impl_put_manifest( struct SG_gateway* gateway, int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, uint64_t, void* ) );
 void SG_impl_patch_manifest( struct SG_gateway* gateway, int (*impl_patch_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, void* ) );
 void SG_impl_delete_manifest( struct SG_gateway* gateway, int (*impl_delete_manifest)( struct SG_gateway*, struct SG_request_data*, void* ) );
 void SG_impl_getxattr( struct SG_gateway* gateway, int (*impl_getxattr)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, void* ) );
@@ -257,7 +257,7 @@ int SG_gateway_impl_block_get( struct SG_gateway* gateway, struct SG_request_dat
 int SG_gateway_impl_block_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block, uint64_t hints );
 int SG_gateway_impl_block_delete( struct SG_gateway* gateway, struct SG_request_data* reqdat );
 int SG_gateway_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints );
-int SG_gateway_impl_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints );
+int SG_gateway_impl_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* manifest_chunk, uint64_t hints );
 int SG_gateway_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* write_delta );
 int SG_gateway_impl_manifest_delete( struct SG_gateway* gateway, struct SG_request_data* reqdat );
 int SG_gateway_impl_getxattr( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* xattr_value );

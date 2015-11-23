@@ -892,12 +892,14 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
          
          goto SG_gateway_init_error;
       }
-      
-      // advance!
-      http_inited = true;
-      
+     
+      md_HTTP_set_limits( http, block_size * SG_MAX_BLOCK_LEN_MULTIPLIER, 100 * block_size * SG_MAX_BLOCK_LEN_MULTIPLIER );
+
       // set up HTTP server methods 
       SG_server_HTTP_install_handlers( http );
+
+      // advance!
+      http_inited = true;
    }
    else {
       
@@ -1501,7 +1503,7 @@ void SG_impl_get_manifest( struct SG_gateway* gateway, int (*impl_get_manifest)(
 }
 
 // set the gateway implementation put_manifest routine 
-void SG_impl_put_manifest( struct SG_gateway* gateway, int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_manifest*, uint64_t, void* ) ) {
+void SG_impl_put_manifest( struct SG_gateway* gateway, int (*impl_put_manifest)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, uint64_t, void* ) ) {
    gateway->impl_put_manifest = impl_put_manifest;
 }
 
@@ -2075,18 +2077,18 @@ int SG_gateway_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_
 }
 
 
-// put a manifest into the implementation 
+// put a protobuf'ed manifest into the implementation 
 // return 0 on success
 // return -ENOSYS if not implemented
 // return non-zero on implementation-specific error 
-int SG_gateway_impl_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints ) {
+int SG_gateway_impl_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* chunk, uint64_t hints ) {
    
    int rc = 0;
    
    if( gateway->impl_put_manifest != NULL ) {
       
       reqdat->io_context = SG_gateway_io_context( gateway );
-      rc = (*gateway->impl_put_manifest)( gateway, reqdat, manifest, hints, gateway->cls );
+      rc = (*gateway->impl_put_manifest)( gateway, reqdat, chunk, hints, gateway->cls );
       if( rc != 0 ) {
          
          SG_error("gateway->impl_put_manifest( %" PRIX64 ".%" PRId64 "[manifest %" PRIu64 ".%ld] (%s) ) rc = %d\n",
