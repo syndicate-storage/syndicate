@@ -361,6 +361,34 @@ unsigned char* sha256_fd( int fd ) {
 }
 
 
+// hash a file for a given number of bytes, given its descriptor 
+void sha256_fd_buf( int fd, size_t len, unsigned char* output ) {
+   
+   SHA256_CTX context;
+   SHA256_Init( &context );
+   
+   unsigned char buf[32768];
+   
+   ssize_t num_read = 1;
+   while( num_read > 0 ) {
+      
+      num_read = read( fd, buf, 32768 );
+      if( num_read < 0 ) {
+         
+         SG_error("sha256_fd_buf: I/O error reading FD %d, errno=%d\n", fd, -errno );
+         SHA256_Final( output, &context );
+         return;
+      }
+      
+      SHA256_Update( &context, buf, num_read );
+   }
+   
+   SHA256_Final( output, &context );
+   
+   return;
+}
+
+
 // load a file into RAM
 // return a pointer to the bytes on success, and set *size to the size of the file 
 // return NULL on error, such as OOM or failure to stat or read the file

@@ -153,6 +153,7 @@ char* sha256_hash_printable( char const* input, size_t len );
 unsigned char* sha256_data( char const* printable );
 unsigned char* sha256_file( char const* path );
 unsigned char* sha256_fd( int fd );
+void sha256_fd_buf( int fd, size_t len, unsigned char* output );
 unsigned char* sha256_dup( unsigned char const* sha256 );
 int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 );
 
