@@ -78,6 +78,7 @@ int SG_manifest_block_set_dirty( struct SG_manifest_block* dest, bool dirty );
 int SG_manifest_init( struct SG_manifest* manifest, uint64_t volume_id, uint64_t coordinator_id, uint64_t file_id, int64_t file_version );
 int SG_manifest_dup( struct SG_manifest* dest, struct SG_manifest* src );
 int SG_manifest_load_from_protobuf( struct SG_manifest* manifest, const SG_messages::Manifest* mmsg );
+int SG_manifest_load_from_chunk( struct SG_manifest* manifest, struct SG_chunk* chunk );
 
 // destructors 
 int SG_manifest_block_free( struct SG_manifest_block* block );

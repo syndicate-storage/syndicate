@@ -99,7 +99,6 @@ int SG_manifest_block_load_from_protobuf( struct SG_manifest_block* dest, const 
    return rc;
 }
 
-
 // set the dirty status for a block 
 int SG_manifest_block_set_dirty( struct SG_manifest_block* dest, bool dirty ) {
    
@@ -338,6 +337,37 @@ int SG_manifest_load_from_protobuf( struct SG_manifest* dest, const SG_messages:
    dest->lock = lock;
    
    return 0;
+}
+
+
+// load a manifest from a serialized bytestring that encodes a protobuf
+// return 0 on success, and populate *manifest
+// return -EINVAL if it's not a valid protobuf
+// return -ENOMEM on OOM
+int SG_manifest_load_from_chunk( struct SG_manifest* manifest, struct SG_chunk* chunk ) {
+
+   int rc = 0;
+   SG_messages::Manifest proto_manifest;
+
+   try {
+      rc = md_parse< SG_messages::Manifest >( &proto_manifest, chunk->data, chunk->len );
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+
+   if( rc != 0 ) {
+      SG_error("md_parse rc = %d\n", rc );
+      return -EINVAL;
+   }
+
+   rc = SG_manifest_load_from_protobuf( manifest, &proto_manifest );
+   if( rc != 0 ) {
+      SG_error("SG_manifest_load_from_protobuf rc = %d\n", rc );
+      return rc;
+   }
+
+   return rc;
 }
 
 
