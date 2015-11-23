@@ -20,11 +20,22 @@ import "ms.proto";
 
 // manifest block metadata
 message ManifestBlock {
-   required uint64 block_id = 1;        // or, gateway ID
-   required int64 block_version = 2;
+   enum ChunkType {
+      BLOCK = 1;
+      MANIFEST = 2;
+   }
+
+   required uint64 block_id = 1;        // or, gateway ID (for CERT); or, manifest modtime seconds (for MANIFEST)
+   required int64 block_version = 2;    // or, cert version (for CERT); or, manifest modtime nanoseconds (for MANIFEST)
+   
    optional bytes hash = 3;             // if not given, then each block must be signed
-   optional uint64 owner_id = 4;        // for cert bundles, this is the user that owns the gateway
-   optional uint32 caps = 5;            // for cert bundles, this is the gateway's capability bits
+   optional uint64 owner_id = 4;        // for cert bundles (CERT), this is the user that owns the gateway
+   optional uint32 caps = 5;            // for cert bundles (CERT), this is the gateway's capability bits
+
+   // for when this block identifies a serialized chunk of data
+   optional int32 chunk_type = 6;
+   optional uint64 offset = 7;
+   optional uint64 size = 8; 
 }
 
 // manifest (data plane)
@@ -70,8 +81,8 @@ message Request {
       TRUNCATE = 2;             // truncate a file to a new size
       DETACH = 3;               // delete file 
       RENAME = 4;               // rename file
-      PUTBLOCK = 5;             // send a block
-      DELETEBLOCK = 6;          // delete a block
+      PUTCHUNKS = 5;            // send one or more chunks of data (can be serialized manifests and/or serialized blocks)
+      DELETECHUNKS = 6;         // delete one or more chunks of data (can be manifests and/or blocks)
       SETXATTR = 7;             // set an xattr 
       REMOVEXATTR = 8;          // remove an xattr 
       RELOAD = 9;               // reload cert bundle; new versions in volume_version and cert_version
@@ -90,7 +101,7 @@ message Request {
    required int64 file_version = 7;
    required string fs_path = 8;
 
-   repeated ManifestBlock blocks = 9;    // for WRITE, indicates new block versions and hashes; for BLOCK, indicates the accompanying block information
+   repeated ManifestBlock blocks = 9;    // for WRITE, indicates new block versions and hashes; for PUTCHUNKS, indicates the accompanying chunk information
    optional string new_fs_path = 10;     // for RENAME, indicates the new path 
    optional uint64 new_size = 11;        // for TRUNCATE, indicates the new size
    optional int64 new_manifest_mtime_sec = 12;    // for WRITE, indicates the new manifest modification time (seconds)
