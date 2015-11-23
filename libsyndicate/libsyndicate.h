@@ -428,7 +428,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define SG_INVALID_FILE_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_USER_ID SG_INVALID_BLOCK_ID
 
-// gateway HTTP error codes (used by the AG and UG)
+// gateway HTTP error codes
 #define SG_HTTP_TRYAGAIN    503
 
 #define SG_CAP_READ_DATA  1
@@ -441,11 +441,10 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // limits
-#define SG_MAX_CERT_LEN                  10*1024           // 10kb
-#define SG_MAX_MANIFEST_LEN              1024*1024L         // 1MB
-#define SG_MAX_DRIVER_LEN                10*1024*1024L      // 10MB
-#define SG_MAX_XATTR_LEN                 10*1024*1024L     // 10MB
-#define SG_MAX_BLOCK_LEN_MULTIPLER       5                 // i.e. a block download can't be more than 5x the size of a block
+#define SG_MAX_CERT_LEN                  10*1024           // 10kb--max certificate size
+#define SG_MAX_MANIFEST_LEN              10*1024*1024L      // 10MB--max manifest size
+#define SG_MAX_DRIVER_LEN                10*1024*1024L      // 10MB--max driver size
+#define SG_MAX_XATTR_LEN                 10*1024*1024L     // 10MB--max xattr size
+#define SG_MAX_BLOCK_LEN_MULTIPLIER      5                 // i.e. a serialized block can't be more than $SG_MAX_BLOCK_LEN_MULTIPLIER times the size of a block
                                                            // (there are some serious problems with the design of a driver that requires this, IMHO).
-
 #endif

@@ -67,7 +67,7 @@ int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const
    if( auth_header != NULL ) {
       curl_easy_setopt( curl, CURLOPT_USERPWD, auth_header );
    }
-   
+
    return 0;
 }
 
