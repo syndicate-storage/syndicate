@@ -4335,3 +4335,9 @@ int md_entry_to_string( struct md_entry* ent, char** data ) {
     *data = buf;
     return 0;
 }
+
+
+// get data root directory
+char* md_conf_get_data_root( struct md_syndicate_conf* conf ) {
+    return conf->data_root;
+}

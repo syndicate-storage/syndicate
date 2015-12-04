@@ -305,6 +305,10 @@ int md_signals( int use_signals );
 int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf );
 int md_read_conf_line( char* line, char** key, char*** values );
 int md_free_conf( struct md_syndicate_conf* conf );
+int md_default_conf( struct md_syndicate_conf* conf );
+int md_check_conf( struct md_syndicate_conf* conf );
+
+char* md_conf_get_data_root( struct md_syndicate_conf* conf );
 
 // md_entry
 struct md_entry* md_entry_dup( struct md_entry* src );
@@ -355,12 +359,10 @@ int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname );
 // top-level initialization
 int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
-// initialize syndicate as a client only
+// initialize syndicate as an anonymous read-only client only
 int md_init_client( struct md_syndicate_conf* conf, struct ms_client* client, struct md_opts* opts );
 
 int md_shutdown(void);
-int md_default_conf( struct md_syndicate_conf* conf );
-int md_check_conf( struct md_syndicate_conf* conf );
 
 // load certs 
 int md_certs_reload( struct md_syndicate_conf* conf, EVP_PKEY** syndicate_pubkey, ms::ms_user_cert* user_cert, ms::ms_user_cert* volume_owner_cert, ms::ms_volume_metadata* volume_cert, ms_cert_bundle* gateway_certs );
