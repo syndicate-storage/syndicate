@@ -1507,10 +1507,10 @@ int SG_client_request_PUTCHUNKS_setup( struct SG_gateway* gateway, SG_messages::
 }
 
 
-// make a signed DELETEBLOCK request
+// make a signed DELETECHUNKS request
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_DELETEBLOCK_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
+int SG_client_request_DELETECHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
