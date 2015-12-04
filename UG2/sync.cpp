@@ -41,7 +41,7 @@ int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path,
          continue;
       }
       
-      if( UG_dirty_block_fd( &itr->second ) >= 0 || UG_dirty_block_is_flushing( &itr->second ) ) {
+      if( UG_dirty_block_is_flushing( &itr->second ) ) {
          
          // already flushed or flushing
          continue;
@@ -102,6 +102,57 @@ int UG_sync_blocks_flush_finish( uint64_t file_id, int64_t file_version, UG_dirt
    
    return worst_rc;
 }
+
+
+// flush all dirty blocks to disk, but ensure that they remain in RAM
+// (this is the default behavior of flushing a dirty block)
+// return 0 on success
+// loop forever until successful; doing exponential back-off until something succeeds
+int UG_sync_blocks_flush( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, UG_dirty_block_map_t* dirty_blocks ) {
+
+   int rc = 0;
+   uint64_t timeout = 1;
+   struct timespec ts;
+
+   while( 1 ) {
+
+      rc = UG_sync_blocks_flush_async( gateway, fs_path, file_id, file_version, dirty_blocks );
+      if( rc != 0 ) {
+
+         SG_error("UG_sync_blocks_flush_async(%s) rc = %d\n", fs_path, rc );
+
+         ts.tv_sec = timeout;
+         ts.tv_nsec = 0;
+
+         md_sleep_uninterrupted( &ts );
+
+         timeout *= 2;
+         timeout += md_random64() % timeout;
+
+         continue;
+      }
+
+      rc = UG_sync_blocks_flush_finish( file_id, file_version, dirty_blocks );
+      if( rc != 0 ) {
+
+         SG_error("UG_dirty_blocks_flush_finish(%s) rc = %d\n", fs_path, rc );
+
+         ts.tv_sec = timeout;
+         ts.tv_nsec = 0;
+
+         md_sleep_uninterrupted( &ts );
+
+         timeout *= 2;
+         timeout += md_random64() % timeout;
+         
+         continue;
+      }
+
+      break;
+   }
+
+   return 0;
+}        
 
 
 // set up a sync context.
@@ -171,24 +222,21 @@ static int UG_sync_dirty_blocks_restore( struct SG_gateway* gateway, struct UG_i
    UG_dirty_block_map_t::iterator dirty_itr;
    struct ms_client* ms = SG_gateway_ms( gateway );
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
-   uint64_t blocksize = ms_client_get_volume_size( ms );
-
-   struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
+   uint64_t blocksize = ms_client_get_volume_blocksize( ms );
 
    for( UG_dirty_block_map_t::iterator itr = blocks->begin(); itr != blocks->end(); ) {
    
       uint64_t block_id = itr->first;
-      struct UG_dirty_block* block = itr->second;
+      struct UG_dirty_block* block = &itr->second;
 
       // don't include if the file was truncated before we could merge dirty data 
       if( old_file_version != UG_inode_file_version( inode ) ) {
          
-         if( block_id * block_size >= (unsigned)old_size ) {
+         if( block_id * blocksize >= (unsigned)old_file_size ) {
             
             tmp_itr = itr;
             itr++;
             
-            new_dirty_blocks->erase( tmp_itr );
             UG_dirty_block_evict_and_free( cache, inode, block );
             
             SG_debug("Skip truncated: %" PRIX64 "[%" PRId64 "]\n", UG_inode_file_id( inode ), block_id ); 
@@ -257,11 +305,8 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
    struct UG_sync_context sctx;
    
    struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( core );
-   struct ms_client* ms = SG_gateway_ms( gateway );
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct SG_manifest* replaced_blocks = NULL;
-   
-   uint64_t block_size = ms_client_get_volume_blocksize( ms );
    
    int64_t file_version = 0;
    off_t file_size = 0;
@@ -296,6 +341,8 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    file_version = UG_inode_file_version( inode );
    file_size = fskit_entry_get_size( fent );
+   old_manifest_modtime.tv_sec = SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) );
+   old_manifest_modtime.tv_nsec = SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) );
    
    // get dirty blocks 
    rc = UG_inode_dirty_blocks_extract_modified( inode, dirty_blocks );
@@ -305,12 +352,31 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
       
       SG_safe_delete( dirty_blocks );
       SG_safe_delete( new_dirty_blocks );
+      SG_safe_free( vctx );
+      SG_safe_free( rctx );
 
       SG_error("UG_inode_dirty_blocks_extract_modified('%s') rc = %d\n", path, rc );
       return rc;
    }
-   
+
+   // flush all dirty blocks
+   rc = UG_sync_blocks_flush( gateway, path, UG_inode_file_id( inode ), file_version, dirty_blocks );
+   if( rc != 0 ) {
+       
+       UG_sync_dirty_blocks_return( inode, dirty_blocks );
+       fskit_entry_unlock( fent );
+
+       SG_safe_delete( dirty_blocks );
+       SG_safe_delete( new_dirty_blocks );
+       SG_safe_free( vctx );
+       SG_safe_free( rctx );
+
+       SG_error("UG_sync_blocks_flush_async( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", UG_inode_file_id( inode ), file_version, path, rc );
+       return -EIO;
+   }
+
    // make a replica context, snapshotting this inode's dirty blocks and manifest
+   // takes ownership of blocks within dirty_blocks
    rc = UG_replica_context_init( rctx, ug, path, inode, UG_inode_manifest( inode ), dirty_blocks );
  
    // success?
@@ -334,7 +400,8 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
    replaced_blocks = UG_inode_replaced_blocks( inode );
    if( replaced_blocks == NULL || SG_manifest_get_block_count( replaced_blocks ) == 0 ) {
       
-      // nothing to vacuum 
+      // nothing to vacuum
+      SG_safe_free( vctx ); 
       vctx = NULL;
    }
    else {
@@ -384,7 +451,6 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
          SG_safe_delete( dirty_blocks );
          SG_safe_delete( new_dirty_blocks );
          
-         UG_replica_context_release_blocks( rctx );
          UG_replica_context_free( rctx );
          SG_safe_free( rctx );
         
@@ -398,10 +464,8 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
       }
    }
    
-   // replace dirty blocks--we're replicating them now.
+   // clear out dirty blocks and replaced blocks--we're replicating/vacuuming them now.
    UG_inode_replace_dirty_blocks( inode, new_dirty_blocks );
-   
-   // clear out replaced block info--we're vacuuming them now.
    UG_inode_clear_replaced_blocks( inode );
    
    // all manifest blocks are now clean--subsequent manifest refreshes can overwrite them
@@ -433,7 +497,7 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
       SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
       
       // preserve dirty but uncommitted, non-overwritten blocks
-      UG_sync_dirty_blocks_restore( gateway, inode, file_version, file_size, UG_replica_context_blocks( rctx ) );
+      UG_sync_dirty_blocks_restore( gateway, inode, file_version, file_size, dirty_blocks );
       
       // put back vacuum state into the inode 
       if( vctx != NULL ) {
@@ -457,9 +521,6 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
    else {
       
       // success!  this manifest is the last successfully-vacuumed manifest
-      old_manifest_modtime.tv_sec = UG_replica_context_inode_data( rctx )->manifest_mtime_sec;
-      old_manifest_modtime.tv_nsec = UG_replica_context_inode_data( rctx )->manifest_mtime_nsec;
-      
       UG_inode_set_old_manifest_modtime( inode, &old_manifest_modtime );
       
       while( 1 ) {

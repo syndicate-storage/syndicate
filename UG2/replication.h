@@ -40,13 +40,6 @@ int UG_replica_context_free( struct UG_replica_context* rctx );
 // send a manifest and a of dirty blocks to a given gateway
 int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx );
 
-// getters 
-UG_dirty_block_map_t* UG_replica_context_blocks( struct UG_replica_context* rctx );
-struct md_entry* UG_replica_context_inode_data( struct UG_replica_context* rctx );
-
 }
-
-// setters 
-UG_dirty_block_map_t* UG_replica_context_release_blocks( struct UG_replica_context* rctx );
 
 #endif
