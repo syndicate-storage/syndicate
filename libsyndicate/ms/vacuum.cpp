@@ -28,7 +28,7 @@ int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_i
    memset( vreq, 0, sizeof(struct ms_vacuum_entry) );
    
    vreq->volume_id = volume_id;
-   vreq->coordinator_id = gateway_id;
+   vreq->writer_id = gateway_id;
    vreq->file_id = file_id;
    vreq->file_version = file_version;
    vreq->manifest_mtime_sec = manifest_mtime_sec;
@@ -105,7 +105,7 @@ int ms_client_sign_vacuum_ticket( struct ms_client* client, struct ms_vacuum_ent
    ms::ms_vacuum_ticket vt;
    
    vt.set_volume_id( ve->volume_id );
-   vt.set_coordinator_id( ve->coordinator_id );
+   vt.set_writer_id( ve->writer_id );
    vt.set_file_id( ve->file_id );
    vt.set_file_version( ve->file_version );
    vt.set_manifest_mtime_sec( ve->manifest_mtime_sec );
@@ -147,7 +147,7 @@ int ms_client_verify_vacuum_ticket( struct ms_client* client, ms::ms_vacuum_tick
    
    ms_client_config_rlock( client );
    
-   cert = ms_client_get_gateway_cert( client, vt->coordinator_id() );
+   cert = ms_client_get_gateway_cert( client, vt->writer_id() );
    if( cert == NULL ) {
       
       // not known to us 
@@ -163,7 +163,7 @@ int ms_client_verify_vacuum_ticket( struct ms_client* client, ms::ms_vacuum_tick
 }
 
 
-// get the head of the vacuum log for a file 
+// get a vacuum log entry for a file 
 // return 0 on success
 // return -ENOMEM if OOM
 // return -ENODATA if there is no vacuum ticket
@@ -240,7 +240,7 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
          return rc;
       }
       
-      ms_client_vacuum_entry_init( ve, volume_id, vacuum_ticket->coordinator_id(), file_id, vacuum_ticket->file_version(),
+      ms_client_vacuum_entry_init( ve, volume_id, vacuum_ticket->writer_id(), file_id, vacuum_ticket->file_version(),
                                    vacuum_ticket->manifest_mtime_sec(), vacuum_ticket->manifest_mtime_nsec(), affected_blocks, num_affected_blocks );
       
       SG_safe_delete( reply );
@@ -356,7 +356,7 @@ int ms_client_append_vacuum_log_entry( struct ms_client* client, struct ms_vacuu
    
    // sentinel md_entry with all of our given information
    ent.volume = ve->volume_id;
-   ent.coordinator = ve->coordinator_id;
+   ent.coordinator = ve->writer_id;
    ent.file_id = ve->file_id;
    ent.version = ve->file_version;
    ent.manifest_mtime_sec = ve->manifest_mtime_sec;

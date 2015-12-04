@@ -24,7 +24,7 @@ struct ms_vacuum_entry {
    
    // NOTE: covered with the vacuum_signature in the ms_client_request sent to the MS
    uint64_t volume_id;
-   uint64_t coordinator_id;
+   uint64_t writer_id;  // id of the gateway that committed the data
    uint64_t file_id;
    int64_t file_version;
    int64_t manifest_mtime_sec;
@@ -39,7 +39,7 @@ struct ms_vacuum_entry {
 extern "C" {
    
 // vacuum API 
-int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_id, uint64_t coordinator_id, uint64_t file_id, int64_t file_version,
+int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_id, uint64_t writer_id, uint64_t file_id, int64_t file_version,
                                  int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, uint64_t* affected_blocks, size_t num_affected_blocks );
 
 int ms_client_vacuum_entry_set_blocks( struct ms_vacuum_entry* vreq, uint64_t* affected_blocks, size_t num_affected_blocks );
