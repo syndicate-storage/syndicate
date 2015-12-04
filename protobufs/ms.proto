@@ -110,7 +110,7 @@ message ms_listing {
 message ms_vacuum_ticket {
 
    required uint64 volume_id = 1;
-   required uint64 coordinator_id = 2;
+   required uint64 writer_id = 2;
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required int64 manifest_mtime_sec = 5;          
