@@ -26,6 +26,11 @@
 // gateway for which we are running the main() loop
 static struct SG_gateway* g_main_gateway = NULL;
 
+// alloc a gateway 
+struct SG_gateway* SG_gateway_new(void) {
+   return SG_CALLOC( struct SG_gateway, 1 );
+}
+
 // initialize an empty request data structure 
 // always succeeds 
 int SG_request_data_init( struct SG_request_data* reqdat ) {
@@ -46,10 +51,10 @@ int SG_request_data_init( struct SG_request_data* reqdat ) {
 }
 
 
-// initialize a request data structure for a block 
+// init common fields of a request data 
 // return 0 on success 
-// return -ENOMEM on OOM
-int SG_request_data_init_block( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct SG_request_data* reqdat ) {
+// return -ENOMEM on OOM 
+int SG_request_data_init_common( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct SG_request_data* reqdat ) {
 
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t volume_id = ms_client_get_volume_id( ms );
@@ -67,9 +72,24 @@ int SG_request_data_init_block( struct SG_gateway* gateway, char const* fs_path,
    reqdat->file_id = file_id;
    reqdat->coordinator_id = SG_gateway_id( gateway );
    reqdat->file_version = file_version;
+   reqdat->user_id = SG_gateway_user_id( gateway );
+
+   return 0;
+}
+
+
+// initialize a request data structure for a block 
+// return 0 on success 
+// return -ENOMEM on OOM
+int SG_request_data_init_block( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct SG_request_data* reqdat ) {
+
+   int rc = SG_request_data_init_common( gateway, fs_path, file_id, file_version, reqdat );
+   if( rc != 0 ) {
+      return rc;
+   }
+
    reqdat->block_id = block_id;
    reqdat->block_version = block_version;
-   reqdat->user_id = SG_gateway_user_id( gateway );
    
    return 0;
 }
@@ -80,25 +100,13 @@ int SG_request_data_init_block( struct SG_gateway* gateway, char const* fs_path,
 // return -ENOMEM on OOM 
 int SG_request_data_init_manifest( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, struct SG_request_data* reqdat ) {
 
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* fs_path_dup = SG_strdup_or_null( fs_path );
-   
-   if( fs_path_dup == NULL && fs_path != NULL ) {
-      return -ENOMEM;
+   int rc = SG_request_data_init_common( gateway, fs_path, file_id, file_version, reqdat );
+   if( rc != 0 ) {
+      return rc;
    }
    
-   SG_request_data_init( reqdat );
-   
-   reqdat->fs_path = fs_path_dup;
-   reqdat->volume_id = volume_id;
-   reqdat->file_id = file_id;
-   reqdat->coordinator_id = SG_gateway_id( gateway );
-   reqdat->file_version = file_version;
    reqdat->manifest_timestamp.tv_sec = manifest_mtime_sec;
    reqdat->manifest_timestamp.tv_nsec = manifest_mtime_nsec;
-   reqdat->user_id = SG_gateway_user_id( gateway );
    
    return 0;
 }
@@ -109,40 +117,28 @@ int SG_request_data_init_manifest( struct SG_gateway* gateway, char const* fs_pa
 // return -ENOMEM on OOM 
 int SG_request_data_init_setxattr( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char const* name, char const* value, size_t value_len, struct SG_request_data* reqdat ) {
 
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
    if( name == NULL || value == NULL ) {
       return -EINVAL;
    }
    
-   char* fs_path_dup = SG_strdup_or_null( fs_path );
-   
-   if( fs_path_dup == NULL && fs_path != NULL ) {
-      return -ENOMEM;
-   }
-   
    char* name_dup = SG_strdup_or_null( name );
    if( name_dup == NULL ) {
-      SG_safe_free( fs_path_dup );
       return -ENOMEM;
    }
    
    char* value_dup = SG_CALLOC( char, value_len );
    if( value_dup == NULL ) {
-      SG_safe_free( fs_path_dup );
       SG_safe_free( name_dup );
       return -ENOMEM;
    }
    
-   SG_request_data_init( reqdat );
+   int rc = SG_request_data_init_common( gateway, fs_path, file_id, file_version, reqdat );
+   if( rc != 0 ) {
+      SG_safe_free( name_dup );
+      SG_safe_free( value_dup );
+      return -ENOMEM;
+   }
    
-   reqdat->fs_path = fs_path_dup;
-   reqdat->volume_id = volume_id;
-   reqdat->file_id = file_id;
-   reqdat->coordinator_id = SG_gateway_id( gateway );
-   reqdat->file_version = file_version;
-   reqdat->user_id = SG_gateway_user_id( gateway );
    reqdat->setxattr = true;
    reqdat->xattr_name = name_dup;
    reqdat->xattr_value = value_dup;
@@ -158,33 +154,21 @@ int SG_request_data_init_setxattr( struct SG_gateway* gateway, char const* fs_pa
 // return -ENOMEM on OOM 
 int SG_request_data_init_removexattr( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char const* name, struct SG_request_data* reqdat ) {
 
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
    if( name == NULL ) {
       return -EINVAL;
    }
    
-   char* fs_path_dup = SG_strdup_or_null( fs_path );
-   
-   if( fs_path_dup == NULL && fs_path != NULL ) {
-      return -ENOMEM;
-   }
-   
    char* name_dup = SG_strdup_or_null( name );
    if( name_dup == NULL ) {
-      SG_safe_free( fs_path_dup );
       return -ENOMEM;
    }
    
-   SG_request_data_init( reqdat );
+   int rc = SG_request_data_init_common( gateway, fs_path, file_id, file_version, reqdat );
+   if( rc != 0 ) {
+      SG_safe_free( name_dup );
+      return -ENOMEM;
+   }
    
-   reqdat->fs_path = fs_path_dup;
-   reqdat->volume_id = volume_id;
-   reqdat->file_id = file_id;
-   reqdat->coordinator_id = SG_gateway_id( gateway );
-   reqdat->file_version = file_version;
-   reqdat->user_id = SG_gateway_user_id( gateway );
    reqdat->removexattr = true;
    reqdat->xattr_name = name_dup;
    

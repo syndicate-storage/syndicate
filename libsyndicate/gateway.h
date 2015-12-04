@@ -155,6 +155,7 @@ struct SG_gateway {
 extern "C" {
 
 // lifecycle
+struct SG_gateway* SG_gateway_new(void);
 int SG_gateway_init( struct SG_gateway* gateway, uint64_t gateway_type, int argc, char** argv, struct md_opts* overrides );
 int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts );
 int SG_gateway_main( struct SG_gateway* gateway );
@@ -187,6 +188,7 @@ void SG_impl_config_change( struct SG_gateway* gateway, int (*impl_config_change
 
 // request parsing
 int SG_request_data_init( struct SG_request_data* reqdat );
+int SG_request_data_init_common( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct SG_request_data* reqdat );
 int SG_request_data_init_block( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct SG_request_data* reqdat );
 int SG_request_data_init_manifest( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, struct SG_request_data* reqdat );
 int SG_request_data_init_setxattr( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char const* name, char const* value, size_t value_len, struct SG_request_data* reqdat );
