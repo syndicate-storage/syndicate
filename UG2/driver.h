@@ -24,8 +24,8 @@ struct UG_state;
 
 extern "C" {
 
-// start initial handlers
-int UG_driver_startup( struct UG_state* state );
+int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls );
+int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls );
 
 }
 
