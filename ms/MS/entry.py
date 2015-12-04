@@ -455,13 +455,15 @@ class MSEntryXAttr( storagetypes.Object ):
 class MSEntryVacuumLog( storagetypes.Object ):
    """
    Log of manifest metadata of an MSEntry, for use in garbage collection.
-   UGs poll these in order to garbage-collect stale manifests and blocks from the RGs for an MSEntry.
+   Gateways poll these in order to garbage-collect stale manifests and blocks.
    The MS remembers which previous manifests (and thus blocks) exist through a set of these records.
+
+   The log does not preserve order, since garbage collection is done concurrently.
    """
    
    file_id = storagetypes.String( default="None" )              # has to be a string, since this is an unsigned 64-bit int (and GAE only supports signed 64-bit int)
    volume_id = storagetypes.Integer( default=-1 )
-   coordinator_id = storagetypes.Integer( default=-1 )
+   writer_id = storagetypes.Integer( default=-1 )
    
    version = storagetypes.Integer( default=-1, indexed=False )
    manifest_mtime_sec = storagetypes.Integer(default=0, indexed=False)
@@ -474,23 +476,23 @@ class MSEntryVacuumLog( storagetypes.Object ):
    nonce = storagetypes.Integer( default=0, indexed=False )
    
    @classmethod
-   def make_key_name( cls, volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
-      return "MSEntryVacuumLog: volume_id=%s,coordinator_id=%s,file_id=%s,version=%s,manifest_mtime_sec=%s,manifest_mtime_nsec=%s" % (volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+   def make_key_name( cls, volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+      return "MSEntryVacuumLog: volume_id=%s,writer_id=%s,file_id=%s,version=%s,manifest_mtime_sec=%s,manifest_mtime_nsec=%s" % (volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
    
    @classmethod
-   def create_async( cls, _volume_id, _coordinator_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec, _affected_blocks, _signature, nonce=None ):
+   def create_async( cls, _volume_id, _writer_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec, _affected_blocks, _signature, nonce=None ):
       
       if _affected_blocks is None:
          _affected_blocks = []
          
-      key_name = MSEntryVacuumLog.make_key_name( _volume_id, _coordinator_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec )
+      key_name = MSEntryVacuumLog.make_key_name( _volume_id, _writer_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec )
       
       if nonce is None:
          nonce = random.randint(-2**63, 2**63 - 1)
       
       return MSEntryVacuumLog.get_or_insert_async( key_name,
                                                    volume_id=_volume_id,
-                                                   coordinator_id=_coordinator_id,
+                                                   writer_id=_writer_id,
                                                    file_id=_file_id,
                                                    version=_version,
                                                    manifest_mtime_sec=_manifest_mtime_sec,
@@ -500,9 +502,9 @@ class MSEntryVacuumLog( storagetypes.Object ):
                                                    nonce=nonce )
    
    @classmethod 
-   def delete_async( cls, volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+   def delete_async( cls, volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
       
-      key_name = MSEntryVacuumLog.make_key_name( volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      key_name = MSEntryVacuumLog.make_key_name( volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
       record_key = storagetypes.make_key( MSEntryVacuumLog, key_name )
       
       storagetypes.deferred.defer( MSEntryVacuumLog.delete_all, [record_key] )
@@ -513,8 +515,8 @@ class MSEntryVacuumLog( storagetypes.Object ):
    @classmethod 
    def Peek( cls, volume_id, file_id, async=False ):
       """
-      Get the head of the log for this file.
-      That is, the oldest manifest record.
+      Get a single vacuum log entry.
+      Order is not preserved.
       """
       
       log_head = MSEntryVacuumLog.ListAll( {"MSEntryVacuumLog.volume_id ==": volume_id, "MSEntryVacuumLog.file_id ==": file_id},
@@ -524,7 +526,7 @@ class MSEntryVacuumLog( storagetypes.Object ):
       return log_head
    
    @classmethod 
-   def Insert( cls, volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, signature ):
+   def Insert( cls, volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, signature ):
       """
       Add a new manifest log record.
       Verify that the MSEntry exists afterwards, and undo (delete) the newly-inserted record if not
@@ -532,7 +534,7 @@ class MSEntryVacuumLog( storagetypes.Object ):
       
       nonce = random.randint(-2**63, 2**63 - 1)
       
-      rec_fut = cls.create_async( volume_id, coordinator_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, signature, nonce=nonce )
+      rec_fut = cls.create_async( volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, signature, nonce=nonce )
       
       rec = rec_fut.get_result()
       
@@ -541,7 +543,7 @@ class MSEntryVacuumLog( storagetypes.Object ):
       if msent is None or msent.deleted:
          # undo, if we created 
          if rec.nonce == nonce:
-            cls.delete_async( rec.volume_id, rec.coordinator_id, rec.file_id, rec.version, rec.manifest_mtime_sec, rec.manifest_mtime_nsec )
+            cls.delete_async( rec.volume_id, rec.writer_id, rec.file_id, rec.version, rec.manifest_mtime_sec, rec.manifest_mtime_nsec )
             
       return rec
    
