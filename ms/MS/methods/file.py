@@ -882,7 +882,7 @@ def file_vacuum_log_response( volume, rc, log_record ):
    
    if rc == 0:
       reply.vacuum_ticket.file_id = log_record.file_id
-      reply.vacuum_ticket.coordinator_id = log_record.coordinator_id
+      reply.vacuum_ticket.writer_id = log_record.writer_id
       reply.vacuum_ticket.file_version = log_record.version
       reply.vacuum_ticket.manifest_mtime_sec = log_record.manifest_mtime_sec 
       reply.vacuum_ticket.manifest_mtime_nsec = log_record.manifest_mtime_nsec
@@ -994,7 +994,7 @@ def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=Fals
    attrs = MSEntry.unprotobuf_dict( update.entry )
    rc = 0
    
-   required_attrs =  ['volume_id', 'coordinator_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   required_attrs =  ['volume_id', 'writer_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
    
    attrs = file_update_get_attrs( attrs, required_attrs )
    
@@ -1033,7 +1033,7 @@ def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=Fals
                 else:
                    
                    # append!
-                   storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], attrs['coordinator_id'], attrs['file_id'], attrs['version'], \
+                   storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], attrs['writer_id'], attrs['file_id'], attrs['version'], \
                                                 attrs['manifest_mtime_sec'], attrs['manifest_mtime_nsec'], affected_blocks, vacuum_signature )
                    rc = 0
 
