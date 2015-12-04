@@ -68,7 +68,8 @@ struct SG_manifest {
 // manifest methods 
 extern "C" {
 
-// constructors 
+// constructors
+struct SG_manifest_block* SG_manifest_block_alloc( size_t count );
 int SG_manifest_block_init( struct SG_manifest_block* dest, uint64_t block_id, int64_t block_version, unsigned char const* hash, size_t hash_len );
 int SG_manifest_block_init_from_chunk( struct SG_manifest_block* dest, uint64_t block_id, int64_t block_version, struct SG_chunk* chunk );
 int SG_manifest_block_dup( struct SG_manifest_block* dest, struct SG_manifest_block* src );
@@ -101,10 +102,13 @@ int SG_manifest_set_stale( struct SG_manifest* manifest, bool stale );
 int SG_manifest_clear( struct SG_manifest* manifest );
 int SG_manifest_clear_nofree( struct SG_manifest* manifest );
 
+int SG_manifest_block_set_hash( struct SG_manifest_block* block, unsigned char* hash );
+
 // getters 
 uint64_t SG_manifest_block_id( struct SG_manifest_block* block );
 int64_t SG_manifest_block_version( struct SG_manifest_block* block );
 bool SG_manifest_block_is_dirty( struct SG_manifest_block* block );
+unsigned char* SG_manifest_block_hash( struct SG_manifest_block* block );
 
 uint64_t SG_manifest_get_volume_id( struct SG_manifest* manifest );
 uint64_t SG_manifest_get_file_id( struct SG_manifest* manifest );

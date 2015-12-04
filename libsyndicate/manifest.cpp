@@ -32,6 +32,11 @@ static int SG_manifest_unlock( struct SG_manifest* manifest ) {
    return pthread_rwlock_unlock( &manifest->lock );
 }
 
+// allocate manifest blocks 
+struct SG_manifest_block* SG_manifest_block_alloc( size_t num_blocks ) {
+   return SG_CALLOC( struct SG_manifest_block, num_blocks );
+}
+
 // initialize a manifest block.
 // duplicate all information 
 // return 0 on success
@@ -807,6 +812,20 @@ bool SG_manifest_block_is_dirty( struct SG_manifest_block* block ) {
    return block->dirty;
 }
 
+// get a manifest block's hash 
+unsigned char* SG_manifest_block_hash( struct SG_manifest_block* block ) {
+   return block->hash;
+}
+
+// set a manifest's block hash (freeing the previous one, if present)
+int SG_manifest_block_set_hash( struct SG_manifest_block* block, unsigned char* hash ) {
+   if( block->hash != NULL ) {
+      SG_safe_free( block->hash );
+   }
+   block->hash = hash;
+   return 0;
+}
+
 // get the manifest volume ID 
 uint64_t SG_manifest_get_volume_id( struct SG_manifest* manifest ) {
    
@@ -1120,6 +1139,7 @@ int SG_manifest_block_hash_eq( struct SG_manifest* manifest, uint64_t block_id, 
 }
 
 // put a manifest's data into its protobuf representation 
+// the manifest will NOT be signed
 // return 0 on success
 // return -ENOMEM on OOM 
 // the caller should free mmsg regardless of the return code
