@@ -145,3 +145,31 @@ message Reply {
 
    optional ms.ms_entry ent_out = 11;        // on UPDATE, this is the new state of the entry 
 }
+
+// driver request 
+message DriverRequest {
+
+   enum RequestType {
+      BLOCK = 1;
+      MANIFEST = 2;
+   }
+    
+   required uint64 volume_id = 1;
+   required uint64 user_id = 2;
+   required uint64 coordinator_id = 3;
+   required uint64 file_id = 4;
+   required uint64 file_version = 5;
+   required uint32 request_type = 6;
+
+   // extra optional goodies the gateway can supply
+   optional string path = 7;
+   optional uint64 block_id = 8;        // if block request
+   optional int64 block_version = 9;    // if block request 
+   optional int64 manifest_mtime_sec = 10;   // if manifest request 
+   optional int32 manifest_mtime_nsec = 11;  // if manifest request 
+
+   // hints
+   repeated bool cached_blocks = 12;    // vector of true|false where cached_blocks[i] is true if it's locally present in the cache
+   optional Manifest manifest = 13;     // for whole-file operations
+}
+
