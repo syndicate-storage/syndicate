@@ -931,9 +931,71 @@ int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk ) {
 }
 
 
+// create a driver request from a reqdat
+// return 0 on success, and populate all required fields of *dreq, and any optional fields specific to the type
+// return -ENOMEM on OOM
+int SG_proc_request_init( SG_messages::DriverRequest* dreq, struct SG_request_data* reqdat ) {
+
+   try {
+      dreq->set_file_id( reqdat->file_id );
+      dreq->set_file_version( reqdat->file_version );
+      dreq->set_volume_id( reqdat->volume_id );
+      dreq->set_coordinator_id( reqdat->coordinator_id );
+      dreq->set_user_id( reqdat->user_id );
+
+      if( reqdat->fs_path != NULL ) {
+          dreq->set_path( string(reqdat->fs_path) );
+      }
+
+      if( SG_request_is_manifest( reqdat ) ) {
+          dreq->set_manifest_mtime_sec( reqdat->manifest_timestamp.tv_sec );
+          dreq->set_manifest_mtime_nsec( reqdat->manifest_timestamp.tv_nsec );
+      }
+      else if( SG_request_is_block( reqdat ) ) {
+          dreq->set_block_id( reqdat->block_id );
+          dreq->set_block_version( reqdat->block_version );
+      }
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+
+   return 0;
+}
+
+
+// send a driver request along to a process
+// return 0 on success
+// return -ENOMEM on OOM
+// return -ENODATA if we couldn't write (i.e. SIGPIPE)
+// return -EIO if we couldn't get a reply
+int SG_proc_write_request( int fd, SG_messages::DriverRequest* dreq ) {
+
+   int rc = 0;
+   struct SG_chunk chunk;
+   char* buf = NULL;
+   size_t len = 0;
+
+   memset( &chunk, 0, sizeof(struct SG_chunk) );
+
+   rc = md_serialize< SG_messages::DriverRequest >( dreq, &buf, &len );
+   if( rc != 0 ) {
+      return rc;
+   }
+
+   SG_chunk_init( &chunk, buf, len );
+
+   rc = SG_proc_write_chunk( fd, &chunk );
+   SG_chunk_free( &chunk );
+
+   return rc;
+}
+
+
 // start a (long-running) worker process, and store the relevant information in an SG_proc.
 // if given, feed the worker its config (as a string), its secrets (as a string), and its driver info (as a string)
 // set up pipes to link the worker to the gateway.
+// TODO: gather stderr with another thread, and feed into our logging system
 // return 0 on success 
 // return -EINVAL on invalid arguments
 // return -EMFILE if we're out of fds
@@ -1219,7 +1281,7 @@ int SG_proc_tryjoin( struct SG_proc* proc, int* child_status ) {
          rc = -errno;
          if( rc == -EINTR ) {
             
-            // might have caught SIGCHILD. Try again 
+            // might have caught SIGCHLD. Try again 
             continue;
          }
          else if( rc == -EAGAIN ) {
