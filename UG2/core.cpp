@@ -21,8 +21,7 @@
 #include "vacuumer.h"
 
 #define UG_DRIVER_NUM_ROLES  3
-
-char const* UG_DRIVER_ROLES[3] = {
+char const* UG_DRIVER_ROLES[ UG_DRIVER_NUM_ROLES ] = {
    "cdn",
    "serialize",
    "deserialize"
@@ -31,7 +30,7 @@ char const* UG_DRIVER_ROLES[3] = {
 // global UG state
 struct UG_state {
    
-   struct SG_gateway gateway;           // reference to the gateway core (which, in turn, points to UG_state)
+   struct SG_gateway* gateway;           // reference to the gateway core (which, in turn, points to UG_state)
    
    uint64_t* replica_gateway_ids;       // IDs of replica gateways to replicate data to
    size_t num_replica_gateway_ids;
@@ -140,6 +139,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    struct md_wq* wq = NULL;
    struct md_opts* overrides = md_opts_new( 1 );
    struct md_syndicate_conf* conf = NULL;
+   struct SG_gateway* gateway = NULL;
    
    if( overrides == NULL ) {
       return NULL;
@@ -148,7 +148,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    md_opts_default( overrides );
    md_opts_set_client( overrides, client );
    md_opts_set_gateway_type( overrides, SYNDICATE_UG );
-   md_opts_set_driver_params( overrides, UG_DEFAULT_DRIVER_EXEC_STR, UG_DRIVER_ROLES, UG_NUM_DRIVER_ROLES );
+   md_opts_set_driver_config( overrides, UG_DEFAULT_DRIVER_EXEC_STR, UG_DRIVER_ROLES, UG_DRIVER_NUM_ROLES );
    
    struct UG_state* state = SG_CALLOC( struct UG_state, 1 );
    if( state == NULL ) {
@@ -158,6 +158,15 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       return NULL;
    }
    
+   gateway = SG_gateway_new();
+   if( gateway == NULL ) {
+      
+      md_opts_free( overrides );
+      SG_safe_free( overrides );
+      SG_safe_free( state );
+      return NULL;
+   }
+
    SG_debug("%s", "Activating filesystem\n");
    
    // set up fskit library...
@@ -166,6 +175,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       
       fskit_error( "fskit_library_init rc = %d\n", rc );
       SG_safe_free( state );
+      SG_safe_free( gateway );
       md_opts_free( overrides );
       SG_safe_free( overrides );
       return NULL;
@@ -176,6 +186,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       
       fskit_library_shutdown();
       SG_safe_free( state );
+      SG_safe_free( gateway );
       md_opts_free( overrides );
       SG_safe_free( overrides );
       return NULL;
@@ -184,7 +195,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    SG_debug("%s", "Setting up gateway core\n");
    
    // set up gateway...
-   rc = SG_gateway_init( &state->gateway, SYNDICATE_UG, argc, argv, overrides );
+   rc = SG_gateway_init( gateway, SYNDICATE_UG, argc, argv, overrides );
    
    md_opts_free( overrides );
    SG_safe_free( overrides );
@@ -196,6 +207,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       pthread_rwlock_destroy( &state->lock );
       fskit_library_shutdown();
       SG_safe_free( state );
+      SG_safe_free( gateway );
       return NULL;
    }
    
@@ -206,11 +218,12 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       pthread_rwlock_destroy( &state->lock );
       fskit_library_shutdown();
       SG_safe_free( state );
+      SG_safe_free( gateway );
       return NULL;
    }
    
    // debugging?
-   conf = SG_gateway_conf( &state->gateway );
+   conf = SG_gateway_conf( state->gateway );
    
    if( conf->debug_lock ) {
        
@@ -234,6 +247,8 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       // OOM
       pthread_rwlock_destroy( &state->lock );
       fskit_library_shutdown();
+      SG_gateway_shutdown( gateway );
+      SG_safe_free( gateway );
       SG_safe_free( state );
       return NULL;
    }
@@ -243,7 +258,8 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       
       SG_error("fskit_core_init rc = %d\n", rc );
       
-      SG_gateway_shutdown( &state->gateway );
+      SG_gateway_shutdown( gateway );
+      SG_safe_free( gateway );
       pthread_rwlock_destroy( &state->lock );
       fskit_library_shutdown();
       SG_safe_free( state->fs );
@@ -252,12 +268,13 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    }
    
    // propagate UG to gateway 
-   SG_gateway_set_cls( &state->gateway, state );
+   SG_gateway_set_cls( gateway, state );
+   state->gateway = gateway;
    
    SG_debug("%s", "Looking up volume root\n");
    
    // set up root inode
-   rc = ms_client_get_volume_root( SG_gateway_ms( &state->gateway ), 0, 0, &root_inode_data );
+   rc = ms_client_get_volume_root( SG_gateway_ms( gateway ), 0, 0, &root_inode_data );
    if( rc != 0 ) {
       
       SG_error("ms_client_get_volume_root() rc = %d\n", rc );
@@ -329,7 +346,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    SG_debug("%s", "Setting up filesystem callbacks\n");
    
    // install methods 
-   UG_impl_install_methods( &state->gateway );
+   UG_impl_install_methods( state->gateway );
    UG_fs_install_methods( state->fs );
    
    // load replica gateways 
@@ -355,7 +372,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    SG_debug("%s", "Starting vacuumer\n");
    
    // set up vacuumer 
-   rc = UG_vacuumer_init( &state->vacuumer, &state->gateway );
+   rc = UG_vacuumer_init( &state->vacuumer, state->gateway );
    if( rc != 0 ) {
       
       UG_shutdown( state );
@@ -428,7 +445,7 @@ int UG_main( struct UG_state* state ) {
    
    int rc = 0;
    
-   rc = SG_gateway_main( &state->gateway );
+   rc = SG_gateway_main( state->gateway );
    
    return rc;
 }
@@ -475,10 +492,12 @@ int UG_shutdown( struct UG_state* state ) {
    SG_debug("%s", "Gateway shutdown\n");
    
    // destroy the gateway 
-   rc = SG_gateway_shutdown( &state->gateway );
+   rc = SG_gateway_shutdown( state->gateway );
    if( rc != 0 ) {
       SG_error("SG_gateway_shutdown rc = %d\n", rc );
    }
+
+   SG_safe_free( state->gateway );
    
    SG_debug("%s", "Free all cached inodes\n");
    
@@ -516,7 +535,7 @@ int UG_shutdown( struct UG_state* state ) {
 
 // get a pointer to the gateway core 
 struct SG_gateway* UG_state_gateway( struct UG_state* state ) {
-   return &state->gateway;
+   return state->gateway;
 }
    
 // get a pointer to the filesystem core
@@ -544,25 +563,10 @@ struct md_wq* UG_state_wq( struct UG_state* state ) {
    return state->wq;
 }
 
-// get a malloc'ed copy of the driver exec string 
-char* UG_state_get_exec_str( struct UG_state* state ) {
-   return SG_strdup_or_null( state->exec_str );
-}
-
 // get a ref to the UG driver
 // call only when at least read-locked 
 struct SG_driver* UG_state_driver( struct UG_state* state ) {
-   return state->driver;
+   return SG_gateway_driver( state->gateway );
 }
 
-// get a ref to the UG's driver roles 
-// call only when at least read-locked 
-char const** UG_state_driver_roles( struct UG_state* state ) {
-   return state->roles;
-}
-
-// get the number of driver roles 
-size_t UG_state_driver_num_roles( struct UG_state* state ) {
-   return state->num_roles;
-}
 
