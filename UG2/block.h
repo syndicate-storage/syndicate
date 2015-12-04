@@ -98,6 +98,8 @@ int64_t UG_dirty_block_version( struct UG_dirty_block* blk );
 struct SG_chunk* UG_dirty_block_buf( struct UG_dirty_block* blk );
 int UG_dirty_block_fd( struct UG_dirty_block* blk );
 struct SG_manifest_block* UG_dirty_block_info( struct UG_dirty_block* blk );
+
+// checks
 bool UG_dirty_block_unshared( struct UG_dirty_block* blk );
 bool UG_dirty_block_dirty( struct UG_dirty_block* blk );
 bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk );
