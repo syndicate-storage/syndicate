@@ -36,9 +36,6 @@ int UG_write_timestamp_update( struct UG_inode* inode, struct timespec ts );
 // update write nonce 
 int UG_write_nonce_update( struct UG_inode* inode );
 
-// merge dirty blocks into an inode
-int UG_write_dirty_blocks_merge( struct SG_gateway* gateway, struct UG_inode* inode, int64_t old_file_version, off_t old_size, uint64_t block_size, UG_dirty_block_map_t* new_dirty_blocks, bool overwrite );
-
 }
 
 #endif
