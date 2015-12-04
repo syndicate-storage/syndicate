@@ -23,6 +23,28 @@ import cStringIO
 import traceback
 import signal
 import json
+import threading
+
+driver_shutdown = None 
+
+def do_driver_shutdown():
+    """
+    gracefully shut down
+    """
+    global driver_shutdown
+
+    print >> sys.stderr, "Worker %s exiting" % os.getpid()
+
+    if driver_shutdown is not None:
+        rc = driver_shutdown()
+        if type(rc) in [int, long]:
+            sys.exit(rc)
+        else:
+            sys.exit(0)
+
+    else:
+        sys.exit(0)
+
 
 def read_string( f ):
    """
@@ -49,6 +71,10 @@ def read_int( f ):
    
    # read the int 
    i = f.readline( 100 )
+   if len(i) == 0:
+       # gateway exit 
+       do_driver_shutdown()
+
    if i[-1] != '\n':
       
       # invalid line 
@@ -73,6 +99,10 @@ def read_path( f ):
    
    # read path from stdin; output blocks to stdout 
    path = f.readline( 4096 )
+   if len(path) == 0:
+       # gateway exit 
+       do_driver_shutdown()
+
    if path[-1] != '\n':
       
       # invalid line 
@@ -91,6 +121,9 @@ def read_data( f, size ):
    """
    
    chunk = f.read( size+1 )
+   if len(chunk) == 0:
+       # gateway exit
+       do_driver_shutdown()
    
    if len(chunk) != size+1:
       
@@ -116,7 +149,7 @@ def read_chunk( f ):
 
    chunk_len = read_int( f )
    if chunk_len is None:
-       return None 
+       do_driver_shutdown()
 
    chunk = read_data( f, chunk_len )
    return chunk
@@ -245,6 +278,7 @@ def driver_setup( operation_modes, expected_callback_names ):
    except Exception, e:
       
       print >> sys.stderr, "Failed to load config"
+      print >> sys.stderr, "'%s'" % config_str
       print >> sys.stderr, traceback.format_exc()
       
       # tell the parent that we failed
@@ -277,8 +311,8 @@ def driver_setup( operation_modes, expected_callback_names ):
       
    # verify that the driver methods are defined 
    fail = False
-   for method_name in expected_callback_names + ["driver_init", "driver_shutdown"]:
-       if method_name not in locals():
+   for method_name in expected_callback_names:
+       if method_name not in locals().keys():
            fail = True
            print >> sys.stderr, "No '%s' method defined" % method_name
         
@@ -290,7 +324,7 @@ def driver_setup( operation_modes, expected_callback_names ):
        METHODS[ method_name ] = method
 
    # remember generic shutdown so the signal handler can use it
-   if METHODS.has_key('driver_shutdown')
+   if METHODS.has_key('driver_shutdown'):
        global driver_shutdown
        driver_shutdown = METHODS['driver_shutdown']
 
