@@ -130,6 +130,7 @@ ssize_t md_read_uninterrupted( int fd, char* buf, size_t len );
 ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags );
 ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len );
 ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags );
+int md_transfer( int in_fd, int out_fd, size_t len );
 
 // time functions
 int64_t md_current_time_seconds();
@@ -167,7 +168,7 @@ int md_base64_decode(const char* b64message, size_t b64len, char** buffer, size_
 int md_base64_encode(const char* message, size_t len, char** buffer);
 int md_strrstrip( char* str, char const* strip );
 
-// random number generator
+// pseudo-random number generator (not cryptographically secure)
 uint32_t md_random32(void);
 uint64_t md_random64(void);
 

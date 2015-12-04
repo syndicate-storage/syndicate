@@ -602,6 +602,43 @@ ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) 
    return num_written;
 }
 
+
+// transfer data from one fd to another.
+// mask EINTR.
+// return 0 on success
+// return -ENODATA on underflow
+// return negative on error 
+int md_transfer( int in_fd, int out_fd, size_t count ) {
+
+   char buf[4096];
+   size_t i = 0;
+
+   while( i < count ) {
+
+      ssize_t nr = md_read_uninterrupted( in_fd, buf, 4096 );
+      if( nr < 0 ) {
+         return nr;
+      }
+      if( nr == 0 ) {
+         return -ENODATA;
+      }
+
+      ssize_t nw = md_write_uninterrupted( out_fd, buf, nr );
+      if( nw < 0 ) {
+         return nw;
+      }
+      
+      if( nw != nr ) {
+         return -ENODATA;
+      }
+
+      i += nw;
+   }
+
+   return 0;
+}
+
+
 // create an AF_UNIX local socket 
 // if bind_on is true, then this binds and listens on the socket
 // otherwise, it connects
