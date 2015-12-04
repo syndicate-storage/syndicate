@@ -176,7 +176,7 @@ static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
-   // must be local 
+   // must be coordinated by us 
    if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
       
       fskit_entry_unlock( fent );
@@ -344,7 +344,7 @@ static int UG_impl_detach( struct SG_gateway* gateway, struct SG_request_data* r
 // on config reload, re-calculate the set of replica gateway IDs
 // return 0 on success 
 // return negative on error
-static int UG_impl_config_change( struct SG_gateway* gateway, void* cls ) {
+static int UG_impl_config_change( struct SG_gateway* gateway, int driver_reload_rc, void* cls ) {
    
    int rc = 0;
    struct UG_state* ug = (struct UG_state*)cls;
@@ -372,6 +372,7 @@ int UG_impl_install_methods( struct SG_gateway* gateway ) {
    SG_impl_get_manifest( gateway, UG_impl_manifest_get );
    SG_impl_patch_manifest( gateway, UG_impl_manifest_patch );
    SG_impl_config_change( gateway, UG_impl_config_change );
-   
+
    return 0;
 }
+
