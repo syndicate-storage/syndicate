@@ -345,54 +345,19 @@ RG_server_block_put_finish:
 // return -ENOMEM on OOM 
 // return -EIO if we get invalid data from the driver (i.e. driver error)
 // return -ENODATA if we couldn't send data to the driver (i.e. gateway error)
-static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints, void* cls ) {
+static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* manifest_chunk, uint64_t hints, void* cls ) {
    
    int rc = 0;
-   struct SG_chunk chunk;
-   SG_messages::Manifest manifest_message;
    size_t len = 0;
    
-   SG_chunk_init( &chunk, NULL, 0 );
-   
-   // convert to protobuf 
-   rc = SG_manifest_serialize_to_protobuf( manifest, &manifest_message );
-   if( rc < 0 ) {
-      
-      SG_error("SG_manifest_serialize_to_protobuf rc = %d\n", rc );
-      
-      if( rc != -ENOMEM ) {
-         rc = -ENODATA;
-      }
-      
-      goto RG_server_manifest_put_finish;
-   }
-   
-   // serialize 
-   rc = md_serialize< SG_messages::Manifest >( &manifest_message, &chunk.data, &len );
-   chunk.len = (off_t)len;
-   
-   if( rc < 0 ) {
-      
-      SG_error("md_serialize rc = %d\n", rc );
-      
-      if( rc != -ENOMEM ) {
-         rc = -ENODATA;
-      }
-      
-      goto RG_server_manifest_put_finish;
-   }
-   
    // send it off, as a block 
-   rc = RG_server_block_put( gateway, reqdat, &chunk, hints, cls );
-   SG_chunk_free( &chunk );
+   rc = RG_server_block_put( gateway, reqdat, manifest_chunk, hints, cls );
    
    if( rc < 0 ) {
       
       SG_error("RG_server_block_put rc = %d\n", rc );
    }
       
-RG_server_manifest_put_finish:
-
    return rc;
 }
 
