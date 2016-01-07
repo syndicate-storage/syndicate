@@ -49,7 +49,8 @@ static int SG_gateway_impl_stat_or_fail( struct SG_gateway* gateway, struct md_H
    // do the stat
    rc = SG_gateway_impl_stat( gateway, reqdat, entity_info, mode );
    if( rc != 0 ) {
-      
+     
+      SG_error("SG_gateway_impl_stat rc = %d\n", rc ); 
       // not found or permission error?
       if( rc == -ENOENT || rc == -EACCES ) {
          
@@ -488,7 +489,8 @@ int SG_server_HTTP_HEAD_handler( struct md_HTTP_connection_data* con_data, struc
    // parse the request
    rc = SG_request_data_parse( &reqdat, con_data->url_path );
    if( rc != 0 ) {
-      
+     
+      SG_error("SG_request_data_parse rc = %d\n", rc ); 
       if( rc != -ENOMEM ) {
          return md_HTTP_create_response_builtin( resp, 400 );
       }
@@ -528,6 +530,7 @@ int SG_server_HTTP_GET_getxattr( struct SG_gateway* gateway, struct SG_request_d
    rc = SG_gateway_impl_getxattr( gateway, reqdat, &xattr_value );
    if( rc < 0 ) {
       
+      SG_error("SG_gateway_impl_getxattr rc = %d\n", rc );
       if( rc == -ENOENT ) {
          
          // not present 
@@ -591,6 +594,7 @@ int SG_server_HTTP_GET_listxattr( struct SG_gateway* gateway, struct SG_request_
    rc = SG_gateway_impl_listxattr( gateway, reqdat, &xattr_names, &num_xattrs );
    if( rc < 0 ) {
       
+      SG_error("SG_gateway_impl_listxattr rc = %d\n", rc );
       if( rc == -ENOENT ) {
          
          // not present 
@@ -735,6 +739,7 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
       
       // failure 
       SG_chunk_free( &block );
+      SG_error("SG_gateway_cached_block_put_raw_async rc = %d\n", rc );
       return md_HTTP_create_response_builtin( resp, 500 );
    }
    
@@ -757,12 +762,17 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    struct SG_chunk protobufed_manifest;      // unserialized manifest, as a protobuf str
    struct SG_chunk serialized_manifest;      // final manifest to cache
    struct SG_chunk serialized_manifest_resp; // response to send
+
+   memset( &raw_serialized_manifest, 0, sizeof(struct SG_chunk) );
+   memset( &protobufed_manifest, 0, sizeof(struct SG_chunk) );
+   memset( &serialized_manifest, 0, sizeof(struct SG_chunk) );
+   memset( &serialized_manifest_resp, 0, sizeof(struct SG_chunk) );
    
    struct SG_manifest manifest;              // from the implementation
    SG_messages::Manifest manifest_message;
    
-   char* protobuf_manifest_str;
-   size_t protobuf_manifest_len;
+   char* protobuf_manifest_str = NULL;
+   size_t protobuf_manifest_len = 0;
    
    struct md_cache_block_future* manifest_fut = NULL;
    
@@ -782,7 +792,8 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    
    if( rc == 0 ) {
       
-      // reply 
+      // reply
+      SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld]\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
       return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, raw_serialized_manifest.data, raw_serialized_manifest.len );
    }
    else if( rc != -ENOENT ) {
@@ -791,7 +802,8 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       SG_warn("SG_gateway_cached_manifest_get_raw( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
    }
    
-   SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld]\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
+   SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] (rc = %d)\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
+   rc = 0;
    
    // cache miss 
    // get from the implementation 
@@ -800,7 +812,8 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    // get the manifest
    rc = SG_gateway_impl_manifest_get( gateway, reqdat, &manifest, 0 );
    if( rc != 0 ) {
-      
+     
+      SG_error("SG_gateway_impl_manifest_get( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc ); 
       if( rc == -ENOENT ) {
          
          // not found 
@@ -809,14 +822,12 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       else {
             
          // failed 
-         SG_error("SG_gateway_impl_manifest_get( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc ); 
          return md_HTTP_create_response_builtin( resp, 500 );
       }
    }
    
    // serialize to string
    rc = SG_manifest_serialize_to_protobuf( &manifest, &manifest_message );
-   
    SG_manifest_free( &manifest );
    
    if( rc != 0 ) {
@@ -853,19 +864,12 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    SG_chunk_init( &protobufed_manifest, protobuf_manifest_str, protobuf_manifest_len );
    rc = SG_gateway_impl_serialize( gateway, reqdat, &protobufed_manifest, &serialized_manifest );
    if( rc != 0 ) {
-    
-      if( rc == -ENOSYS ) {
-          // this fine--the final form is the protobuf
-          serialized_manifest = protobufed_manifest;
-          memset( &protobufed_manifest, 0, sizeof(struct SG_chunk) );
-      }
-      else {
-          // some other error 
-          SG_error("SG_gateway_impl_serialize(  %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
-                   reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
-          
-          return md_HTTP_create_response_builtin( resp, 500 );
-      }
+   
+      SG_error("SG_gateway_impl_serialize( %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld] ) rc = %d\n",
+               reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, rc );
+   
+      SG_chunk_free( &protobufed_manifest );      
+      return md_HTTP_create_response_builtin( resp, 500 );
    }
    else {
 
@@ -879,6 +883,7 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       
       // OOM 
       SG_chunk_free( &serialized_manifest );
+      SG_error("SG_chunk_dup rc = %d\n", rc );
       return md_HTTP_create_response_builtin( resp, 500 );
    }
    
@@ -896,6 +901,8 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
       // failed 
       SG_chunk_free( &serialized_manifest );
       SG_chunk_free( &serialized_manifest_resp );
+
+      SG_error("SG_gateway_cached_manifest_put_raw_async rc = %d\n", rc );
       return md_HTTP_create_response_builtin( resp, 500 );
    }
    
@@ -926,6 +933,8 @@ int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct
    // parse the request
    rc = SG_request_data_parse( reqdat, con_data->url_path );
    if( rc != 0 ) {
+         
+      SG_error("SG_request_data_parse rc = %d\n", rc );
       
       SG_safe_free( reqdat );
       if( rc != -ENOMEM ) {
@@ -971,12 +980,16 @@ int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct
       
       // bad request 
       rc = md_HTTP_create_response_builtin( resp, 400 );
+      if( rc == 0 ) {
+          rc = -ENOSYS;
+      }
    }
    
    if( rc != 0 ) {
       // only do this in error; the I/O thread will clean up otherwise
       SG_request_data_free( reqdat );
       SG_safe_free( reqdat );
+      SG_error("SG_server_HTTP_IO_start rc = %d\n", rc );
    }
 
    return rc;
@@ -1026,7 +1039,7 @@ static int SG_request_message_parse( struct SG_gateway* gateway, SG_messages::Re
             
       if( rc != 0 ) {
             
-          SG_error("ms_client_verify_gateway_message( from=%" PRIu64 " ) rc = %d\n", msg->src_gateway_id(), rc );
+          SG_error("ms_client_verify_gateway_message(from=%" PRIu64 ") rc = %d\n", msg->src_gateway_id(), rc );
           return -EPERM;
       }
    }
@@ -1235,17 +1248,15 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_
    
    int rc = 0;
    struct SG_server_io* io = NULL;
-   struct md_wreq* wreq = SG_CALLOC( struct md_wreq, 1 );
-   if( wreq == NULL ) {
-      return -ENOMEM;
-   }
+   struct md_wreq wreq;
    
    io = SG_CALLOC( struct SG_server_io, 1 );
    if( io == NULL ) {
       
-      SG_safe_free( wreq );
       return -ENOMEM;
    }
+
+   memset( &wreq, 0, sizeof(struct md_wreq) );
    
    io->gateway = gateway;
    io->reqdat = reqdat;
@@ -1262,7 +1273,6 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_
       SG_error("md_HTTP_connection_suspend rc = %d\n", rc );
       
       SG_safe_free( io );
-      SG_safe_free( wreq );
       return rc;
    }
    
@@ -1270,7 +1280,7 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_
    // TODO: this needlessly constrains the order in which I/O happens.
    // what we really want is to "select()" on outstanding I/O requests, and collect results as we get them.
     
-   rc = md_wreq_init( wreq, SG_server_HTTP_IO_finish, io, 0 );
+   rc = md_wreq_init( &wreq, SG_server_HTTP_IO_finish, io, 0 );
    if( rc != 0 ) {
       
       SG_error("md_wreq_init rc = %d\n", rc );
@@ -1278,11 +1288,10 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_
       md_HTTP_create_response_builtin( resp, 500 );
       md_HTTP_connection_resume( con_data, resp );
       SG_safe_free( io );
-      SG_safe_free( wreq );
       return rc;
    }
    
-   rc = SG_gateway_io_start( gateway, wreq );
+   rc = SG_gateway_io_start( gateway, &wreq );
    
    if( rc != 0 ) {
       
@@ -1388,7 +1397,7 @@ int SG_server_HTTP_IO_finish( struct md_wreq* wreq, void* cls ) {
    
    SG_safe_delete( request_msg );
    SG_safe_free( io );
-   
+  
    return rc;
 }
 
@@ -1609,11 +1618,13 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
    for( int i = 0; i < request_msg->blocks_size(); i++ ) {
 
       if( !request_msg->blocks(i).has_chunk_type() ) {
+         SG_error("Chunk %d is missing 'chunk_type'\n", i );
          return -EINVAL;
       }
 
       chunk_type = request_msg->blocks(i).chunk_type();
       if( chunk_type != SG_messages::ManifestBlock::BLOCK && chunk_type != SG_messages::ManifestBlock::MANIFEST ) {
+         SG_error("Chunk %d is neither a BLOCK or MANIFEST chunk\n", i );
          return -EINVAL;
       }
    }
@@ -1634,6 +1645,12 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
       if( chunk_type == SG_messages::ManifestBlock::MANIFEST ) {
 
          // delete manifest 
+         // fill in request details....
+         reqdat->manifest_timestamp.tv_sec = chunk_info.block_id;
+         reqdat->manifest_timestamp.tv_nsec = chunk_info.block_version;
+         reqdat->block_id = SG_INVALID_BLOCK_ID;
+         reqdat->block_version = 0;
+
          rc = SG_gateway_impl_manifest_delete( gateway, reqdat );
          SG_manifest_block_free( &chunk_info );
 
@@ -1647,6 +1664,12 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
       else {
 
          // delete block 
+         // fill in request details....
+         reqdat->manifest_timestamp.tv_sec = -1;
+         reqdat->manifest_timestamp.tv_nsec = -1;
+         reqdat->block_id = request_msg->blocks(i).block_id();
+         reqdat->block_version = request_msg->blocks(i).block_version();
+
          rc = SG_gateway_impl_block_delete( gateway, reqdat );
          SG_manifest_block_free( &chunk_info );
 
@@ -1672,13 +1695,15 @@ SG_server_HTTP_POST_DELETECHUNKS_finish:
 // return -EINVAL if the request does not contain block information
 // return -EBADMSG if the block's hash does not match the hash given on the control plane
 // return -ENODATA if we failed to load the data into the gateway
-// return -errno on fchmod, mmap failure
+// return -EPERM on internal error
+// return -errno on fchmod, lseek, mmap failure
 static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_request_data* reqdat, SG_messages::Request* request_msg, struct md_HTTP_connection_data* con_data, struct md_HTTP_response* ignored ) {
    
    int rc = 0;
    int chunks_fd = 0;
+   struct stat sb;
    int chunk_type = 0;
-   char* chunk_mmap = NULL;
+   char* chunks_mmap = NULL;
    struct SG_chunk chunk;
    struct SG_manifest_block chunk_info;
    unsigned char chunk_hash[SG_BLOCK_HASH_LEN];
@@ -1696,23 +1721,28 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
    for( int i = 0; i < request_msg->blocks_size(); i++ ) {
       
       if( !request_msg->blocks(i).has_chunk_type() ) {
+         SG_error("Chunk %d is missing 'chunk_type'\n", i);
          return -EINVAL;
       }
 
       if( !request_msg->blocks(i).has_offset() ) {
+         SG_error("Chunk %d is missing 'offset'\n", i);
          return -EINVAL;
       }
 
       if( !request_msg->blocks(i).has_size() ) {
+         SG_error("Chunk %d is missing 'size'\n", i);
          return -EINVAL;
       }
 
       if( !request_msg->blocks(i).has_hash() ) {
+         SG_error("Chunk %d is missing 'hash'\n", i);
          return -EINVAL;
       }
 
       chunk_type = request_msg->blocks(i).chunk_type();
       if( chunk_type != SG_messages::ManifestBlock::BLOCK && chunk_type != SG_messages::ManifestBlock::MANIFEST ) {
+         SG_error("Chunk type %d is not BLOCK or MANIFEST\n", chunk_type );
          return -EINVAL;
       }
    }
@@ -1722,7 +1752,7 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
    if( rc != 0 ) {
       
       SG_error("md_HTTP_upload_get_field_buffer( '%s' ) rc = %d\n", SG_SERVER_POST_FIELD_DATA_PLANE, rc );
-      return rc;
+      return -EPERM;
    }
    
    // read-only...
@@ -1731,9 +1761,17 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
       
       rc = -errno;
       SG_error("fchmod rc = %d\n", rc );
-      return rc;
+      return -EPERM;
    }
-   
+
+   rc = fstat( chunks_fd, &sb );
+   if( rc != 0 ) {
+
+      rc = -errno;
+      SG_error("fstat rc = %d\n", rc );
+      return -EPERM;
+   }
+
    // integrity/authenticity check
    for( int i = 0; i < request_msg->blocks_size(); i++ ) {
 
@@ -1742,15 +1780,15 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
        if( rc != 0 ) {
       
           SG_error("SG_manifest_block_load_from_protobuf rc = %d\n", rc );
-          return rc;
+          return -EPERM;
        }
    
        // offset and size of chunk
        offset = request_msg->blocks(i).offset();
        size = request_msg->blocks(i).size();
 
-       rc = lseek( chunks_fd, SEEK_SET, offset );
-       if( rc != 0 ) {
+       rc = lseek( chunks_fd, offset, SEEK_SET );
+       if( rc < 0 ) {
           rc = -errno;
           SG_error("lseek(%d) rc = %d\n", chunks_fd, rc );
 
@@ -1761,7 +1799,7 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
        // integrity/authenticity check on each chunk 
        sha256_fd_buf( chunks_fd, size, chunk_hash );
        if( sha256_cmp( chunk_hash, chunk_info.hash ) != 0 ) {
-
+ 
             char expected[ 2*SG_BLOCK_HASH_LEN + 1 ];
             char actual[ 2*SG_BLOCK_HASH_LEN + 1 ];
             
@@ -1771,7 +1809,7 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
             md_sprintf_data( expected, chunk_info.hash, chunk_info.hash_len );
             md_sprintf_data( actual, chunk_hash, SG_BLOCK_HASH_LEN );
             
-            SG_error("%" PRIX64 ".%" PRId64 "[%d] (%" PRIu64 "): expected '%s', got '%s'\n", reqdat->file_id, reqdat->file_version, i, size, expected, actual );
+            SG_error("%" PRIX64 ".%" PRId64 "[chunk %d] (%" PRIu64 "): expected '%s', got '%s'\n", reqdat->file_id, reqdat->file_version, i, size, expected, actual );
             
             SG_manifest_block_free( &chunk_info );
             return -EBADMSG;
@@ -1779,9 +1817,21 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
 
        SG_manifest_block_free( &chunk_info );
    }
+   
+   lseek( chunks_fd, 0, SEEK_SET );
 
    // it all checks out.
-   // feed manifests and blocks to the driver 
+   // feed manifests and blocks to the driver
+   chunks_mmap = (char*)mmap( NULL, sb.st_size, PROT_READ, MAP_PRIVATE, chunks_fd, 0 );
+   if( chunks_mmap == MAP_FAILED ) {
+
+      rc = -errno;
+      SG_error("mmap rc = %d\n", rc );
+
+      rc = -ENODATA;
+      goto SG_server_HTTP_POST_PUTCHUNKS_finish;
+   }
+
    for( int i = 0; i < request_msg->blocks_size(); i++ ) {
 
       // type, offset and size of chunk
@@ -1789,28 +1839,10 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
       offset = request_msg->blocks(i).offset();
       size = request_msg->blocks(i).size();
 
-      // load to RAM
-      rc = lseek( chunks_fd, SEEK_SET, offset );
-      if( rc != 0 ) {
-          rc = -errno;
-          SG_error("lseek(%d) rc = %d\n", chunks_fd, rc );
-          
-          rc = -ENODATA;
-          goto SG_server_HTTP_POST_PUTCHUNKS_finish;
-      }
+      SG_debug("Load chunk %d [offset %" PRIu64 ", size %" PRIu64 "]\n", i, offset, size );
 
-      chunk_mmap = (char*)mmap( NULL, size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, chunks_fd, offset );
-      if( chunk_mmap == NULL ) {
-
-         rc = -errno;
-         SG_error("mmap rc = %d\n", rc );
-
-         rc = -ENODATA;
-         goto SG_server_HTTP_POST_PUTCHUNKS_finish;
-      }
-   
       // set up a chunk 
-      SG_chunk_init( &chunk, chunk_mmap, size );
+      SG_chunk_init( &chunk, chunks_mmap + offset, size );
 
       // deserialize 
       rc = SG_gateway_impl_deserialize( gateway, reqdat, &chunk, &deserialized_chunk );
@@ -1836,7 +1868,7 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
 
          if( rc != 0 ) {
             
-            SG_error("SG_gateway_impl_block_put(%d) rc = %d\n", i, rc );
+            SG_error("SG_gateway_impl_block_put(chunk %d) rc = %d\n", i, rc );
             rc = -ENODATA;
             goto SG_server_HTTP_POST_PUTCHUNKS_finish;
          }
@@ -1856,29 +1888,20 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
 
          if( rc != 0 ) {
 
-            SG_error("SG_gateway_impl_manifest_put(%d) rc = %d\n", i, rc );
+            SG_error("SG_gateway_impl_manifest_put(chunk %d) rc = %d\n", i, rc );
             rc = -ENODATA;
             goto SG_server_HTTP_POST_PUTCHUNKS_finish;
          }
       }
 
-      rc = munmap( chunk_mmap, size );
-      chunk_mmap = NULL;
-
       memset( &chunk, 0, sizeof(struct SG_chunk) );
-
-      if( rc != 0 ) {
-
-         SG_error("munmap rc = %d\n", rc );
-         goto SG_server_HTTP_POST_PUTCHUNKS_finish;
-      }
    }
 
 SG_server_HTTP_POST_PUTCHUNKS_finish:
 
-   if( chunk_mmap != NULL ) {
+   if( chunks_mmap != MAP_FAILED ) {
        
-       int unmap_rc = munmap( chunk_mmap, size );
+       int unmap_rc = munmap( chunks_mmap, size );
        if( unmap_rc != 0 ) {
 
            unmap_rc = -errno;
@@ -2006,7 +2029,7 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       SG_safe_delete( request_msg );
       
       // failed to parse and verify control-plane message 
-      SG_error("SG_request_message_parse( '%s' ) rc = %d\n", SG_SERVER_POST_FIELD_CONTROL_PLANE, rc );
+      SG_error("SG_request_message_parse('%s') rc = %d\n", SG_SERVER_POST_FIELD_CONTROL_PLANE, rc );
       
       if( rc == -EAGAIN ) {
          
@@ -2049,6 +2072,7 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       else {
          
          // not permitted 
+         SG_debug("%s", "Gateway does not have sufficient capabilities\n" );
          return md_HTTP_create_response_builtin( resp, 403 );
       }
    }
@@ -2087,7 +2111,7 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       // failed 
       SG_safe_free( reqdat );
       SG_safe_delete( request_msg );
-      
+      SG_error("SG_request_data_from_message rc = %d\n", rc ); 
       return md_HTTP_create_response_builtin( resp, 500 );
    }
   
@@ -2237,21 +2261,12 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::DELETECHUNKS: {
          
-         if( gateway->impl_stat == NULL ) {
-      
-            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
-            SG_safe_delete( request_msg );
-            return md_HTTP_create_response_builtin( resp, 501 );
-         }
-         else {
-               
-            // start delete-chunks request 
-            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_DELETECHUNKS, reqdat, request_msg, con_data, resp );
-            if( rc != 0 ) {
-               
-               SG_error("SG_server_HTTP_IO_start( DELETECHUNKS( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n",
-                        reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
-            }
+         // start delete-chunks request 
+         rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_DELETECHUNKS, reqdat, request_msg, con_data, resp );
+         if( rc != 0 ) {
+            
+            SG_error("SG_server_HTTP_IO_start( DELETECHUNKS( %" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n",
+                     reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
          }
       
          break;
