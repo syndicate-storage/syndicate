@@ -24,10 +24,10 @@
 
 extern "C" {
 
-int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result );
+int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct md_entry* ent_out );
 int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result );
 
-int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result );
+int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct md_entry* ent_out );
 int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* result );
 
 int ms_client_getattr_request( struct ms_path_ent* ms_ent, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce, void* cls );

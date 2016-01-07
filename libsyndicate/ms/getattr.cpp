@@ -127,7 +127,7 @@ static int ms_client_get_metadata_begin( struct ms_client* client, struct ms_pat
    }
    
    // start the download 
-   rc = md_download_context_start( &client->dl, dlctx );
+   rc = md_download_context_start( client->dl, dlctx );
    if( rc != 0 ) {
       
       SG_error("md_download_start( '%s' ) rc = %d\n", url, rc );
@@ -151,11 +151,10 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
    
    int rc = 0;
    struct ms_client_get_metadata_context* dlstate = (struct ms_client_get_metadata_context*)md_download_context_get_cls( dlctx );
-   
+   CURL* curl = NULL; 
    int ent_idx = dlstate->request_id;
    struct md_entry ent;
    int listing_error = 0;
-   CURL* curl = NULL;
    
    // download status?
    rc = ms_client_download_parse_errors( dlctx );
@@ -168,16 +167,14 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
       }
       
       md_download_context_set_cls( dlctx, NULL );
-      int unref_rc = md_download_context_unref( dlctx );
 
-      if( unref_rc > 0 ) {
-          md_download_context_free( dlctx, &curl );
+      // TODO connection pool
+      md_download_context_unref_free( dlctx, &curl );
+      if( curl != NULL ) {
+         curl_easy_cleanup( curl );
       }
 
       ms_client_get_metadata_context_free( dlstate );
-      
-      // TODO connection pool 
-      curl_easy_cleanup( curl );
       return rc;
    }
    
@@ -190,14 +187,11 @@ static int ms_client_get_metadata_end( struct ms_client* client, ms_path_t* path
    // done with the download 
    // TODO connection pool
    md_download_context_set_cls( dlctx, NULL );
-   int unref_rc = md_download_context_unref( dlctx );
-   if( unref_rc > 0 ) {
-       
-       // safe to free 
-       md_download_context_free( dlctx, &curl );
-       curl_easy_cleanup( curl );
+   md_download_context_unref_free( dlctx, &curl );
+   if( curl != NULL ) {
+      curl_easy_cleanup(curl);
    }
-   
+
    ms_client_get_metadata_context_free( dlstate );
    
    if( rc != 0 ) {
@@ -263,7 +257,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
    
    int rc = 0;
    struct md_entry* result_ents = NULL;
-   struct md_download_loop dlloop;
+   struct md_download_loop* dlloop = NULL;
    queue<int> request_ids;
    int* attempts = NULL;
    int num_processed = 0;
@@ -303,9 +297,17 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
    }
    
    // set up download loop 
-   rc = md_download_loop_init( &dlloop, &client->dl, MIN( (unsigned)client->max_connections, path->size() ) );
+   dlloop = md_download_loop_new();
+   if( dlloop == NULL ) {
+      
+      SG_safe_free( result_ents );
+      return -ENOMEM;
+   }
+
+   rc = md_download_loop_init( dlloop, client->dl, MIN( (unsigned)client->max_connections, path->size() ) );
    if( rc != 0 ) {
       
+      SG_safe_free( dlloop );
       SG_safe_free( result_ents );
       return rc;
    }
@@ -315,14 +317,23 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
    if( attempts == NULL ) {
       
       SG_safe_free( result_ents );
-      md_download_loop_free( &dlloop );
+      md_download_loop_free( dlloop );
+      SG_safe_free( dlloop );
       return -ENOMEM;
    }
-   
-   // prepare all entries!
-   for( unsigned int i = 0; i < path->size(); i++ ) {
+  
+   try { 
+       // prepare all entries!
+       for( unsigned int i = 0; i < path->size(); i++ ) {
       
-      request_ids.push( i );
+          request_ids.push( i );
+       }
+   }
+   catch( bad_alloc& ba ) {
+      SG_safe_free( result_ents );
+      md_download_loop_free( dlloop );
+      SG_safe_free( dlloop );
+      return -ENOMEM;
    }
    
    // run the download loop!
@@ -332,7 +343,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
       while( request_ids.size() > 0 ) {
          
          // next download 
-         rc = md_download_loop_next( &dlloop, &dlctx );
+         rc = md_download_loop_next( dlloop, &dlctx );
          if( rc != 0 ) {
             
             if( rc == -EAGAIN ) {
@@ -350,7 +361,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
          request_ids.pop();
          
          // start the download 
-         rc = ms_client_get_metadata_begin( client, &path->at(request_id), request_id, do_getchild, &dlloop, dlctx );
+         rc = ms_client_get_metadata_begin( client, &path->at(request_id), request_id, do_getchild, dlloop, dlctx );
          if( rc != 0 ) {
             
             SG_error("ms_client_get_metadata_begin( %p ) rc = %d\n", dlctx, rc );
@@ -363,7 +374,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
       }
       
       // run the downloads 
-      rc = md_download_loop_run( &dlloop );
+      rc = md_download_loop_run( dlloop );
       if( rc != 0 ) {
          
          SG_error("md_download_loop_run rc = %d\n", rc );
@@ -376,7 +387,7 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
          struct md_download_context* dlctx = NULL;
          
          // next finished download 
-         rc = md_download_loop_finished( &dlloop, &dlctx );
+         rc = md_download_loop_finished( dlloop, &dlctx );
          if( rc < 0 ) {
             
             if( rc == -EAGAIN) {
@@ -422,32 +433,36 @@ static int ms_client_get_metadata( struct ms_client* client, ms_path_t* path, st
          break;
       }
       
-   } while( md_download_loop_running( &dlloop ) );
+   } while( md_download_loop_running( dlloop ) );
    
    if( rc != 0 ) {
       
-      SG_error("Abort download loop %p, rc = %d\n", &dlloop, rc );
+      SG_error("Abort download loop %p, rc = %d\n", dlloop, rc );
       
-      md_download_loop_abort( &dlloop );
+      md_download_loop_abort( dlloop );
       
       int i = 0;
       
       // free all ms_client_get_metadata_context
-      for( dlctx = md_download_loop_next_initialized( &dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( &dlloop, &i ) ) {
+      for( dlctx = md_download_loop_next_initialized( dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( dlloop, &i ) ) {
          
          if( dlctx == NULL ) {
             break;
          }
          
          struct ms_client_get_metadata_context* dlstate = (struct ms_client_get_metadata_context*)md_download_context_get_cls( dlctx );
-         
-         ms_client_get_metadata_context_free( dlstate );
-         SG_safe_free( dlstate );
+         md_download_context_set_cls( dlctx, NULL );
+
+         if( dlstate != NULL ) { 
+             ms_client_get_metadata_context_free( dlstate );
+             SG_safe_free( dlstate );
+         }
       }
    }
    
-   md_download_loop_cleanup( &dlloop, NULL, NULL );
-   md_download_loop_free( &dlloop );
+   md_download_loop_cleanup( dlloop, NULL, NULL );
+   md_download_loop_free( dlloop );
+   SG_safe_free( dlloop );
    SG_safe_free( attempts );
    
    result->ents = result_ents;
@@ -489,9 +504,13 @@ int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct m
 // * write_nonce 
 // return 0 on success 
 // return negative on error
-int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result ) {
+int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct md_entry* ent_out ) {
    
    ms_path_t path;
+   int rc = 0;
+   struct ms_client_multi_result result;
+   
+   memset( &result, 0, sizeof(struct ms_client_multi_result) );
    
    try {
       path.push_back( *ms_ent );
@@ -499,8 +518,36 @@ int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, str
    catch( bad_alloc& ba ) {
       return -ENOMEM;
    }
+
+   rc = ms_client_get_metadata( client, &path, &result, false );
+   if( rc != 0 ) {
+      SG_error("ms_client_get_metadata(%" PRIX64 ") rc = %d\n", ms_ent->file_id, rc );
+      ms_client_multi_result_free( &result );
+      return -ENODATA;
+   }
+
+   if( result.reply_error != 0 ) {
+
+      SG_error("MS replied %d\n", result.reply_error); 
+      ms_client_multi_result_free( &result );
+      ent_out->error = result.reply_error;
+      return result.reply_error;
+   }
+
+   if( result.num_processed != 1 || result.num_ents != 1 ) {
+
+      SG_error("Got back %d results (%zu entries), expected 1\n", result.num_processed, result.num_ents);
+      ms_client_multi_result_free( &result );
+      return -EBADMSG;
+   }
+  
+   // gift result 
+   memcpy( ent_out, &result.ents[0], sizeof(struct md_entry) );
+   memset( &result.ents[0], 0, sizeof(struct md_entry) );
    
-   return ms_client_get_metadata( client, &path, result, false );
+   ms_client_multi_result_free( &result );
+
+   return 0;
 }
 
 
@@ -514,15 +561,20 @@ int ms_client_getchild_multi( struct ms_client* client, ms_path_t* path, struct 
 
 // download metadata for a single entry 
 // ms_ent needs:
-// * file_id 
-// * volume_id 
-// * version 
-// * write_nonce 
+// * parent_id
+// * volume_id
+// * name 
 // return 0 on success 
 // return negative on error
-int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct ms_client_multi_result* result ) {
+int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, struct md_entry* ent_out ) {
    
    ms_path_t path;
+   int rc = 0;
+   struct ms_client_multi_result result;
+
+   if( ms_ent->name == NULL ) {
+      return -EINVAL;
+   }
    
    try {
       path.push_back( *ms_ent );
@@ -531,7 +583,35 @@ int ms_client_getchild( struct ms_client* client, struct ms_path_ent* ms_ent, st
       return -ENOMEM;
    }
    
-   return ms_client_get_metadata( client, &path, result, true );
+   rc = ms_client_get_metadata( client, &path, &result, true );
+   if( rc != 0 ) {
+      SG_error("ms_client_get_metadata(%s) rc = %d, MS reply %d\n", ms_ent->name, result.reply_error, rc );
+      ent_out->error = result.reply_error;
+      ms_client_multi_result_free( &result );
+      return -ENODATA;
+   }
+
+   if( result.reply_error != 0 ) {
+
+      SG_error("MS replied %d\n", result.reply_error); 
+      ent_out->error = result.reply_error;
+      ms_client_multi_result_free( &result );
+      return result.reply_error;
+   }
+
+   if( result.num_processed != 1 || result.num_ents != 1 ) {
+
+      SG_error("Got back %d results (%zu entries), expected 1\n", result.num_processed, result.num_ents);
+      ms_client_multi_result_free( &result );
+      return -EBADMSG;
+   }
+  
+   // gift result 
+   memcpy( ent_out, &result.ents[0], sizeof(struct md_entry) );
+   memset( &result.ents[0], 0, sizeof(struct md_entry) );
+   
+   ms_client_multi_result_free( &result );
+   return rc;
 }
 
 // set up an ms_ent to request attributes
