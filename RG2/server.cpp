@@ -22,6 +22,7 @@
 // get a block on cache miss
 // return 0 on success, and fill in *block
 // return -ENOMEM on OOM 
+// return -ENOENT if the block does not exist
 // return -EIO if the driver did not fulfill the request (driver error)
 // return -ENODATA if we couldn't request the data, for whatever reason (gateway error)
 static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block, uint64_t hints, void* cls ) {
@@ -31,11 +32,8 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
    struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
-   char* request_path = NULL;
-   struct SG_chunk request_path_chunk;
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   size_t len = ms_client_get_volume_blocksize( ms );
-   
+   SG_messages::DriverRequest driver_req;
+
    RG_core_rlock( core );
    
    // find a reader 
@@ -51,21 +49,22 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
          goto RG_server_block_get_finish;
       }
       
-      // generate the request 
-      request_path = SG_driver_reqdat_to_path( reqdat );
-      if( request_path == NULL ) {
-         
-         rc = -ENOMEM;
+      // ask for the block 
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
+         rc = -EIO;
+
          goto RG_server_block_get_finish;
       }
 
-      // ask for the block 
-      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
-      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
-      if( rc < 0 ) {
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
+      if( rc != 0 ) {
 
-         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
+         SG_error("SG_proc_write_request rc = %d\n", rc );
          rc = -EIO;
+
          goto RG_server_block_get_finish;
       }
      
@@ -80,11 +79,17 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
       }
       
       // bail if the gateway had a problem
-      if( worker_rc != 0 ) {
-         
-         SG_error("Worker %d: GET '%s' rc = %d\n", SG_proc_pid( proc ), request_path, (int)worker_rc );
-         rc = -EIO;
-         
+      if( worker_rc < 0 ) {
+        
+         SG_error("Request to worker %d failed, rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
+
+         if( worker_rc == -ENOENT ) { 
+             rc = -ENOENT;
+         }
+         else {
+             rc = -EIO;
+         }
+
          goto RG_server_block_get_finish;
       }
       
@@ -106,8 +111,6 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
    
 RG_server_block_get_finish:
 
-   SG_safe_free( request_path );
-   
    if( group != NULL && proc != NULL ) {
       SG_proc_group_release( group, proc );
    }
@@ -119,7 +122,8 @@ RG_server_block_get_finish:
 
 // get a manifest on cache miss 
 // return 0 on success, and fill in *manifest 
-// return -ENOMEM on OOM 
+// return -ENOMEM on OOM
+// return -ENOENT if the manifest is not present 
 // return -EIO if we get invalid data from the driver (i.e. driver error)
 // return -ENODATA if the driver is offline (i.e. gateway error)
 static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints, void* cls ) {
@@ -130,19 +134,12 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
    struct SG_chunk chunk;
-   char* request_path = NULL;
-   struct SG_chunk request_path_chunk;
+   size_t manifest_len = 0;
+   SG_messages::DriverRequest driver_req;
    SG_messages::Manifest manifest_message;
    
    memset( &chunk, 0, sizeof(struct SG_chunk) );
 
-   // generate the request's path
-   request_path = SG_driver_reqdat_to_path( reqdat );
-   if( request_path == NULL ) {
-      
-      return -ENOMEM;
-   }
-   
    // find a reader 
    RG_core_rlock( core );
    
@@ -155,17 +152,28 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
       
          // nothing running
          rc = -ENODATA;
+         SG_error("No free 'read' processes in group %p\n", group);
          goto RG_server_manifest_get_finish;
       }
 
       // ask for the serialized manifest 
-      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
-      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
-      if( rc < 0 ) { 
-         
-         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
-         
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
          rc = -EIO;
+
+         goto RG_server_manifest_get_finish;
+      }
+
+      SG_debug("Request get %s\n", (driver_req.request_type() == SG_messages::DriverRequest::MANIFEST ? "manifest" : "block"));
+
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
+      if( rc < 0 ) {
+
+         SG_error("SG_proc_write_request(%d) rc = %d\n", SG_proc_stdin(proc), rc );
+         rc = -EIO;
+
          goto RG_server_manifest_get_finish;
       }
 
@@ -174,16 +182,23 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
       if( rc < 0 ) {
          
          SG_error("SG_proc_read_int64('ERROR') rc = %d\n", rc );
-         rc = -EIO;
          
          goto RG_server_manifest_get_finish;
       }
       
+      SG_debug("Worker rc = %" PRId64 "\n", worker_rc );
+
       // bail if the gateway had a problem
-      if( worker_rc != 0 ) {
+      if( worker_rc < 0 ) {
          
-         SG_error("Worker %d: GET '%s' rc = %d\n", SG_proc_pid( proc ), request_path, (int)worker_rc );
-         rc = -EIO;
+         SG_error("Request to worker %d failed, rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
+
+         if( worker_rc == -ENOENT ) {
+             rc = -ENOENT;
+         }
+         else {
+             rc = -EIO;
+         }
          
          goto RG_server_manifest_get_finish;
       }
@@ -199,11 +214,12 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
       
       // deserialize 
       rc = md_parse< SG_messages::Manifest >( &manifest_message, chunk.data, chunk.len );
+      manifest_len = chunk.len;
       SG_chunk_free( &chunk );
       
       if( rc < 0 ) {
          
-         SG_error("md_parse(%zu) rc = %d\n", chunk.len, rc );
+         SG_error("md_parse(%zu) rc = %d\n", manifest_len, rc );
          
          rc = -EIO;
          goto RG_server_manifest_get_finish;
@@ -224,14 +240,13 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
    }
    else {
       
-      // no way to do work--no process group 
+      // no way to do work--no process group
+      SG_error("%s", "No such process group 'read'\n");
       rc = -ENODATA;
    }
    
 RG_server_manifest_get_finish:
 
-   SG_safe_free( request_path );
-   
    if( group != NULL && proc != NULL ) {
       SG_proc_group_release( group, proc );
    }
@@ -253,16 +268,7 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
    struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
-   
-   char* request_path = NULL;
-   struct SG_chunk request_path_chunk;
-   
-   // generate the request's path
-   request_path = SG_driver_reqdat_to_path( reqdat );
-   if( request_path == NULL ) {
-      
-      return -ENOMEM;
-   }
+   SG_messages::DriverRequest driver_req; 
    
    RG_core_rlock( core );
    
@@ -275,18 +281,28 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
       if( proc == NULL ) {
          
          // no free workers
-         SG_error("No free 'write' workers for %s\n", request_path );
+         SG_error("%s", "No free 'write' workers\n" );
 
          rc = -ENODATA;
          goto RG_server_block_put_finish;
       }
       
-      // send path
-      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
-      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
+      // send request 
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
+
+         rc = -ENODATA;
+         goto RG_server_block_put_finish;
+      }
+
+      SG_debug("Request put %s\n", (driver_req.request_type() == SG_messages::DriverRequest::MANIFEST ? "manifest" : "block"));
+
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
       if( rc < 0 ) {
-         
-         SG_error("md_write_uninterrupted(%d) rc = %d\n", SG_proc_stdin( proc ), rc);
+
+         SG_error("SG_proc_write_request(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
          
          rc = -ENODATA;
          goto RG_server_block_put_finish;
@@ -312,9 +328,11 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
          goto RG_server_block_put_finish;
       }
       
+      SG_debug("Worker rc = %" PRId64 "\n", worker_rc );
+
       if( worker_rc < 0 ) {
          
-         SG_error("Worker %d: PUT '%s' rc = %d\n", SG_proc_pid( proc ), request_path, (int)worker_rc );
+         SG_error("Request to worker %d failed, rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
          rc = -EIO;
          
          goto RG_server_block_put_finish;
@@ -323,13 +341,11 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
    else {
       
       // no writers????
-      SG_error("BUG: no writers started.  Cannot handle %s\n", request_path );
+      SG_error("%s", "BRG: no writers started.  Cannot handle!\n");
       rc = -ENODATA;
    }
    
 RG_server_block_put_finish:
-   
-   SG_safe_free( request_path );
    
    if( group != NULL && proc != NULL ) {
       SG_proc_group_release( group, proc );
@@ -348,7 +364,15 @@ RG_server_block_put_finish:
 static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* manifest_chunk, uint64_t hints, void* cls ) {
    
    int rc = 0;
-   size_t len = 0;
+
+   // sanity check
+   SG_messages::Manifest mmsg;
+   rc = md_parse< SG_messages::Manifest >( &mmsg, manifest_chunk->data, manifest_chunk->len );
+   if( rc != 0 ) {
+
+      SG_error("not a manifest: %s\n", reqdat->fs_path );
+      return -EINVAL;
+   }
    
    // send it off, as a block 
    rc = RG_server_block_put( gateway, reqdat, manifest_chunk, hints, cls );
@@ -357,7 +381,7 @@ static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request
       
       SG_error("RG_server_block_put rc = %d\n", rc );
    }
-      
+    
    return rc;
 }
 
@@ -371,19 +395,9 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
    
    int rc = 0;
    int64_t worker_rc = 0;
-   char* request_path = NULL;
-   struct SG_chunk request_path_chunk;
    struct SG_proc* proc = NULL;
    struct SG_proc_group* group = NULL;
-   
-   // generate the path 
-   request_path = SG_driver_reqdat_to_path( reqdat );
-   if( request_path == NULL ) {
-      
-      return -ENOMEM;
-   }
-   
-   SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
+   SG_messages::DriverRequest driver_req;
 
    // find a worker...
    group = SG_driver_get_proc_group( SG_gateway_driver(gateway), "delete" );
@@ -398,11 +412,22 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
          goto RG_server_block_delete_finish;
       }
       
-      // send the worker the path to delete 
-      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
-      if( rc < 0 ) {
-         
-         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
+      // send the worker the request 
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
+
+         rc = -ENODATA;
+         goto RG_server_block_delete_finish;
+      }
+
+      SG_debug("Request delete %s\n", (driver_req.request_type() == SG_messages::DriverRequest::MANIFEST ? "manifest" : "block"));
+
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_write_request(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
          
          rc = -ENODATA;
          goto RG_server_block_delete_finish;
@@ -418,10 +443,12 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
          goto RG_server_block_delete_finish;
       }
       
+      SG_debug("Worker rc = %" PRId64 "\n", worker_rc );
+      
       // bail if the gateway had a problem
       if( worker_rc != 0 ) {
          
-         SG_error("Worker %d: GET '%s' rc = %d\n", SG_proc_pid( proc ), request_path, (int)worker_rc );
+         SG_error("Request to worker %d failed, rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
          rc = -EIO;
          
          goto RG_server_block_delete_finish;
@@ -434,9 +461,11 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
    }
    
 RG_server_block_delete_finish:
-   
-   SG_safe_free( request_path );
-   
+    
+   if( group != NULL && proc != NULL ) {
+      SG_proc_group_release( group, proc );
+   } 
+
    return rc;
 }
 
@@ -452,6 +481,221 @@ static int RG_server_manifest_delete( struct SG_gateway* gateway, struct SG_requ
 }
 
 
+// gateway callback to deserialize a chunk
+// return 0 on success, and fill in *chunk
+// return -ENOMEM on OOM 
+// return -EIO if the driver did not fulfill the request (driver error)
+// return -EAGAIN if we couldn't request the data, for whatever reason (i.e. no free processes)
+int RG_server_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls ) {
+   
+   int rc = 0;
+   int64_t worker_rc = 0;
+   struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
+   struct SG_proc_group* group = NULL;
+   struct SG_proc* proc = NULL;
+   SG_messages::DriverRequest driver_req;
+   struct SG_driver* driver = NULL;
+  
+   RG_core_rlock( core );
+   
+   // find a free deserializer
+   driver = SG_gateway_driver( gateway );
+   group = SG_driver_get_proc_group( driver, "deserialize" );
+   if( group != NULL ) {
+
+      // get a free process
+      proc = SG_proc_group_acquire( group );
+      if( proc == NULL ) {
+      
+         // nothing running
+         rc = -EAGAIN;
+         goto RG_server_chunk_deserialize_finish;
+      }
+      
+      // feed in the metadata for this block
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
+         rc = -EIO;
+         goto RG_server_chunk_deserialize_finish;
+      }
+
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_write_request rc = %d\n", rc );
+         rc = -EIO;
+         goto RG_server_chunk_deserialize_finish;
+      }
+
+      // feed in the block itself 
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), in_chunk );
+      if( rc < 0 ) {
+
+         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin(proc), rc );
+
+         rc = -EIO;
+         goto RG_server_chunk_deserialize_finish;
+      }
+
+      // get error code 
+      rc = SG_proc_read_int64( SG_proc_stdout_f( proc ), &worker_rc );
+      if( rc < 0 ) {
+         
+         SG_error("SG_proc_read_int64('ERROR') rc = %d\n", rc );
+         rc = -EIO;
+         
+         goto RG_server_chunk_deserialize_finish;
+      }
+      
+      SG_debug("Worker rc = %" PRId64 "\n", worker_rc );
+      
+      // bail if the driver had a problem
+      if( worker_rc < 0 ) {
+         
+         SG_error("Worker %d: deserialize rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
+         rc = -EIO;
+         
+         goto RG_server_chunk_deserialize_finish;
+      }
+      
+      // get the serialized chunk 
+      rc = SG_proc_read_chunk( SG_proc_stdout_f( proc ), out_chunk );
+      if( rc < 0 ) {
+         
+         SG_error("SG_proc_read_chunk(%d) rc = %d\n", fileno( SG_proc_stdout_f(proc) ), rc );
+         
+         // OOM, EOF, or driver crash (rc is -ENOMEM, -ENODATA, or -EIO, respectively)
+         goto RG_server_chunk_deserialize_finish;
+      }
+   }
+   else {
+      
+      // no-op deserializer 
+      rc = SG_chunk_dup( out_chunk, in_chunk );
+   }
+  
+RG_server_chunk_deserialize_finish: 
+
+   if( group != NULL && proc != NULL ) {
+      SG_proc_group_release( group, proc );
+   }
+   
+   if( rc != 0 ) {
+      SG_chunk_free( out_chunk );
+   }
+
+   RG_core_unlock( core );
+   return rc;
+}
+
+
+// gateway callback to serialize a chunk
+// return 0 on success 
+// return -ENOMEM on OOM 
+// return -EIO if we failed to communicate with the driver (i.e. driver error)
+// return -EAGAIN if there were no free workers
+int RG_server_chunk_serialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls ) {
+   
+   int rc = 0;
+   int64_t worker_rc = 0;
+   struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
+   struct SG_proc_group* group = NULL;
+   struct SG_proc* proc = NULL;
+   struct SG_driver* driver = NULL;
+   SG_messages::DriverRequest driver_req;
+   
+   RG_core_rlock( core );
+   
+   // find a worker 
+   driver = SG_gateway_driver( gateway );
+   group = SG_driver_get_proc_group( driver, "serialize" );
+   if( group != NULL ) {
+      
+      // get a free worker 
+      proc = SG_proc_group_acquire( group );
+      if( proc == NULL ) {
+         
+         // no free workers
+         SG_error("%s", "No free 'write' workers\n" );
+
+         rc = -EAGAIN;
+         goto RG_server_chunk_serialize_finish;
+      }
+
+      // feed in the metadata for this block
+      rc = SG_proc_request_init( &driver_req, reqdat );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_request_init rc = %d\n", rc );
+         rc = -EIO;
+         goto RG_server_chunk_serialize_finish;
+      }
+
+      rc = SG_proc_write_request( SG_proc_stdin( proc ), &driver_req );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_write_request rc = %d\n", rc );
+         rc = -EIO;
+         goto RG_server_chunk_serialize_finish;
+      }
+
+      // put the block 
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), in_chunk );
+      if( rc < 0 ) {
+       
+         SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
+         
+         rc = -EIO;
+         goto RG_server_chunk_serialize_finish;
+      }
+      
+      // get the reply 
+      rc = SG_proc_read_int64( SG_proc_stdout_f( proc ), &worker_rc );
+      if( rc < 0 ) {
+         
+         SG_error("SG_proc_read_int64(%d) rc = %d\n", fileno(SG_proc_stdout_f( proc )), rc );
+         
+         rc = -EIO;
+         goto RG_server_chunk_serialize_finish;
+      }
+
+      SG_debug("Worker rc = %" PRId64 "\n", worker_rc );
+      
+      if( worker_rc < 0 ) {
+         
+         SG_error("Worker %d: serialize rc = %d\n", SG_proc_pid( proc ), (int)worker_rc );
+         rc = -EIO;
+         
+         goto RG_server_chunk_serialize_finish;
+      }
+
+      // get the deserialized chunk 
+      rc = SG_proc_read_chunk( SG_proc_stdout_f( proc ), out_chunk );
+      if( rc != 0 ) {
+
+         SG_error("SG_proc_read_chunk(%d) rc = %d\n", fileno(SG_proc_stdout_f(proc)), rc );
+         goto RG_server_chunk_serialize_finish;
+      }
+   }
+   else {
+   
+      // no-op serializer 
+      rc = SG_chunk_dup( out_chunk, in_chunk );   
+   }
+   
+RG_server_chunk_serialize_finish:
+   
+   if( group != NULL && proc != NULL ) {
+      SG_proc_group_release( group, proc );
+   }
+   
+   RG_core_unlock( core );
+   return rc;
+}
+
+
 // set up the gateway's method implementation 
 // always succeeds
 int RG_server_install_methods( struct SG_gateway* gateway, struct RG_core* core ) {
@@ -464,7 +708,10 @@ int RG_server_install_methods( struct SG_gateway* gateway, struct RG_core* core 
    
    SG_impl_delete_block( gateway, RG_server_block_delete );
    SG_impl_delete_manifest( gateway, RG_server_manifest_delete );
-  
+ 
+   SG_impl_serialize( gateway, RG_server_chunk_serialize );
+   SG_impl_deserialize( gateway, RG_server_chunk_deserialize );
+
    SG_gateway_set_cls( gateway, core );
    return 0;
 }
