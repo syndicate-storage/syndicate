@@ -105,14 +105,15 @@ def file_update_get_attrs( entry_dict, attr_list ):
    Return None if at least one is missing.
    """
    ret = {}
+   missing = []
    for attr_name in attr_list:
       if not entry_dict.has_key(attr_name):
 
-         """
          for attr_name in attr_list:
              if not entry_dict.has_key(attr_name):
-                 print "missing %s" % attr_name
-         """
+                 missing.append( attr_name )
+
+         log.error("Missing: %s" % (",".join(missing)))
          return None 
       
       ret[attr_name] = entry_dict[attr_name]
@@ -881,13 +882,14 @@ def file_vacuum_log_response( volume, rc, log_record ):
    reply.error = rc
    
    if rc == 0:
-      reply.vacuum_ticket.file_id = log_record.file_id
+      reply.vacuum_ticket.volume_id = log_record.volume_id
+      reply.vacuum_ticket.file_id = MSEntry.serialize_id( log_record.file_id )
       reply.vacuum_ticket.writer_id = log_record.writer_id
       reply.vacuum_ticket.file_version = log_record.version
       reply.vacuum_ticket.manifest_mtime_sec = log_record.manifest_mtime_sec 
       reply.vacuum_ticket.manifest_mtime_nsec = log_record.manifest_mtime_nsec
       reply.vacuum_ticket.affected_blocks.extend( log_record.affected_blocks )
-      reply.vacuum_ticket.vacuum_signature = log_record.signature
+      reply.vacuum_ticket.signature = log_record.signature
    
    return file_update_complete_response( volume, reply )
 
@@ -920,15 +922,12 @@ def file_vacuum_log_peek( gateway, volume, file_id, caller_is_admin=False ):
       
       else:
          # get the log head 
-         log_head_list = MSEntryVacuumLog.Peek( volume.volume_id, file_id )
+         log_head = MSEntryVacuumLog.Peek( volume.volume_id, file_id )
          
-         if log_head_list is None or len(log_head_list) == 0:
+         if log_head is None:
             # no more data
             rc = -errno.ENOENT 
          
-         else:
-            log_head = log_head_list[0]
-            
    logging.info("vacuum log peek /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
    
    return file_vacuum_log_response( volume, rc, log_head )
@@ -944,7 +943,7 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    rc = 0
-   required_attrs =  ['volume_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   required_attrs =  ['volume_id', 'coordinator_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
    
    attrs = file_update_get_attrs( attrs, required_attrs )
    
@@ -978,7 +977,7 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
             
          else:
             # Delete!
-            rc = MSEntryVacuumLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+            rc = MSEntryVacuumLog.Remove( volume.volume_id, attrs['coordinator_id'], file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
    
       logging.info("vacuum log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
    
@@ -994,7 +993,7 @@ def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=Fals
    attrs = MSEntry.unprotobuf_dict( update.entry )
    rc = 0
    
-   required_attrs =  ['volume_id', 'writer_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   required_attrs =  ['volume_id', 'coordinator_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
    
    attrs = file_update_get_attrs( attrs, required_attrs )
    
@@ -1033,7 +1032,7 @@ def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=Fals
                 else:
                    
                    # append!
-                   storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], attrs['writer_id'], attrs['file_id'], attrs['version'], \
+                   storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], attrs['coordinator_id'], attrs['file_id'], attrs['version'], \
                                                 attrs['manifest_mtime_sec'], attrs['manifest_mtime_nsec'], affected_blocks, vacuum_signature )
                    rc = 0
 
