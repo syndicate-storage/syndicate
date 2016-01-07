@@ -156,6 +156,10 @@ int UG_consistency_manifest_download( struct SG_gateway* gateway, struct SG_requ
       return -EINVAL;
    }
    
+   if( num_gateway_ids == 0 ) {
+      return -ENODATA;
+   }
+
    for( size_t i = 0; i < num_gateway_ids; i++ ) {
       
       rc = SG_client_get_manifest( gateway, reqdat, gateway_ids[i], manifest );
@@ -175,10 +179,11 @@ int UG_consistency_manifest_download( struct SG_gateway* gateway, struct SG_requ
 
 
 // Verify that a manifest is fresh.  Download and merge the latest manifest data for the referred inode if not.
-// local dirty blocks that were overwritten will be dropped and evicted.
+// local dirty blocks that were overwritten will be dropped and evicted on merge.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -ENODATA if we could not fetch a manifest, but needed to
+// NOTE: entry at the end of fs_path should *NOT* be locked
 int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const* fs_path ) {
    
    int rc = 0;
@@ -186,11 +191,10 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    struct SG_request_data reqdat;
    
    uint64_t* gateway_ids_buf = NULL;
-   uint64_t* gateway_ids = NULL;        // either points to gateway_ids_buf, or gateway_ids_buf + 1 (i.e. to skip the coordinator)
    size_t num_gateway_ids = 0;
    
-   int64_t manifest_mtime_sec;
-   int32_t manifest_mtime_nsec;
+   int64_t manifest_mtime_sec = 0;
+   int32_t manifest_mtime_nsec = 0;
    
    struct fskit_entry* fent = NULL;
    struct UG_inode* inode = NULL;
@@ -205,14 +209,17 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    uint64_t file_id = 0;
    int64_t file_version = 0;
    uint64_t coordinator_id = 0;
-   off_t file_size = 0;
-   
    bool local_coordinator = false;
+
+   memset( &now, 0, sizeof(struct timespec) );
+   memset( &manifest_refresh_mtime, 0, sizeof(struct timespec) );
    
    // ref...
    fent = fskit_entry_ref( fs, fs_path, &rc );
    if( rc != 0 ) {
       
+      SG_error("BUG: fskit_entry_ref(%s) rc = %d\n", fs_path, rc );
+      exit(1);
       return rc;
    }
    
@@ -224,9 +231,9 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    file_id = UG_inode_file_id( inode );
    file_version = UG_inode_file_version( inode );
    coordinator_id = UG_inode_coordinator_id( inode );
-   file_size = fskit_entry_get_size( fent );
    max_read_freshness = UG_inode_max_read_freshness( inode );
-   
+  
+   // TODO: problem--we update manifest modtime between writes, and refresh manifest as well 
    SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
    // are we the coordinator?
@@ -238,11 +245,14 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    // if we're the coordinator and we didn't explicitly mark the manifest as stale, then it's fresh
    if( !SG_manifest_is_stale( UG_inode_manifest( inode ) ) && local_coordinator ) {
       
-      // we're the coordinator--we already have the freshest version 
+      // we're the coordinator--we already have the freshest version
+      SG_debug("Manifest %" PRIX64 ".%" PRId64 ".%d is locally-coordinated and not stale\n", file_id, manifest_mtime_sec, manifest_mtime_nsec ); 
       fskit_entry_unlock( fent );
       fskit_entry_unref( fs, fs_path, fent );
       return 0;
    }
+
+   SG_debug("Reload manifest %" PRIX64 "/manifest.%" PRId64 ".%d\n", file_id, manifest_mtime_sec, manifest_mtime_nsec );
    
    rc = clock_gettime( CLOCK_REALTIME, &now );
    if( rc != 0 ) {
@@ -259,20 +269,30 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    if( !SG_manifest_is_stale( UG_inode_manifest( inode ) ) && md_timespec_diff_ms( &now, &manifest_refresh_mtime ) <= max_read_freshness ) {
       
       // still fresh
+      SG_debug("Manifest %" PRIX64 "/manifest.%" PRId64 ".%d is still fresh\n", file_id, manifest_mtime_sec, manifest_mtime_nsec ); 
       fskit_entry_unlock( fent );
       fskit_entry_unref( fs, fs_path, fent );
       return 0;
    }
    
    // manifest is stale--must refresh.
-   fskit_entry_unlock( fent );
-   
    // get list of gateways to try
    rc = UG_read_download_gateway_list( gateway, coordinator_id, &gateway_ids_buf, &num_gateway_ids );
    if( rc != 0 ) {
       
+      fskit_entry_unlock( fent );
       fskit_entry_unref( fs, fs_path, fent );
       return rc;
+   }
+
+   if( num_gateway_ids == 0 ) {
+
+      // no gateways
+      SG_error("%s", "No replica gateways exist; cannot fetch manifest\n");
+      SG_safe_free( gateway_ids_buf );
+      fskit_entry_unlock( fent );
+      fskit_entry_unref( fs, fs_path, fent );
+      return -ENODATA;
    }
    
    // set up a request 
@@ -280,20 +300,13 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    if( rc != 0 ) {
    
       SG_safe_free( gateway_ids_buf );
+      fskit_entry_unlock( fent );
       fskit_entry_unref( fs, fs_path, fent );
       return rc;
    }
    
-   // if we were the coordinator, skip ourselves
-   if( local_coordinator ) {
-      
-      gateway_ids = gateway_ids_buf + 1;
-      num_gateway_ids --;
-   }
-   
    // get the manifest 
-   rc = UG_consistency_manifest_download( gateway, &reqdat, gateway_ids, num_gateway_ids, &new_manifest );
-   
+   rc = UG_consistency_manifest_download( gateway, &reqdat, gateway_ids_buf, num_gateway_ids, &new_manifest );
    SG_safe_free( gateway_ids_buf );
    
    if( rc != 0 ) {
@@ -302,35 +315,20 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
                reqdat.file_id, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, rc );
       
       SG_request_data_free( &reqdat );
+      fskit_entry_unlock( fent ); 
       fskit_entry_unref( fs, fs_path, fent );
       return rc;
    }
    
-   fskit_entry_wlock( fent );
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
    // merge in new blocks (but keep locally-dirty ones)
-   // NOTE: this works without keeping the inode locked because UG_inode_manifest_merge_blocks is a commutative, associative operation!
-   // other writes to it may have occurred intermittently, but that's okay to merge the new manifest since we'll arrive at the same manifest regardless of the merge order.
    rc = UG_inode_manifest_merge_blocks( gateway, inode, &new_manifest );
-   
    if( rc == 0 ) {
       
-      // if were the local coordinator, we need to fix up the manifest from the one we got back from the RGs
-      if( local_coordinator ) {
-         
-         // if the size shrank, then truncate 
-         if( (unsigned)SG_manifest_get_file_size( &new_manifest ) < (unsigned)file_size ) {
-            
-            UG_inode_truncate( gateway, inode, SG_manifest_get_file_size( &new_manifest ), SG_manifest_get_file_version( &new_manifest ) );
-            fskit_entry_set_size( fent, SG_manifest_get_file_size( &new_manifest ) );
-         }
-         
-         // restore modtime 
-         SG_manifest_set_modtime( UG_inode_manifest( inode ), SG_manifest_get_modtime_sec( &new_manifest ), SG_manifest_get_modtime_nsec( &new_manifest ) );
-      }
-         
+      // restore modtime, version, coordinator (we already have the latest size)
+      SG_manifest_set_modtime( UG_inode_manifest( inode ), SG_manifest_get_modtime_sec( &new_manifest ), SG_manifest_get_modtime_nsec( &new_manifest ) );
+      SG_manifest_set_file_version( UG_inode_manifest( inode ), SG_manifest_get_file_version( &new_manifest ) );
+      SG_manifest_set_coordinator_id( UG_inode_manifest( inode ), SG_manifest_get_coordinator( &new_manifest ) );
+
       // update refresh time 
       rc = clock_gettime( CLOCK_REALTIME, &now );
       if( rc != 0 ) {
@@ -347,17 +345,17 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
          UG_inode_set_manifest_refresh_time( inode, &now );
       }
    }
-   
-   fskit_entry_unlock( fent );
-   
-   SG_manifest_free( &new_manifest );
-   
-   if( rc != 0 ) {
-      
+   else {
+ 
       SG_error("UG_inode_manifest_merge_blocks( %" PRIX64 ".%" PRId64 "/manifest.%ld.%ld ) rc = %d\n", 
                 reqdat.file_id, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, rc );
+
    }
-   
+
+   SG_manifest_set_stale( UG_inode_manifest( inode ), false );
+
+   fskit_entry_unlock( fent );
+   SG_manifest_free( &new_manifest );
    SG_request_data_free( &reqdat );
    
    return rc;
@@ -435,6 +433,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
 // * if the versions don't match, then the inode will be reversioned 
 // * for regular files, if the size changed, then the inode will be truncated (i.e. evicting blocks if the size shrank)
 // * if the names don't match, the name will be changed.
+// * if this is a regular file, and we're still the coordinator and the version has not changed, then no reload will take place (since we already have the latest information).
 // NOTE: fent must be write-locked
 // NOTE: parent must be write-locked
 // NOTE: fent might be replaced--don't access it after calling this method.
@@ -442,7 +441,7 @@ static int UG_consistency_fskit_entry_replace( struct SG_gateway* gateway, char 
 // return 1 if fent got replaced 
 // return -ENOMEM on OOM
 // return -errno on error
-static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path, struct fskit_entry* parent, struct fskit_entry* fent, char const* fent_name, struct md_entry* inode_data ) {
+int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path, struct fskit_entry* parent, struct fskit_entry* fent, char const* fent_name, struct md_entry* inode_data ) {
    
    int rc = 0;
    struct fskit_entry* new_fent = NULL;
@@ -461,6 +460,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    // types don't match?
    if( !UG_inode_export_match_type( inode, inode_data ) ) {
       
+      SG_debug("%" PRIX64 ": old type = %d, new type = %d\n", inode_data->file_id, fskit_entry_get_type( UG_inode_fskit_entry( inode ) ), inode_data->type );
+
       // make a new fskit entry for this
       new_fent = fskit_entry_new();
       if( new_fent == NULL ) {
@@ -510,6 +511,7 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       if( fskit_entry_get_type( new_fent ) == FSKIT_ENTRY_TYPE_FILE ) {
          
          SG_manifest_set_stale( UG_inode_manifest( inode ), true );
+         SG_debug("%" PRIX64 ": mark manifest stale\n", UG_inode_file_id( inode ) );
       }
       
       // replaced!
@@ -520,10 +522,22 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    // versions don't match?
    if( !UG_inode_export_match_version( inode, inode_data ) ) {
       
-      // reversion--both metadata, and cached data 
+      // reversion--both metadata, and cached data
+      SG_debug("%" PRIX64 ": old version = %" PRId64 ", new version = %" PRId64 "\n", inode_data->file_id, UG_inode_file_version( inode ), inode_data->version );
+      
       // NOTE: don't really care if cache reversioning fails--it'll get reaped eventually
       md_cache_reversion_file( cache, inode_data->file_id, UG_inode_file_version( inode ), inode_data->version );
       SG_manifest_set_file_version( UG_inode_manifest( inode ), inode_data->version );
+   }
+   else {
+
+      // if version matches and we're the coordinator, then no further action is necessary.
+      // we know the latest data already.
+      if( SG_gateway_id( gateway ) == UG_inode_coordinator_id( inode ) ) {
+
+         // nothing to do; our copy is fresh
+         return 0;
+      }
    }
    
    // file sizes don't match?
@@ -532,6 +546,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
       // need to expand/truncate inode
       off_t size = fskit_entry_get_size( UG_inode_fskit_entry( inode ) );
       off_t new_size = inode_data->size;
+
+      SG_debug("%" PRIX64 ": old size = %jd, new size = %jd\n", inode_data->file_id, size, new_size );
       
       if( size > new_size ) {
          
@@ -558,6 +574,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    if( UG_inode_export_match_name( inode, inode_data ) <= 0 ) {
       
       // inode got renamed 
+      SG_debug("%" PRIX64 ": old name = '%s', new name = '%s'\n", inode_data->file_id, fent_name, inode_data->name );
+
       rc = fskit_entry_rename_in_directory( parent, fent, fent_name, inode_data->name );
       if( rc != 0 ) {
          
@@ -569,8 +587,12 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    
    // manifest timestamps don't match, and we don't coordinate this file?
    if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) &&
-      (inode_data->manifest_mtime_sec != SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) ) || inode_data->manifest_mtime_nsec != SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) ) ) ) {
+      (inode_data->manifest_mtime_sec != SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) ) || inode_data->manifest_mtime_nsec != SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) )) ) {
       
+      SG_debug("%" PRIX64 ": old manifest timestamp = %" PRId64 ".%d, new manifest timestamp = %" PRId64 ".%d\n", inode_data->file_id,
+            SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) ), SG_manifest_get_modtime_nsec( UG_inode_manifest( inode )),
+            inode_data->manifest_mtime_sec, inode_data->manifest_mtime_nsec );
+
       SG_manifest_set_stale( UG_inode_manifest( inode ), true );
    }
    
@@ -578,6 +600,8 @@ static int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* 
    if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && inode_data->coordinator != SG_gateway_id( gateway ) ) {
       
       // uncache xattrs--we're not the authoritative source any longer
+      SG_debug("%" PRIX64 ": old coordinator = %" PRIu64 ", new coordinator = %" PRIu64 "\n", inode_data->file_id, SG_gateway_id( gateway ), inode_data->coordinator );
+
       fskit_fremovexattr_all( fs, fent );
    }
    
@@ -698,12 +722,10 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, ms
          
          SG_error("UG_inode_fskit_entry_init( %" PRIX64 " (%s) ) rc = %d\n", path_data[i].file_id, path_data[i].name, rc );
          
-         fskit_entry_destroy( fs, graft_child, false );
-         
          if( *graft_root != NULL ) {
             UG_consistency_fskit_path_graft_free( fs, *graft_root, path_data, path_len );
          }
-         
+        
          return rc;
       }
       
@@ -713,6 +735,7 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, ms
           
           // file manifest should be stale, since we only have metadata
           SG_manifest_set_stale( UG_inode_manifest( inode ), true );
+          SG_debug("%" PRIX64 ": mark manifest stale\n", UG_inode_file_id( inode ) );
       }
       else {
           
@@ -864,6 +887,7 @@ static int UG_consistency_path_free( struct fskit_core* core, ms_path_t* path ) 
         
         fskit_entry_unref( core, ent_ctx->fs_path, ent_ctx->fent );
         SG_safe_free( ent_ctx->fs_path );
+        SG_safe_free( ent_ctx );
         
         ms_client_path_ent_set_cls( &path->at(i), NULL );
     }
@@ -945,7 +969,9 @@ static int UG_consistency_path_find_local_stale( struct SG_gateway* gateway, cha
       rc = ms_client_getattr_request( &path_ent, UG_inode_volume_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_inode_write_nonce( inode ), path_ctx );
       if( rc != 0 ) {
          
-         // OOM 
+         // OOM
+         SG_safe_free( path_ctx );
+         SG_safe_free( cur_path ); 
          break;
       }
       
@@ -956,6 +982,8 @@ static int UG_consistency_path_find_local_stale( struct SG_gateway* gateway, cha
       catch( bad_alloc& ba ) {
          
          rc = -ENOMEM;
+         SG_safe_free( path_ctx );
+         SG_safe_free( cur_path );
          break;
       }
    }
@@ -1024,12 +1052,14 @@ static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char co
       
       if( skip ) {
           // this inode is fresh
+          SG_safe_free( cur_name );
           continue;
       }
       
       if( inode_i >= num_inodes ) {
          
          SG_error("overflow: counted %zu inodes\n", inode_i );
+         SG_safe_free( cur_name );
          rc = -EINVAL;
          break;
       }
@@ -1107,10 +1137,9 @@ static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char co
          SG_safe_free( path_stump );
          
          // done iterating
-         fskit_path_iterator_release( itr );
-         return rc;
+         break;
       }
-      
+
       // name of this inode, in case it gets blown away?
       name = SG_strdup_or_null( inode_datum->name );
       if( name == NULL ) {
@@ -1395,7 +1424,7 @@ int UG_consistency_path_ensure_fresh( struct SG_gateway* gateway, char const* fs
       
       UG_consistency_path_free( fs, &path_local );
       
-      SG_error("ms_client_getattr_multi('%s') rc = %d\n", fs_path, rc );
+      SG_error("ms_client_getattr_multi('%s') rc = %d, MS reply error %d\n", fs_path, rc, remote_inodes_stale.reply_error );
       return rc;
    }
    else if( rc == -ENOENT ) {
@@ -1541,6 +1570,132 @@ int UG_consistency_path_ensure_fresh( struct SG_gateway* gateway, char const* fs
    else {
        return 0;
    }
+}
+
+
+// refresh a single inode's metadata 
+// return 0 if the inode is already fresh, or is not changed remotely
+// return 1 if the inode was not fresh, but we fetched and merged the new data successfully
+// return -errno on failure 
+// inode->entry must NOT be locked
+int UG_consistency_inode_ensure_fresh( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode ) {
+
+   int rc = 0; 
+   ms_path_t ms_inode;
+   uint64_t volume_id = 0;
+   uint64_t file_id = 0;
+   int64_t file_version = 0;
+   int64_t write_nonce = 0;
+   struct timespec now;
+   struct ms_path_ent path_ent;
+   struct md_entry entry;
+   struct fskit_entry* fent = NULL;
+   struct fskit_entry* dent = NULL;
+   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   struct fskit_core* fs = UG_state_fs( ug );
+
+   char* fs_dirpath = md_dirname( fs_path, NULL );
+   char* fent_name = md_basename( fs_path, NULL );
+
+   if( fent_name == NULL || fs_dirpath == NULL ) {
+      
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      return -ENOMEM;
+   }
+
+   memset( &entry, 0, sizeof(struct md_entry) );
+   clock_gettime( CLOCK_REALTIME, &now );
+
+   if( !UG_inode_is_read_stale( inode, &now ) ) {
+
+      // still fresh 
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      return 0;
+   }
+
+   fskit_entry_rlock( UG_inode_fskit_entry( inode ));
+
+   volume_id = UG_inode_volume_id( inode );
+   file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+   write_nonce = UG_inode_write_nonce( inode );
+
+   fskit_entry_unlock( UG_inode_fskit_entry( inode ) );
+
+   SG_debug("Refresh inode %" PRIX64 "\n", UG_inode_file_id( inode ) );
+ 
+   rc = ms_client_getattr_request( &path_ent, volume_id, file_id, file_version, write_nonce, NULL);
+   if( rc != 0 ) {
+
+      // OOM
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      return rc;
+   }
+   
+   rc = ms_client_getattr( ms, &path_ent, &entry );
+   if( rc != 0 ) {
+
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      SG_error("ms_client_getattr(%" PRIX64 ") rc = %d, MS reply error %d\n", file_id, rc, entry.error );
+      return rc;
+   }
+
+   if( entry.error == MS_LISTING_NOCHANGE ) {
+      
+      // we're fresh
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      md_entry_free( &entry );
+      SG_debug("Entry %" PRIX64 " is fresh\n", file_id );
+      return 0;
+   }
+
+   // write-lock both the parent and child, so we can reload 
+   dent = fskit_entry_resolve_path( fs, fs_dirpath, 0, 0, true, &rc );
+   if( dent == NULL ) {
+      
+      // this entry does not exist anymore...
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      md_entry_free( &entry );
+      return rc;
+   }
+
+   fent = fskit_dir_find_by_name( dent, fent_name );
+   if( fent == NULL ) {
+
+      // not found 
+      SG_safe_free( fent_name );
+      SG_safe_free( fs_dirpath );
+      md_entry_free( &entry );
+      fskit_entry_unlock( dent );
+
+      return -ENOENT;
+   } 
+
+   fskit_entry_wlock( fent );
+
+   rc = UG_consistency_inode_reload( gateway, fs_path, dent, fent, fent_name, &entry );
+
+   fskit_entry_unlock( fent );
+   fskit_entry_unlock( dent );
+      
+   SG_safe_free( fent_name );
+   SG_safe_free( fs_dirpath );
+   md_entry_free( &entry );
+
+   if( rc != 0 ) {
+
+      SG_error("UG_consistency_inode_reload(%" PRIX64 ") rc = %d\n", file_id, rc );
+      return rc;
+   }
+    
+   return 1;
 }
 
 
@@ -1821,6 +1976,15 @@ int UG_consistency_fetchxattrs( struct SG_gateway* gateway, uint64_t file_id, in
       SG_error("ms_client_fetchxattrs(/%" PRIu64 "/%" PRIX64 ".%" PRId64 ") rc = %d\n", volume_id, file_id, xattr_nonce, rc );
       return -ENODATA;
    }
+
+   if( xattr_names[0] == NULL ) {
+      // no xattrs 
+      *ret_xattrs = NULL;
+      SG_FREE_LIST( xattr_names, free );
+      SG_FREE_LIST( xattr_values, free );
+      SG_safe_free( xattr_value_lengths );
+      return 0;
+   }
    
    // load them into an xattr set to be fed into the inode 
    xattr_set = fskit_xattr_set_new();
@@ -1833,20 +1997,21 @@ int UG_consistency_fetchxattrs( struct SG_gateway* gateway, uint64_t file_id, in
    }
    
    for( size_t i = 0; xattr_names[i] != NULL; i++ ) {
-      
+     
       rc = fskit_xattr_set_insert( &xattr_set, xattr_names[i], xattr_values[i], xattr_value_lengths[i], 0 );
       if( rc != 0 ) {
          
          break;
       }
    }
+      
+   SG_FREE_LIST( xattr_names, free );
+   SG_FREE_LIST( xattr_values, free );
+   SG_safe_free( xattr_value_lengths );
    
    if( rc != 0 ) {
       
       fskit_xattr_set_free( xattr_set );
-      SG_FREE_LIST( xattr_names, free );
-      SG_FREE_LIST( xattr_values, free );
-      SG_safe_free( xattr_value_lengths );
       return rc;
    }
    
@@ -1879,7 +2044,7 @@ static int UG_consistency_fetchxattrs_all( struct SG_gateway* gateway, ms_path_t
              SG_error("UG_consistency_fetchxattrs(%" PRIX64 ") rc = %d\n", (*path_remote)[i].file_id, rc );
              return rc;
          }
-         
+        
          // associate the xattrs with this path entry 
          ms_client_path_ent_set_cls( &path_remote->at(i), xattrs );
       }
