@@ -17,6 +17,7 @@
 #include "block.h"
 #include "inode.h"
 
+
 // init dirty block by copying in a buffer
 // return 0 on success
 // return -ENOMEM on OOM 
@@ -155,7 +156,32 @@ int UG_dirty_block_deepcopy( struct UG_dirty_block* dest, struct UG_dirty_block*
 }
 
 
+// set a dirty block's buffer.  Use with care.
+// only works if the block is *not* shared/RAM-allocated.  If unshared, frees the buffer first.
+int UG_dirty_block_set_buf( struct UG_dirty_block* dest, struct SG_chunk* new_buf ) {
+
+   if( !UG_dirty_block_unshared( dest ) && UG_dirty_block_in_RAM( dest ) ) {
+      SG_error("%s", "BUG: dirty block not in RAM\n");
+      exit(1);
+   }
+
+   if( UG_dirty_block_unshared( dest ) ) {
+      SG_chunk_free( &dest->buf );
+   }
+
+   dest->buf = *new_buf;
+   return 0;
+}
+
+// set version 
+int UG_dirty_block_set_version( struct UG_dirty_block* blk, int64_t version ) {
+   SG_manifest_block_set_version( &blk->info, version );
+   return 0;
+}
+
 // load a block from the cache, into dirty_block->buf
+// if dirty_block->buf is allocated, this loads the deserialized block directly into it.
+// If it is not allocated, it will be with malloc.
 // transform it using the driver
 // do NOT mark it dirty.
 // dirty_block must be instantiated, but must not be in RAM
@@ -165,16 +191,33 @@ int UG_dirty_block_deepcopy( struct UG_dirty_block* dest, struct UG_dirty_block*
 // return -ENOMEM on OOM
 // return -EINVAL if dirty_block is in RAM
 // return -ENODATA if we failed to serialize the block
-int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, uint64_t file_version, struct UG_dirty_block* dirty_block ) {
+int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, uint64_t file_version, struct UG_dirty_block* dirty_block, struct SG_IO_hints* io_hints ) {
    
    int rc = 0;
    struct SG_request_data reqdat;
    
    struct SG_chunk raw_block;
    struct SG_chunk block_buf;
+   struct SG_chunk* buf_ptr = NULL;
+
+   memset( &raw_block, 0, sizeof(struct SG_chunk) );
+   memset( &block_buf, 0, sizeof(struct SG_chunk) );
+
+   if( UG_dirty_block_is_flushed( dirty_block ) || UG_dirty_block_mmaped( dirty_block ) ) {
+
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] flushed or mmap'ed\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
+   }
 
    if( UG_dirty_block_in_RAM( dirty_block ) ) {
-      return -EINVAL;
+
+      // load directly 
+      buf_ptr = UG_dirty_block_buf( dirty_block );
+   }
+   else {
+
+      // implementation must allocate 
+      buf_ptr = &block_buf;
    }
 
    rc = SG_request_data_init_block( gateway, fs_path, file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), &reqdat );
@@ -182,8 +225,11 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
       return rc;
    }
 
+   SG_request_data_set_IO_hints( &reqdat, io_hints );
+
    // fetch serialized block from cache 
    rc = SG_gateway_cached_block_get_raw( gateway, &reqdat, &raw_block );
+   
    if( rc != 0 ) {
 
       SG_error("SG_gateway_cached_block_get_raw( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
@@ -199,20 +245,34 @@ int UG_dirty_block_load_from_cache( struct SG_gateway* gateway, char const* fs_p
       }
    }
 
-   // deserialize
-   rc = SG_gateway_impl_deserialize( gateway, &reqdat, &raw_block, &block_buf );
+   // deserialize (might allocate buf_ptr)
+   rc = SG_gateway_impl_deserialize( gateway, &reqdat, &raw_block, buf_ptr );
+
+   SG_request_data_free( &reqdat );
    SG_chunk_free( &raw_block );
+
+   if( rc == -ENOSYS ) {
+      // no-op 
+      rc = 0;
+   }
+
    if( rc != 0 ) {
        
       SG_error("SG_gateway_impl_deserialize( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
                    file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
 
-      SG_request_data_free( &reqdat );
-      return -ENODATA;
+      if( rc != -ENOMEM ) {
+          rc = -ENODATA;
+      }
+
+      return rc;
    }
 
-   // put into place 
-   dirty_block->buf = block_buf;
+   // put into place, if not there already
+   if( buf_ptr == &block_buf ) {
+      UG_dirty_block_set_buf( dirty_block, buf_ptr );
+   }
+
    return 0;
 }
 
@@ -227,12 +287,25 @@ int UG_dirty_block_mmap( struct UG_dirty_block* dirty_block ) {
    int rc = 0;
    char* buf = NULL;
    struct stat sb;
-   
-   if( dirty_block->mmaped || dirty_block->buf.data != NULL || dirty_block->block_fd < 0 ) {
-      
+  
+   // sanity check: can't mmap if in ram
+   // should never happen. 
+   if( !dirty_block->mmaped && dirty_block->buf.data != NULL) {
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] still in RAM\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ));
+      exit(1);
+   }
+
+   // sanity check: needs to be flushed
+   if(  dirty_block->block_fd < 0 ) {
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] not flushed to disk\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
+   }
+
+   if( dirty_block->mmaped ) {
+      // already mmaped 
       return -EINVAL;
    }
-   
+
    // how big?
    rc = fstat( dirty_block->block_fd, &sb );
    if( rc != 0 ) {
@@ -243,7 +316,7 @@ int UG_dirty_block_mmap( struct UG_dirty_block* dirty_block ) {
    }
    
    buf = (char*)mmap( NULL, sb.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, dirty_block->block_fd, 0 );
-   if( buf == NULL ) {
+   if( buf == MAP_FAILED ) {
       
       rc = -errno;
       SG_error("mmap(%d) rc = %d\n", dirty_block->block_fd, rc );
@@ -363,16 +436,25 @@ int UG_dirty_block_set_dirty( struct UG_dirty_block* dirty_block, bool dirty ) {
 }
 
 
-// flush a block to disk, if it is dirty.  If it is not dirty, do nothing and return 0
-// if the block was in RAM, create a cache future and put it into *block_fut 
+// set the unshared flag on a dirty block
+// this is the case if we gift data into a block
+// always succeeds 
+int UG_dirty_block_set_unshared( struct UG_dirty_block* dirty_block, bool unshared ) {
+
+   dirty_block->unshared = true;
+   return 0;
+}
+
+
+// flush a dirty block from RAM to disk.
 // return 0 on success, put the cache-write future into *dirty_block, and re-calculate the hash over the block's driver-serialized form
 // return -EINPROGRESS if this block is already being flushed
-// return -EINVAL if the block was already flushed, or is not in RAM
+// return -EINVAL if the block was already flushed, or is not in RAM, or is not dirty
 // return -ENODATA if we failed to serialize the block 
 // return -errno on cache failure
 // NOTE: be careful not to free dirty_block until the future has been finalized!
 // NOTE: not thread-safe--don't try flushing the same block twice
-int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct UG_dirty_block* dirty_block ) {
+int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, struct UG_dirty_block* dirty_block, struct SG_IO_hints* io_hints ) {
    
    int rc = 0;
    struct md_cache_block_future* fut = NULL;
@@ -387,71 +469,64 @@ int UG_dirty_block_flush_async( struct SG_gateway* gateway, char const* fs_path,
    
    if( !UG_dirty_block_in_RAM( dirty_block ) ) {
       // can't flush
-      return -EINVAL;
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not in RAM\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
    }
 
-   if( dirty_block->mmaped || dirty_block->block_fd >= 0 ) {
+   if( UG_dirty_block_mmaped( dirty_block ) || UG_dirty_block_is_flushed( dirty_block ) ) {
       
       // already on disk
-      return -EINVAL;
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is flushed to disk already\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
    }
    
    if( !dirty_block->dirty ) {
       
       // nothing to do 
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not dirty\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
+   }
+  
+   // synthesize a block request
+   rc = SG_request_data_init_block( gateway, fs_path, file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), &reqdat );
+   if( rc != 0 ) {
+
+      SG_error("SG_request_data_init rc = %d\n", rc );
       return rc;
    }
-   
-   if( dirty_block->buf.data != NULL ) {
-      
-      // set up a reqdat 
-      rc = SG_request_data_init_block( gateway, fs_path, file_id, file_version, SG_manifest_block_id( &dirty_block->info ), SG_manifest_block_version( &dirty_block->info ), &reqdat );
-      if( rc != 0 ) {
-         return -ENOMEM;
-      }
+    
+   // serialize and update hash 
+   rc = UG_dirty_block_serialize( gateway, &reqdat, dirty_block, io_hints, &serialized_data );
+   if( rc != 0 ) {
 
-      // serialize through the driver 
-      rc = SG_gateway_impl_serialize( gateway, &reqdat, &dirty_block->buf, &serialized_data );
-      if( rc != 0 ) {
-         SG_error("SG_gateway_impl_serialize( %"  PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-                  file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
-
-         return -ENODATA;
-      }
-      
-      // recalculate the hash for this block, over its serialized form 
-      rc = UG_dirty_block_rehash( dirty_block, serialized_data.data, serialized_data.len );
-      if( rc != 0 ) {
-         
-         SG_error("UG_inode_dirty_block_rehash( %" PRIX64 ".%" PRIu64" [%" PRId64 ".%" PRIu64 "] ) rc = %d\n", 
-               file_id, file_version, UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
-
-         SG_request_data_free( &reqdat );
-         return -ENOMEM;
-      }
-       
-      // gift the serialized data to the cache
-      rc = SG_gateway_cached_block_put_raw_async( gateway, &reqdat, &serialized_data, SG_CACHE_FLAG_UNSHARED, &fut );
-      
-      if( rc != 0 ) {
-         
-         SG_error("SG_gateway_cached_block_put_raw_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", 
-                  file_id, file_version, dirty_block->info.block_id, dirty_block->info.block_version, rc );
-      }
-      
-      else {
-         
-         dirty_block->block_fut = fut;
-      }
-      
+      SG_error("UG_dirty_block_serialize([%" PRIu64 ".%" PRId64 "]) rc = %d\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
       SG_request_data_free( &reqdat );
+      return -ENODATA;
+   }
+    
+   // gift the serialized data to the cache
+   rc = SG_gateway_cached_block_put_raw_async( gateway, &reqdat, &serialized_data, SG_CACHE_FLAG_UNSHARED, &fut );
+   SG_request_data_free( &reqdat );
+   
+   if( rc != 0 ) {
+      
+      SG_error("SG_gateway_cached_block_put_raw_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", 
+               file_id, file_version, dirty_block->info.block_id, dirty_block->info.block_version, rc );
+
+      SG_chunk_free( &serialized_data );
+   }
+   
+   else {
+      
+      dirty_block->block_fut = fut;
    }
    
    return rc;
 }
-   
+
+
 // wait for a block to get flushed.  If the block is not dirty and is not flushing, return 0.
-// if the flush succeeds, then set dirty_block->block_fd to the fd on disk to the flushed block.
+// if the flush succeeds, then set dirty_block->block_fd to the fd on disk to the flushed block, and update the block's hash.
 // if free_chunk is set, free dirty_block's RAM buffer as well if we successfully flush
 // return 0 on success
 // return -EINVAL if the block is dirty, but the block is not being flushed.
@@ -484,7 +559,7 @@ int UG_dirty_block_flush_finish_ex( struct UG_dirty_block* dirty_block, bool fre
       return rc;
    }
    
-   // detach the file descriptor from the future, and put it into the dirty block 
+   // detach the file descriptor from the future, and put it into the dirty block (in order to keep the data referenced) 
    block_fd = md_cache_block_future_release_fd( block_fut );
    if( block_fd < 0 ) {
       
@@ -493,7 +568,7 @@ int UG_dirty_block_flush_finish_ex( struct UG_dirty_block* dirty_block, bool fre
       
       return block_fd;
    }
-   
+
    dirty_block->block_fd = block_fd;
    
    if( free_chunk && !dirty_block->mmaped && dirty_block->unshared ) {
@@ -563,51 +638,51 @@ int UG_dirty_block_buf_unshare( struct UG_dirty_block* dirty_block ) {
 }
 
 
-// given an offset and a write length, find the IDs of the first aligned block and last aligned block 
+// given an offset and a write length, find the IDs of the first aligned block and last aligned block.
+// that is, the IDs of the first and last block that correspond to whole blocks in the range [offset, offset + buf_len].
 // always succeeds 
-int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, uint64_t* aligned_start_id, uint64_t* aligned_end_id, off_t* aligned_start_offset ) {
+int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, uint64_t* aligned_start_id, uint64_t* aligned_end_id, off_t* aligned_start_offset, off_t* last_block_len ) {
    
    int rc = 0;
    
-   uint64_t first_block = offset / block_size;
+   uint64_t first_affected_block = offset / block_size;
    uint64_t first_aligned_block = 0;
    off_t first_aligned_block_offset = 0;  // offset into buf where the first aligned block starts
    
    uint64_t last_aligned_block = 0;
+   uint64_t last_block_overflow = 0;
    
    // is the first block aligned?
    if( offset > 0 && (offset % block_size) != 0 ) {
       
       // nope--it's the next one 
-      first_aligned_block = first_block + 1;
+      first_aligned_block = first_affected_block + 1;
       
       first_aligned_block_offset = block_size - (offset % block_size);
    }
    else {
       
       // yup--aligned 
-      first_aligned_block = first_block;
+      first_aligned_block = first_affected_block;
       
       first_aligned_block_offset = 0;
    }
-   
-   // is the last block aligned?
-   if( (offset + buf_len) > 0 && ((offset + buf_len) % block_size) != 0 ) {
-      
-      // nope--it's the previous one 
-      last_aligned_block = (offset + buf_len) / block_size;
-      
-      // careful, overflow...
+  
+   last_aligned_block = (offset + buf_len) / block_size;
+   if( last_aligned_block > 0 ) {
+      last_aligned_block--;
+   }
+
+   // if the last whole block ends at a block boundry, then the block overflow is 
+   // exactly one block and the last whole block is the preceding block.
+   last_block_overflow = (offset + buf_len) % block_size;
+   if( last_block_overflow == 0 ) {
+      last_block_overflow = block_size;
       if( last_aligned_block > 0 ) {
          last_aligned_block--;
       }
    }
-   else {
-      
-      // yup--aligned 
-      last_aligned_block = (offset + buf_len) / block_size;
-   }
-   
+
    if( aligned_start_id != NULL ) {
       
       *aligned_start_id = first_aligned_block;
@@ -621,6 +696,11 @@ int UG_dirty_block_aligned( off_t offset, size_t buf_len, uint64_t block_size, u
    if( aligned_start_offset != NULL ) {
       
       *aligned_start_offset = first_aligned_block_offset;
+   }
+
+   if( last_block_len != NULL ) {
+
+      *last_block_len = last_block_overflow;
    }
    
    return rc;
@@ -649,6 +729,18 @@ int64_t UG_dirty_block_version( struct UG_dirty_block* blk ) {
    return blk->info.block_version;
 }
 
+// NOTE: can only be called once the block has been (re)hashed
+int UG_dirty_block_hash_buf( struct UG_dirty_block* blk, unsigned char* hash_buf ) {
+
+   if( SG_manifest_block_hash( &blk->info ) == NULL ) {
+      SG_error("BUG: hash for block [%" PRIu64 ".%" PRId64 "] is NULL\n", UG_dirty_block_id( blk ), UG_dirty_block_version( blk ) );
+      exit(1);
+   }
+
+   memcpy( hash_buf, SG_manifest_block_hash( &blk->info ), SG_BLOCK_HASH_LEN );
+   return 0;
+}
+   
 struct SG_chunk* UG_dirty_block_buf( struct UG_dirty_block* blk ) {
    return &blk->buf;
 }
@@ -673,17 +765,21 @@ bool UG_dirty_block_is_flushing( struct UG_dirty_block* blk ) {
    return (blk->block_fut) != NULL;
 }
 
+bool UG_dirty_block_is_flushed( struct UG_dirty_block* blk ) {
+   return (blk->block_fd >= 0);
+}
+
 bool UG_dirty_block_mmaped( struct UG_dirty_block* blk ) {
    return blk->mmaped;
 }
 
 bool UG_dirty_block_in_RAM( struct UG_dirty_block* blk ) {
-   return (blk->mmaped || blk->buf.data != NULL);
+   return (blk->buf.data != NULL);
 }
 
 
 // re-calculate the hash of the block
-// the block must be resident in memory (mmaped or otherwise)
+// the block must be resident in memory, but not mmap'ed
 // store it into its block info
 // NOT ATOMIC
 // return 0 on success
@@ -692,16 +788,62 @@ int UG_dirty_block_rehash( struct UG_dirty_block* blk, char const* serialized_da
 
    unsigned char* hash = NULL;
 
-   if( SG_manifest_block_hash( &blk->info ) == NULL ) {
-
-      hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
-      if( hash == NULL ) {
-         return -ENOMEM;
-      }
-
-      SG_manifest_block_set_hash( &blk->info, hash );
+   hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH);
+   if( hash == NULL ) {
+      return -ENOMEM;
    }
 
    sha256_hash_buf( serialized_data, serialized_data_len, hash );
+   SG_manifest_block_set_hash( &blk->info, hash );
+
+   char hash_str[2*SG_BLOCK_HASH_LEN + 1];
+   memset( hash_str, 0, 2*SG_BLOCK_HASH_LEN+1 );
+
+   sha256_printable_buf( hash, hash_str );
+   SG_debug("Hash of block [%" PRIu64 ".%" PRId64 "] (%p) is now %s\n", UG_dirty_block_id( blk ), UG_dirty_block_version( blk ), blk, hash_str );
    return 0;
 }
+
+
+// serialize a block, and update its hash 
+// the block must be resident in memory, but not mmaped
+// return 0 on success
+// return -ENOMEM on OOM 
+int UG_dirty_block_serialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct UG_dirty_block* block, struct SG_IO_hints* io_hints, struct SG_chunk* serialized_data ) {
+
+   int rc = 0;
+
+   // sanity check: must be in RAM 
+   if( !UG_dirty_block_in_RAM( block ) ) {
+     SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not in RAM\n", UG_dirty_block_id( block ), UG_dirty_block_version( block ) );
+     exit(1);
+   } 
+
+   memset( serialized_data, 0, sizeof(struct SG_chunk) );
+
+   // serialize the block
+   rc = SG_gateway_impl_serialize( gateway, reqdat, UG_dirty_block_buf( block ), serialized_data );
+
+   if( rc != 0 && rc != -ENOSYS ) {
+
+      SG_error("UG_impl_block_serialize([%" PRIu64 ".%" PRId64 "]) rc = %d\n", UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+      return rc;
+   }
+   else {
+      rc = 0;
+   }
+   
+   // calculate the new block hash 
+   rc = UG_dirty_block_rehash( block, serialized_data->data, serialized_data->len );
+
+   if( rc != 0 ) {
+
+      SG_error("UG_dirty_block_rehash([%" PRIu64 ".%" PRId64 "]) rc = %d\n", UG_dirty_block_id( block ), UG_dirty_block_version( block ), rc );
+      SG_chunk_free( serialized_data );
+      return rc;
+   }
+
+   return 0;
+}
+
+
