@@ -17,9 +17,9 @@
 #ifndef _SG_DRIVER_H_
 #define _SG_DRIVER_H_
 
-#include "libsyndicate.h"
-#include "proc.h"
-#include "libjson-compat.h"
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/proc.h"
+#include "libsyndicate/libjson-compat.h"
 
 typedef map<string, string> SG_driver_conf_t;
 typedef SG_driver_conf_t SG_driver_secrets_t;
@@ -38,7 +38,7 @@ int SG_driver_wlock( struct SG_driver* driver );
 int SG_driver_unlock( struct SG_driver* driver );
 
 // initialization, reload, and shutdown 
-int SG_driver_init( struct SG_driver* driver,
+int SG_driver_init( struct SG_driver* driver, struct md_syndicate_conf* conf,
                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
                     char const* exec_str, char** const roles, size_t num_roles, int num_instances,
                     char const* driver_text, size_t driver_text_len);

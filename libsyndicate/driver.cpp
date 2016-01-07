@@ -14,6 +14,7 @@
    limitations under the License.
 */
 
+#include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/driver.h"
 #include "libsyndicate/crypt.h"
 #include "libsyndicate/gateway.h"
@@ -37,6 +38,9 @@ struct SG_driver {
    char** roles;
    size_t num_roles;
    int num_instances;   // number of instances of each role 
+
+   // pointer to global conf 
+   struct md_syndicate_conf* conf;
 };
 
 
@@ -605,7 +609,7 @@ static int SG_driver_init_procs( struct SG_driver* driver, char** const roles, s
 // decrypt the driver secrets using the private key.
 // return 0 on success, and populate *driver 
 // return -ENOMEM on OOM
-int SG_driver_init( struct SG_driver* driver,
+int SG_driver_init( struct SG_driver* driver, struct md_syndicate_conf* conf,
                     EVP_PKEY* pubkey, EVP_PKEY* privkey,
                     char const* exec_str, char** const roles, size_t num_roles, int num_instances,
                     char const* driver_text, size_t driver_text_len ) {
@@ -657,7 +661,8 @@ int SG_driver_init( struct SG_driver* driver,
    driver->roles = roles_dup;
    driver->num_roles = num_roles;
    driver->num_instances = num_instances;
-   
+   driver->conf = conf;
+    
    return rc;
 }
 
@@ -712,6 +717,12 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
    int rc = 0;
    struct SG_proc_group** groups = NULL;
    struct SG_proc** initial_procs = NULL;
+
+   // do we even have a driver?
+   if( driver->driver_text.data == NULL ) {
+      driver->groups = NULL;
+      return 0;
+   }
 
    groups = SG_CALLOC( struct SG_proc_group*, driver->num_roles );
    if( groups == NULL ) {
@@ -795,11 +806,20 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
           SG_debug("Start: %s %s (instance %d)\n", driver->exec_str, driver->roles[i], j );
 
           // start this process 
-          rc = SG_proc_start( initial_procs[proc_idx], driver->exec_str, driver->roles[i], &config, &secrets, &driver->driver_text );
+          rc = SG_proc_start( initial_procs[proc_idx], driver->exec_str, driver->roles[i], driver->conf->helper_env, &config, &secrets, &driver->driver_text );
           if( rc != 0 ) {
-         
-             SG_error("SG_proc_start('%s %s') rc = %d\n", driver->exec_str, driver->roles[i], rc );
-             goto SG_driver_procs_start_finish;
+
+             if( rc == -ENOSYS ) {
+                SG_warn("Driver does not implement '%s'\n", driver->roles[i] );
+                initial_procs[proc_idx] = NULL;
+                rc = 0;
+                continue;
+             }
+        
+             else { 
+                 SG_error("SG_proc_start('%s %s') rc = %d\n", driver->exec_str, driver->roles[i], rc );
+                 goto SG_driver_procs_start_finish;
+             }
           }
    
           rc = SG_proc_group_add( groups[i], initial_procs[proc_idx] );
@@ -834,8 +854,10 @@ SG_driver_procs_start_finish:
 
                 int proc_idx = i * driver->num_instances + j;
 
-                SG_proc_stop( initial_procs[proc_idx], 1 );
-                SG_proc_free( initial_procs[proc_idx] );
+                if( initial_procs[proc_idx] != NULL ) {
+                    SG_proc_stop( initial_procs[proc_idx], 1 );
+                    SG_proc_free( initial_procs[proc_idx] );
+                }
             }
          }
          
@@ -867,6 +889,11 @@ int SG_driver_procs_stop( struct SG_driver* driver ) {
 
    struct SG_proc_group* group = NULL;
    int rc = 0;
+
+   // if there are no processes, then do nothing 
+   if( driver->groups == NULL ) {
+      return 0;
+   }
 
    // ask the workers to stop
    for( size_t i = 0; i < driver->num_roles; i++ ) {
@@ -922,10 +949,16 @@ int SG_driver_procs_stop( struct SG_driver* driver ) {
 // reload the driver from a JSON object representation.
 // return 0 on success 
 // return -ENOMEM on OOM 
-// return -EINVAL on failure to parse
+// return -EINVAL on failure to parse, or if driver_text is NULL
 // return -EPERM if we were unable to start the driver processes
 int SG_driver_reload( struct SG_driver* driver, EVP_PKEY* pubkey, EVP_PKEY* privkey, char const* driver_text, size_t driver_text_len ) {
    
+   if( driver_text == NULL ) {
+      SG_error("%s", "BUG: no driver text given\n");
+      exit(1);
+      return -EINVAL;
+   }
+
    SG_driver_wlock( driver );
    
    int reload_rc = 0;
@@ -965,18 +998,19 @@ int SG_driver_reload( struct SG_driver* driver, EVP_PKEY* pubkey, EVP_PKEY* priv
       for( SG_driver_proc_group_t::iterator itr = driver->groups->begin(); itr != driver->groups->end(); itr++ ) {
          
          struct SG_proc_group* group = itr->second;
+         
+         SG_debug("Reload process group %p (%s)\n", group, itr->first.c_str() ); 
       
          // do not allow any subsequent requests for this group
          SG_proc_group_wlock( group );
-   
          rc = SG_proc_group_reload( group, driver->exec_str, &serialized_conf, &serialized_secrets, &driver->driver_text );
-      
          SG_proc_group_unlock( group );
          
          if( rc != 0 ) {
 
             SG_error("SG_proc_group_reload('%s', '%s') rc = %d\n", driver->exec_str, itr->first.c_str(), rc );
             reload_rc = -EPERM;
+            break;
          }
       }
    }
