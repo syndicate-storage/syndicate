@@ -94,7 +94,9 @@ extern int _SG_ERROR_MESSAGES;
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #endif
 
+#ifndef MAX
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
+#endif
 
 #define CURL_DEFAULT_SELECT_SEC 0
 #define CURL_DEFAULT_SELECT_USEC 50000

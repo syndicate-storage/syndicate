@@ -189,6 +189,8 @@ int sha256_cmp( unsigned char const* hash1, unsigned char const* hash2 ) {
 void sha256_printable_buf( unsigned char const* hash, char* ret ) {
    
    char buf[3];
+   memset( buf, 0, 3 );
+
    for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
       sprintf(buf, "%02x", hash[i] );
       ret[2*i] = buf[0];
@@ -362,6 +364,7 @@ unsigned char* sha256_fd( int fd ) {
 
 
 // hash a file for a given number of bytes, given its descriptor 
+// it can underflow if we reach EOF
 void sha256_fd_buf( int fd, size_t len, unsigned char* output ) {
    
    SHA256_CTX context;
@@ -369,19 +372,25 @@ void sha256_fd_buf( int fd, size_t len, unsigned char* output ) {
    
    unsigned char buf[32768];
    
-   ssize_t num_read = 1;
-   while( num_read > 0 ) {
+   ssize_t num_read = 0;
+   ssize_t nr = 0;
+   do {
       
-      num_read = read( fd, buf, 32768 );
-      if( num_read < 0 ) {
+      nr = read( fd, buf, MIN( 32768, len - num_read ));
+      if( nr < 0 ) {
          
          SG_error("sha256_fd_buf: I/O error reading FD %d, errno=%d\n", fd, -errno );
          SHA256_Final( output, &context );
          return;
       }
-      
-      SHA256_Update( &context, buf, num_read );
-   }
+      if( nr == 0 ) {
+         break;
+      } 
+
+      SHA256_Update( &context, buf, nr );
+      num_read += nr;
+
+   } while( (unsigned)num_read < len );
    
    SHA256_Final( output, &context );
    
