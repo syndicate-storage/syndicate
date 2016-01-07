@@ -40,9 +40,7 @@ struct UG_replica_context {
    
    struct SG_manifest write_delta;      // write delta to send to the coordinator
 
-   uint64_t* rg_ids;                    // replica gateway IDs
-   int* rg_status;                      // rg_status[i] is the replication status for rg_ids[i] (0: not started; 1: in progress; 2: success; negative: failure)
-   size_t num_rgs;                      // number of replica gateways
+   struct UG_RG_context* rg_context;    // RPC contexts to all RGs
    
    bool flushed_blocks;                 // if true, then the blocks have all been flushed to disk and can be replicated 
    bool sent_vacuum_log;                // if true, then we've told the MS about the manifest and blocks we're about to replicate 
@@ -114,6 +112,11 @@ static int UG_replica_sign_serialize_manifest_to_chunk( struct SG_gateway* gatew
    SG_request_data_free( &reqdat );
    SG_chunk_free( &chunk );
 
+   if( rc == -ENOSYS ) {
+      // no-op
+      rc = 0;
+   }
+
    if( rc != 0 ) {
 
       SG_error("SG_gateway_impl_serialize rc = %d\n", rc );
@@ -138,66 +141,50 @@ static int UG_replica_make_manifest_chunk_info( struct SG_chunk* manifest_chunk,
    }
 
    rc = SG_manifest_block_init( chunk_info, mtime_sec, mtime_nsec, hash, SG_BLOCK_HASH_LEN );
+   SG_safe_free( hash );
+
    if( rc != 0 ) {
 
-      SG_safe_free( hash );
       return rc;
    }
+
+   SG_manifest_block_set_type( chunk_info, SG_MANIFEST_BLOCK_TYPE_MANIFEST );
 
    return rc;
 }
 
 
-// generate chunk info from a dirty block
+// generate chunk info from a dirty block.
+// the block needs to have been flushed to disk.
 // NOTE: not thread-safe w.r.t. the block; the block must *not* be modified while this method is being called!
 // return 0 on success, and populate *chunk_info 
 // return -ENOMEM on OOM 
 // return -EPERM if the block could not be mapped into RAM
 static int UG_replica_make_block_chunk_info( struct UG_dirty_block* block, uint64_t block_id, int64_t block_version, struct SG_manifest_block* chunk_info ) {
 
-   unsigned char* hash = NULL;
-   bool mmaped = false;
+   unsigned char hash[SG_BLOCK_HASH_LEN];
    int rc = 0;
-   struct SG_chunk* chunk_buf = NULL;
 
-   // if not in RAM; then mmap it
-   if( !UG_dirty_block_in_RAM( block ) ) {
-      rc = UG_dirty_block_mmap( block );
-      if( rc != 0 ) {
-
-         SG_error("UG_dirty_block_mmap(%" PRIu64 ".%" PRId64 ") rc = %d\n", block_id, block_version, rc );
-         return -EPERM;
-      }
-
-      mmaped = true;
-   }
-
-   chunk_buf = UG_dirty_block_buf( block );
-
-   hash = sha256_hash_data( chunk_buf->data, chunk_buf->len );
-   if( hash == NULL ) {
-
-      if( mmaped ) {
-         UG_dirty_block_munmap( block );
-      }
-
-      return -ENOMEM;
-   }
-
-   rc = SG_manifest_block_init( chunk_info, block_id, block_version, hash, SG_BLOCK_HASH_LEN );
+   rc = UG_dirty_block_hash_buf( block, hash );
    if( rc != 0 ) {
 
-      if( mmaped ) {
-         UG_dirty_block_munmap( block );
-      }
+      // should never happen 
+      if( rc == -ERANGE ) {
 
-      SG_safe_free( hash );
+         SG_error("BUG: block has a non-standard hash (not SG_BLOCOK_HASH_LEN (%d)) bytes\n", SG_BLOCK_HASH_LEN );
+         exit(1);
+      }
+      else {
+         return rc;
+      }
+   }
+   
+   rc = SG_manifest_block_init( chunk_info, block_id, block_version, hash, SG_BLOCK_HASH_LEN );
+   if( rc != 0 ) {
       return rc;
    }
 
-   if( mmaped ) {
-      UG_dirty_block_munmap( block );
-   }
+   SG_manifest_block_set_type( chunk_info, SG_MANIFEST_BLOCK_TYPE_BLOCK );
 
    return rc;
 }
@@ -235,7 +222,8 @@ static int UG_replica_make_write_delta( struct SG_manifest* whole_manifest, UG_d
 }
 
 
-// create the replica control-plane message 
+// create the replica control-plane message
+// all blocks in flushed_blocks need to be dirty. 
 // return 0 on success, and populate *request and *serialized_manifest.  Does *NOT* calculate size and offset fields in the request
 // return -ENOMEM on OOM 
 static int UG_replica_context_make_controlplane_message( struct UG_state* ug, char const* fs_path, struct UG_inode* inode, struct SG_manifest* manifest,
@@ -248,6 +236,8 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
    size_t chunks_capacity = 0;
    struct SG_manifest_block* chunk_info = NULL;
    struct SG_chunk manifest_chunk;
+
+   memset( &manifest_chunk, 0, sizeof(struct SG_chunk) );
 
    // get basic info
    rc = SG_request_data_init_common( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), &reqdat );
@@ -287,17 +277,6 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
 
    if( flushed_blocks != NULL ) {
       
-      // sanity check 
-      for( UG_dirty_block_map_t::iterator itr = flushed_blocks->begin(); itr != flushed_blocks->end(); itr++ ) {
-        
-         // not dirty?
-         if( !UG_dirty_block_dirty( &itr->second ) ) {
-         
-            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] not dirty\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( &itr->second ) );
-            exit(1);
-         }
-      }
-      
       for( UG_dirty_block_map_t::iterator itr = flushed_blocks->begin(); itr != flushed_blocks->end(); itr++ ) {
 
          struct UG_dirty_block* block = &itr->second;
@@ -312,8 +291,8 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
       }
    }
 
-   // generate the message
-   rc = SG_client_request_PUTCHUNKS_setup( gateway, request, &reqdat, chunk_info, num_chunks );
+   // generate the message, but don't sign it yet (still need to add data-plane metadata)
+   rc = SG_client_request_PUTCHUNKS_setup_ex( gateway, request, &reqdat, chunk_info, num_chunks, false );
    if( rc != 0 ) {
 
       goto UG_replica_context_make_controlplane_message_fail;
@@ -338,13 +317,12 @@ UG_replica_context_make_controlplane_message_fail:
 }
 
 
-// create the replica data-plane message.
-// write out the serialized data-plane message to disk.
-// NOTE: each block in flushed_blocks must be in-RAM, dirty, and already flushed to disk (i.e. it must also have a file descriptor)
+// create the replica data-plane message, using an already-initialized control-plane request.
+// write out the serialized data-plane message to disk, and add chunk information (size, offset, type) to the control-plane request.
+// NOTE: each block in flushed_blocks must be dirty and already flushed to disk (i.e. it must have a file descriptor)
 // return 0 on success, and populate the size and offset fields for each block in the control-plane request *request, and populate *dataplane_fd
 // return -errno on fs-related errors.
 // return -ENAMETOOLONG on temporary path overflow
-// TODO DRIVER
 static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_messages::Request* request, struct SG_chunk* manifest_chunk, UG_dirty_block_map_t* flushed_blocks, int* dataplane_fd ) {
 
    int rc = 0;
@@ -355,30 +333,35 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
    char* data_root = md_conf_get_data_root( conf );
    char tmppath[PATH_MAX];
    struct stat sb;
+   SG_messages::ManifestBlock* block_info = NULL;
 
    rc = snprintf( tmppath, PATH_MAX-1, "%s/.replica-XXXXXX", data_root );
    if( rc >= PATH_MAX-1 ) {
       return -ENAMETOOLONG;
    }
+
+   // sanity check: request must be initialized 
+   if( (unsigned)request->blocks_size() != (unsigned)flushed_blocks->size() + 1 ) {
+      SG_error("%s", "BUG: control-plane request is not initialized\n");
+      exit(1);
+   }
    
-   // sanity check: all blocks must be in RAM
-   for( int i = 0; i < request->blocks_size(); i++ ) {
+   // sanity check: all blocks must exist in flushed_blocks and be flushed to disk (i.e. we need a file descriptor)
+   // however, the first block_info in the controlplane message refers to the *manifest* chunk, so we will not consider it here.
+   for( int i = 1; i < request->blocks_size(); i++ ) {
 
-      SG_messages::ManifestBlock* block_info = request->mutable_blocks(i);
-      struct UG_dirty_block* block = &(*flushed_blocks)[ block_info->block_id() ];
-      if( block == NULL ) {
+      block_info = request->mutable_blocks(i);
+      struct UG_dirty_block* block = NULL;
+      UG_dirty_block_map_t::iterator itr = flushed_blocks->find( block_info->block_id() );
 
+      // must exist...
+      if( itr == flushed_blocks->end() ) {
          SG_error("BUG: block %" PRIu64 " not present\n", block_info->block_id() );
          exit(1);
       }
 
-      if( !UG_dirty_block_in_RAM( block ) ) {
-
-         SG_error("BUG: block %" PRIu64 " not in RAM\n", block_info->block_id() );
-         exit(1);
-      }
-
-      if( UG_dirty_block_fd( block ) < 0 ) {
+      block = &itr->second;
+      if( !UG_dirty_block_is_flushed( block ) ) {
 
          SG_error("BUG: block %" PRIu64 " not flushed\n", block_info->block_id() );
          exit(1);
@@ -404,17 +387,27 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
 
    // flush manifest 
    rc = md_write_uninterrupted( fd, manifest_chunk->data, manifest_chunk->len );
-   if( rc != 0 ) {
+   if( rc < 0 ) {
 
       SG_error("md_write_uninterrupted rc = %d\n", rc );
       goto UG_replica_context_make_dataplane_message_fail;
    }
+   else {
+      rc = 0;
+   }
+
+   // put manifest chunk data 
+   block_info = request->mutable_blocks(0);
+   block_info->set_offset( 0 );
+   block_info->set_size( manifest_chunk->len );
+
+   off += manifest_chunk->len;
 
    // flush each block
    // NOTE: blocks[0] should be the manifest info; blocks[1..n] are the block info
    for( int i = 1; i < request->blocks_size(); i++ ) {
     
-      SG_messages::ManifestBlock* block_info = request->mutable_blocks(i);
+      block_info = request->mutable_blocks(i);
       struct UG_dirty_block* block = &(*flushed_blocks)[ block_info->block_id() ];
       int block_fd = UG_dirty_block_fd( block );
 
@@ -474,6 +467,8 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
    struct stat sb;
    uint64_t* affected_blocks = NULL;
    size_t num_affected_blocks = 0;
+   struct SG_gateway* gateway = UG_state_gateway( ug );
+   EVP_PKEY* gateway_privkey = SG_gateway_private_key( gateway );
    
    memset( rctx, 0, sizeof( struct UG_replica_context ) );
    
@@ -496,19 +491,12 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
             exit(1);
          }
 
-         // can't be flushing
-         if( UG_dirty_block_is_flushing( block ) ) {
+         // must be flushed to disk
+         if( !UG_dirty_block_is_flushed( block ) ) {
 
-            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] is flushing\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( block ) );
+            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] is not flushed\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( block ) );
             exit(1);
          }
-      
-         // must be in RAM
-         if( !UG_dirty_block_in_RAM( block ) ) {
-
-            SG_error("BUG: %" PRIX64 "[%" PRIu64 ".%" PRId64 "] not in RAM\n", UG_inode_file_id( inode ), itr->first, UG_dirty_block_version( block ) );
-            exit(1);
-         } 
 
          affected_blocks[num_affected_blocks] = itr->first;
          num_affected_blocks++;
@@ -519,20 +507,19 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
    rctx->affected_blocks = affected_blocks;
    rctx->num_affected_blocks = num_affected_blocks;
 
-   // get RGs 
-   rc = UG_state_list_replica_gateway_ids( ug, &rctx->rg_ids, &rctx->num_rgs );
-   if( rc != 0 ) {
-     
-      SG_error("UG_state_list_replica_gateway_ids rc = %d\n", rc ); 
-      return rc;
+   rctx->rg_context = UG_RG_context_new();
+   if( rctx->rg_context == NULL ) {
+
+      return -ENOMEM;
    }
 
-   rctx->rg_status = SG_CALLOC( int, rctx->num_rgs );
+   rc = UG_RG_context_init( ug, rctx->rg_context );
    if( rc != 0 ) {
 
-      rc = -ENOMEM;
-      UG_replica_context_free( rctx );
-      return rc;
+      SG_error("UG_RG_context_init rc = %d\n", rc );
+      UG_RG_context_free( rctx->rg_context );
+      SG_safe_free( rctx->rg_context );
+      return (rc == -ENOMEM ? rc : -EPERM);
    }
 
    // create fields
@@ -585,6 +572,17 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
       return rc;
    }
 
+   // sign control-plane.
+   // since it has the hashes of the chunks, it attests to the data plane's integrity and authenticity as well
+   rc = md_sign< SG_messages::Request >( gateway_privkey, controlplane );
+   if( rc != 0 ) {
+
+      UG_replica_context_free( rctx );
+      SG_safe_delete( controlplane );
+      SG_error("md_sign rc = %d\n", rc );
+      return rc;
+   }
+
    rctx->dataplane_fd = dataplane_fd;
    rctx->controlplane_request = controlplane;
 
@@ -599,7 +597,7 @@ int UG_replica_context_init( struct UG_replica_context* rctx, struct UG_state* u
    }
 
    fd_buf = (char*)mmap( NULL, sb.st_size, PROT_READ, MAP_SHARED, dataplane_fd, 0 );
-   if( fd_buf == NULL ) {
+   if( fd_buf == MAP_FAILED ) {
 
       rc = -errno;
       UG_replica_context_free( rctx );
@@ -620,9 +618,13 @@ int UG_replica_context_free( struct UG_replica_context* rctx ) {
    md_entry_free( &rctx->inode_data );
    SG_manifest_free( &rctx->write_delta );
    SG_safe_delete( rctx->controlplane_request );
-   SG_safe_free( rctx->rg_ids );
-   SG_safe_free( rctx->rg_status );
+   UG_RG_context_free( rctx->rg_context );
+   SG_safe_free( rctx->rg_context );
    SG_safe_free( rctx->affected_blocks );
+   if( rctx->dataplane_fd >= 0 ) {
+      close( rctx->dataplane_fd );
+      rctx->dataplane_fd = -1;
+   }
    
    memset( rctx, 0, sizeof(struct UG_replica_context) );
    
@@ -663,105 +665,6 @@ static int UG_replicate_vacuum_log( struct SG_gateway* gateway, struct UG_replic
 }
 
 
-// Send data to be replicated to each RG 
-// Replication is all-or-nothing: if even one RG fails to receive the data, the replication is
-// considered to have failed.  Complex "partial replication" error handling and masking should be performed
-// in the RG implementation, not the UG.
-// return 0 on successful replication to *all* RGs
-// return -EIO if at least one replication fails, for any reason.
-int UG_replicate_send( struct SG_gateway* gateway, struct UG_replica_context* rctx ) {
-
-   int rc = 0;
-   struct md_download_loop dlloop;
-   struct md_download_context* dlctx = NULL;
-   SG_messages::Reply reply;
-
-   rc = md_download_loop_init( &dlloop, SG_gateway_dl( gateway ), rctx->num_rgs );
-   if( rc != 0 ) {
-
-      SG_error("md_download_loop_init rc = %d\n", rc );
-      return rc;
-   }
-
-   // try to send to each RG 
-   do {
-
-       // next free download context
-       rc = md_download_loop_next( &dlloop, &dlctx );
-       if( rc == 0 ) {
-
-          // have one to start.
-          // start sending to the next REPLICA_NOT_STARTED-tagged RG 
-          for( size_t i = 0; i < rctx->num_rgs; i++ ) {
-
-              if( rctx->rg_status[i] == REPLICA_NOT_STARTED ) {
-                  
-                  SG_debug("Replicate %" PRIu64 ": %p\n", rctx->rg_ids[i], dlctx );
-
-                  rc = SG_client_request_send_async( gateway, rctx->rg_ids[i], rctx->controlplane_request, &rctx->dataplane_mmap, &dlloop, dlctx );
-                  if( rc != 0 ) {
-
-                     SG_error("SG_client_request_send_async(to %" PRIu64 ") rc = %d\n", rctx->rg_ids[i], rc );
-                     break;
-                  }
-
-                  rctx->rg_status[i] = REPLICA_IN_PROGRESS;
-                  break;
-              }
-          }
-
-          if( rc != 0 ) {
-             // failed to connect 
-             break;
-          }
-       }
-       else if( rc != -EAGAIN ) {
-
-          // fatal error 
-          break;
-       }
-
-       // wait for an upload to finish
-       rc = md_download_loop_finished( &dlloop, &dlctx );
-       if( rc == 0 ) {
-
-          // one finished
-          rc = SG_client_request_send_finish( gateway, dlctx, &reply );
-          if( rc != 0 ) {
-      
-              SG_error("SG_client_request_send_finish rc = %d\n", rc );
-              break;
-          }
-
-          // did the replication succeed?
-          if( reply.error_code() != 0 ) {
-
-             SG_error("replication %p failed: %d\n", dlctx, reply.error_code());
-             rc = reply.error_code();
-             break;
-          }
-       }
-       else if( rc != -EAGAIN ) {
-
-          // fatal error 
-          break;
-       }
-
-   } while( md_download_loop_running( &dlloop ) );
-
-   if( rc != 0 ) {
-      
-      // replication failed. terminate.
-      SG_error("Terminating replication, rc = %d\n", rc );
-      md_download_loop_abort( &dlloop );
-
-      rc = -EIO;
-   }
-
-   return rc;
-}
-
-
 // replicate the blocks and manifest to a given gateway.
 // (0) make sure all blocks are flushed to disk cache
 // (1) if we're the coordinator, append to this file's vacuum log on the MS 
@@ -786,7 +689,7 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    // (1) make sure the MS knows about this replication request
    if( !rctx->sent_vacuum_log ) {
       
-      SG_debug("%" PRIX64 ": replicate vacuum log\n", rctx->inode_data.file_id );
+      SG_debug("%" PRIX64 ": begin replicating vacuum log\n", rctx->inode_data.file_id );
 
       rc = UG_replicate_vacuum_log( gateway, rctx );
       if( rc != 0 ) {
@@ -806,25 +709,27 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
          
          // success!
          rctx->sent_vacuum_log = true;
+         SG_debug("%" PRIX64 ": replicated vacuum log!\n", rctx->inode_data.file_id );
       }
    }
    
    // (2) replicate the manifest and each block to each replica gateway
    if( !rctx->replicated_blocks ) {
       
-      SG_debug("%" PRIX64 ": replicate manifest and blocks\n", rctx->inode_data.file_id );
+      SG_debug("%" PRIX64 ": begin replicating manifest and blocks\n", rctx->inode_data.file_id );
 
       // send off to all RGs
-      rc = UG_replicate_send( gateway, rctx );
+      rc = UG_RG_send_all( gateway, rctx->rg_context, rctx->controlplane_request, &rctx->dataplane_mmap );
       if( rc != 0 ) {
          
-         SG_error("UG_replicate_send() rc = %d\n", rc );
+         SG_error("UG_RG_send_all() rc = %d\n", rc );
          
          return rc;
       }
       else {
          
          rctx->replicated_blocks = true;
+         SG_debug("%" PRIX64 ": replicated manifest and blocks!\n", rctx->inode_data.file_id );
       }
    }
    
@@ -832,7 +737,7 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    // or send it to the coordinator directly.
    if( !rctx->sent_ms_update ) {
       
-      SG_debug("%" PRIX64 ": send MS updates\n", rctx->inode_data.file_id );
+      SG_debug("%" PRIX64 ": begin sending MS updates\n", rctx->inode_data.file_id );
 
       // send it to the MS if we're the coordinator, 
       // or send it to the coordinator itself.
@@ -860,6 +765,7 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
       else {
 
          rctx->sent_ms_update = true;
+         SG_debug("%" PRIX64 ": sent MS updates!\n", rctx->inode_data.file_id );
       }
       
       SG_safe_free( write_data );
@@ -868,7 +774,4 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    // done!
    return rc;
 }
-
-// get a pointer to inode snapshot 
-
 
