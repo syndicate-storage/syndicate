@@ -813,6 +813,14 @@ int UG_vacuum_begin( struct UG_state* state, char const* path, struct UG_vacuum_
       return rc;
    }
 
+   // refresh manifest 
+   rc = UG_consistency_manifest_ensure_fresh( gateway, path );
+   if( rc != 0 ) {
+
+      SG_error("UG_consistency_manifest_ensure_fresh('%s') rc = %d\n", path, rc );
+      return rc;
+   }
+
    fent = fskit_entry_resolve_path( fs, path, 0, 0, true, &rc );
    if( rc != 0 ) {
 
