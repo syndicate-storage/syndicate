@@ -49,7 +49,6 @@ struct UG_inode {
    
    UG_dirty_block_map_t* dirty_blocks;  // set of locally-modified blocks that must be replicated, either on the next fsync() or last close()
    
-   struct timespec old_manifest_modtime;// timestamp of the last-replicated manifest (used for vacuuming)
    struct SG_manifest replaced_blocks;  // set of blocks replaced by writes, that need to be garbage-collected (contains only metadata)
    
    UG_inode_fsync_queue_t* sync_queue;  // queue of fsync requests on this inode
@@ -125,6 +124,8 @@ int UG_inode_init( struct UG_inode* inode, char const* name, struct fskit_entry*
       return rc;
    }
   
+   SG_manifest_set_size( &inode->manifest, fskit_entry_get_size( entry ) );
+
    if( fskit_entry_get_type( entry ) == FSKIT_ENTRY_TYPE_FILE ) {
 
       // replaced blocks
@@ -187,6 +188,7 @@ int UG_inode_init_from_protobuf( struct UG_inode* inode, struct fskit_entry* ent
 
 // initialize an inode from an exported inode data and an fskit_entry 
 // NOTE: file ID in inode_data and fent must match, as must their types
+// the inode's manifest will be stale, since it currently has no data.
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EINVAL if the data is invalid (i.e. file IDs don't match, and such)
@@ -231,6 +233,8 @@ int UG_inode_init_from_export( struct UG_inode* inode, struct md_entry* inode_da
    inode->ms_capacity = inode_data->capacity;
    
    clock_gettime( CLOCK_REALTIME, &inode->refresh_time );
+
+   SG_manifest_set_stale( &inode->manifest, true );
    
    return 0;
 }
@@ -268,6 +272,7 @@ static int UG_inode_fskit_dir_init( struct fskit_entry* fent, struct fskit_entry
    
    // sanity check 
    if( inode_data->type != MD_ENTRY_DIR ) {
+      SG_error("Inode %" PRIX64 " is not a directory\n", inode_data->file_id);
       return -EINVAL;
    }
    
@@ -372,9 +377,10 @@ int UG_inode_free( struct UG_inode* inode ) {
    
    SG_safe_free( inode->name );
    SG_safe_delete( inode->sync_queue );
+   UG_dirty_block_map_free( inode->dirty_blocks );
    SG_safe_delete( inode->dirty_blocks );
    SG_manifest_free( &inode->manifest );
-   
+   SG_manifest_free( &inode->replaced_blocks );
    memset( inode, 0, sizeof(struct UG_inode) );
    
    return 0;
@@ -442,6 +448,9 @@ int UG_inode_export_xattrs( struct fskit_core* fs, struct UG_inode* inode, char*
    if( xattr_list_len == 0 ) {
        
       // no xattrs
+      *ret_xattr_names = NULL;
+      *ret_xattr_values = NULL;
+      *ret_xattr_value_lengths = NULL;
       return 0;
    }
        
@@ -561,9 +570,10 @@ int UG_inode_export_xattr_hash( struct fskit_core* fs, uint64_t gateway_id, stru
       
       return rc;
    }
-   
+
+   memset( xattr_hash, 0, SHA256_DIGEST_LENGTH );
    rc = ms_client_xattr_hash( xattr_hash, SG_manifest_get_volume_id( &inode->manifest ), UG_inode_file_id( inode ), inode->xattr_nonce, xattr_names, xattr_values, xattr_lengths );
-   
+  
    SG_FREE_LIST( xattr_names, free );
    SG_FREE_LIST( xattr_values, free );
    SG_safe_free( xattr_lengths );
@@ -671,7 +681,7 @@ int UG_inode_export_match_type( struct UG_inode* dest, struct md_entry* src ) {
 int UG_inode_export_match_size( struct UG_inode* dest, struct md_entry* src ) {
    
    // size matches?
-   if( fskit_entry_get_size( UG_inode_fskit_entry( dest ) ) != src->size ) {
+   if( fskit_entry_get_size( dest->entry ) != (unsigned)src->size ) {
       
       return 0;
    }
@@ -764,41 +774,41 @@ int UG_inode_import( struct UG_inode* dest, struct md_entry* src ) {
       SG_error("dest->entry == %p\n", dest->entry );
       return -EPERM;
    }
-   
+  
    if( !UG_inode_export_match_volume_id( dest, src ) ) {
       
-      SG_error("src->volume_id == %" PRIu64 ", dest->volume_id == %" PRIu64 "\n", src->volume, SG_manifest_get_volume_id( &dest->manifest ) );
+      SG_error("src->volume_id == %" PRIu64 ", dest->volume_id == %" PRIu64 "\n", src->volume, UG_inode_volume_id( dest ) );
       return -EINVAL;
    }
    
    if( !UG_inode_export_match_file_id( dest, src ) ) {
       
-      SG_error("src->file_id == %" PRIX64 ", dest->file_id == %" PRIX64 "\n", src->file_id, SG_manifest_get_file_id( &dest->manifest ) );
+      SG_error("src->file_id == %" PRIX64 ", dest->file_id == %" PRIX64 "\n", src->file_id, UG_inode_file_id( dest ) );
       return -EINVAL;
    }
    
    if( UG_inode_export_match_name( dest, src ) <= 0 ) {
       
-      SG_error("src->name == '%s', dest->name == '%s'\n", src->name, dest->name );
+      SG_error("%" PRIX64 ": src->name == '%s', dest->name == '%s'\n", src->file_id, src->name, dest->name );
       
       return -EINVAL;
    }
    
    if( !UG_inode_export_match_size( dest, src ) ) {
       
-      SG_error("src->size == %zu, dest->size == %zu\n", src->size, SG_manifest_get_file_size( &dest->manifest ) );
+      SG_error("%" PRIX64 ": src->size == %zu, dest->size == %zu\n", src->file_id, src->size, fskit_entry_get_size( dest->entry ) );
       return -EINVAL;
    }
    
    if( !UG_inode_export_match_type( dest, src ) ) {
       
-      SG_error("src->type == %d, dest->type == %d\n", src->type, fskit_entry_get_type( dest->entry ) );
+      SG_error("%" PRIX64 ": src->type == %d, dest->type == %d\n", src->file_id, src->type, fskit_entry_get_type( dest->entry ) );
       return -EINVAL;
    }
    
    if( !UG_inode_export_match_version( dest, src ) ) {
       
-      SG_error("src->version = %" PRId64 ", dest->version = %" PRId64 "\n", src->version, SG_manifest_get_file_version( &dest->manifest ) );
+      SG_error("%" PRIX64 ": src->version = %" PRId64 ", dest->version = %" PRId64 "\n", src->version, src->version, UG_inode_file_version( dest ) );
       return -EINVAL;
    }
    
@@ -835,7 +845,7 @@ int UG_inode_import( struct UG_inode* dest, struct md_entry* src ) {
    else {
        memset( dest->ms_xattr_hash, 0, SHA256_DIGEST_LENGTH );
    }
-   
+
    return 0;
 }
 
@@ -857,6 +867,7 @@ bool UG_inode_manifest_is_newer_than( struct SG_manifest* manifest, int64_t mtim
    
    return newer;
 }
+
 
 // merge new manifest block data into an inode's manifest (i.e. from reloading it remotely, or handling a remote write).
 // evict now-stale cached data and overwritten dirty blocks.
@@ -891,27 +902,24 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       
       struct SG_manifest_block* existing_block = SG_manifest_block_lookup( UG_inode_manifest( inode ), block_id );
       int64_t existing_block_version = 0;
-      
-      if( existing_block == NULL ) {
          
-         // nothing to worry about
-         continue;
-      }
-      
-      if( SG_manifest_block_version( existing_block ) == SG_manifest_block_version( new_block ) ) {
+      if( existing_block != NULL ) {
+            
+         if( SG_manifest_block_version( existing_block ) == SG_manifest_block_version( new_block ) ) {
+            
+            // already merged, or no change
+            continue;
+         }
          
-         // already merged, or no change
-         continue;
-      }
-      
-      // if the local block is dirty, keep the local block 
-      if( SG_manifest_block_is_dirty( existing_block ) ) {
+         // if the local block is dirty, keep the local block 
+         if( SG_manifest_block_is_dirty( existing_block ) ) {
+            
+            continue;
+         }
          
-         continue;
+         // preserve existing block data that will get overwritten 
+         existing_block_version = SG_manifest_block_version( existing_block );
       }
-      
-      // preserve existing block data that will get overwritten 
-      existing_block_version = SG_manifest_block_version( existing_block );
       
       // merge into current manifest, replacing the old one *if* the new_manifest is actually newer (makes this method commutative, associative)
       // that is, only overwrite a block if the block is not dirty, and if the new_manifest has a newer modification time (this in turn is guaranteed
@@ -923,7 +931,9 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       }
       
       // clear cached block (idempotent)
-      md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_id, existing_block_version );
+      if( existing_block != NULL ) {
+          md_cache_evict_block( cache, UG_inode_file_id( inode ), UG_inode_file_version( inode ), block_id, existing_block_version );
+      }
       
       // clear dirty block (idempotent)
       dirty_block_itr = UG_inode_dirty_blocks( inode )->find( block_id );
@@ -945,122 +955,46 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
 }
 
 
-// trim an inode's dirty blocks
-// flush all blocks but those id'ed in *preserve
-// ensure that all blocks in *preserve are unshared 
-// return 0 on success
-// return -ENOMEM on OOM 
-// return -errno on failure to flush 
-// NOTE: inode->entry should be write-locked--this method is neither reentrant nor thread-safe
-// if this method fails, it can be safely tried again.
-int UG_inode_dirty_blocks_trim( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, uint64_t* preserve, size_t preserve_len ) {
-   
-   int rc = 0;
-   int worst_rc = 0;
-   
-   for( UG_dirty_block_map_t::iterator itr = inode->dirty_blocks->begin(); itr != inode->dirty_blocks->end(); itr++ ) {
-      
-      bool do_preserve = false;
-      
-      // preserve?
-      if( preserve != NULL ) {
-         
-         for( size_t i = 0; i < preserve_len; i++ ) {
-          
-            if( itr->first == preserve[i] ) {
-               
-               // don't flush this one, but make sure it's unshared if it's not already mmap'ed 
-               if( !UG_dirty_block_unshared( &itr->second ) && UG_dirty_block_in_RAM( &itr->second ) && !UG_dirty_block_mmaped( &itr->second ) ) {
-                  
-                  rc = UG_dirty_block_buf_unshare( &itr->second );
-                  if( rc != 0 ) {
-                     
-                     // probably OOM 
-                     SG_error("UG_dirty_block_buf_unshare( %" PRIu64 ".%" PRId64 " ) rc = %d\n", UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
-                     return rc;
-                  }
-                  
-                  do_preserve = true;
-               }
-            }
-         }
-      }
-      
-      if( !do_preserve && UG_dirty_block_in_RAM( &itr->second ) && !UG_dirty_block_mmaped( &itr->second ) && !UG_dirty_block_is_flushing( &itr->second ) && UG_dirty_block_fd( &itr->second ) < 0 ) {
-         
-         // can flush out of RAM
-         rc = UG_dirty_block_flush_async( gateway, fs_path, UG_inode_file_id( inode ), UG_inode_file_version( inode ), &itr->second );
-         if( rc != 0 ) {
-            
-            SG_error("UG_dirty_block_flush_async( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
-            
-            worst_rc = rc;
-            break;
-         }
-      }
-   }
-   
-   // finish flushing all blocks
-   // try them all even if we error
-   for( UG_dirty_block_map_t::iterator itr = inode->dirty_blocks->begin(); itr != inode->dirty_blocks->end(); itr++ ) {
-      
-      if( UG_dirty_block_is_flushing( &itr->second ) ) {
-         
-         rc = UG_dirty_block_flush_finish( &itr->second );
-         if( rc != 0 ) {
-            
-            SG_error("UG_dirty_block_flush_finish( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
-                     UG_inode_file_id( inode ), UG_inode_file_version( inode ), UG_dirty_block_id( &itr->second ), UG_dirty_block_version( &itr->second ), rc );
-            
-            worst_rc = rc;
-         }
-      }
-   }
-   
-   return worst_rc;
-}
-
-
-// remove the modified dirty blocks from the inode, and put them into modified
-// if modified is NULL, then just remove them
+// remove dirty blocks from the inode, and put them into *modified
 // return 0 on success, and fill in *modified. the inode will no longer have modified dirty blocks
 // return -ENOMEM on OOM 
 // NOTE: inode->entry must be write-locked
-int UG_inode_dirty_blocks_extract_modified( struct UG_inode* inode, UG_dirty_block_map_t* modified ) {
+int UG_inode_dirty_blocks_extract( struct UG_inode* inode, UG_dirty_block_map_t* modified ) {
    
-   if( modified != NULL ) {
+   for( UG_dirty_block_map_t::iterator itr = UG_inode_dirty_blocks( inode )->begin(); itr != UG_inode_dirty_blocks( inode )->end(); itr++ ) {
       
-      for( UG_dirty_block_map_t::iterator itr = UG_inode_dirty_blocks( inode )->begin(); itr != UG_inode_dirty_blocks( inode )->end(); itr++ ) {
+      // dirty?
+      if( !UG_dirty_block_dirty( &itr->second ) ) {
          
-         // dirty?
-         if( !UG_dirty_block_dirty( &itr->second ) ) {
-            
-            itr++;
-            continue;
-         }
+         continue;
+      }
+      
+      try {
          
-         try {
-            
-            (*modified)[ itr->first ] = itr->second;
-         }
-         catch( bad_alloc& ba ) {
-            return -ENOMEM;
-         }
+         (*modified)[ itr->first ] = itr->second;
+      }
+      catch( bad_alloc& ba ) {
+         return -ENOMEM;
       }
    }
    
    // and remove from the inode 
    for( UG_dirty_block_map_t::iterator itr = modified->begin(); itr != modified->end(); itr++ ) {
-      
-      UG_inode_dirty_blocks( inode )->erase( itr->first );
+     
+      UG_dirty_block_map_t::iterator dirty_itr = UG_inode_dirty_blocks( inode )->find( itr->first );
+      if( dirty_itr != UG_inode_dirty_blocks( inode )->end() ) {
+         UG_inode_dirty_blocks( inode )->erase( dirty_itr );
+      } 
    }
+
+   SG_debug("Extracted %zu dirty blocks (%zu remaining)\n", modified->size(), UG_inode_dirty_blocks( inode )->size() );
    
    return 0;
 }
 
 
 // return extracted dirty blocks to an inode.  clear them out of *extracted as we do so.
+// You should call this in the same critical section as UG_inode_dirty_blocks_extract()
 // return 0 on success
 // return -ENOMEM on OOM 
 // NOTE: inode->entry must be write-locked; locked in the same context as the _extract_ method was called 
@@ -1091,24 +1025,19 @@ int UG_inode_dirty_blocks_return( struct UG_inode* inode, UG_dirty_block_map_t* 
 }
 
 
-// cache a non-dirty block to an inode's dirty-block set.
+// put a block to an inode's dirty-block set (it can be dirty or not dirty)
 // fails if there is already a block cached with a different version.
 // succeeds if there is already a block cached, but with the same version.
 // does not affect the inode's manifest or replaced_block sets.
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -EINVAL if the block is dirty
-// return -EEXIST if the block would replace a different block
+// return -EEXIST if the block would replace a different block, and replace was false
 // NOTE: inode->entry must be write-locked
 // NOTE: inode takes ownership of dirty_block's contents.
-int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* dirty_block ) {
+int UG_inode_dirty_block_put( struct SG_gateway* gateway, struct UG_inode* inode, struct UG_dirty_block* dirty_block, bool replace ) {
    
-   // dirty? invalid 
-   if( UG_dirty_block_dirty( dirty_block ) ) {
-      
-      return -EINVAL;
-   }
-   
+   struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
    struct UG_dirty_block* old_dirty_block = NULL;
    UG_dirty_block_map_t::iterator old_dirty_block_itr;
    
@@ -1123,13 +1052,20 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
          
          return 0;
       }
-      else {
+      else if( !replace ) {
          
          return -EEXIST;
       }
+      else {
+
+         // evict old dirty block 
+         old_dirty_block_itr->second = *dirty_block;
+         UG_dirty_block_evict_and_free( cache, inode, old_dirty_block );
+         return 0;
+      }
    }
    
-   // cache 
+   // not present.  put in place.
    try {
       
       (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
@@ -1143,29 +1079,58 @@ int UG_inode_dirty_block_cache( struct UG_inode* inode, struct UG_dirty_block* d
 }
 
 
-// commit a single dirty block to an inode, optionally replacing an older version of the block.
-// update the inode's manifest (putting a dirty block info), and remember block information for blocks that must be garbage-collected.
-// evict the old version of the block, if it is cached.
+// preserve an inode's old manifest timestamp on modification,
+// so we can garbage-collect the old manifest when we fsync() the inode.
+// always succeeds 
+// NOTE: inode->entry must be write-locked
+static int UG_inode_preserve_old_manifest_timestamp( struct UG_inode* inode ) {
+
+   int64_t manifest_mtime_sec = 0;
+   int32_t manifest_mtime_nsec = 0;
+   if( SG_manifest_get_modtime_sec( &inode->replaced_blocks ) == 0 && SG_manifest_get_modtime_nsec( &inode->replaced_blocks ) == 0 ) {
+      
+      manifest_mtime_sec = SG_manifest_get_modtime_sec( &inode->manifest );
+      manifest_mtime_nsec = SG_manifest_get_modtime_nsec( &inode->manifest );
+
+      SG_manifest_set_modtime( &inode->replaced_blocks, manifest_mtime_sec, manifest_mtime_nsec );
+   }
+
+   return 0;
+}
+
+
+// Update the inode's manifest to include the dirty block info.
+// Remember old block information for blocks that must be garbage-collected.
 // return 0 on success.  The inode takes ownership of dirty_block.
 // return 0 if the block is already present in the manifest (in which case dirty_block is freed)
 // return -ENOMEM on OOM 
-// return -EINVAL if dirty_block is not dirty
+// return -EINVAL if dirty_block is not dirty or not flushed
 // NOTE: inode->entry must be write-locked!
 // NOTE: inode takes ownership of dirty_block's contents
-int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* inode, struct UG_dirty_block* dirty_block ) {
+// NOTE: the block must have been flushed to disk.
+int UG_inode_dirty_block_update_manifest( struct SG_gateway* gateway, struct UG_inode* inode, struct UG_dirty_block* dirty_block ) {
    
    int rc = 0;
    
-   // not dirty? do nothing 
-   if( !UG_dirty_block_dirty( dirty_block ) ) {
-      
+   SG_debug("update manifest for %" PRIX64 "[%" PRIu64 ".%" PRId64 "] (%p)\n", UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), dirty_block );
+
+   // sanity check: must be flushed to disk 
+   if( !UG_dirty_block_is_flushed( dirty_block ) ) {
+
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not flushed\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
       return -EINVAL;
    }
    
-   struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
+   // sanity check: must be dirty
+   if( !UG_dirty_block_dirty( dirty_block ) ) {
+     
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not dirty\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1); 
+      return -EINVAL;
+   }
    
    struct SG_manifest_block old_block_info;
-   struct UG_dirty_block* old_dirty_block = NULL;
    
    // what blocks are being replaced?
    struct SG_manifest_block* old_block_info_ref = SG_manifest_block_lookup( UG_inode_manifest( inode ), UG_dirty_block_id( dirty_block ) );
@@ -1182,14 +1147,7 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
       }
    }
    
-   // find the old dirty block
-   UG_dirty_block_map_t::iterator old_dirty_block_itr = UG_inode_dirty_blocks( inode )->find( UG_dirty_block_id( dirty_block ) );
-   if( old_dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
-      
-      old_dirty_block = &old_dirty_block_itr->second;
-   }
-   
-   // update the manifest with the new (dirty) block
+   // update the manifest with the new dirty block info
    rc = SG_manifest_put_block( UG_inode_manifest( inode ), UG_dirty_block_info( dirty_block ), true );
    if( rc != 0 ) {
       
@@ -1204,29 +1162,13 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
       return rc;
    }
    
-   // insert the new dirty block into the dirty block set 
-   try {
-      
-      (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
-   }
-   catch( bad_alloc& ba ) {
-      
-      rc = -ENOMEM;
-      
-      // restore manifest data: put the old block data back 
-      // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
-      SG_manifest_put_block_nocopy( UG_inode_manifest( inode ), &old_block_info, true );
-      
-      goto UG_inode_block_commit_out;
-   }
-   
    if( old_block_info_ref != NULL ) {
       
       if( old_replaced_block_info == NULL ) {
          
          // we replaced a block in the manifest, so we'll need to garbage-collect the old version.
          // we can forget about the previous old version (generated on a previous write), since it is
-         // not replicated.
+         // not replicated (we just need to evict any local state it had).
          rc = SG_manifest_put_block_nocopy( UG_inode_replaced_blocks( inode ), &old_block_info, true );
          if( rc != 0 ) {
             
@@ -1237,31 +1179,74 @@ int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* in
             // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
             SG_manifest_put_block_nocopy( UG_inode_manifest( inode ), &old_block_info, true );
             
-            // NOTE: guaranteed to succeed, since we're replacing without copying or allocating 
-            if( old_dirty_block != NULL ) {
-               
-               (*UG_inode_dirty_blocks( inode ))[ UG_dirty_block_id( dirty_block ) ] = *dirty_block;
-            }
-            
-            goto UG_inode_block_commit_out;
+            goto UG_inode_block_update_manifest_out;
          }
       }
    }
    
    // this block is dirty--keep it in the face of future manifest refreshes until we replicate (via fsync())
    SG_manifest_set_block_dirty( UG_inode_manifest( inode ), UG_dirty_block_id( dirty_block ), true );
+   UG_inode_preserve_old_manifest_timestamp( inode );
    
-UG_inode_block_commit_out:
+UG_inode_block_update_manifest_out:
    
-   if( rc == 0 ) {
-      
-      if( old_dirty_block != NULL ) {
-      
-         // clear out the old dirty block's local state
-         UG_dirty_block_evict_and_free( cache, inode, old_dirty_block );
-      }
+   return rc;
+}
+
+
+// commit a single dirty block to an inode, optionally replacing an older version of the block.
+// the block must have been flushed to disk.
+// update the inode's manifest to include the dirty block info.
+// evict the old version of the block, if it is cached.
+// remember old block information for blocks that must be garbage-collected.
+// return 0 on success.  The inode takes ownership of dirty_block.
+// return 0 if the block is already present in the manifest (in which case dirty_block is freed)
+// return -ENOMEM on OOM 
+// return -EINVAL if dirty_block is not dirty or not flushed
+// NOTE: inode->entry must be write-locked!
+// NOTE: inode takes ownership of dirty_block's contents
+int UG_inode_dirty_block_commit( struct SG_gateway* gateway, struct UG_inode* inode, struct UG_dirty_block* dirty_block ) {
+   
+   int rc = 0;
+   
+   SG_debug("commit %" PRIX64 "[%" PRIu64 ".%" PRId64 "] (%p)\n", UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), dirty_block );
+
+   // sanity check: must be flushed to disk 
+   if( !UG_dirty_block_is_flushed( dirty_block ) ) {
+
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not flushed\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1);
+      return -EINVAL;
    }
    
+   // sanity check: must be dirty
+   if( !UG_dirty_block_dirty( dirty_block ) ) {
+     
+      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] is not dirty\n", UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ) );
+      exit(1); 
+      return -EINVAL;
+   }
+
+   // update manifest...
+   rc = UG_inode_dirty_block_update_manifest( gateway, inode, dirty_block );
+   if( rc != 0 ) {
+
+      SG_error("UG_inode_dirty_block_update_manifest( %" PRIX64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", 
+            UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
+
+      return rc;
+   }
+
+   // put new dirty block
+   rc = UG_inode_dirty_block_put( gateway, inode, dirty_block, true );
+   if( rc != 0 ) {
+      
+      SG_error("FATAL: failed to put new dirty block %" PRIX64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", 
+            UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), rc );
+
+      exit(1);
+   }
+
    return rc;
 }
 
@@ -1388,9 +1373,7 @@ int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t
    }
    
    uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( inode ) );
-   
    int64_t old_version = UG_inode_file_version( inode );
-   
    struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
    
    // go through the manifest and drop locally-cached blocks
@@ -1534,17 +1517,8 @@ struct UG_sync_context* UG_inode_sync_queue_pop( struct UG_inode* inode ) {
 int UG_inode_clear_replaced_blocks( struct UG_inode* inode ) {
    
    SG_manifest_clear( &inode->replaced_blocks );
+   SG_manifest_set_modtime( &inode->replaced_blocks, 0, 0 );
    return 0;
-}
-
-
-// replace a UG's dirty blocks with a new caller-allocated dirty block map 
-// always succeeds
-UG_dirty_block_map_t* UG_inode_replace_dirty_blocks( struct UG_inode* inode, UG_dirty_block_map_t* new_dirty_blocks ) {
-   
-   UG_dirty_block_map_t* ret = inode->dirty_blocks;
-   inode->dirty_blocks = new_dirty_blocks;
-   return ret;
 }
 
 // getters
@@ -1580,6 +1554,19 @@ int64_t UG_inode_xattr_nonce( struct UG_inode* inode ) {
    return inode->xattr_nonce;
 }
 
+// NOTE: inode->entry must be at least read-locked
+uint64_t UG_inode_size( struct UG_inode* inode ) {
+   // embed a sanity check (TODO: DRY)
+   if( (unsigned)fskit_entry_get_size( inode->entry ) != (unsigned)SG_manifest_get_file_size( &inode->manifest ) ) {
+      SG_debug("BUG: fskit entry size and manifest size mismatch (%" PRIu64 " != %" PRIu64 ")\n",
+            fskit_entry_get_size(inode->entry), SG_manifest_get_file_size( &inode->manifest ) );
+
+      exit(1);
+   }
+
+   return SG_manifest_get_file_size( &inode->manifest );
+}
+
 void UG_inode_ms_xattr_hash( struct UG_inode* inode, unsigned char* ms_xattr_hash ) {
    if( inode->ms_xattr_hash != NULL ) {
        memcpy( inode->ms_xattr_hash, ms_xattr_hash, SHA256_DIGEST_LENGTH );
@@ -1599,7 +1586,10 @@ UG_dirty_block_map_t* UG_inode_dirty_blocks( struct UG_inode* inode ) {
 }
 
 struct timespec UG_inode_old_manifest_modtime( struct UG_inode* inode ) {
-   return inode->old_manifest_modtime;
+   struct timespec ts;
+   ts.tv_sec = SG_manifest_get_modtime_sec( &inode->replaced_blocks );
+   ts.tv_nsec = SG_manifest_get_modtime_nsec( &inode->replaced_blocks );
+   return ts;
 }
   
 struct fskit_entry* UG_inode_fskit_entry( struct UG_inode* inode ) {
@@ -1685,7 +1675,7 @@ void UG_inode_set_children_refresh_time( struct UG_inode* inode, struct timespec
 }
 
 void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts ) {
-   inode->old_manifest_modtime = *ts;
+   SG_manifest_set_modtime( &inode->replaced_blocks, ts->tv_sec, ts->tv_nsec );
 }
 
 void UG_inode_set_max_read_freshness( struct UG_inode* inode, uint32_t rf ) {
@@ -1723,12 +1713,3 @@ void UG_inode_bind_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent 
    fskit_entry_set_user_data( ent, inode );
 }
 
-
-// load the xattrs into the inode.
-// inode->entry must be write-locked 
-// free the exisitng inodes 
-// always succeeds 
-void UG_inode_load_xattrs( struct UG_inode* inode, fskit_xattr_set* xattr_set ) {
-   fskit_xattr_set* old_xattrs = fskit_entry_swap_xattrs( inode->entry, xattr_set );
-   fskit_xattr_set_free( old_xattrs );
-}
