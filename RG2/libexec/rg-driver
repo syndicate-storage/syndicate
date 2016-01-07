@@ -103,20 +103,19 @@ import json
 
 import syndicate.util.gateway as gateway
 
-# to be overwritten by the driver, when we load it.
-read_chunk = None 
-write_chunk = None 
-delete_chunk = None
-
 if __name__ == "__main__":
   
-   usage, CONFIG, SECRETS, METHODS = gateway.driver_setup( ['read', 'write', 'delete'], ['read_chunk', 'write_chunk', 'delete_chunk'] )
+   # it's okay if the driver doesn't have a 'serialize' or 'deserialize' method 
+   default_callbacks = {
+      'serialize': None,
+      'deserialize': None
+   }
+
+   usage, driver_mod = gateway.driver_setup( ['read', 'write', 'delete', 'serialize', 'deserialize'], \
+                                             ['read_chunk', 'write_chunk', 'delete_chunk', 'serialize', 'deserialize'],
+                                             default_callbacks=default_callbacks )
   
    # ready to go!
-   read_chunk = METHODS['read_chunk']
-   write_chunk = METHODS['write_chunk']
-   delete_chunk = METHODS['delete_chunk']
-   
    # tell the parent that we're ready 
    print "0"
    sys.stdout.flush()
@@ -124,10 +123,10 @@ if __name__ == "__main__":
    if usage == "write":
       
       while True:
-            
-         # read path from stdin; output blocks to stdout 
-         path = gateway.read_path( sys.stdin )
-         if path is None:
+         
+         # read path and metadata from stdin; output blocks to stdout 
+         request = gateway.read_request( sys.stdin )
+         if request is None:
             sys.exit(3)
          
          # read size fom stdin
@@ -140,33 +139,40 @@ if __name__ == "__main__":
          if chunk is None:
             sys.exit(3)
             
+         print >> sys.stderr, "write %s" % gateway.request_to_storage_path(request)
+
          # write it 
          try:
-            rc = write_chunk( path, chunk, CONFIG, SECRETS )
+            rc = driver_mod.write_chunk( request, chunk, driver_mod.CONFIG, driver_mod.SECRETS )
          except Exception, e:
             print >> sys.stderr, "write_chunk failed"
             print >> sys.stderr, traceback.format_exc()
             sys.exit(4)
             
          # send back the status
+         print >> sys.stderr, "write status: %s (%s bytes)" % (rc, len(chunk))
          gateway.write_int( sys.stdout, rc )
          sys.stdout.flush()
+         sys.stderr.flush()
          
          
    elif usage == "read":
       
       while True:
-         
-         # read the path from stdin, write the chunk size and chunk to stdout
-         path = gateway.read_path( sys.stdin )
-         if path is None:
+        
+         # read the path and metadata from stdin, write the chunk size and chunk to stdout
+         request = gateway.read_request( sys.stdin )
+         if request is None:
             sys.exit(3)
          
          chunk_fd = cStringIO.StringIO()
-         
+         rc = 0
+
+         print >> sys.stderr, "read %s" % gateway.request_to_storage_path(request)
+
          # get it 
          try:
-            rc = read_chunk( path, chunk_fd, CONFIG, SECRETS )
+            rc = driver_mod.read_chunk( request, chunk_fd, driver_mod.CONFIG, driver_mod.SECRETS )
          except Exception, e:
             print >> sys.stderr, "read_chunk failed"
             print >> sys.stderr, traceback.format_exc()
@@ -175,28 +181,37 @@ if __name__ == "__main__":
          chunk = chunk_fd.getvalue()
          
          # send back the data!
+         print >> sys.stderr, "read status: %s" % rc
          gateway.write_int( sys.stdout, rc )
-         gateway.write_int( sys.stdout, len(chunk) )
-         gateway.write_data( sys.stdout, chunk )
+
+         if rc == 0:
+             print >> sys.stderr, "read chunk of %s bytes" % len(chunk)
+             gateway.write_chunk( sys.stdout, chunk )
+
          sys.stdout.flush()
+         sys.stderr.flush()
          
    else:
       
       while True:
          
-         # read paths, delete them, write back the status codes
-         path = gateway.read_path( sys.stdin )
-         if path is None:
+         # read request, delete, write back the status code
+         request = gateway.read_request( sys.stdin )
+         if request is None:
             sys.exit(3)
-         
+        
+         print >> sys.stderr, "delete %s" % gateway.request_to_storage_path(request)
+
          try:
-            rc = delete_chunk( path, CONFIG, SECRETS )
+            rc = driver_mod.delete_chunk( request, driver_mod.CONFIG, driver_mod.SECRETS )
          except Exception, e:
             print >> sys.stderr, "delete_chunk failed"
             print >> sys.stderr, traceback.format_exc()
             sys.exit(4)
          
          # return the rc 
+         print >> sys.stderr, "delete status: %s" % rc
          gateway.write_int( sys.stdout, rc )
          sys.stdout.flush()
+         sys.stderr.flush()
          
