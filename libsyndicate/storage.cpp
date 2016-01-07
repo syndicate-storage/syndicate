@@ -613,6 +613,8 @@ int md_user_cert_store( char const* users_dir, char const* username, ms::ms_user
    size_t buf_len = 0;
    
    md_object_cert_path( users_dir, username, path, PATH_MAX );
+
+   SG_debug("store user cert '%s'\n", path );
    
    rc = md_serialize< ms::ms_user_cert >( user_cert, &buf, &buf_len );
    if( rc != 0 ) {
@@ -644,6 +646,7 @@ int md_user_cert_remove( char const* users_dir, char const* username ) {
    char path[PATH_MAX+1];
    
    md_object_cert_path( users_dir, username, path, PATH_MAX );
+   SG_debug("unlink user cert '%s'\n", path );
    
    rc = unlink( path );
    if( rc != 0 ) {
