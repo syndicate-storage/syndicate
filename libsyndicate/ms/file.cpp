@@ -42,11 +42,9 @@ static int ms_client_requests_protobuf( ms_client_request_list* requests, ms::ms
          }
          
          ms::ms_request* ms_req = ms_requests->add_requests();
-
-         ms_req->set_type( request->op );
-
          ms::ms_entry* ms_ent = ms_req->mutable_entry();
 
+         ms_req->set_type( request->op );
          md_entry_to_ms_entry( ms_ent, request->ent );
          
          // if this an UPDATE or a VACUUMAPPEND, then add the affected blocks 

@@ -84,9 +84,6 @@ int ms_client_update( struct ms_client* client, struct md_entry* ent_out, struct
 int ms_client_coordinate( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent, unsigned char* xattr_hash );
 int ms_client_rename( struct ms_client* client, struct md_entry* ent_out, struct md_entry* src, struct md_entry* dest );
 
-// multi-RPC (i.e. POST) API
-// int ms_client_run_requests( struct ms_client* client, struct ms_client_request* requests, struct ms_client_request_result* results, size_t num_requests );
-
 // generate requests to be run
 int ms_client_create_request( struct ms_client* client, struct md_entry* ent, struct ms_client_request* request );
 int ms_client_create_async_request( struct ms_client* client, struct md_entry* ent, struct ms_client_request* request );
