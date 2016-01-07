@@ -24,6 +24,7 @@ struct UG_state;
 
 extern "C" {
 
+int UG_driver_cdn_url( struct UG_state* core, char const* in_url, char** out_url );
 int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls );
 int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls );
 

@@ -19,24 +19,23 @@
 #include "core.h"
 #include "driver.h"
 
-
 // convert a URL into a CDN-ified URL 
 // return 0 on success, and fill in *chunk with the URL 
 // return -ENOMEM on OOM 
 // return -EIO if the driver did not fulfill the request (driver error)
-// return -ENODATA if we couldn't request the data, for whatever reason (gateway error)
+// return -EAGAIN if there are no free driver processes
 // NOTE: this method is called by the Syndicate "impl_connect_cache" callback implementation in the UG.
-int UG_driver_cdn_url( struct UG_state* core, struct SG_request_data* reqdat, struct SG_chunk* out_url ) {
+int UG_driver_cdn_url( struct UG_state* core, char const* in_url, char** out_url ) {
 
    int rc = 0;
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
-   char* request_path = NULL;
-   struct SG_chunk request_path_chunk;
    struct SG_driver* driver = NULL;
-   struct SG_chunk out_chunk;
+   struct SG_chunk in_url_chunk;
+   struct SG_chunk out_url_chunk;
 
-   memset( &out_chunk, 0, sizeof(struct SG_chunk) );
+   SG_chunk_init( &in_url_chunk, (char*)in_url, strlen(in_url) );
+   memset( &out_url_chunk, 0, sizeof(struct SG_chunk) );
 
    UG_state_rlock( core );
 
@@ -50,20 +49,12 @@ int UG_driver_cdn_url( struct UG_state* core, struct SG_request_data* reqdat, st
       if( proc == NULL ) {
 
          // got nothing 
-         rc = -ENODATA;
+         rc = -EAGAIN;
          goto UG_driver_cdn_url_finish;
       }
 
-      // feed in the metadata for this block
-      request_path = SG_driver_reqdat_to_path( reqdat );
-      if( request_path == NULL ) {
-         
-         rc = -ENOMEM;
-         goto UG_driver_cdn_url_finish;
-      }
-
-      SG_chunk_init( &request_path_chunk, request_path, strlen(request_path) );
-      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &request_path_chunk );
+      // feed in the URL
+      rc = SG_proc_write_chunk( SG_proc_stdin( proc ), &in_url_chunk );
       if( rc < 0 ) {
          
          SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin(proc), rc );
@@ -73,7 +64,7 @@ int UG_driver_cdn_url( struct UG_state* core, struct SG_request_data* reqdat, st
       }
 
       // read back CDN-ified url 
-      rc = SG_proc_read_chunk( SG_proc_stdout_f( proc ), &out_chunk );
+      rc = SG_proc_read_chunk( SG_proc_stdout_f( proc ), &out_url_chunk );
       if( rc < 0 ) {
 
          SG_error("SG_proc_read_chunk(%d) rc = %d\n", fileno( SG_proc_stdout_f( proc ) ), rc );
@@ -83,19 +74,20 @@ int UG_driver_cdn_url( struct UG_state* core, struct SG_request_data* reqdat, st
       }
 
       // success!
-      *out_url = out_chunk;
-      memset( &out_chunk, 0, sizeof(struct SG_chunk) );
+      *out_url = out_url_chunk.data;
+      memset( &out_url_chunk, 0, sizeof(struct SG_chunk) );
    }
    else {
 
-      SG_error("%s", "BUG: no process group 'cdn_url'\n");
-      exit(1);
+      // no-op driver 
+      *out_url = SG_strdup_or_null( in_url );
+      if( *out_url == NULL ) {
+         rc = -ENOMEM;
+      }
    }
 
 UG_driver_cdn_url_finish:
 
-   SG_safe_free( request_path );
-   
    if( group != NULL && proc != NULL ) {
       SG_proc_group_release( group, proc );
    }
@@ -109,7 +101,7 @@ UG_driver_cdn_url_finish:
 // return 0 on success, and fill in *chunk
 // return -ENOMEM on OOM 
 // return -EIO if the driver did not fulfill the request (driver error)
-// return -ENODATA if we couldn't request the data, for whatever reason (gateway error)
+// return -EAGAIN if we couldn't request the data, for whatever reason (i.e. no free processes)
 int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls ) {
    
    int rc = 0;
@@ -119,17 +111,8 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    struct SG_proc* proc = NULL;
    SG_messages::DriverRequest driver_req;
    struct SG_driver* driver = NULL;
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   size_t len = ms_client_get_volume_blocksize( ms );
+   bool out_chunk_alloced = (out_chunk->data == NULL);  // will allocate
   
-   // expect one block 
-   char* chunk_data = SG_CALLOC( char, len );
-   if( chunk_data == NULL ) {
-      return -ENOMEM;
-   }
-   
-   SG_chunk_init( out_chunk, chunk_data, len );
-   
    UG_state_rlock( core );
    
    // find a free deserializer
@@ -142,7 +125,7 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
       if( proc == NULL ) {
       
          // nothing running
-         rc = -ENODATA;
+         rc = -EAGAIN;
          goto UG_driver_chunk_deserialize_finish;
       }
       
@@ -204,9 +187,8 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    }
    else {
       
-      // no way to do work--no process group 
-      SG_error("%s", "BUG: no process group 'deserialize'\n");
-      exit(1);
+      // no-op deserializer
+      rc = SG_chunk_copy_or_dup( out_chunk, in_chunk );
    }
   
 UG_driver_chunk_deserialize_finish: 
@@ -215,7 +197,7 @@ UG_driver_chunk_deserialize_finish:
       SG_proc_group_release( group, proc );
    }
    
-   if( rc != 0 ) {
+   if( rc != 0 && out_chunk_alloced ) {
       SG_chunk_free( out_chunk );
    }
 
@@ -227,8 +209,8 @@ UG_driver_chunk_deserialize_finish:
 // gateway callback to serialize a chunk
 // return 0 on success 
 // return -ENOMEM on OOM 
-// return -EIO if we get invalid data from the driver (i.e. driver error)
-// return -ENODATA if we couldn't send data to the driver (i.e. gateway error)
+// return -EIO if we failed to communicate with the driver (i.e. driver error)
+// return -EAGAIN if there were no free workers
 int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk, void* cls ) {
    
    int rc = 0;
@@ -253,7 +235,7 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
          // no free workers
          SG_error("%s", "No free 'write' workers\n" );
 
-         rc = -ENODATA;
+         rc = -EAGAIN;
          goto UG_driver_chunk_serialize_finish;
       }
 
@@ -280,7 +262,7 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
        
          SG_error("SG_proc_write_chunk(%d) rc = %d\n", SG_proc_stdin( proc ), rc );
          
-         rc = -ENODATA;
+         rc = -EIO;
          goto UG_driver_chunk_serialize_finish;
       }
       
@@ -311,10 +293,9 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
       }
    }
    else {
-      
-      // no writers????
-      SG_error("%s", "BUG: no process group 'serialize'\n");
-      exit(1);
+   
+      // no-op serializer 
+      rc = SG_chunk_copy_or_dup( out_chunk, in_chunk );   
    }
    
 UG_driver_chunk_serialize_finish:
