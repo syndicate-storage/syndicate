@@ -635,9 +635,6 @@ int UG_vacuum_run( struct UG_vacuumer* vacuumer, struct UG_vacuum_context* vctx 
              return 0;
           }
           
-          vctx->manifest_modtime_sec = SG_manifest_get_modtime_sec( vctx->old_blocks );
-          vctx->manifest_modtime_nsec = SG_manifest_get_modtime_nsec( vctx->old_blocks );
-
           // get old block data at this timestamp
           rc = UG_vacuumer_get_block_data( vacuumer, vctx, old_write_delta );
           if( rc != 0 ) {
@@ -652,6 +649,8 @@ int UG_vacuum_run( struct UG_vacuumer* vacuumer, struct UG_vacuum_context* vctx 
           }
 
           vctx->old_blocks = old_write_delta;
+          vctx->manifest_modtime_sec = SG_manifest_get_modtime_sec( vctx->old_blocks );
+          vctx->manifest_modtime_nsec = SG_manifest_get_modtime_nsec( vctx->old_blocks );
       }
       
       // sanity check
