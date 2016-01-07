@@ -14,138 +14,32 @@
    limitations under the License.
 */
 
+#include "driver.h"
 #include "impl.h"
 #include "read.h"
 #include "write.h"
 #include "client.h"
 #include "core.h"
 
-// get a block from a file, on cache miss.
-// return 0 on success, and fill in *block 
-// return -ENOENT if the block is not present locally.  The caller will need to try an RG.
-// return -errno on error
-static int UG_impl_block_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block, uint64_t hints, void* cls ) {
-   
-   int rc = 0;
-   struct fskit_entry* fent = NULL;
-   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct ms_client* ms = (struct ms_client*)SG_gateway_ms( gateway );
-   
-   uint64_t block_size = ms_client_get_volume_blocksize( ms );
-   
-   UG_dirty_block_map_t block_bufs;
-   struct UG_inode* inode = NULL;
-   
-   struct fskit_core* fs = UG_state_fs( ug );
-   
-   size_t num_non_local = 0;
-   struct SG_manifest non_local;
-   
-   // look up
-   fent = fskit_entry_resolve_path( fs, reqdat->fs_path, 0, 0, false, &rc );
-   if( fent == NULL ) {
-      
-      return rc;
-   }
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   // only if local 
-   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
-      
-      fskit_entry_unlock( fent );
-      return -ENOENT;
-   }
-   
-   // NOTE: only care about number of non-local blocks.
-   rc = SG_manifest_init( &non_local, 0, 0, 0, 0 );
-   if( rc != 0 ) {
-      
-      fskit_entry_unlock( fent );
-      return rc;
-   }
-   
-   // set up buffers 
-   rc = UG_read_aligned_setup( inode, block->data, block->len, block_size * reqdat->block_id, block_size, &block_bufs );
-   if( rc != 0 ) {
-      
-      SG_error("UG_read_aligned_setup( '%s' (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", 
-               reqdat->fs_path, reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, rc );
-      
-      fskit_entry_unlock( fent );
-      
-      SG_manifest_free( &non_local );
-      return rc;
-   }
-   
-   // fetch block, if it is local.
-   // TODO: don't look at the cache--this method is only called on cache miss
-   rc = UG_read_blocks_local( gateway, reqdat->fs_path, inode, &block_bufs, &non_local );
-   if( rc != 0 ) {
-      
-      SG_error("UG_read_blocks_local( '%s' (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", 
-               reqdat->fs_path, reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, rc );
-      
-      fskit_entry_unlock( fent );
-      
-      UG_dirty_block_map_free_keepbuf( &block_bufs );
-      SG_manifest_free( &non_local );
-      
-      return rc;
-   }
-   
-   num_non_local = SG_manifest_get_block_count( &non_local );
-   
-   fskit_entry_unlock( fent );
-   SG_manifest_free( &non_local );
-   UG_dirty_block_map_free_keepbuf( &block_bufs );
-   
-   // did we fetch anything?
-   if( num_non_local > 0 ) {
-      
-      // nope 
-      return -ENOENT;
-   }
-   
-   return 0;
-}
 
+// connect to the CDN
+// return 0 on success
+// return -ENOMEM on OOM 
+static int UG_impl_connect_cache( struct SG_gateway* gateway, CURL* curl, char const* url, void* cls ) {
 
-// get a file's manifest 
-// return 0 on success, and fill in *manifest
-// return -ENOMEM on OOM
-// return -ESTALE if the inode is not local
-// return -errno on error
-static int UG_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* manifest, uint64_t hints, void* cls ) {
-   
    int rc = 0;
-   struct fskit_entry* fent = NULL;
+   char* out_url = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   
-   struct fskit_core* fs = UG_state_fs( ug );
-   struct UG_inode* inode = NULL;
-   
-   // look up
-   fent = fskit_entry_resolve_path( fs, reqdat->fs_path, 0, 0, false, &rc );
-   if( fent == NULL ) {
-      
+
+   rc = UG_driver_cdn_url( ug, url, &out_url );
+   if( rc != 0 ) {
       return rc;
    }
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
-      
-      fskit_entry_unlock( fent );
-      return -ESTALE;
-   }
-   
-   // copy the manifest
-   rc = SG_manifest_dup( manifest, UG_inode_manifest( inode ) );
-   
-   fskit_entry_unlock( fent );
-   
-   return rc;
+
+   // set up the curl handle
+   curl_easy_setopt( curl, CURLOPT_URL, out_url );
+   SG_safe_free( out_url );
+   return 0; 
 }
 
 
@@ -363,15 +257,18 @@ static int UG_impl_config_change( struct SG_gateway* gateway, int driver_reload_
 // always succeeds
 int UG_impl_install_methods( struct SG_gateway* gateway ) {
    
+   SG_impl_connect_cache( gateway, UG_impl_connect_cache );
    SG_impl_stat( gateway, UG_impl_stat );
    SG_impl_truncate( gateway, UG_impl_truncate );
    SG_impl_rename( gateway, UG_impl_rename );
    SG_impl_detach( gateway, UG_impl_detach );
    
-   SG_impl_get_block( gateway, UG_impl_block_get );
-   SG_impl_get_manifest( gateway, UG_impl_manifest_get );
+   // SG_impl_get_block( gateway, UG_impl_block_get );
+   // SG_impl_get_manifest( gateway, UG_impl_manifest_get );
    SG_impl_patch_manifest( gateway, UG_impl_manifest_patch );
    SG_impl_config_change( gateway, UG_impl_config_change );
+   SG_impl_serialize( gateway, UG_driver_chunk_serialize );
+   SG_impl_deserialize( gateway, UG_driver_chunk_deserialize );
 
    return 0;
 }
