@@ -153,6 +153,16 @@ message DriverRequest {
       BLOCK = 1;
       MANIFEST = 2;
    }
+
+   enum IOType {
+      NONE = 0;
+      READ = 1;
+      WRITE = 2;
+      TRUNC = 3;
+      SYNC = 4;
+      REPLICATE = 5;
+      DELETE= 6;
+   }
     
    required uint64 volume_id = 1;
    required uint64 user_id = 2;
@@ -160,16 +170,18 @@ message DriverRequest {
    required uint64 file_id = 4;
    required uint64 file_version = 5;
    required uint32 request_type = 6;
+   required string path = 7;
 
-   // extra optional goodies the gateway can supply
-   optional string path = 7;
+   // extra optional hints the gateway can supply
    optional uint64 block_id = 8;        // if block request
    optional int64 block_version = 9;    // if block request 
    optional int64 manifest_mtime_sec = 10;   // if manifest request 
-   optional int32 manifest_mtime_nsec = 11;  // if manifest request 
-
-   // hints
-   repeated bool cached_blocks = 12;    // vector of true|false where cached_blocks[i] is true if it's locally present in the cache
-   optional Manifest manifest = 13;     // for whole-file operations
+   optional int32 manifest_mtime_nsec = 11;  // if manifest request
+   optional uint64 offset = 12;          // logical read/write offset in the file 
+   optional uint64 len = 13;             // logical read/write length in the file
+   optional uint64 io_context = 14;      // opaque identifier that uniquely identifies a sequence of related requests
+   optional int32 io_type = 15;          // none, read, write, or truncate (IOType)
+   repeated bool cached_blocks = 16;     // vector of true|false where cached_blocks[i] is true if it's locally present in the cache
+   optional Manifest manifest = 17;      // for whole-file operations
 }
 
