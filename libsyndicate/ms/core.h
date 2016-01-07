@@ -73,7 +73,7 @@ struct ms_client {
    
    char* url;                   // MS URL (read-only; never changes)
    
-   struct md_downloader dl;     // downloader instance
+   struct md_downloader* dl;    // downloader instance
    
    struct md_syndicate_conf* conf;      // reference to syndicate config (read-only, never changes)
    

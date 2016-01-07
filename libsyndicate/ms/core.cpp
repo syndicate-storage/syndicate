@@ -158,15 +158,28 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
    // get MS url 
    client->url = SG_strdup_or_null( conf->metadata_url );
    if( client->url == NULL ) {
+      pthread_rwlock_destroy( &client->lock );
+      sem_destroy( &client->config_sem );
       return -ENOMEM;
    }
    
-   // set up downloader so we can register
-   rc = md_downloader_init( &client->dl, "ms-client" );
+   // set up downloader for MS API calls 
+   client->dl = md_downloader_new();
+   if( client->dl == NULL ) {
+
+      SG_safe_free( client->url );
+      sem_destroy( &client->config_sem );
+      pthread_rwlock_destroy( &client->config_lock );
+      pthread_rwlock_destroy( &client->lock );
+      return -ENOMEM;
+   }
+
+   rc = md_downloader_init( client->dl, "ms-client" );
    if( rc != 0 ) {
       
       SG_error("md_downloader_start rc = %d\n", rc );
-      
+     
+      SG_safe_free( client->dl ); 
       SG_safe_free( client->url );
       pthread_rwlock_destroy( &client->config_lock );
       pthread_rwlock_destroy( &client->lock );
@@ -186,7 +199,9 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
    // new volume 
    volume = SG_CALLOC( struct ms_volume, 1 );
    if( volume == NULL ) {
-      
+     
+      md_downloader_shutdown( client->dl ); 
+      SG_safe_free( client->dl );
       SG_safe_free( client->url );
       pthread_rwlock_destroy( &client->config_lock );
       pthread_rwlock_destroy( &client->lock );
@@ -199,6 +214,8 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
    if( rc != 0 ) {
       
       SG_error("ms_client_volume_init('%s') rc = %d\n", conf->volume_name, rc );
+      md_downloader_shutdown( client->dl ); 
+      SG_safe_free( client->dl );
       SG_safe_free( client->url );
       pthread_rwlock_destroy( &client->config_lock );
       pthread_rwlock_destroy( &client->lock );
@@ -223,6 +240,8 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
    client->certs = SG_safe_new( ms_cert_bundle() );
    if( client->certs == NULL ) {
       
+      md_downloader_shutdown( client->dl ); 
+      SG_safe_free( client->dl );
       SG_safe_free( client->url );
       pthread_rwlock_destroy( &client->config_lock );
       pthread_rwlock_destroy( &client->lock );
@@ -239,6 +258,8 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
         if( rc != 0 ) {
             SG_error("ms_client_try_load_key rc = %d\n", rc );
             
+            md_downloader_shutdown( client->dl ); 
+            SG_safe_free( client->dl );
             SG_safe_free( client->url );
             pthread_rwlock_destroy( &client->config_lock );
             pthread_rwlock_destroy( &client->lock );
@@ -255,7 +276,8 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
             
             SG_error("md_public_key_from_private_key( %p ) rc = %d\n", client->gateway_key, rc );
             
-            
+            md_downloader_shutdown( client->dl ); 
+            SG_safe_free( client->dl );
             SG_safe_free( client->url );
             pthread_rwlock_destroy( &client->config_lock );
             pthread_rwlock_destroy( &client->lock );
@@ -281,11 +303,13 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EV
    client->gateway_key_pem_mlocked = true;
    
    // start downloading
-   rc = md_downloader_start( &client->dl );
+   rc = md_downloader_start( client->dl );
    if( rc != 0 ) {
       
       SG_error("Failed to start downloader, rc = %d\n", rc );
       
+      md_downloader_shutdown( client->dl ); 
+      SG_safe_free( client->dl );
       SG_safe_free( client->url );
       pthread_rwlock_destroy( &client->config_lock );
       pthread_rwlock_destroy( &client->lock );
@@ -332,7 +356,7 @@ int ms_client_destroy( struct ms_client* client ) {
    
    client->inited = false;
    
-   md_downloader_stop( &client->dl );
+   md_downloader_stop( client->dl );
    
    // clean up config
    ms_client_config_wlock( client );
@@ -380,7 +404,8 @@ int ms_client_destroy( struct ms_client* client ) {
       client->syndicate_pubkey = NULL;
    }
    
-   md_downloader_shutdown( &client->dl );
+   md_downloader_shutdown( client->dl );
+   SG_safe_free( client->dl );
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
@@ -509,8 +534,11 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
       
       SG_error("md_download_run('%s') rc = %d\n", url, rc );
       
-      if( rc >= -400 && rc <= -499 ) {
+      if( rc <= -400 && rc >= -499 ) {
          rc = -EPROTO;
+      }
+      else if( rc <= -500 ) {
+         rc = -EREMOTEIO;
       }
    }
    else {
@@ -520,6 +548,7 @@ int ms_client_download( struct ms_client* client, char const* url, char** buf, o
    ms_client_timing_free( &timing );
    return rc;
 }
+
 
 // read-lock a client context 
 int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
@@ -531,6 +560,7 @@ int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno
    return pthread_rwlock_rdlock( &client->lock );
 }
 
+
 // write-lock a client context 
 int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno ) {
    
@@ -540,6 +570,7 @@ int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno
    
    return pthread_rwlock_wrlock( &client->lock );
 }
+
 
 // unlock a client context 
 int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
@@ -551,6 +582,7 @@ int ms_client_unlock2( struct ms_client* client, char const* from_str, int linen
    return pthread_rwlock_unlock( &client->lock );
 }
 
+
 // read-lock a client context's view
 int ms_client_config_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
     
@@ -560,6 +592,7 @@ int ms_client_config_rlock2( struct ms_client* client, char const* from_str, int
    
    return pthread_rwlock_rdlock( &client->config_lock );
 }
+
 
 // write-lock a client context's view
 int ms_client_config_wlock2( struct ms_client* client, char const* from_str, int lineno  ) {
@@ -571,6 +604,7 @@ int ms_client_config_wlock2( struct ms_client* client, char const* from_str, int
    return pthread_rwlock_wrlock( &client->config_lock );
 }
 
+
 // unlock a client context's view
 int ms_client_config_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
    
@@ -580,6 +614,7 @@ int ms_client_config_unlock2( struct ms_client* client, char const* from_str, in
    
    return pthread_rwlock_unlock( &client->config_lock );
 }
+
 
 // get the current volume config version
 uint64_t ms_client_volume_version( struct ms_client* client ) {
@@ -684,7 +719,6 @@ int ms_client_get_volume_root( struct ms_client* client, int64_t root_version, i
 
    int rc = 0;
    struct ms_path_ent root_request;
-   struct ms_client_multi_result result;
    
    ms_client_config_rlock( client );
    
@@ -697,37 +731,15 @@ int ms_client_get_volume_root( struct ms_client* client, int64_t root_version, i
    
    ms_client_config_unlock( client );
    
-   rc = ms_client_getattr( client, &root_request, &result );
+   rc = ms_client_getattr( client, &root_request, root );
    
    ms_client_free_path_ent( &root_request, NULL );
    
    if( rc != 0 ) {
       
       SG_error("ms_client_getattr('/') rc = %d\n", rc );
-      
-      ms_client_multi_result_free( &result );
       return rc;
    }
-   
-   // get the root result 
-   if( result.reply_error != 0 ) {
-      
-      SG_error("MS replied %d on request for '/'\n", result.reply_error );
-      
-      ms_client_multi_result_free( &result );
-      return -ENODATA;
-   }
-   
-   if( result.num_ents != 1 ) {
-      
-      SG_error("MS replied %d entries\n", result.num_processed );
-   
-      ms_client_multi_result_free( &result );
-      return -ENODATA;
-   }
-   
-   rc = md_entry_dup2( &result.ents[0], root );
-   ms_client_multi_result_free( &result );
    
    return rc;
 }
@@ -932,6 +944,7 @@ EVP_PKEY* ms_client_swap_syndicate_pubkey( struct ms_client* client, EVP_PKEY* n
     return old_key;
 }
 
+
 // synchronous method to GET data
 // expects an ms_reply
 // return 0 on success
@@ -953,7 +966,6 @@ int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* rep
    
    if( rc != 0 ) {
       SG_error("ms_client_download('%s') rc = %d\n", url, rc );
-      
       return rc;
    }
    
