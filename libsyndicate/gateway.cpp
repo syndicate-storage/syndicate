@@ -19,9 +19,11 @@
 #include "libsyndicate/opts.h"
 #include "libsyndicate/private/opts.h"
 #include "libsyndicate/client.h"
+#include "libsyndicate/util.h"
 
 #include "libsyndicate/ms/gateway.h"
 #include "libsyndicate/ms/core.h"
+#include "libsyndicate/ms/cert.h"
 
 // gateway for which we are running the main() loop
 static struct SG_gateway* g_main_gateway = NULL;
@@ -29,6 +31,18 @@ static struct SG_gateway* g_main_gateway = NULL;
 // alloc a gateway 
 struct SG_gateway* SG_gateway_new(void) {
    return SG_CALLOC( struct SG_gateway, 1 );
+}
+
+// initialize SG IO hints 
+int SG_IO_hints_init( struct SG_IO_hints* io_hints, int io_type, uint64_t offset, uint64_t len ) {
+
+   memset( io_hints, 0, sizeof(struct SG_IO_hints));
+   
+   io_type = io_type;
+   io_hints->io_context = md_random64();
+   io_hints->offset = offset;
+   io_hints->len = len;
+   return 0;
 }
 
 // initialize an empty request data structure 
@@ -514,6 +528,20 @@ void SG_request_data_free( struct SG_request_data* reqdat ) {
    memset( reqdat, 0, sizeof(struct SG_request_data) );
 }
 
+// get IO hints
+int SG_request_data_get_IO_hints( struct SG_request_data* reqdat, struct SG_IO_hints* hints ) {
+   *hints = reqdat->io_hints;
+   return 0;
+}
+
+
+// set IO hints
+int SG_request_data_set_IO_hints( struct SG_request_data* reqdat, struct SG_IO_hints* hints ) {
+   reqdat->io_hints = *hints;
+   return 0;
+}
+
+
 // merge opts and config--opts overriding the config
 // return 0 on success
 // return -ENOMEM on OOM 
@@ -568,7 +596,7 @@ static int SG_gateway_driver_init_internal( struct ms_client* ms, struct md_synd
    }
    
    // create the driver
-   rc = SG_driver_init( driver, ms->gateway_pubkey, ms->gateway_key, conf->driver_exec_path, conf->driver_roles, conf->num_driver_roles, num_instances, driver_text, driver_text_len );
+   rc = SG_driver_init( driver, conf, ms->gateway_pubkey, ms->gateway_key, conf->driver_exec_path, conf->driver_roles, conf->num_driver_roles, num_instances, driver_text, driver_text_len );
    
    SG_safe_free( driver_text );
    
@@ -744,7 +772,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    struct md_syndicate_cache* cache = SG_CALLOC( struct md_syndicate_cache, 1 );
    struct md_HTTP* http = SG_CALLOC( struct md_HTTP, 1 );
    struct SG_driver* driver = SG_driver_alloc();
-   struct md_downloader* dl = SG_CALLOC( struct md_downloader, 1 );
+   struct md_downloader* dl = md_downloader_new();
    struct md_wq* iowqs = NULL;
    
    sem_t config_sem;
@@ -761,7 +789,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    int first_arg_optind = -1;
    
    int num_iowqs = 0;
-   int max_num_iowqs = 4 * sysconf( _SC_NPROCESSORS_CONF );       // I/O doesn't take much CPU...
+   int max_num_iowqs = 1; // 4 * sysconf( _SC_NPROCESSORS_CONF );       // I/O doesn't take much CPU...
    
    if( ms == NULL || conf == NULL || cache == NULL || http == NULL || dl == NULL ) {
       
@@ -794,6 +822,21 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
       
       goto SG_gateway_init_error;
    }
+
+   // validity 
+   if( opts->gateway_name == NULL ) {
+
+      SG_error("%s", "No gateway name defined\n");
+      rc = -EINVAL;
+      goto SG_gateway_init_error;
+   }
+
+   if( opts->volume_name == NULL ) {
+
+      SG_error("%s", "No volume name defined\n");
+      rc = -EINVAL;
+      goto SG_gateway_init_error;
+   }
   
    // allocate I/O work queues 
    iowqs = SG_CALLOC( struct md_wq, max_num_iowqs );
@@ -808,6 +851,13 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    // initialize library
    if( !opts->client ) {
       
+      if( opts->username == NULL ) {
+         
+         SG_error("%s", "No username given\n");
+         rc = -EINVAL;
+         goto SG_gateway_init_error;
+      }
+
       // initialize peer
       SG_debug("%s", "Not anonymous; initializing as peer\n");
       
@@ -890,11 +940,11 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
       // won't need the HTTP server 
       SG_safe_free( http );
    }
-   
+    
    // load driver 
    if( !opts->ignore_driver ) {
       
-      rc = SG_gateway_driver_init_internal( ms, conf, driver, max_num_iowqs );
+      rc = SG_gateway_driver_init_internal( ms, conf, driver, 1 );
       if( rc != 0 && rc != -ENOENT ) {
          
          SG_error("SG_gateway_driver_init_internal rc = %d\n", rc );
@@ -1011,7 +1061,7 @@ SG_gateway_init_error:
    
    if( dl_inited ) {
       
-      if( dl->running ) {
+      if( md_downloader_is_running( dl ) ) {
          md_downloader_stop( dl );
       }
       
@@ -1170,10 +1220,12 @@ int SG_gateway_shutdown( struct SG_gateway* gateway ) {
       
       (*gateway->impl_shutdown)( gateway, gateway->cls );
    }
-   
-   md_downloader_stop( gateway->dl );
-   md_downloader_shutdown( gateway->dl );
-   SG_safe_free( gateway->dl );
+  
+   if( gateway->dl != NULL ) { 
+       md_downloader_stop( gateway->dl );
+       md_downloader_shutdown( gateway->dl );
+       SG_safe_free( gateway->dl );
+   }
       
    if( gateway->http != NULL ) {
       md_HTTP_stop( gateway->http );
@@ -1181,29 +1233,37 @@ int SG_gateway_shutdown( struct SG_gateway* gateway ) {
       SG_safe_free( gateway->http );
    }
    
-   md_cache_stop( gateway->cache );
-   md_cache_destroy( gateway->cache );
-   SG_safe_free( gateway->cache );
+   if( gateway->cache != NULL ) {
+       md_cache_stop( gateway->cache );
+       md_cache_destroy( gateway->cache );
+       SG_safe_free( gateway->cache );
+   }
    
    if( gateway->driver != NULL ) {
       SG_driver_shutdown( gateway->driver );
       SG_safe_free( gateway->driver );
    }
    
-   ms_client_destroy( gateway->ms );
-   SG_safe_free( gateway->ms );
-   
-   for( int i = 0; i < gateway->num_iowqs; i++ ) {
-      
-      md_wq_stop( &gateway->iowqs[i] );
-      md_wq_free( &gateway->iowqs[i], NULL );
+   if( gateway->ms != NULL ) {
+       ms_client_destroy( gateway->ms );
+       SG_safe_free( gateway->ms );
    }
    
-   SG_safe_free( gateway->iowqs );
+   if( gateway->iowqs != NULL ) {
+       for( int i = 0; i < gateway->num_iowqs; i++ ) {
+      
+          md_wq_stop( &gateway->iowqs[i] );
+          md_wq_free( &gateway->iowqs[i], NULL );
+       }
    
-   md_free_conf( gateway->conf );
-   SG_safe_free( gateway->conf );
-   
+       SG_safe_free( gateway->iowqs );
+   }
+
+   if( gateway->conf != NULL ) {
+       md_free_conf( gateway->conf );
+       SG_safe_free( gateway->conf );
+   }
+
    sem_destroy( &gateway->config_sem );
    
    memset( gateway, 0, sizeof(struct SG_gateway) );
@@ -1266,6 +1326,12 @@ int SG_gateway_main( struct SG_gateway* gateway ) {
       struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
       struct ms_client* ms = SG_gateway_ms( gateway );
 
+      struct ms_gateway_cert* old_gateway_cert;
+      unsigned char old_driver_hash[SHA256_DIGEST_LENGTH];
+      unsigned char new_driver_hash[SHA256_DIGEST_LENGTH];
+      char old_driver_hash_str[2*SHA256_DIGEST_LENGTH + 1];
+      char new_driver_hash_str[2*SHA256_DIGEST_LENGTH + 1];
+      struct ms_gateway_cert* new_gateway_cert = NULL;
       char* new_driver_text = NULL;
       size_t new_driver_text_len = 0;
       
@@ -1320,6 +1386,21 @@ int SG_gateway_main( struct SG_gateway* gateway ) {
       if( !gateway->running ) {
          break;
       }
+
+      // find old cert 
+      old_gateway_cert = ms_client_get_gateway_cert( ms, conf->gateway );
+      if( old_gateway_cert == NULL ) {
+         SG_error("BUG: no gateway on file for us (%" PRIu64 ")\n", conf->gateway );
+         rc = -ENOTCONN;
+         break;
+      }
+
+      // find old driver hash 
+      rc = ms_client_gateway_driver_hash_buf( old_gateway_cert, old_driver_hash );
+      if( rc == -ENOENT ) {
+         rc = 0;
+         memset( old_driver_hash, 0, SHA256_DIGEST_LENGTH );
+      }
       
       // fetch new certs 
       volume_cert = SG_safe_new( ms::ms_volume_metadata );
@@ -1342,6 +1423,7 @@ int SG_gateway_main( struct SG_gateway* gateway ) {
          SG_error("md_certs_reload rc = %d\n", rc );
          
          ms_client_cert_bundle_free( gateway_certs );
+         SG_safe_delete( gateway_certs );
          SG_safe_delete( volume_cert );
          if( syndicate_pubkey != NULL ) {
             EVP_PKEY_free( syndicate_pubkey );
@@ -1372,8 +1454,46 @@ int SG_gateway_main( struct SG_gateway* gateway ) {
       if( old_gateway_certs != NULL ) {
          
          ms_client_cert_bundle_free( old_gateway_certs );
+         SG_safe_delete( old_gateway_certs );
       }
      
+      // go fetch or revalidate our new driver, if it changed
+      new_gateway_cert = md_gateway_cert_find( gateway_certs, conf->gateway );
+      if( new_gateway_cert == NULL ) {
+      
+         SG_error("No cert on file for us (%" PRIu64 ")\n", conf->gateway );
+         rc = -ENOTCONN;
+         break;
+      }
+
+      rc = ms_client_gateway_driver_hash_buf( new_gateway_cert, new_driver_hash );
+      if( rc == -ENOENT ) {
+         rc = 0;
+         memset( new_driver_hash, 0, SHA256_DIGEST_LENGTH );
+      }
+
+      // did the driver change?
+      if( memcmp( old_driver_hash, new_driver_hash, SHA256_DIGEST_LENGTH ) == 0 ) {
+
+         // nope--no driver change
+         // no need to reload
+         SG_debug("%s", "driver did not change\n");
+         continue;
+      }
+
+      sha256_printable_buf( old_driver_hash, old_driver_hash_str );
+      sha256_printable_buf( new_driver_hash, new_driver_hash_str );
+      SG_debug("Driver changed from %s to %s; reloading\n", old_driver_hash_str, new_driver_hash_str );
+      
+      // driver changed. go re-download
+      rc = md_driver_reload( conf, new_gateway_cert );
+      if( rc != 0 && rc != -ENOENT ) {
+      
+         SG_error("md_driver_reload rc = %d\n", rc );
+         rc = -ENOTCONN;
+         break;
+      }
+      
       rc = ms_client_gateway_get_driver_text( ms, &new_driver_text, &new_driver_text_len );
       if( rc != 0 ) {
          SG_error("ms_client_gateway_get_driver_text rc = %d\n", rc );
@@ -1384,19 +1504,22 @@ int SG_gateway_main( struct SG_gateway* gateway ) {
       }
 
       if( rc == 0 ) {
+
+         // reload workers
          rc = SG_driver_reload( SG_gateway_driver( gateway ), ms_client_my_pubkey( ms ), ms_client_my_privkey( ms ), new_driver_text, new_driver_text_len );
-      }
-      
-      if( gateway->impl_config_change != NULL ) {
+         SG_safe_free( new_driver_text ); 
+         if( gateway->impl_config_change != NULL ) {
          
-         // gateway-specific config reload 
-         rc = (*gateway->impl_config_change)( gateway, rc, gateway->cls );
-         if( rc != 0 ) {
+            // gateway-specific config reload 
+            rc = (*gateway->impl_config_change)( gateway, rc, gateway->cls );
+            if( rc != 0 ) {
             
-            SG_warn( "gateway->impl_config_change rc = %d\n", rc );
+               SG_warn( "gateway->impl_config_change rc = %d\n", rc );
+            }
          }
       }
-      else if( rc != 0 ) {
+     
+      if( rc != 0 ) {
 
          // failed to load the driver
          // default behavior is to abort
@@ -1598,21 +1721,47 @@ void SG_chunk_init( struct SG_chunk* chunk, char* data, off_t len ) {
    chunk->len = len;
 }
 
-// duplicate a chunk 
+// duplicate a chunk
+// if dest's data is already allocated, try to expand it. 
 // return 0 on success 
-// return -ENOMEM on OOM 
+// return -ENOMEM on OOM
+// either way, set dest->len to the required size 
 int SG_chunk_dup( struct SG_chunk* dest, struct SG_chunk* src ) {
-   
+  
    dest->data = SG_CALLOC( char, src->len );
    if( dest->data == NULL ) {
       return -ENOMEM;
    }
    
-   memcpy( dest->data, src->data, src->len );
    dest->len = src->len;
+   memcpy( dest->data, src->data, src->len );
    
    return 0;
 }
+
+
+// copy or duplicate a chunk
+// only copy if we have space; otherwise duplicate
+// return 0 on success
+// return -ENOMEM on OOM
+// return -ERANGE if there's not enough space to copy 
+int SG_chunk_copy_or_dup( struct SG_chunk* dest, struct SG_chunk* src ) {
+   if( dest->data != NULL ) {
+      if( dest->len < src->len ) {
+
+         // too small
+         return -ERANGE;
+      }
+
+      memcpy( dest->data, src->data, src->len );
+      dest->len = src->len;
+      return 0;
+   }
+   else {
+      return SG_chunk_dup( dest, src );
+   }
+}
+
 
 
 // copy one chunk's data to another 
@@ -1653,11 +1802,8 @@ static int SG_gateway_cache_get_raw( struct SG_gateway* gateway, struct SG_reque
    
    if( block_fd < 0 ) {
       
-      if( block_fd != -ENOENT ) {
-         
-         SG_warn("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%s %" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n",
-                 reqdat->file_id, reqdat->file_version, SG_request_is_block( reqdat ) ? "block" : "manifest", block_id_or_manifest_mtime_sec, block_version_or_manifest_mtime_nsec, reqdat->fs_path, block_fd );
-      }
+      SG_warn("md_cache_open_block( %" PRIX64 ".%" PRId64 "[%s %" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n",
+              reqdat->file_id, reqdat->file_version, SG_request_is_block( reqdat ) ? "block" : "manifest", block_id_or_manifest_mtime_sec, block_version_or_manifest_mtime_nsec, reqdat->fs_path, block_fd );
       
       return block_fd;
    }
@@ -1766,6 +1912,7 @@ int SG_gateway_cached_manifest_get_raw( struct SG_gateway* gateway, struct SG_re
    
    // sanity check 
    if( !SG_request_is_manifest( reqdat ) ) {
+      SG_error("Not a manifest request: %p\n", reqdat);
       return -EINVAL;
    }
    
@@ -1774,7 +1921,13 @@ int SG_gateway_cached_manifest_get_raw( struct SG_gateway* gateway, struct SG_re
    if( rc == -EAGAIN ) {
       
       // not available in the cache 
+      SG_error("Chunk is not readable at this time: %p\n", reqdat);
       return -ENOENT;
+   }
+   else if( rc != 0 ) {
+
+      SG_error("md_cache_is_block_readable rc = %d\n", rc );
+      return rc;
    }
    
    // check cache disk 
@@ -1782,6 +1935,7 @@ int SG_gateway_cached_manifest_get_raw( struct SG_gateway* gateway, struct SG_re
    if( rc != 0 ) {
       
       // not available in the cache 
+      SG_error("Chunk is not in the cache (rc = %d)\n", rc);
       return rc;
    }
    
@@ -1831,19 +1985,18 @@ int SG_gateway_io_start( struct SG_gateway* gateway, struct md_wreq* wreq ) {
 }
 
 
-// get the I/O context for a request
-// in the current implementation, this is the workqueue's serialized thread ID.
-uint64_t SG_gateway_io_context( struct SG_gateway* gateway ) {
+// get thread worker ID
+uint64_t SG_gateway_io_thread_id( struct SG_gateway* gateway ) {
    
    union {
       pthread_t t;
       uint64_t i;
-   } io_context_data;
+   } io_thread_id_data;
 
-   io_context_data.i = 0;
-   io_context_data.t = pthread_self();
+   io_thread_id_data.i = 0;
+   io_thread_id_data.t = pthread_self();
    
-   return io_context_data.i;
+   return io_thread_id_data.i;
 }
 
 
@@ -1882,7 +2035,7 @@ int SG_gateway_impl_stat( struct SG_gateway* gateway, struct SG_request_data* re
    
    if( gateway->impl_stat != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_stat)( gateway, reqdat, out_reqdat, out_mode, gateway->cls );
       
       if( rc != 0 ) {
@@ -1910,7 +2063,7 @@ int SG_gateway_impl_truncate( struct SG_gateway* gateway, struct SG_request_data
    
    if( gateway->impl_truncate != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_truncate)( gateway, reqdat, new_size, gateway->cls );
       
       if( rc != 0 ) {
@@ -1938,7 +2091,7 @@ int SG_gateway_impl_rename( struct SG_gateway* gateway, struct SG_request_data* 
    
    if( gateway->impl_rename != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_rename)( gateway, reqdat, new_path, gateway->cls );
       
       if( rc != 0 ) {
@@ -1966,7 +2119,7 @@ int SG_gateway_impl_detach( struct SG_gateway* gateway, struct SG_request_data* 
    
    if( gateway->impl_detach != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_detach)( gateway, reqdat, gateway->cls );
       
       if( rc != 0 ) {
@@ -2009,13 +2162,13 @@ int SG_gateway_impl_serialize( struct SG_gateway* gateway, struct SG_request_dat
 
 
 // deserialize a chunk, making it suitable for consumption by a client program
+// *out_chunk may be allocated already (i.e. if the chunk's length is known).  The implementation must accomodate this possibility.
 // return 0 on success
 // return -ENOSYS if not defined
 // return non-zero on error 
 int SG_gateway_impl_deserialize( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* in_chunk, struct SG_chunk* out_chunk ) {
 
    int rc = 0;
-   
    if( gateway->impl_deserialize != NULL ) {
 
       rc = (*gateway->impl_deserialize)( gateway, reqdat, in_chunk, out_chunk, gateway->cls );
@@ -2043,7 +2196,7 @@ int SG_gateway_impl_manifest_get( struct SG_gateway* gateway, struct SG_request_
    
    if( gateway->impl_get_manifest != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_get_manifest)( gateway, reqdat, manifest, hints, gateway->cls );
       
       if( rc != 0 ) {
@@ -2071,12 +2224,65 @@ int SG_gateway_impl_manifest_put( struct SG_gateway* gateway, struct SG_request_
    
    if( gateway->impl_put_manifest != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_put_manifest)( gateway, reqdat, chunk, hints, gateway->cls );
       if( rc != 0 ) {
          
          SG_error("gateway->impl_put_manifest( %" PRIX64 ".%" PRId64 "[manifest %" PRIu64 ".%ld] (%s) ) rc = %d\n",
                    reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, reqdat->fs_path, rc );
+      }
+      
+      return rc;
+   }
+   else {
+      
+      return -ENOSYS;
+   }
+}
+
+
+// patch a manifest 
+// the gateway MUST inform the MS of the new manifest information 
+// return 0 on success
+// return non-zero on implemetation error
+int SG_gateway_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* write_delta ) {
+   
+   int rc = 0;
+   
+   if( gateway->impl_patch_manifest != NULL ) {
+      
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
+      rc = (*gateway->impl_patch_manifest)( gateway, reqdat, write_delta, gateway->cls );
+      
+      if( rc != 0 ) {
+         
+         SG_error("gateway->impl_patch_manifest( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+      }
+      
+      return rc;
+   }
+   else {
+      
+      return -ENOSYS;
+   }
+}
+
+
+// delete a manifest 
+// return 0 on success
+// return non-zero on implemetation error
+int SG_gateway_impl_manifest_delete( struct SG_gateway* gateway, struct SG_request_data* reqdat) {
+   
+   int rc = 0;
+   
+   if( gateway->impl_delete_manifest != NULL ) {
+      
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
+      rc = (*gateway->impl_delete_manifest)( gateway, reqdat, gateway->cls );
+      
+      if( rc != 0 ) {
+         
+         SG_error("gateway->impl_delete_manifest( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
       }
       
       return rc;
@@ -2099,7 +2305,7 @@ int SG_gateway_impl_block_get( struct SG_gateway* gateway, struct SG_request_dat
    
    if( gateway->impl_get_block != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_get_block)( gateway, reqdat, block, hints, gateway->cls );
       
       if( rc != 0 ) {
@@ -2116,6 +2322,7 @@ int SG_gateway_impl_block_get( struct SG_gateway* gateway, struct SG_request_dat
    }
 }
 
+
 // put a block into the implementation 
 // return 0 on success 
 // return non-zero on implementation error 
@@ -2125,7 +2332,7 @@ int SG_gateway_impl_block_put( struct SG_gateway* gateway, struct SG_request_dat
    
    if( gateway->impl_put_block != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_put_block)( gateway, reqdat, block, hints, gateway->cls );
       
       if( rc != 0 ) {
@@ -2152,39 +2359,13 @@ int SG_gateway_impl_block_delete( struct SG_gateway* gateway, struct SG_request_
    
    if( gateway->impl_delete_block != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_delete_block)( gateway, reqdat, gateway->cls );
       
       if( rc != 0 ) {
          
          SG_error("gateway->impl_delete_block( %" PRIX64 ".%" PRId64 " [%" PRIu64 ".%" PRId64 "] (%s) rc = %d\n", 
                   reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->fs_path, rc );
-      }
-      
-      return rc;
-   }
-   else {
-      
-      return -ENOSYS;
-   }
-}
-
-// patch a manifest 
-// the gateway MUST inform the MS of the new manifest information 
-// return 0 on success
-// return non-zero on implemetation error
-int SG_gateway_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* write_delta ) {
-   
-   int rc = 0;
-   
-   if( gateway->impl_patch_manifest != NULL ) {
-      
-      reqdat->io_context = SG_gateway_io_context( gateway );
-      rc = (*gateway->impl_patch_manifest)( gateway, reqdat, write_delta, gateway->cls );
-      
-      if( rc != 0 ) {
-         
-         SG_error("gateway->impl_patch_manifest( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
       }
       
       return rc;
@@ -2205,7 +2386,7 @@ int SG_gateway_impl_getxattr( struct SG_gateway* gateway, struct SG_request_data
    
    if( gateway->impl_getxattr != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_getxattr)( gateway, reqdat, xattr_value, gateway->cls );
       
       if( rc != 0 ) {
@@ -2231,7 +2412,7 @@ int SG_gateway_impl_listxattr( struct SG_gateway* gateway, struct SG_request_dat
    
    if( gateway->impl_listxattr != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_listxattr)( gateway, reqdat, xattr_names, num_xattrs, gateway->cls );
       
       if( rc != 0 ) {
@@ -2257,7 +2438,7 @@ int SG_gateway_impl_setxattr( struct SG_gateway* gateway, struct SG_request_data
    
    if( gateway->impl_setxattr != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_setxattr)( gateway, reqdat, xattr_value, gateway->cls );
       
       if( rc != 0 ) {
@@ -2283,7 +2464,7 @@ int SG_gateway_impl_removexattr( struct SG_gateway* gateway, struct SG_request_d
    
    if( gateway->impl_removexattr != NULL ) {
       
-      reqdat->io_context = SG_gateway_io_context( gateway );
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
       rc = (*gateway->impl_removexattr)( gateway, reqdat, gateway->cls );
       
       if( rc != 0 ) {

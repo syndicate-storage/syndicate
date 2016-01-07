@@ -27,6 +27,21 @@
 #include "libsyndicate/workqueue.h"
 #include "libsyndicate/ms/core.h"
 
+// I/O hints for gateway requests
+struct SG_IO_hints {
+   int io_type;             // none, read, write, trunc
+   uint64_t io_context;     // unique identifier that is consistent across a series of related reads or writes
+   uint64_t offset;         // logical offset of the read/write
+   uint64_t len;            // logical length of the read/write
+};
+
+// values for SG_IO_hints.io_type 
+#define SG_IO_NONE  SG_messages::DriverRequest::NONE
+#define SG_IO_READ  SG_messages::DriverRequest::READ
+#define SG_IO_WRITE SG_messages::DriverRequest::WRITE
+#define SG_IO_TRUNC SG_messages::DriverRequest::TRUNC
+#define SG_IO_SYNC  SG_messages::DriverRequest::SYNC
+
 // gateway request structure, for a block or a manifest or xattr info
 struct SG_request_data {
    uint64_t user_id;                            // ID of the user running the requesting gateway
@@ -55,10 +70,9 @@ struct SG_request_data {
    size_t xattr_value_len;
    int64_t xattr_nonce;
    
-   // internal
-   uint64_t io_context;                         // opaque key that identifies the context in which the gateway is processing the request.
-                                                // useful for setting up context-specific data, like helper processes.
-                                                // used internally; not derived from requester.
+   // internal hints to be given to the driver
+   uint64_t io_thread_id;                        // I/O worker thread id handling this request
+   struct SG_IO_hints io_hints;                  // I/O hints to be passed along to the driver
 };
 
 // gateway chunk of data, with known length
@@ -201,6 +215,11 @@ bool SG_request_is_getxattr( struct SG_request_data* reqdat );
 bool SG_request_is_listxattr( struct SG_request_data* reqdat );
 void SG_request_data_free( struct SG_request_data* reqdat );
 
+// I/O hints
+int SG_IO_hints_init( struct SG_IO_hints* io_hints, int io_type, uint64_t offset, uint64_t len );
+int SG_request_data_get_IO_hints( struct SG_request_data* gateway, struct SG_IO_hints* hints );
+int SG_request_data_set_IO_hints( struct SG_request_data* gateway, struct SG_IO_hints* hints );
+
 // getters for gateway fields 
 void* SG_gateway_cls( struct SG_gateway* gateway );
 void SG_gateway_set_cls( struct SG_gateway* gateway, void* cls );
@@ -221,6 +240,7 @@ int SG_gateway_first_arg_optind( struct SG_gateway* gateway );
 void SG_chunk_init( struct SG_chunk* chunk, char* data, off_t len );
 int SG_chunk_dup( struct SG_chunk* dest, struct SG_chunk* src );
 int SG_chunk_copy( struct SG_chunk* dest, struct SG_chunk* src );
+int SG_chunk_copy_or_dup( struct SG_chunk* dest, struct SG_chunk* src );
 void SG_chunk_free( struct SG_chunk* chunk );
 
 // driver methods 
