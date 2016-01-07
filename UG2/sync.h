@@ -34,8 +34,8 @@ struct UG_sync_context {
 extern "C" {
    
 // sync blocks to cache   
-int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path, uint64_t file_id, int64_t file_version, UG_dirty_block_map_t* dirty_blocks );
-int UG_sync_blocks_flush_finish( uint64_t file_id, int64_t file_version, UG_dirty_block_map_t* dirty_blocks );
+int UG_sync_blocks_flush_async( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, UG_dirty_block_map_t* dirty_blocks );
+int UG_sync_blocks_flush_finish( struct SG_gateway* gateway, struct UG_inode* inode, UG_dirty_block_map_t* dirty_blocks );
 
 // set up and tear down a sync context 
 int UG_sync_context_init( struct UG_sync_context* sctx, struct UG_replica_context* rctx );
