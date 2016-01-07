@@ -62,6 +62,7 @@ ms::ms_user_cert* ms_client_gateway_cert_user( struct ms_gateway_cert* cert );
 ms::ms_gateway_cert* ms_client_gateway_cert_gateway( struct ms_gateway_cert* cert );
 char const* ms_client_gateway_cert_name( struct ms_gateway_cert* cert );
 EVP_PKEY* ms_client_gateway_pubkey( struct ms_gateway_cert* cert );
+int ms_client_gateway_driver_hash_buf( struct ms_gateway_cert* cert, unsigned char* hash );
 
 // setters 
 int ms_client_gateway_cert_set_user( struct ms_gateway_cert* cert, ms::ms_user_cert* user_pb );

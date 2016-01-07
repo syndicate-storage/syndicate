@@ -160,14 +160,24 @@ ms::ms_gateway_cert* ms_client_gateway_cert_gateway( struct ms_gateway_cert* cer
    return cert->pb;
 }
 
-
+// get gateway name (ref)
 char const* ms_client_gateway_cert_name( struct ms_gateway_cert* cert ) {
    return cert->name;
 }
 
-
+// get gateway pubkey (ref)
 EVP_PKEY* ms_client_gateway_pubkey( struct ms_gateway_cert* cert ) {
    return cert->pubkey;
+}
+
+// copy out driver hash (should be at least SHA256_DIGEST_LEN bytes)
+int ms_client_gateway_driver_hash_buf( struct ms_gateway_cert* cert, unsigned char* hash_buf ) {
+   if( cert->driver_hash == NULL ) {
+      return -ENOENT;
+   }
+
+   memcpy( hash_buf, cert->driver_hash, cert->driver_hash_len );
+   return 0;
 }
 
 // add a user protobuf 
