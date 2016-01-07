@@ -515,15 +515,23 @@ class MSEntryVacuumLog( storagetypes.Object ):
    @classmethod 
    def Peek( cls, volume_id, file_id, async=False ):
       """
-      Get a single vacuum log entry.
+      Get a single vacuum log entry, or None if there are none
       Order is not preserved.
       """
       
       log_head = MSEntryVacuumLog.ListAll( {"MSEntryVacuumLog.volume_id ==": volume_id, "MSEntryVacuumLog.file_id ==": file_id},
                                            limit=1,
                                            async=async )
-      
+     
+      if not async:
+          if len(log_head) == 0:
+              return None 
+
+          else:
+              log_head = log_head[0]
+
       return log_head
+  
    
    @classmethod 
    def Insert( cls, volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, signature ):
@@ -549,15 +557,15 @@ class MSEntryVacuumLog( storagetypes.Object ):
    
    
    @classmethod 
-   def Remove( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+   def Remove( cls, volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
       """
       Remove a manifest log record.
       Return -errno.ENOENT if it doesn't exist 
       """
       
-      logging.info( "remove log head /%s/%s (version = %s, manifest_mtime_sec = %s, manifest_mtime_nsec = %s)" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec) )
+      logging.info( "remove log head /%s/%s (version = %s, gateway = %s, manifest_mtime_sec = %s, manifest_mtime_nsec = %s)" % (volume_id, file_id, version, writer_id, manifest_mtime_sec, manifest_mtime_nsec) )
       
-      key_name = MSEntryVacuumLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      key_name = MSEntryVacuumLog.make_key_name( volume_id, writer_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
       log_ent_key = storagetypes.make_key( MSEntryVacuumLog, key_name )
       
       log_ent = log_ent_key.get()
@@ -704,6 +712,7 @@ class MSEntry( storagetypes.Object ):
       "max_read_freshness",
       "max_write_freshness",
       "write_nonce",
+      "xattr_hash",
       "ent_sig"
    ]
 
@@ -864,8 +873,8 @@ class MSEntry( storagetypes.Object ):
          "msentry_version": ent_cert.version,
          "msentry_volume_id": ent_cert.volume
       }
-      
-      if ent_cert.xattr_hash:
+     
+      if hasattr(ent_cert, "xattr_hash") and len(ent_cert.xattr_hash) > 0:
           attrs["xattr_hash"] = binascii.hexlify( ent_cert.xattr_hash )
           
       return attrs
@@ -901,8 +910,12 @@ class MSEntry( storagetypes.Object ):
       ent_pb.num_children = ent.num_children
       ent_pb.capacity = ent.capacity
       
-      if ent.xattr_hash is not None and len(ent.xattr_hash) > 0:
-         ent_pb.xattr_hash = binascii.unhexlify( ent.xattr_hash )
+      if ent.xattr_hash is not None:
+         if len(ent.xattr_hash) > 0:
+             ent_pb.xattr_hash = binascii.unhexlify( ent.xattr_hash )
+         else:
+             # empty string 
+             ent_pb.xattr_hash = ent.xattr_hash
       
       return
       
@@ -1231,23 +1244,18 @@ class MSEntry( storagetypes.Object ):
    def Create( cls, user_owner_id, volume, **ent_attrs ):
       
       # return the file_id on success
-      # coerce volume_id
+      # coerce fields
       ent_attrs['volume_id'] = volume.volume_id
-      
-      # coerce initial capacity 
       ent_attrs['capacity'] = cls.get_default('capacity', ent_attrs)
-      
-      # coerce size 
       ent_attrs['size'] = 0
 
+      # only mutate fields allowed
       rc = MSEntry.check_mutate_attrs( ent_attrs )
       if rc != 0:
          return (rc, None)
 
-      # get parent name and ID
-      parent_id = ent_attrs['parent_id']
-
       # ensure we have every required attribute
+      parent_id = ent_attrs['parent_id']
       MSEntry.fill_defaults( ent_attrs )
       
       # necessary input
@@ -1512,7 +1520,7 @@ class MSEntry( storagetypes.Object ):
    def Update( cls, user_owner_id, volume, gateway, **ent_attrs ):
 
       # it's okay if we aren't given the parent_id here...
-      rc = MSEntry.check_mutate_attrs( ent_attrs, safe_to_ignore=['parent_id'] )
+      rc = MSEntry.check_mutate_attrs( ent_attrs, safe_to_ignore=['parent_id', 'xattr_hash'] )
       if rc != 0:
          return (rc, None)
       
@@ -1587,6 +1595,7 @@ class MSEntry( storagetypes.Object ):
       """
       Switch coordinators.
       Performs a transaction--either the chcoord happens, or the caller learns the current coordinator.
+      The version of the entry must increment.
       """
       
       # it's okay if we don't include the parent_id, but we do need a new version
@@ -2058,7 +2067,8 @@ class MSEntry( storagetypes.Object ):
       yield MSEntry.update_shard_async( volume.num_shards, parent_ent, write_nonce=random.randint(-2**63, 2**63-1) )
       
       ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, ent.file_id ) )
-      nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
+      nh_key_name = MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name )
+      nh_key = storagetypes.make_key( MSEntryNameHolder, nh_key_name )
       
       # queue delete this entry and its nameholders
       storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
@@ -2067,7 +2077,7 @@ class MSEntry( storagetypes.Object ):
       storagetypes.deferred.defer( MSEntryXAttr.Delete_ByFile, volume.volume_id, ent.file_id )
       
       # uncache any listings of this parent
-      storagetypes.memcache.delete_multi( [MSEntry.make_key_name( volume_id, parent_id ), ent_cache_key_name] )
+      storagetypes.memcache.delete_multi( [MSEntry.make_key_name( volume_id, parent_id ), ent_cache_key_name, nh_key_name] )
         
       # compactify the parent's directory index
       MSEntryIndex.Delete( volume_id, parent_id, ent_idx.file_id, ent_idx.dir_index, volume.num_shards, compactify_continuation=MSEntry.__compactify_continuation_uncache )
@@ -2450,6 +2460,7 @@ class MSEntry( storagetypes.Object ):
       all_futs.append( futs["base"] )
       
       futs["num_children"] = MSEntryIndex.GetNumChildren( volume_id, file_id, num_shards, async=True )
+      all_futs.append( futs["num_children"] )
       
       # get shards
       futs["shard"] = [None] * len(shard_keys)
@@ -2496,11 +2507,12 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def FlattenFuture( cls, ent_fut ):
       
-      all_futures = [None] * (len(ent_fut.shard_futures) + 1)
+      all_futures = [None] * (len(ent_fut.shard_futures) + 2)
       for i in xrange(0, len(ent_fut.shard_futures)):
          all_futures[i] = ent_fut.shard_futures[i]
       
-      all_futures[len(all_futures)-1] = ent_fut.base_future
+      all_futures[len(all_futures)-2] = ent_fut.base_future
+      all_futures[len(all_futures)-1] = ent_fut.num_children_future
       
       return all_futures
    
