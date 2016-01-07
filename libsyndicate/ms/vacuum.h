@@ -49,7 +49,7 @@ int ms_client_sign_vacuum_ticket( struct ms_client* client, struct ms_vacuum_ent
 int ms_client_verify_vacuum_ticket( struct ms_client* client, ms::ms_vacuum_ticket* vt );
 
 int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uint64_t file_id, struct ms_vacuum_entry* ve );
-int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec );
+int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t writer_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec );
 int ms_client_append_vacuum_log_entry( struct ms_client* client, struct ms_vacuum_entry* ve );
 
 }

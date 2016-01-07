@@ -20,20 +20,27 @@
 
 
 // make a vacuum entry.
-// the resulting ms_vacuum_entry structure will own the affected_blocks array (which the caller must dynamically allocate)
-// always succeeds
+// return 0 on success
+// return -ENOMEM on OOM
 int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version,
                                  int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, uint64_t* affected_blocks, size_t num_affected_blocks ) {
    
+  
+   uint64_t* affected_blocks_dup = SG_CALLOC( uint64_t, num_affected_blocks );
+   if( affected_blocks_dup == NULL ) {
+      return -ENOMEM;
+   }
+
+   memcpy( affected_blocks_dup, affected_blocks, sizeof(affected_blocks[0]) * num_affected_blocks );
+
    memset( vreq, 0, sizeof(struct ms_vacuum_entry) );
-   
    vreq->volume_id = volume_id;
    vreq->writer_id = gateway_id;
    vreq->file_id = file_id;
    vreq->file_version = file_version;
    vreq->manifest_mtime_sec = manifest_mtime_sec;
    vreq->manifest_mtime_nsec = manifest_mtime_nsec;
-   vreq->affected_blocks = affected_blocks;
+   vreq->affected_blocks = affected_blocks_dup;
    vreq->num_affected_blocks = num_affected_blocks;
    
    return 0;
@@ -166,13 +173,16 @@ int ms_client_verify_vacuum_ticket( struct ms_client* client, ms::ms_vacuum_tick
 // get a vacuum log entry for a file 
 // return 0 on success
 // return -ENOMEM if OOM
-// return -ENODATA if there is no vacuum ticket
+// return -ENODATA if there is no vacuum data to be had
+// return -EACCES if we aren't allowed to vacuum
 // return -EPERM if the vacuum ticket was not signed by a gateway we know
 // return -EBADMSG if the vacuum ticket contained invalid data
+// return -EREMOTEIO on remote server error
+// return -EPROTO on HTTP 400-level error (i.e. no data, access denied, bad request, etc.)
 // return negative if we couldn't download or parse the result
 int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uint64_t file_id, struct ms_vacuum_entry* ve ) {
    
-   char* vacuum_url = ms_client_vacuum_url( client->url, ms_client_volume_version( client ), ms_client_cert_version( client ), volume_id, file_id );
+   char* vacuum_url = ms_client_vacuum_url( client->url, volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ), file_id );
    ms::ms_reply* reply = NULL;
    ms::ms_vacuum_ticket* vacuum_ticket = NULL;
    int rc = 0;
@@ -240,8 +250,15 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
          return rc;
       }
       
-      ms_client_vacuum_entry_init( ve, volume_id, vacuum_ticket->writer_id(), file_id, vacuum_ticket->file_version(),
-                                   vacuum_ticket->manifest_mtime_sec(), vacuum_ticket->manifest_mtime_nsec(), affected_blocks, num_affected_blocks );
+      rc = ms_client_vacuum_entry_init( ve, volume_id, vacuum_ticket->writer_id(), file_id, vacuum_ticket->file_version(),
+                                        vacuum_ticket->manifest_mtime_sec(), vacuum_ticket->manifest_mtime_nsec(), affected_blocks, num_affected_blocks );
+      SG_safe_free( affected_blocks );
+      if( rc != 0 ) {
+
+         // OOM
+         SG_safe_delete( reply );
+         return rc;
+      }
       
       SG_safe_delete( reply );
       
@@ -252,11 +269,12 @@ int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uin
 
 // remove a vacuum log entry 
 // NOTE: any gateway can send this, as long as it is the current coordinator of the file.
+// writer_id identifies the gateway that performed the associated write; it can be obtained from the manifest or the vacuum log head.
 // return 0 on success
 // return -ENOMEM on OOM
 // return -EPROTO on MS RPC protocol-level error or HTTP 400-level error
 // return negative on RPC error (see ms_client_single_rpc)
-int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec ) {
+int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t writer_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec ) {
    
    struct ms_client_request request;
    struct ms_client_request_result result;
@@ -279,7 +297,7 @@ int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume
    }
    
    // sentinel md_entry with all of our given information
-   ent.coordinator = ms_client_get_gateway_id( client );
+   ent.coordinator = writer_id;
    ent.volume = volume_id;
    ent.file_id = file_id;
    ent.version = file_version;
@@ -356,7 +374,7 @@ int ms_client_append_vacuum_log_entry( struct ms_client* client, struct ms_vacuu
    
    // sentinel md_entry with all of our given information
    ent.volume = ve->volume_id;
-   ent.coordinator = ve->writer_id;
+   ent.coordinator = ve->writer_id;     // 'coordinator' carries *this* gateway's ID to the vacuum log
    ent.file_id = ve->file_id;
    ent.version = ve->file_version;
    ent.manifest_mtime_sec = ve->manifest_mtime_sec;
@@ -367,6 +385,7 @@ int ms_client_append_vacuum_log_entry( struct ms_client* client, struct ms_vacuu
    if( rc != 0 ) {
       
       md_entry_free( &ent );
+      SG_safe_free( vacuum_ticket_sig );
       return -ENOMEM;
    }
    
@@ -387,6 +406,9 @@ int ms_client_append_vacuum_log_entry( struct ms_client* client, struct ms_vacuu
    
    ent.name = NULL;
    md_entry_free( &ent );       // frees signature as well
+
+   SG_safe_free( vacuum_ticket_sig );
+   request.vacuum_signature = NULL;
    
    if( rc != 0 ) {
       return rc;
