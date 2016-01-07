@@ -215,6 +215,7 @@ static int UG_update_local( struct UG_state* state, char const* path, struct SG_
    struct UG_inode* inode = NULL;
    
    unsigned char xattr_hash[SHA256_DIGEST_LENGTH];
+   memset( xattr_hash, 0, SHA256_DIGEST_LENGTH );
    
    // keep this around...
    fent = fskit_entry_ref( fs, path, &rc );
@@ -249,16 +250,12 @@ static int UG_update_local( struct UG_state* state, char const* path, struct SG_
    
    // apply changes to the inode we'll send
    SG_client_WRITE_data_merge( write_data, &inode_data );
-   
-   // send along xattr hash too
    inode_data.xattr_hash = xattr_hash;
    
    // send the update along
    rc = ms_client_update( ms, &inode_data_out, &inode_data );
    
-   // NOTE: don't free this
    inode_data.xattr_hash = NULL;
-   
    md_entry_free( &inode_data );
    
    if( rc != 0 ) {
@@ -286,10 +283,11 @@ static int UG_update_local( struct UG_state* state, char const* path, struct SG_
        // data has since changed; will need to pull latest 
        UG_inode_set_read_stale( inode, true );
    }
-   
+  
    fskit_entry_unlock( fent );
    fskit_entry_unref( fs, path, fent );
    
+   md_entry_free( &inode_data_out ); 
    return 0;
 }
 
@@ -454,24 +452,6 @@ int UG_stat_raw( struct UG_state* state, char const* path, struct md_entry* ent 
 // mkdir(2)
 // forward to fskit, which will take care of communicating with the MS
 int UG_mkdir( struct UG_state* state, char const* path, mode_t mode ) {
-   
-   int rc = 0;
-   struct SG_gateway* gateway = UG_state_gateway( state );
-   
-   // refresh path, but expect that the entry doesn't exist
-   rc = UG_consistency_path_ensure_fresh( gateway, path );
-   if( rc != -ENOENT ) {
-      
-      if( rc == 0 ) {
-         // already exists 
-         SG_error("Path '%s' already exists\n", path );
-         rc = -EEXIST;
-      }
-      else {
-         SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
-      }
-      return rc;
-   }
    
    return fskit_mkdir( UG_state_fs( state ), path, mode, UG_state_owner_id( state ), UG_state_volume_id( state ) );
 }
@@ -746,8 +726,9 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
    // propagate new xattr hash
    inode_data.xattr_hash = xattr_hash;
    
-   // set the new coordinator to ourselves
+   // set the new coordinator to ourselves, and increment the version number 
    inode_data.coordinator = SG_gateway_id( gateway );
+   inode_data.version += 1;
    fskit_entry_unlock( fent );
    
    // ask the MS to make us the coordinator
@@ -764,18 +745,18 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
       md_entry_free( &inode_data_out );
       return rc;
    }
+       
+   // pass back current coordinator
+   *new_coordinator_response = inode_data_out.coordinator;
    
    // did we succeed?
-   if( inode_data_out.coordinator != SG_gateway_id( gateway ) ) {
+   if( SG_gateway_id( gateway ) != inode_data_out.coordinator || inode_data_out.version <= inode_data.version ) {
        
        // nope 
        fskit_entry_unref( fs, path, fent );
        md_entry_free( &inode_data_out );
        return -EAGAIN;
    }
-   
-   // yup!
-   *new_coordinator_response = inode_data_out.coordinator;
    
    // can we load this data?
    fskit_entry_wlock( fent );
@@ -807,6 +788,85 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
 }
 
 
+// start vacuuming a file inode's old data (used to recover after an unclean shutdown)
+// set up and return *vctx to be a waitable vacuum context 
+// return 0 on success
+// return -ENOMEM on OOM
+// return -ENONENT if there so such path
+// return -EACCES if we can't write to the file 
+// return -EISDIR if the path refers to a directory
+// return -ENOTCONN if we're quiescing requests
+int UG_vacuum_begin( struct UG_state* state, char const* path, struct UG_vacuum_context** ret_vctx ) {
+
+   int rc = 0;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   struct fskit_core* fs = UG_state_fs( state );
+   struct UG_vacuum_context* vctx = NULL;
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+
+   // refresh path 
+   rc = UG_consistency_path_ensure_fresh( gateway, path );
+   if( rc != 0 ) {
+
+      SG_error("UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
+      return rc;
+   }
+
+   fent = fskit_entry_resolve_path( fs, path, 0, 0, true, &rc );
+   if( rc != 0 ) {
+
+      SG_error("fskit_entry_resolve_path('%s') rc = %d\n", path, rc );
+      return rc;
+   }
+
+   if( fskit_entry_get_type( fent ) != FSKIT_ENTRY_TYPE_FILE ) {
+      SG_error("'%s' is not a file\n", path );
+      fskit_entry_unlock( fent );
+      return -EISDIR;
+   }
+
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+
+   vctx = UG_vacuum_context_new();
+   if( vctx == NULL ) {
+      fskit_entry_unlock( fent );
+      return -ENOMEM;
+   }
+
+   rc = UG_vacuum_context_init( vctx, state, path, inode, NULL );
+   if( rc != 0 ) {
+      SG_error("UG_vacuum_context_init rc = %d\n", rc );
+      SG_safe_free( vctx );
+      fskit_entry_unlock( fent );
+      return rc;
+   }
+
+   rc = UG_vacuumer_enqueue_wait( UG_state_vacuumer( state ), vctx );
+   if( rc != 0 ) {
+      SG_error("UG_vacuumer_enqueue_wait rc = %d\n", rc );
+      UG_vacuum_context_free( vctx );
+      fskit_entry_unlock( fent );
+      return rc;
+   }
+
+   fskit_entry_unlock( fent );
+
+   *ret_vctx = vctx;
+   return 0;
+}
+
+
+// wait for an ongoing vacuum request to finish 
+// always succeeds (if it returns at all)
+int UG_vacuum_wait( struct UG_vacuum_context* vctx ) {
+   UG_vacuum_context_wait( vctx );
+   UG_vacuum_context_free( vctx );
+   return 0;
+}
+
+
+
 // trunc(2)
 // forward to fskit
 int UG_truncate( struct UG_state* state, char const* path, off_t newsize ) {
@@ -830,6 +890,7 @@ int UG_truncate( struct UG_state* state, char const* path, off_t newsize ) {
 UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* rc ) {
    
    struct fskit_file_handle* fh = NULL;
+   struct SG_gateway* gateway = UG_state_gateway( state );
    UG_handle_t* sh = SG_CALLOC( UG_handle_t, 1 );
    
    if( sh == NULL ) {
@@ -837,7 +898,16 @@ UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* 
       *rc = -ENOMEM;
       return NULL;
    }
-   
+    
+   // refresh path 
+   *rc = UG_consistency_path_ensure_fresh( gateway, path );
+   if( *rc != 0 ) {
+      
+      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, *rc );
+      SG_safe_free( sh );
+      return NULL;
+   }
+
    fh = fskit_open( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), flags, 0644, rc );
    if( fh == NULL ) {
    
@@ -850,6 +920,7 @@ UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* 
    
    return sh;
 }
+
 
 // read(2)
 // forward to fskit
@@ -869,7 +940,7 @@ int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t *fi ) {
       return nr;
    }
 
-   if( nr < (signed)size ) {
+   if( (unsigned)nr < size ) {
       
       // zero-out the remainder of the buffer
       memset( buf + nr, 0, size - nr );
@@ -878,6 +949,7 @@ int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t *fi ) {
    fi->offset += nr;
    return nr;
 }
+
 
 // write(2)
 // forward to fskit
@@ -890,16 +962,17 @@ int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t 
    if( fi->type != UG_TYPE_FILE ) {
       return -EBADF;
    }
+
+   int rc = fskit_write( UG_state_fs( state ), fi->fh, buf, size, fi->offset );
    
-   int nw = fskit_write( UG_state_fs( state ), fi->fh, buf, size, fi->offset );
-   
-   if( nw < 0 ) {
-      return nw;
+   if( rc < 0 ) {
+      return rc;
    }
    
-   fi->offset += nw;
-   return nw;
+   fi->offset += size;
+   return size;
 }
+
 
 // lseek(2)
 off_t UG_seek( UG_handle_t* fi, off_t pos, int whence ) {
@@ -931,6 +1004,7 @@ off_t UG_seek( UG_handle_t* fi, off_t pos, int whence ) {
    
    return fi->offset;
 }
+
 
 // close(2)
 // forward to fskit
@@ -1180,23 +1254,8 @@ int UG_access( struct UG_state* state, char const* path, int mask ) {
 // forward to fskit
 UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, int* ret_rc ) {
    
-   int rc = 0;
-   struct SG_gateway* gateway = UG_state_gateway( state );
    UG_handle_t* sh = NULL;
    struct fskit_file_handle* fh = NULL;
-   
-   // refresh path, but expect -ENOENT (since we don't want a collision)
-   rc = UG_consistency_path_ensure_fresh( gateway, path );
-   if( rc != -ENOENT ) {
-      
-      if( rc == 0 ) {
-         rc = -EEXIST;
-      }
-      
-      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
-      *ret_rc = rc;
-      return NULL;
-   }
    
    sh = SG_CALLOC( UG_handle_t, 1 );
    if( sh == NULL ) {

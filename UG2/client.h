@@ -121,6 +121,7 @@ typedef struct _UG_handle {
    };
 } UG_handle_t;
 
+// high-level metadata API
 int UG_stat( struct UG_state* state, char const* path, struct stat *statbuf );
 int UG_stat_raw( struct UG_state* state, char const* path, struct md_entry* ent );
 int UG_mkdir( struct UG_state* state, char const* path, mode_t mode );
@@ -134,9 +135,10 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
 int UG_truncate( struct UG_state* state, char const* path, off_t newsize );
 int UG_access( struct UG_state* state, char const* path, int mask );
 
-// low-level; used internally
+// low-level metadata API
 int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data );
 
+// high-level file data API
 UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, int* rc  );
 UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* rc );
 int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t* fi );
@@ -147,6 +149,11 @@ int UG_fsync( struct UG_state* state, UG_handle_t *fi );
 int UG_ftruncate( struct UG_state* state, off_t offset, UG_handle_t *fi );
 int UG_fstat( struct UG_state* state, struct stat *statbuf, UG_handle_t *fi );
 
+// low-level file data API
+int UG_vacuum_begin( struct UG_state* state, char const* path, struct UG_vacuum_context** vctx );
+int UG_vacuum_wait( struct UG_vacuum_context* vctx );
+
+// high-level directory data API
 UG_handle_t* UG_opendir( struct UG_state* state, char const* path, int* rc );
 int UG_readdir( struct UG_state* state, struct md_entry*** listing, size_t num_children, UG_handle_t *fi );
 int UG_rewinddir( UG_handle_t* fi );
@@ -155,13 +162,14 @@ int UG_seekdir( UG_handle_t* fi, off_t loc );
 int UG_closedir( struct UG_state* state, UG_handle_t *fi );
 void UG_free_dir_listing( struct md_entry** listing );
 
+// high-level xattr API
 int UG_setxattr( struct UG_state* state, char const* path, char const* name, char const* value, size_t size, int flags );
 int UG_getxattr( struct UG_state* state, char const* path, char const* name, char *value, size_t size );
 int UG_listxattr( struct UG_state* state, char const* path, char *list, size_t size );
 int UG_removexattr( struct UG_state* state, char const* path, char const* name );
 
 // low-level; used internally
-int UG_send_WRITE( struct UG_state* state, char const* fs_path, struct SG_client_WRITE_data* write_data, struct md_entry* inode_out );
+int UG_send_WRITE( struct UG_state* state, char const* fs_path, struct SG_client_WRITE_data* write_data, struct md_entry* new_inode_state );
 
 }
 
