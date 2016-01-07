@@ -167,6 +167,7 @@ void UG_inode_set_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent )
 void UG_inode_set_creating( struct UG_inode* inode, bool creating );
 
 void UG_inode_bind_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent );
+void UG_inode_preserve_old_manifest_modtime( struct UG_inode* inode );
 
 }
 

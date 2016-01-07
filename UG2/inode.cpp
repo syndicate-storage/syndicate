@@ -1713,3 +1713,20 @@ void UG_inode_bind_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent 
    fskit_entry_set_user_data( ent, inode );
 }
 
+
+// preserve the old manifest timestamp: if it's not set, then copy it from the current manifest
+// NOTE: requires exclusive access to inode 
+void UG_inode_preserve_old_manifest_modtime( struct UG_inode* inode ) {
+
+   if( SG_manifest_get_modtime_sec( &inode->replaced_blocks ) == 0 && SG_manifest_get_modtime_nsec( &inode->replaced_blocks ) == 0 ) {
+
+      struct timespec ts;
+      ts.tv_sec = SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) );
+      ts.tv_nsec = SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) );
+
+      SG_debug("Old manifest timestamp of %" PRIX64 " is %d.%d\n", UG_inode_file_id( inode ), (int)ts.tv_sec, (int)ts.tv_nsec );
+
+      UG_inode_set_old_manifest_modtime( inode, &ts );
+   }
+}
+
