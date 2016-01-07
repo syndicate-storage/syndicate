@@ -22,7 +22,7 @@
 
 struct SG_proc {
    
-   bool active;                 // set to true if the group is active 
+   bool dead;                   // set to true if the process is dead
    
    pid_t pid;                   // PID of child driver 
    int fd_in;                   // input pipe to the child 
@@ -33,6 +33,7 @@ struct SG_proc {
    
    char* exec_str;              // string to feed into exec
    char* exec_arg;              // arg to feed
+   char** exec_env;             // environment variables
 
    struct SG_proc* next;        // next process (linked list)
 };
@@ -86,10 +87,19 @@ void SG_proc_free_data( struct SG_proc* proc ) {
    
    if( proc != NULL ) {
       if( proc->pid > 0 ) {
-            
-         close( proc->fd_in );
-         fclose( proc->fout );      // closes proc->fd_out
-         close( proc->fd_err );
+           
+         if( proc->fd_in >= 0 ) { 
+             close( proc->fd_in );
+         }
+         if( proc->fout != NULL ) {
+             fclose( proc->fout );      // closes proc->fd_out
+         }
+         if( proc->fd_err >= 0 ) {
+             // do NOT close; this is shared with the gateway 
+             proc->fd_err = -1;
+         }
+
+         proc->fout = NULL;
       }
       
       if( proc->exec_str != proc->exec_arg ) {
@@ -98,7 +108,14 @@ void SG_proc_free_data( struct SG_proc* proc ) {
 
       SG_safe_free( proc->exec_str );
 
+      if( proc->exec_env != NULL ) {
+          SG_FREE_LIST( proc->exec_env, free );
+      }
+
       memset( proc, 0, sizeof(struct SG_proc) );
+      proc->fd_in = -1;
+      proc->fd_out = -1;
+      proc->fd_err = -1;
    }
 }
 
@@ -273,15 +290,6 @@ int SG_proc_group_kill( struct SG_proc_group* group, int signal ) {
             SG_warn("kill(%d, %d) rc = %d\n", SG_proc_pid( group->procs[i] ), signal, rc );
          }
       }
-     
-      /* 
-      if( rc == 0 ) {
-         
-         SG_proc_list_remove( &group->free, group->procs[i] );
-         SG_proc_free( group->procs[i] );
-         group->procs[i] = NULL;
-      }
-      */
    }
    
    SG_proc_group_unlock( group );
@@ -595,18 +603,17 @@ void SG_proc_group_free( struct SG_proc_group* group ) {
 
 
 // add a process to a process group, and put the proc into the free list
+// the group must be write-locked
 // the group takes ownership of proc
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -EEXIST if this process is already in the group
-int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
+static int SG_proc_group_add_unlocked( struct SG_proc_group* group, struct SG_proc* proc ) {
    
    int rc = 0;
    struct SG_proc** new_procs = NULL;
    bool need_space = true;
    
-   SG_proc_group_wlock( group );
-
    if( group->procs == NULL ) {
      
       group->num_procs = 0; 
@@ -628,7 +635,6 @@ int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
       for( int i = 0; i < group->capacity; i++ ) {
          if( group->procs[i] == proc ) {
             
-            SG_proc_group_unlock( group );
             return -EEXIST;
          }
       }
@@ -669,26 +675,36 @@ int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
    
    if( rc == 0 ) {
 
-       // insert into the free list
+       // insert into the free list, so it can be acquired later
        SG_proc_list_insert( &group->free, proc );
 
        SG_debug("Process group %p has %p (%d procs)\n", group, proc, group->num_procs );
    }
 
+   return rc;
+}
+
+
+// add a process to a process group.
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EEXIST if it is already present 
+int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc ) {
+
+   SG_proc_group_wlock( group );
+   int rc = SG_proc_group_add_unlocked( group, proc );
    SG_proc_group_unlock( group );
    return rc;
 }
 
 
-// remove a process from a process group
+// remove a process from a process group.  The group must already be write-locked
 // does not free or stop it.
 // return 0 on success 
 // return -ENOENT if it's not found 
-int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
+static int SG_proc_group_remove_unlocked( struct SG_proc_group* group, struct SG_proc* proc ) {
    
    int rc = 0;
-   
-   SG_proc_group_wlock( group );
    
    if( group->procs == NULL ) {
       
@@ -700,12 +716,11 @@ int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
          
          if( group->procs[i] == proc ) {
             
-            proc = NULL;
-            group->procs[i] = NULL;
-            
-            // remove from the free list, if it is there 
+            // remove from the free list, if it is there, so it can no longer be acquired 
             SG_proc_list_remove( &group->free, proc );
             group->procs[i] = NULL;
+            proc = NULL;
+            group->num_procs--;
             break;
          }
       }
@@ -717,7 +732,102 @@ int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
       }
    }
    
+   return rc;
+}
+
+
+// remove a process from a process group
+// return 0 on success
+// return -ENOENT if not found 
+int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
+
+   SG_proc_group_wlock( group );
+   int rc = SG_proc_group_remove_unlocked( group, proc );
    SG_proc_group_unlock( group );
+   return rc;
+}
+
+
+// test to see if a process is dead
+// return 0 on success 
+int SG_proc_test_dead( struct SG_proc* proc ) {
+
+   if( proc->dead ) {
+      return 0;
+   }
+
+   if( proc->pid <= 0 ) {
+      SG_debug("Proc %p is dead (pid <= 0)\n", proc );
+      proc->dead = true;
+      return 0;
+   }
+
+   int rc = kill( proc->pid, 0 );
+   if( rc != 0 ) {
+      // dead, or we don't have permissions
+      // either way, it's not ours
+      proc->dead = true;
+      rc = -errno;
+      SG_debug("Proc %p is dead (kill %d rc = %d)\n", proc, proc->pid, rc );
+      return 0;
+   }
+
+   return 0;
+}
+
+
+// is a process dead?
+bool SG_proc_is_dead( struct SG_proc* proc ) {
+   SG_proc_test_dead( proc );
+   return proc->dead;
+}
+
+
+// remove a dead process, freeing it
+// return 0 on success
+// return -EINVAL if not dead
+// return -ENOENT if not present in the group
+static int SG_proc_group_remove_dead_unlocked( struct SG_proc_group* group, struct SG_proc* proc ) {
+   
+   int rc = 0;
+   if( !SG_proc_is_dead( proc ) ) {
+      return -EINVAL;
+   }
+
+   rc = SG_proc_group_remove_unlocked( group, proc );
+   if( rc != 0 ) {
+      return rc;
+   }
+
+   rc = SG_proc_tryjoin( proc, NULL );
+   SG_proc_free( proc );
+
+   if( rc != 0 ) {
+      SG_error("BUG: SG_proc_tryjoin(%p) rc = %d\n", proc, rc );
+      exit(1);
+   }
+
+   return rc;
+}
+
+
+// remove a process if it is dead
+// return 1 if dead and removed
+// return 0 if not dead
+// return -ENOENT if not present
+// return -ENOMEM on OOM 
+static int SG_proc_group_remove_if_dead_unlocked( struct SG_proc_group* group, struct SG_proc* proc ) {
+
+   int rc = 0;
+   if( !SG_proc_is_dead( proc ) ) {
+      return 0;
+   }
+
+   rc = SG_proc_group_remove_dead_unlocked( group, proc );
+   if( rc == 0 ) {
+      rc = 1;
+   }
+
    return rc;
 }
 
@@ -739,12 +849,14 @@ int SG_proc_read_int64( FILE* f, int64_t* result ) {
    int i = 0;
    char intbuf[100];
    char* tmp = NULL;
+   int cnt = 0;
    
    memset( intbuf, 0, 100 );
    while( 1 ) {
 
       c = fgetc( f );
-      
+      cnt++;
+
       if( c == '\n' ) {
          break;
       }
@@ -756,6 +868,8 @@ int SG_proc_read_int64( FILE* f, int64_t* result ) {
       intbuf[i] = c;
       i++;
    }
+
+   SG_debug("Read %d bytes: '%s'\n", cnt, intbuf );
 
    *result = (int64_t)strtoll( intbuf, &tmp, 10 );
    if( *tmp != '\0' ) {
@@ -773,12 +887,15 @@ int SG_proc_read_int64( FILE* f, int64_t* result ) {
 // and this method will error if it receives too much data.
 // return 0 on success, and set up the given SG_chunk (storing the length to chunk->len)
 // return -ENOMEM on OOM 
+// return -ERANGE if the chunk is allocated but there is insufficient space
 // return -ENODATA on EOF
 // return -EIO if the output is unparsable
 int SG_proc_read_chunk( FILE* f, struct SG_chunk* chunk ) {
    
    int rc = 0;
+   int trailer = 0;
    ssize_t nr = 0;
+   ssize_t len = 0;
    int64_t size = 0;
    int64_t off = 0;
    int buf_size = 65536;
@@ -790,79 +907,95 @@ int SG_proc_read_chunk( FILE* f, struct SG_chunk* chunk ) {
       SG_error("SG_proc_read_int64('SIZE') rc = %d\n", rc );
       return rc;
    }
-   
+
+   SG_debug("Read chunk of %" PRId64 " bytes\n", size );
+
    // set up the chunk
    // TODO: investigate splice(2)'ing the data, if memory pressure becomes a problem
-   chunk->len = (unsigned)size;
-   chunk->data = SG_CALLOC( char, size );
-   
    if( chunk->data == NULL ) {
-      
+
+      // need more space
+      chunk->len = (unsigned)size;
+      chunk->data = SG_CALLOC( char, size );
+   }
+
+   if( chunk->data == NULL || (unsigned)chunk->len < (unsigned)size ) {
+         
       // will be unable to hold the data.
       // discard the chunk instead, to keep the driver happy,
       // and report an error.
-      SG_error("%s", "OOM; discarding chunk\n");
+      if( chunk->data == NULL ) {
+          SG_error("%s", "OOM; discarding chunk\n");
+          rc = -ENOMEM;
+      }
+      else {
+          SG_error( "Insufficient chunk space (have %zu, need %zu)\n", (size_t)chunk->len, (size_t)size );
+          rc = -ERANGE;
+      }
       
-      for( int64_t i = 0; i + buf_size < size; i += buf_size ) {
+      // clear the rest of the chunk
+      while( off < size ) {
          
-         nr = md_read_uninterrupted( fileno(f), buf, buf_size );
-         if( nr < 0 ) {
-            
-            SG_error("md_read_uninterrupted(%d) rc = %zd\n", fileno(f), nr );
+         len = buf_size - nr;
+         nr = fread( buf, 1, len, f );
+         if( nr < len ) {
+            if( feof(f) ) {
+
+               SG_error("EOF on fread(%d)\n", fileno(f));
+               break;
+            }
+         }
+         else { 
+            // error 
+            rc = -errno;
+            if( rc == -EINTR ) {
+               clearerr(f);
+               continue;
+            }
+
+            SG_error("fread(%d) error: %s\n", fileno(f), strerror(-rc));
             break;
          }
-         else if( nr < buf_size ) {
-            
-            SG_error("EOF on md_read_uninterrupted(%d)\n", fileno(f) );
-            break;
-         }
+
+         off += nr;
       }
-      
-      nr = md_read_uninterrupted( fileno(f), buf, size % buf_size );
-      if( nr < 0 ) {
-         
-         SG_error("md_read_uninterrupted(%d) rc = %zd\n", fileno(f), nr );
-      }
-      else if( nr < (size % buf_size) ) {
-         
-         SG_error("EOF on md_read_uninterrupted(%d)\n", fileno(f) );
-      }
-      
-      return -ENOMEM;
    }
-   
-   // feed it in 
-   for( int64_t i = 0; i + buf_size < size; i += buf_size ) {
-      
-      nr = md_read_uninterrupted( fileno(f), chunk->data + i, buf_size );
-      if( nr < 0 ) {
-         
-         SG_error("md_read_uninterrupted(%d) rc = %zd\n", fileno(f), nr );
-         rc = -EIO;
-         break;
+   else {
+
+      // feed it in
+      while( off < size ) {
+          
+          len = size - nr;
+          SG_debug("Read %zd bytes\n", len);
+          nr = fread( chunk->data + nr, 1, len, f );
+          if( nr < len ) {
+             
+             if( feof(f) ) { 
+                break;
+             }
+             else {
+                // error 
+                rc = -errno;
+                if( rc == -EINTR ) {
+                   clearerr(f);
+                   continue;
+                }
+
+                SG_error("fread error: %s\n", strerror(-rc));
+                break;
+             }
+          }
+
+          off += nr;
       }
-      else if( nr < buf_size ) {
-         
-         SG_error("EOF on md_read_uninterrupted(%d)\n", fileno(f) );
-         rc = -ENODATA;
-         break;
-      }
-      
-      off += i;
    }
-   
-   nr = md_read_uninterrupted( fileno(f), chunk->data + off, size % buf_size );
-   if( nr < 0 ) {
-      
-      SG_error("md_read_uninterrupted(%d) rc = %zd\n", fileno(f), nr );
+
+   // sanity check: trailer must be a newline 
+   trailer = fgetc( f );
+   if( trailer != '\n' ) {
+      SG_error("BUG: trailer is %d, expected %d\n", trailer, '\n' );
       rc = -EIO;
    }
-   else if( nr < (size % buf_size) ) {
-      
-      SG_error("EOF on md_read_uninterrupted(%d)\n", fileno(f) );
-      rc = -ENODATA;
-   }
-   
    return rc;
 }
 
@@ -895,7 +1028,6 @@ int SG_proc_write_int64( int fd, int64_t value ) {
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -ENODATA if we could not write (e.g. SIGPIPE)
-// return -EIO if we could not get a reply.
 int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk ) {
    
    int rc = 0;
@@ -934,26 +1066,39 @@ int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk ) {
 // create a driver request from a reqdat
 // return 0 on success, and populate all required fields of *dreq, and any optional fields specific to the type
 // return -ENOMEM on OOM
+// return -EINVAL if fs_path is not set
 int SG_proc_request_init( SG_messages::DriverRequest* dreq, struct SG_request_data* reqdat ) {
 
+   if( reqdat->fs_path == NULL ) {
+      return -EINVAL;
+   }
+
    try {
+
       dreq->set_file_id( reqdat->file_id );
       dreq->set_file_version( reqdat->file_version );
       dreq->set_volume_id( reqdat->volume_id );
       dreq->set_coordinator_id( reqdat->coordinator_id );
       dreq->set_user_id( reqdat->user_id );
-
-      if( reqdat->fs_path != NULL ) {
-          dreq->set_path( string(reqdat->fs_path) );
-      }
-
+      dreq->set_path( string(reqdat->fs_path) );
+      
       if( SG_request_is_manifest( reqdat ) ) {
           dreq->set_manifest_mtime_sec( reqdat->manifest_timestamp.tv_sec );
           dreq->set_manifest_mtime_nsec( reqdat->manifest_timestamp.tv_nsec );
+          dreq->set_request_type( SG_messages::DriverRequest::MANIFEST );
       }
       else if( SG_request_is_block( reqdat ) ) {
           dreq->set_block_id( reqdat->block_id );
           dreq->set_block_version( reqdat->block_version );
+          dreq->set_request_type( SG_messages::DriverRequest::BLOCK );
+      }
+
+      // pass along I/O hints, if given 
+      dreq->set_io_type( reqdat->io_hints.io_type );
+      if( reqdat->io_hints.io_type != SG_IO_NONE ) {
+          dreq->set_offset( reqdat->io_hints.offset );
+          dreq->set_len( reqdat->io_hints.len );
+          dreq->set_io_context( reqdat->io_hints.io_context );
       }
    }
    catch( bad_alloc& ba ) {
@@ -995,13 +1140,13 @@ int SG_proc_write_request( int fd, SG_messages::DriverRequest* dreq ) {
 // start a (long-running) worker process, and store the relevant information in an SG_proc.
 // if given, feed the worker its config (as a string), its secrets (as a string), and its driver info (as a string)
 // set up pipes to link the worker to the gateway.
-// TODO: gather stderr with another thread, and feed into our logging system
 // return 0 on success 
 // return -EINVAL on invalid arguments
 // return -EMFILE if we're out of fds
 // return -ENFILE if the host is out of fds
 // return -ECHILD if the child failed to start
-int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec_arg, struct SG_chunk* config, struct SG_chunk* secrets, struct SG_chunk* driver ) {
+// return -ENOSYS if the driver does not implement the requested operation mode
+int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec_arg, char** exec_env, struct SG_chunk* config, struct SG_chunk* secrets, struct SG_chunk* driver ) {
    
    int rc = 0;
    pid_t pid = 0;
@@ -1009,6 +1154,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
    int child_output[2];
    char ready_buf[10];
    FILE* fout = NULL;
+   size_t env_len = 0;
 
    struct SG_chunk empty_json;
    empty_json.data = (char*)"{}";
@@ -1022,10 +1168,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
    long max_open = sysconf( _SC_OPEN_MAX );
    char* exec_str_dup = SG_strdup_or_null( exec_path );
    char* exec_arg_dup = SG_strdup_or_null( exec_arg );
-   
-   char* empty_env[1] = {
-      NULL
-   };
+   char** exec_env_dup = NULL;
    
    if( exec_str_dup == NULL ) {
       
@@ -1038,6 +1181,27 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       SG_safe_free( exec_str_dup );
       return -ENOMEM;
    }
+
+   for( env_len = 0; exec_env[env_len] != NULL; env_len++ );
+   exec_env_dup = SG_CALLOC( char*,  env_len + 1 );
+   if( exec_env_dup == NULL ) {
+
+      SG_safe_free( exec_arg_dup );
+      SG_safe_free( exec_str_dup );
+      return -ENOMEM;
+   }
+
+   for( size_t i = 0; i < env_len; i++ ) {
+
+      exec_env_dup[i] = SG_strdup_or_null( exec_env[i] );
+      if( exec_env_dup[i] == NULL ) {
+
+         SG_FREE_LIST( exec_env_dup, free );
+         SG_safe_free( exec_arg_dup );
+         SG_safe_free( exec_str_dup );
+         return -ENOMEM;
+      }
+   }
    
    // not running yet 
    proc->pid = 0;
@@ -1049,6 +1213,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       
       SG_safe_free( exec_str_dup );
       SG_safe_free( exec_arg_dup );
+      SG_FREE_LIST( exec_env_dup, free );
       
       rc = -errno;
       SG_error("pipe rc = %d\n", rc );
@@ -1066,6 +1231,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       
       SG_safe_free( exec_str_dup );
       SG_safe_free( exec_arg_dup );
+      SG_FREE_LIST( exec_env_dup, free );
       
       return rc;
    }
@@ -1078,6 +1244,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       
       SG_safe_free( exec_str_dup );
       SG_safe_free( exec_arg_dup );
+      SG_FREE_LIST( exec_env_dup, free );
       
       return rc;
    }
@@ -1095,6 +1262,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       
       SG_safe_free( exec_str_dup );
       SG_safe_free( exec_arg_dup );
+      SG_FREE_LIST( exec_env_dup, free );
       
       return rc;
    }
@@ -1128,7 +1296,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       }
       
       // start the helper 
-      rc = execle( exec_path, exec_path, exec_arg, NULL, empty_env );
+      rc = execle( exec_path, exec_path, exec_arg, NULL, exec_env );
       if( rc != 0 ) {
          
          // NOTE: can't fprintf() :(
@@ -1150,6 +1318,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       proc->fd_err = STDERR_FILENO;
       proc->exec_arg = exec_arg_dup;
       proc->exec_str = exec_str_dup;
+      proc->exec_env = exec_env_dup;
       proc->fout = fout;
 
       if( config == NULL ) {
@@ -1215,6 +1384,13 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
       }
       
       if( ready_buf[0] != '0' ) {
+
+         if( ready_buf[0] == '2' ) {
+            // fall back to built-in 
+            SG_error("Falling back to default gateway implementation for '%s'\n", exec_arg );
+            SG_proc_free_data( proc );
+            return -ENOSYS;
+         }
          
          SG_error("worker failed to initialize, exit code '%c'\n", ready_buf[0] );
          rc = -ECHILD;
@@ -1315,67 +1491,74 @@ int SG_proc_tryjoin( struct SG_proc* proc, int* child_status ) {
 }
 
 
-// reload a process group 
-// * respawn any running workers with the new exec_str string, if it in fact changed.
+// reload a process group--respawn any running workers, using the same arguments
 // NOTE: group must be write-locked
+// return 0 on succss
+// return -ENOMEM on OOM
+// return -errno on failure to start the new process
 int SG_proc_group_reload( struct SG_proc_group* group, char const* new_exec_str, struct SG_chunk* new_config, struct SG_chunk* new_secrets, struct SG_chunk* new_driver ) {
    
    int rc = 0;
-   
-   struct SG_proc* old_proc = NULL;
    struct SG_proc* new_proc = NULL;
+   struct SG_proc* old_proc = NULL;
    
    for( int i = 0; i < group->capacity; i++ ) {
       
       if( group->procs[i] == NULL ) {
          continue;
       }
+     
+      SG_debug("Reload process '%s %s' (index %d, pid %d)\n", group->procs[i]->exec_str, group->procs[i]->exec_arg, i, group->procs[i]->pid );
+
+      // start up the new process, and have it stand by to be swapped in...
+      new_proc = SG_proc_alloc( 1 );
+      if( new_proc == NULL ) {
+         
+         // OOM
+         // just stop this process instead
+         old_proc = group->procs[i]; 
+         SG_proc_stop( old_proc, 1 );
+         SG_proc_group_remove_unlocked( group, old_proc ); 
+         
+         SG_proc_free( old_proc );
+         rc = -ENOMEM;
+         break;
+      }
       
-      // different exec?
-      if( strcmp( group->procs[i]->exec_str, new_exec_str ) != 0 ) {
+      rc = SG_proc_start( new_proc, new_exec_str, group->procs[i]->exec_arg, group->procs[i]->exec_env, new_config, new_secrets, new_driver );
+      if( rc != 0 ) {
          
-         // start up the new process, and have it stand by to be swapped in...
-         new_proc = SG_proc_alloc( 1 );
-         if( new_proc == NULL ) {
-            
-            // OOM
-            // just stop this process instead 
-            SG_proc_stop( group->procs[i], 1 );
-            
-            SG_proc_list_remove( &group->free, group->procs[i] );
-            
-            SG_proc_free( group->procs[i] );
-            group->procs[i] = NULL;
-            continue;
-         }
+         SG_error("SG_proc_start(exec_arg='%s') rc = %d\n", group->procs[i]->exec_arg, rc );
          
-         rc = SG_proc_start( new_proc, new_exec_str, group->procs[i]->exec_arg, new_config, new_secrets, new_driver );
+         SG_proc_stop( new_proc, 0 );
+         SG_proc_free( new_proc );
+         new_proc = NULL;
+         
+         // stop this process instead
+         old_proc = group->procs[i]; 
+         SG_proc_stop( old_proc, 1 );
+         SG_proc_group_remove_unlocked( group, old_proc );
+
+         SG_proc_free( old_proc );
+         break;
+      }
+      else {
+         
+         // stop the old process
+         old_proc = group->procs[i];
+         SG_proc_stop( old_proc, 1 );
+         SG_proc_group_remove_unlocked( group, old_proc );
+         
+         SG_proc_free( old_proc );
+
+         // add in the new one 
+         rc = SG_proc_group_add_unlocked( group, new_proc );
          if( rc != 0 ) {
-            
-            SG_error("SG_proc_start(exec_arg='%s') rc = %d\n", group->procs[i]->exec_arg, rc );
-            
-            SG_proc_stop( new_proc, 0 );
+            SG_error("SG_proc_group_add_unlocked(exec_arg='%s') rc = %d\n", new_proc->exec_arg, rc );
+            SG_proc_stop( new_proc, 0 ) ;
             SG_proc_free( new_proc );
             new_proc = NULL;
-            
-            // stop this process instead 
-            SG_proc_stop( group->procs[i], 1 );
-            
-            SG_proc_list_remove( &group->free, group->procs[i] );
-            
-            SG_proc_free( group->procs[i] );
-            group->procs[i] = NULL;
-         }
-         else {
-            
-            // switch to this new process
-            old_proc = group->procs[i];
-            group->procs[i] = new_proc;
-            
-            // stop the old process 
-            SG_proc_stop( old_proc, 1 );
-            SG_proc_free( old_proc );
-            old_proc = NULL;
+            break;
          }
       }
    }
@@ -1391,6 +1574,7 @@ int SG_proc_group_reload( struct SG_proc_group* group, char const* new_exec_str,
 // NOTE; this call blocks if there are available processes
 struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
    
+   int rc = 0;
    while( group->active ) {
       
       SG_proc_group_wlock( group );
@@ -1414,7 +1598,7 @@ struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
          
          // NOTE this is considered safe here, since the semaphore won't disappear on us
          // (i.e. we ensure that any worker who could call this method will be dead before 
-         // we free up the process group.
+         // we free up the process group).
          sem_wait( &group->num_free );
          
          continue;
@@ -1422,9 +1606,22 @@ struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
       
       else {
          
-         // acquired!
+         // acquired! verify its still alive 
+         rc = SG_proc_group_remove_if_dead_unlocked( group, proc );
+         if( rc < 0 ) {
+            SG_proc_group_unlock( group );
+            SG_error("SG_proc_group_remove_if_dead_unlocked(%p, %p) rc = %d\n", group, proc, rc );
+            return NULL;
+         }
+         if( rc > 0 ) {
+            // dead 
+            rc = 0;
+            SG_proc_group_unlock( group );
+            continue;
+         }
+
+         // success! 
          SG_proc_group_unlock( group );
-         
          return proc;
       }
    }
@@ -1442,9 +1639,28 @@ struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
 // return 0 on success 
 // NOTE: group must NOT be locked 
 int SG_proc_group_release( struct SG_proc_group* group, struct SG_proc* proc ) {
-   
+ 
+   if( proc->dead ) {
+      SG_proc_group_wlock( group );
+      SG_proc_group_remove_dead_unlocked( group, proc );
+      SG_proc_group_unlock( group );
+      return 0;
+   }
+
    SG_proc_group_wlock( group );
-   
+  
+   int rc = SG_proc_group_remove_if_dead_unlocked( group, proc );
+   if( rc < 0 ) {
+      SG_proc_group_unlock( group );
+      SG_error("SG_proc_group_remove_if_dead_unlocked(%p, %p) rc = %d\n", group, proc, rc );
+      return rc;
+   }
+   if( rc > 0 ) {
+      // dead 
+      SG_proc_group_unlock( group );
+      return 0;
+   }
+      
    SG_proc_list_insert( &group->free, proc );
    sem_post( &group->num_free );
    

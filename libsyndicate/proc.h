@@ -50,7 +50,7 @@ int SG_proc_ensure_updated( struct SG_proc* proc );
 int SG_proc_group_reload( struct SG_proc_group* group, char const* exec_str, struct SG_chunk* new_config, struct SG_chunk* new_secrets, struct SG_chunk* new_driver );
 
 // helper management 
-int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec_arg, struct SG_chunk* config, struct SG_chunk* secrets, struct SG_chunk* driver );
+int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec_arg, char** exec_env, struct SG_chunk* config, struct SG_chunk* secrets, struct SG_chunk* driver );
 int SG_proc_stop( struct SG_proc* proc, int timeout );
 int SG_proc_kill( struct SG_proc* proc, int signal );
 int SG_proc_tryjoin( struct SG_proc* proc, int* child_status );
