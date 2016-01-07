@@ -82,7 +82,9 @@ void SG_client_request_cls_free( struct SG_client_request_cls* cls ) {
 // return -EINVAL if we failed to parse the message 
 // return -ETIMEDOUT if the request timed out 
 // return -EREMOTEIO if the request failed with HTTP 500 or higher
-// return -EPROTO on an HTTP 400-level error
+// return -ENOENT on HTTP 404
+// return -EACCES on HTTP 401
+// return -EPROTO on any other HTTP 400-level error
 // return -errno on socket- and recv-related errors
 // NOTE: does *not* check if the manifest came from a different gateway than the one given here (remote_gateway_id)
 static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_request_data* reqdat, CURL* curl, uint64_t remote_gateway_id, struct SG_manifest* manifest ) {
@@ -98,6 +100,9 @@ static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_re
    SG_messages::Manifest mmsg;
    struct SG_chunk serialized_manifest_chunk;
    struct SG_chunk manifest_chunk;
+
+   memset( &manifest_chunk, 0, sizeof(struct SG_chunk) );
+   memset( &serialized_manifest_chunk, 0, sizeof(struct SG_chunk) );
    
    // download!
    rc = md_download_run( curl, SG_MAX_MANIFEST_LEN, &serialized_manifest, &serialized_manifest_len );
@@ -106,7 +111,14 @@ static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_re
       // download failed 
       SG_error("md_download_run rc = %d\n", rc );
       
-      if( rc >= -499 && rc <= -400 ) {
+      // translate HTTP-400-level errors 
+      if( rc == -404 ) {
+         rc = -ENOENT;
+      }
+      else if( rc == -401 ) {
+         rc = -EACCES;
+      }
+      else if( rc >= -499 && rc <= -400 ) {
          rc = -EPROTO;
       }
       
@@ -122,12 +134,15 @@ static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_re
 
    if( rc == -ENOSYS ) {
 
+      SG_warn("%s", "No deserialize method defined\n");
+
       // no effect
       serialized_manifest_chunk.data = NULL;
       serialized_manifest_chunk.len = 0;
 
       manifest_chunk.data = serialized_manifest;
       manifest_chunk.len = serialized_manifest_len;
+      rc = 0;
    }
    else if( rc != 0 ) {
 
@@ -357,8 +372,8 @@ int SG_client_download_async_start( struct SG_gateway* gateway, struct md_downlo
       return rc;
    }
    
-   // reference it, to keep it around 
-   md_download_context_ref( dlctx );
+   // reference it, to keep it around despite the fate of the download loop struct
+   // md_download_context_ref( dlctx );
    
    // watch it 
    rc = md_download_loop_watch( dlloop, dlctx );
@@ -712,7 +727,9 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request, or if we don't know about gateway_id
 // return -EREMOTEIO if the HTTP error is >= 500 
-// return -EPROTO for HTTP 400-level error
+// return -ENOATTR on HTTP 404
+// return -EACCES on HTTP 401
+// return -EPROTO for any other HTTP 400-level error
 int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, uint64_t xattr_nonce, char** xattr_value, size_t* xattr_len ) {
     
     int rc = 0;
@@ -761,8 +778,14 @@ int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char co
         
         SG_error("md_download_run('%s') rc = %d\n", xattr_url, rc );
         SG_safe_free( xattr_url );
-        
-        if( rc >= -499 && rc <= -400 ) {
+
+        if( rc == -404 ) {
+            rc = -ENOATTR;
+        }
+        else if( rc == -401 ) {
+            rc = -EACCES;
+        }
+        else if( rc >= -499 && rc <= -400 ) {
             rc = -EPROTO;
         }
         
@@ -827,8 +850,9 @@ int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char co
 // return -ENOMEM on OOM
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
-// return -EREMOTEIO if the HTTP error is >= 500 
-// return -EPROTO for HTTP 400-level error
+// return -EREMOTEIO if the HTTP error is >= 500
+// return -EACCES if the HTTP error is 404 
+// return -EPROTO for any other HTTP 400-level error
 int SG_client_listxattrs( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t xattr_nonce, char** xattr_list, size_t* xattr_list_len ) {
     
     int rc = 0;
@@ -879,7 +903,10 @@ int SG_client_listxattrs( struct SG_gateway* gateway, uint64_t gateway_id, char 
         SG_error("md_download_run('%s') rc = %d\n", xattr_url, rc );
         SG_safe_free( xattr_url );
         
-        if( rc >= -499 && rc <= -400 ) {
+        if( rc == -401 ) {
+            rc = -EACCES;
+        }
+        else if( rc >= -499 && rc <= -400 ) {
             rc = -EPROTO;
         }
         
@@ -1163,7 +1190,6 @@ int SG_client_deserialize_signed_block( struct SG_gateway* gateway, struct SG_re
 
 // set up the common fields of a Request 
 // return 0 on success 
-// return -EINVAL if reqdat doesn't have file_id, file_version, coordinator_id, or fs_path set
 // return -ENOMEM on OOM 
 static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat ) {
    
@@ -1177,7 +1203,8 @@ static int SG_client_request_setup( struct SG_gateway* gateway, SG_messages::Req
    
    // sanity check...
    if( reqdat->coordinator_id == SG_INVALID_GATEWAY_ID || reqdat->file_id == SG_INVALID_FILE_ID || reqdat->fs_path == NULL ) {
-      return -EINVAL;
+      SG_error("BUG: missing coordinator (%" PRIu64 "), file_id (%" PRIX64 "), or path (%s)\n", reqdat->coordinator_id, reqdat->file_id, reqdat->fs_path );
+      exit(1);
    }
    
    try {
@@ -1459,10 +1486,10 @@ int SG_client_request_DETACH_setup( struct SG_gateway* gateway, SG_messages::Req
 }
 
 
-// make a signed PUTCHUNKS request 
+// make a PUTCHUNKS request, optionally signing it
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_PUTCHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
+int SG_client_request_PUTCHUNKS_setup_ex( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info, bool sign ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
@@ -1496,21 +1523,28 @@ int SG_client_request_PUTCHUNKS_setup( struct SG_gateway* gateway, SG_messages::
        }
    }
    
-   rc = md_sign< SG_messages::Request >( gateway_pkey, request );
-   if( rc != 0 ) {
+   if( sign ) {
+       rc = md_sign< SG_messages::Request >( gateway_pkey, request );
+       if( rc != 0 ) {
       
-      SG_error("md_sign rc = %d\n", rc );
-      return rc;
+          SG_error("md_sign rc = %d\n", rc );
+          return rc;
+       }
    }
    
    return rc;
 }
 
+// make a signed PUTCHUNKS request 
+int SG_client_request_PUTCHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
+   return SG_client_request_PUTCHUNKS_setup_ex( gateway, request, reqdat, chunk_info, num_chunk_info, true );
+}
 
-// make a signed DELETECHUNKS request
+
+// make a DELETECHUNKS request, optionally signing it
 // return 0 on sucess 
 // return -ENOMEM on OOM 
-int SG_client_request_DELETECHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
+int SG_client_request_DELETECHUNKS_setup_ex( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info, bool sign ) {
    
    int rc = 0;
    EVP_PKEY* gateway_pkey = SG_gateway_private_key( gateway );
@@ -1544,16 +1578,22 @@ int SG_client_request_DELETECHUNKS_setup( struct SG_gateway* gateway, SG_message
        }
    }
 
-   rc = md_sign< SG_messages::Request >( gateway_pkey, request );
-   if( rc != 0 ) {
+   if( sign ) {
+       rc = md_sign< SG_messages::Request >( gateway_pkey, request );
+       if( rc != 0 ) {
       
-      SG_error("md_sign rc = %d\n", rc );
-      return rc;
+          SG_error("md_sign rc = %d\n", rc );
+          return rc;
+       }
    }
    
    return rc;
 }
 
+// make a signed DELETECHUNKS request
+int SG_client_request_DELETECHUNKS_setup( struct SG_gateway* gateway, SG_messages::Request* request, struct SG_request_data* reqdat, struct SG_manifest_block* chunk_info, size_t num_chunk_info ) {
+   return SG_client_request_DELETECHUNKS_setup_ex( gateway, request, reqdat, chunk_info, num_chunk_info, true );
+}
 
 // make a signed SETXATTR request
 // return 0 on success 
@@ -1630,6 +1670,7 @@ int SG_client_request_REMOVEXATTR_setup( struct SG_gateway* gateway, SG_messages
 // begin sending a request 
 // serialize the given message, and set up a request cls.
 // NOTE: the download takes ownership of control_plane--the caller should not manipulate it in any way while the download is proceeding
+// NOTE: control_plane should be signed beforehand
 // return 0 on success, and set up *reqcls
 // return -ENOMEM on OOM 
 // return -EAGAIN if the destination gateway is not known to us, but could become known if we reloaded our volumeconfiguration
@@ -1776,6 +1817,7 @@ bool SG_client_request_is_remote_unavailable( int error ) {
 // return -EAGAIN if the request should be retried.  This could be because dest_gateway_id is not known to us, but could become known if we refreshed the volume config.
 // return -ETIMEDOUT on connection timeout 
 // return -EREMOTEIO if the HTTP status was >= 500 (indicates server-side I/O error)
+// return -EACCES if HTTP status was 401
 // return -EPROTO if HTTP status was between 400 or 499 (indicates a misconfiguration--they should never happen)
 // return -errno on socket- and recv-related errors
 int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id, SG_messages::Request* control_plane, struct SG_chunk* data_plane, SG_messages::Reply* reply ) {
@@ -1813,7 +1855,10 @@ int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id
    // run the transfer 
    rc = md_download_run( curl, SG_CLIENT_MAX_REPLY_LEN, &serialized_reply.data, &serialized_reply.len );
    
-   if( rc >= -499 && rc <= -400 ) {
+   if( rc == -401 ) {
+      rc = -EACCES;
+   }
+   else if( rc >= -499 && rc <= -400 ) {
       
       // 400-level HTTP error 
       SG_error("md_download_run('%s') HTTP status %d\n", reqcls.url, -rc );
@@ -1909,9 +1954,6 @@ int SG_client_request_send_async( struct SG_gateway* gateway, uint64_t dest_gate
       return rc;
    }
    
-   // keep this handle resident, even after finalization 
-   md_download_context_ref( dlctx );
-   
    // have the download loop watch this download 
    rc = md_download_loop_watch( dlloop, dlctx );
    if( rc != 0 ) {
@@ -1943,6 +1985,7 @@ int SG_client_request_send_async( struct SG_gateway* gateway, uint64_t dest_gate
    return 0;
 }
 
+
 // finish sending a message to another gateway
 // return 0 on success, and set up *reply with the validated reply
 // return -EINVAL if the download context was not used in a previous call to SG_client_request_send_async
@@ -1964,7 +2007,7 @@ int SG_client_request_send_finish( struct SG_gateway* gateway, struct md_downloa
    if( reqcls == NULL ) {
       
       // not a download
-      SG_error("FATAL BUG: not a download: %p\n", dlctx );
+      SG_error("FATAL BUG: not a client download: %p\n", dlctx );
       exit(1);
    }
    
