@@ -140,7 +140,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
 // look up a gateway cert by ID
 // return a pointer to the cert on success
 // return NULL if not found 
-static struct ms_gateway_cert* md_gateway_cert_find( ms_cert_bundle* gateway_certs, uint64_t gateway_id ) {
+struct ms_gateway_cert* md_gateway_cert_find( ms_cert_bundle* gateway_certs, uint64_t gateway_id ) {
    
    ms_cert_bundle::iterator itr = gateway_certs->find( gateway_id );
    if( itr != gateway_certs->end() ) {
@@ -1278,7 +1278,7 @@ int md_gateway_certs_revalidate( struct md_syndicate_conf* conf, SG_messages::Ma
 // cache the set of gateway certs and their associated user certs,
 // but only if the gateway cert has a valid user cert (it won't have a 
 // cert at all if the user's cert could not be validated).
-// always succeeds (unless there's a bug); this is an optimization 
+// always succeeds; or crashes
 static int md_gateway_certs_cache_all( struct md_syndicate_conf* conf, ms_cert_bundle* gateway_certs ) {
    
    int rc = 0;
@@ -1309,13 +1309,13 @@ static int md_gateway_certs_cache_all( struct md_syndicate_conf* conf, ms_cert_b
       
       // remove old 
       rc = md_gateway_cert_remove( conf->gateways_path, gateway_name );
-      if( rc != 0 && rc != -ENOENT ) {
+      if( rc != 0 ) {
           
          SG_warn("md_gateway_cert_remove('%s') rc = %d\n", gateway_name, rc );
       }
       
       rc = md_user_cert_remove( conf->users_path, user_name );
-      if( rc != 0 && rc != -ENOENT ) {
+      if( rc != 0 ) {
           
          SG_warn("md_user_cert_remove('%s') rc = %d\n", user_name, rc );
       }
@@ -1324,13 +1324,15 @@ static int md_gateway_certs_cache_all( struct md_syndicate_conf* conf, ms_cert_b
       rc = md_gateway_cert_store( conf->gateways_path, gateway_name, gateway_cert );
       if( rc != 0 ) {
          
-         SG_warn("md_gateway_cert_store('%s') rc = %d\n", gateway_name, rc );
+         SG_error("FATAL: md_gateway_cert_store('%s') rc = %d\n", gateway_name, rc );
+         exit(1);
       }
       
       rc = md_user_cert_store( conf->users_path, user_name, user_cert );
       if( rc != 0 ) {
          
-         SG_warn("md_user_cert_store('%s') rc = %d\n", user_name, rc );
+         SG_error("FATAL: md_user_cert_store('%s') rc = %d\n", user_name, rc );
+         exit(1);
       }
       
       rc = 0;
@@ -3861,7 +3863,7 @@ int ms_entry_verify( struct ms_client* ms, ms::ms_entry* msent ) {
 // sign an md_entry 
 // return 0 on success, and fill in *sig and *sig_len 
 // return -ENOMEM on OOM 
-int md_entry_sign( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig, size_t* sig_len ) {
+int md_entry_sign2( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig, size_t* sig_len, char const* file, int lineno ) {
    
    ms::ms_entry msent;
    int rc = 0;
@@ -3882,7 +3884,7 @@ int md_entry_sign( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig,
        msent.clear_xattr_hash();
    }
   
-   SG_debug("%s", "sign:\n");
+   SG_debug("from %s:%d, sign:\n", file, lineno);
    msent.PrintDebugString();
 
    rc = md_sign< ms::ms_entry >( privkey, &msent );
@@ -3897,8 +3899,9 @@ int md_entry_sign( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig,
       
       return -ENOMEM;
    }
-   
+  
    memcpy( *sig, msent.signature().data(), msent.signature().size() );
+   SG_debug("Signature is %s\n", msent.signature().c_str() ); 
    return 0;
 }
 

@@ -314,7 +314,8 @@ char* md_conf_get_data_root( struct md_syndicate_conf* conf );
 struct md_entry* md_entry_dup( struct md_entry* src );
 int md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
-int md_entry_sign( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig, size_t* sig_len );
+#define md_entry_sign( privkey, ent, sig, siglen ) md_entry_sign2( privkey, ent, sig, siglen, __FILE__, __LINE__ )
+int md_entry_sign2( EVP_PKEY* privkey, struct md_entry* ent, unsigned char** sig, size_t* sig_len, char const* file, int lineno );
 int ms_entry_verify( struct ms_client* ms, ms::ms_entry* msent );
 
 // path manipulation
@@ -367,6 +368,7 @@ int md_shutdown(void);
 // load certs 
 int md_certs_reload( struct md_syndicate_conf* conf, EVP_PKEY** syndicate_pubkey, ms::ms_user_cert* user_cert, ms::ms_user_cert* volume_owner_cert, ms::ms_volume_metadata* volume_cert, ms_cert_bundle* gateway_certs );
 int md_driver_reload( struct md_syndicate_conf* conf, struct ms_gateway_cert* cert );
+struct ms_gateway_cert* md_gateway_cert_find( ms_cert_bundle* gateway_certs, uint64_t gateway_id );
 
 // driver 
 int md_conf_set_driver_params( struct md_syndicate_conf* conf, char const* driver_exec_path, char const** driver_roles, size_t num_roles );
