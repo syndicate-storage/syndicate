@@ -38,36 +38,17 @@ struct md_bound_response_buffer {
    md_response_buffer_t* rb;
 };
 
+// download set 
 struct md_download_set;
 
 // download context
-struct md_download_context { 
-   
-   struct md_bound_response_buffer brb;
-   
-   CURL* curl;
-   
-   int curl_rc;         // stores CURL error code
-   int http_status;     // stores HTTP status 
-   int transfer_errno;  // stores CURL-reported system errno, if an error occurred
-   volatile bool cancelled;      // if true, this was cancelled
-   char* effective_url; // stores final URL that resolved to data
-   
-   volatile bool initialized;    // if true, then this download context has been initialized
-   volatile bool pending;        // if true, then this download context is in the process of being started
-   volatile bool cancelling;     // if true, then this download context is in the process of being cancelled
-   volatile bool running;        // if true, then this download is enqueued on the downloader
-   volatile bool finalized;      // if true, then this download has finished
-   int ref_count;                // number of threads referencing this download
-   
-   pthread_mutex_t finalize_lock;       // lock to serialize operations that change the above flags (primarily related to finalization)
-   
-   struct md_download_set* dlset;       // parent group containing this context
-   
-   sem_t sem;   // client holds this to be woken up when the download finishes 
-   
-   void* cls;   // associated download state
-};
+struct md_download_context;
+
+// downloader 
+struct md_downloader;
+
+// download loop 
+struct md_download_loop;
 
 typedef map<CURL*, struct md_download_context*> md_downloading_map_t;
 typedef set<struct md_download_context*> md_pending_set_t;
@@ -75,65 +56,22 @@ typedef md_pending_set_t::iterator md_download_set_iterator;
 
 typedef void (*md_download_curl_release_func)( CURL*, void* );
 
-// download set 
-struct md_download_set {
-   
-   md_pending_set_t* waiting;           // pointers to download contexts for which we are waiting
-   
-   sem_t sem;                           // block on this until at least one of waiting has been finalized
-};
-
-
-// downloader 
-struct md_downloader {
-   
-   char* name;
-   pthread_t thread;    // CURL thread for downloading 
-   
-   md_downloading_map_t* downloading;   // currently-running downloads
-   pthread_rwlock_t downloading_lock;   // guards downloading and curlm
-   
-   md_pending_set_t* pending;           // to be inserted into the downloading map
-   pthread_rwlock_t pending_lock;       // guards pending
-   volatile bool has_pending;
-   
-   md_pending_set_t* cancelling;        // to be removed from the downloading map
-   pthread_rwlock_t cancelling_lock;    // guards cancelling_lock
-   volatile bool has_cancelling;
-   
-   CURLM* curlm;        // multi-download
-   
-   bool running;        // if true, then this downloader is running
-   bool inited;         // if true, then this downloader is fully initialized
-};
-
-// download loop state 
-struct md_download_loop {
-   
-   struct md_downloader* dl;
-   
-   struct md_download_context** downloads;
-   int num_downloads;
-   
-   struct md_download_set dlset;
-   
-   bool started;
-};
-
-
 #define MD_DOWNLOAD_DEFAULT_MAX_DOWNLOADS       10
 
 #define MD_DOWNLOAD_FINISH                      0x1
 
 extern "C" {
    
-// initialization and tear-down 
+// initialization and tear-down
+struct md_downloader* md_downloader_new(); 
 int md_downloader_init( struct md_downloader* dl, char const* name );
 int md_downloader_start( struct md_downloader* dl );
 int md_downloader_stop( struct md_downloader* dl );
 int md_downloader_shutdown( struct md_downloader* dl );
+bool md_downloader_is_running( struct md_downloader* dl );
 
 // initialize/tear down a download context.  Takes a CURL handle from the client, and gives it back when its done.
+struct md_download_context* md_download_context_new();
 int md_download_context_init( struct md_download_context* dlctx, CURL* curl, off_t max_len, void* cls );
 int md_download_context_reset( struct md_download_context* dlctx, CURL** old_curl );
 int md_download_context_free2( struct md_download_context* dlctx, CURL** curl, char const* filename, int lineno );
@@ -141,21 +79,11 @@ int md_download_context_free2( struct md_download_context* dlctx, CURL** curl, c
 int md_download_context_clear_set( struct md_download_context* dlctx );
 
 // reference counting 
-int md_download_context_ref( struct md_download_context* dlctx );
-int md_download_context_unref( struct md_download_context* dlctx );
-
-// download context sets (like an FDSET)
-int md_download_set_init( struct md_download_set* dlset );
-int md_download_set_free( struct md_download_set* dlset );
-int md_download_set_add( struct md_download_set* dlset, struct md_download_context* dlctx );
-int md_download_set_clear_itr( struct md_download_set* dlset, const md_download_set_iterator& itr );
-int md_download_set_clear( struct md_download_set* dlset, struct md_download_context* dlctx );    // don't use inside a e.g. for() loop where you're iterating over a download set
-size_t md_download_set_size( struct md_download_set* dlset );
-
-// iterating through waiting
-md_download_set_iterator md_download_set_begin( struct md_download_set* dlset );
-md_download_set_iterator md_download_set_end( struct md_download_set* dlset );
-struct md_download_context* md_download_set_iterator_get_context( const md_download_set_iterator& itr );
+int md_download_context_ref2( struct md_download_context* dlctx, char const* file, int line );
+#define md_download_context_ref( dlctx ) md_download_context_ref2( dlctx, __FILE__, __LINE__ )
+int md_download_context_unref2( struct md_download_context* dlctx, char const* file, int line );
+#define md_download_context_unref( dlctx ) md_download_context_unref2( dlctx, __FILE__, __LINE__ )
+int md_download_context_unref_free( struct md_download_context* dlctx, CURL** curl );
 
 // begin downloading something, and wait for it to complete
 int md_download_context_start( struct md_downloader* dl, struct md_download_context* dlctx );
@@ -201,7 +129,8 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
 // simple one-shot download
 int md_download_run( CURL* curl, off_t max_size, char** buf, off_t* buf_len );
 
-// high-level download loop 
+// high-level download loop
+struct md_download_loop* md_download_loop_new();
 int md_download_loop_init( struct md_download_loop* dlloop, struct md_downloader* dl, int num_downloads );
 int md_download_loop_free( struct md_download_loop* dlloop );
 int md_download_loop_next( struct md_download_loop* dlloop, struct md_download_context** dlctx );
