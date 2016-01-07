@@ -793,7 +793,6 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    if( rc == 0 ) {
       
       // reply
-      SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[manifest %" PRId64 ".%ld]\n", reqdat->file_id, reqdat->file_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
       return md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, raw_serialized_manifest.data, raw_serialized_manifest.len );
    }
    else if( rc != -ENOENT ) {
