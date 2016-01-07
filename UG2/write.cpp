@@ -895,6 +895,7 @@ int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_m
    if( coordinator_id == gateway_id ) {
       
       // we're the coordinator--advance the manifest's modtime and write nonce
+      UG_inode_preserve_old_manifest_modtime( inode );
       SG_manifest_set_modtime( UG_inode_manifest( inode ), ts.tv_sec, ts.tv_nsec );
       UG_write_nonce_update( inode );
    }
