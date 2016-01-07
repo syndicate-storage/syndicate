@@ -127,7 +127,7 @@ static int UG_fs_create_or_mkdir( struct fskit_core* fs, struct fskit_route_meta
       
       return rc;
    }
-   
+
    // propagate the caller and Syndicate-specific fields...
    inode_data.mode = mode;
    inode_data.version = 1;
@@ -407,7 +407,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    struct SG_manifest removed;
    
    struct UG_replica_context* rctx = NULL;
-   struct UG_vacuum_context vctx;
+   struct UG_vacuum_context* vctx = NULL;
    
    struct timespec new_manifest_timestamp;
    
@@ -474,9 +474,18 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return rc;
    }
    
-   // prepare the vacuum request 
-   memset( &vctx, 0, sizeof(struct UG_vacuum_context) );
-   rc = UG_vacuum_context_init( &vctx, ug, fs_path, inode, &removed );
+   // prepare the vacuum request
+   vctx = UG_vacuum_context_new();
+   if( vctx == NULL ) {
+     
+     // OOM 
+     SG_manifest_free( &removed );
+     SG_manifest_free( &new_manifest );
+     md_entry_free( &inode_data );
+     return -ENOMEM;
+   }
+
+   rc = UG_vacuum_context_init( vctx, ug, fs_path, inode, &removed );
    
    SG_manifest_free( &removed );
    
@@ -485,6 +494,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       // OOM 
       SG_manifest_free( &new_manifest );
       md_entry_free( &inode_data );
+      SG_safe_free( vctx );
       return rc;
    }
    
@@ -495,7 +505,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       // OOM 
       SG_manifest_free( &new_manifest );
       md_entry_free( &inode_data );
-      UG_vacuum_context_free( &vctx );
+      UG_vacuum_context_free( vctx );
       return -ENOMEM;
    }
    
@@ -507,7 +517,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       
       // OOM 
       SG_manifest_free( &new_manifest );
-      UG_vacuum_context_free( &vctx );
+      UG_vacuum_context_free( vctx );
       md_entry_free( &inode_data );
       SG_safe_free( rctx );
       return rc;
@@ -533,7 +543,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    
    if( rc != 0 ) {
       
-      UG_vacuum_context_free( &vctx );
+      UG_vacuum_context_free( vctx );
       UG_replica_context_free( rctx );
       SG_safe_free( rctx );
       md_entry_free( &inode_data_out );
@@ -550,7 +560,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       // replication error...
       SG_error("UG_replicate('%s') rc = %d\n", fs_path, rc );
       
-      UG_vacuum_context_free( &vctx );
+      UG_vacuum_context_free( vctx );
       UG_replica_context_free( rctx );
       SG_safe_free( rctx );
       md_entry_free( &inode_data_out );
@@ -571,7 +581,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    // garbate-collect 
    while( 1 ) {
       
-      rc = UG_vacuum_run( vacuumer, &vctx );
+      rc = UG_vacuum_run( vacuumer, vctx );
       if( rc != 0 ) {
          
          SG_error("UG_vacuum_run('%s') rc = %d, retrying...\n", fs_path, rc );
@@ -581,7 +591,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       break;
    }
       
-   UG_vacuum_context_free( &vctx );
+   UG_vacuum_context_free( vctx );
    UG_replica_context_free( rctx );
    SG_safe_free( rctx );
    
@@ -711,7 +721,8 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    struct md_entry inode_data;
    struct SG_request_data reqdat;       // for the driver
    
-   struct UG_vacuum_context vctx;
+   struct UG_vacuum_context* vctx = NULL;
+   bool vacuum_again = true;
    
    if( UG_inode_deleting( inode ) ) {
       
@@ -732,34 +743,54 @@ static int UG_fs_detach_local( struct SG_gateway* gateway, char const* fs_path, 
    // if this is a file, and we're the coordinator, vacuum it 
    if( UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ) && fskit_entry_get_type( UG_inode_fskit_entry( inode ) ) == FSKIT_ENTRY_TYPE_FILE ) {
       
-      memset( &vctx, 0, sizeof(struct UG_vacuum_context) );
-      
-      rc = UG_vacuum_context_init( &vctx, ug, fs_path, inode, UG_inode_replaced_blocks( inode ) );
-      if( rc != 0 ) {
-         
-         SG_error("UG_vacuum_context_init('%s') rc = %d\n", fs_path, rc );
-         
-         md_entry_free( &inode_data );
-         SG_request_data_free( &reqdat );
-         UG_inode_set_deleting( inode, false );
-         return rc;
-      }
-      
-      while( 1 ) {
-         
-         // vacuum until we succeed
-         rc = UG_vacuum_run( UG_state_vacuumer( ug ), &vctx );
-         
+      while( vacuum_again ) {
+
+         vctx = UG_vacuum_context_new();
+         if( vctx == NULL ) {
+
+            rc = -ENOMEM;
+            
+            md_entry_free( &inode_data );
+            SG_request_data_free( &reqdat );
+            UG_inode_set_deleting( inode, false );
+            
+            return rc;
+         }
+
+         rc = UG_vacuum_context_init( vctx, ug, fs_path, inode, NULL );
          if( rc != 0 ) {
             
-            SG_error("UG_vacuum_run('%s') rc = %d; retrying...\n", fs_path, rc );
-            continue;
+            SG_error("UG_vacuum_context_init('%s') rc = %d\n", fs_path, rc );
+            
+            md_entry_free( &inode_data );
+            SG_request_data_free( &reqdat );
+            SG_safe_free( vctx );
+            UG_inode_set_deleting( inode, false );
+            return rc;
+         }
+
+         // allow deleting the current manifest
+         UG_vacuum_context_set_unlinking( vctx, true );
+         
+         while( 1 ) {
+            
+            // vacuum until we succeed
+            rc = UG_vacuum_run( UG_state_vacuumer( ug ), vctx );
+            
+            if( rc != 0 ) {
+               
+               SG_error("UG_vacuum_run('%s') rc = %d; retrying...\n", fs_path, rc );
+               continue;
+            }
+            
+            break;
          }
          
-         break;
+         // try again until we've vacuumed everything
+         vacuum_again = !UG_vacuum_context_is_clean( vctx );
+         UG_vacuum_context_free( vctx );
+         SG_safe_free( vctx );
       }
-      
-      UG_vacuum_context_free( &vctx );
    }
    
    // delete on the MS
