@@ -24,6 +24,9 @@ import traceback
 import signal
 import json
 import threading
+import cPickle as pickle
+import imp
+from syndicate.protobufs.sg_pb2 import DriverRequest, Manifest
 
 driver_shutdown = None 
 
@@ -90,29 +93,6 @@ def read_int( f ):
    return i
 
 
-def read_path( f ):
-   """
-   Read a newline-deliminated string from file f, up to PATH_MAX
-   Return the path on success
-   Return None on error
-   """
-   
-   # read path from stdin; output blocks to stdout 
-   path = f.readline( 4096 )
-   if len(path) == 0:
-       # gateway exit 
-       do_driver_shutdown()
-
-   if path[-1] != '\n':
-      
-      # invalid line 
-      print >> sys.stderr, "Path too long: '%s'" % path
-      return None
-   
-   path = path.strip()
-   return path
-
-
 def read_data( f, size ):
    """
    Read a newline-terminated data stream from f, up to size.
@@ -155,6 +135,51 @@ def read_chunk( f ):
    return chunk
 
 
+def read_request( f ):
+   """
+   Read a chunk from file f that 
+   contains a DriverRequest string.
+   Return the deserialized DriverRequest on success
+   Shut down the driver on error.
+   """
+   
+   req_chunk = read_chunk( f )
+   try:
+       driver_req = DriverRequest()
+       driver_req.ParseFromString( req_chunk )
+   except:
+       print >> sys.stderr, "Failed to parse driver request"
+       do_driver_shutdown()
+
+   return driver_req
+
+
+def request_to_storage_path( request ):
+   """
+   Create a storage path for a request.
+   It will be prefixed by UID, then volume ID, then 
+   inode, then path, version, and either block ID or version
+   or manifest timestamp (depending on what kind of 
+   request this is).
+
+   Return the string on success
+   """
+
+   prefix = "%s/%s/%X/%s" % (request.user_id, request.volume_id, request.file_id, request.path)
+
+   if request.request_type == DriverRequest.BLOCK:
+       prefix = os.path.join( prefix, "%s/%s" % (request.block_id, request.block_version) )
+
+   elif request.request_type == DriverRequest.MANIFEST:
+       prefix = os.path.join( prefix, "manifest/%s.%s" % (request.manifest_mtime_sec, request.manifest_mtime_nsec))
+
+   else:
+       print >> sys.stderr, "Invalid driver request type '%s'" % request.request_type
+       do_driver_shutdown()
+
+   return prefix
+
+
 def write_int( f, i ):
    """
    Send back an integer to the main Syndicate daemon.
@@ -192,7 +217,17 @@ def sig_die( signum, frame ):
    sys.exit(0)
    
 
-def driver_setup( operation_modes, expected_callback_names ):
+# is an object callable?
+def is_callable( obj ):
+    return hasattr( obj, "__call__" )
+
+
+# does a module have a method?
+def has_method( mod, method_name ):
+    return hasattr( mod, method_name ) and is_callable( getattr(mod, method_name, None) )
+
+
+def driver_setup( operation_modes, expected_callback_names, default_callbacks={} ):
    """
    Set up a gateway driver:
    * verify that the operation mode is supported (i.e. the operation 
@@ -205,14 +240,11 @@ def driver_setup( operation_modes, expected_callback_names ):
    a callback for each method names in expected_callback_names).
    * run the driver_init() method.
 
-   Return a tuple with the following fields:
-   * the operational mode
-   * the configuration (as a dict)
-   * the secrets (as a dict)
-   * a dict mapping each name in expected_callback_names to the callback
-   defined by the driver.
-
-   Signal the parent process and exit with a non-zero exit code on failure.
+   Return (operation mode, driver module) on success
+   Signal the parent process and exit with a non-zero exit code on failure:
+   * return 1 and exit 1 on misconfiguration 
+   * return 1 and exit 2 on failure to initialize
+   * return 2 and exit 0 if the driver does not implement the requested operation mode
    """
 
    # die on SIGINT 
@@ -236,7 +268,10 @@ def driver_setup( operation_modes, expected_callback_names ):
       # tell the parent that we failed
       print "1"
       sys.exit(1)
-   
+ 
+   method_name_idx = operation_modes.index(usage)
+   method_name = expected_callback_names[method_name_idx]
+       
    # on stdin: config and secrets (as two separate null-terminated strings)
    config_len = read_int( sys.stdin )
    if config_len is None:
@@ -270,7 +305,6 @@ def driver_setup( operation_modes, expected_callback_names ):
       
    CONFIG = {}
    SECRETS = {}
-   METHODS = {}
 
    # config_str should be a JSON dict 
    try:
@@ -298,8 +332,9 @@ def driver_setup( operation_modes, expected_callback_names ):
       sys.exit(2)
 
    # driver should be a set of methods 
+   driver_mod = imp.new_module("driver_mod")
    try:
-      exec( driver_str )
+      exec driver_str in driver_mod.__dict__
    except Exception, e:
             
       print >> sys.stderr, "Failed to load driver"
@@ -308,31 +343,35 @@ def driver_setup( operation_modes, expected_callback_names ):
       # tell the parent that we failed 
       print "1"
       sys.exit(2)
-      
-   # verify that the driver methods are defined 
+     
+   # verify that the driver method is defined 
    fail = False
-   for method_name in expected_callback_names:
-       if method_name not in locals().keys():
-           fail = True
-           print >> sys.stderr, "No '%s' method defined" % method_name
-        
-       method = locals()[method_name]
-       if not hasattr(method, "__call__"):
+   if not has_method( driver_mod, method_name ):
+       if not default_callbacks.has_key( method_name ):
            fail = True 
-           print >> sys.stderr, "Object '%s' is not callable" % method_name 
+           print >> sys.stderr, "No method '%s' defined" % method_name
 
-       METHODS[ method_name ] = method
+       elif default_callbacks[method_name] is None:
+           # no method implementation; fall back to the gateway
+           print >> sys.stderr, "No implementation for '%s'" % method_name
+           print "2"
+           sys.exit(0)
+
+       else:
+           print >> sys.stderr, "Using default implementation for '%s'" % method_name
+           setattr( driver_mod, usage, default_callbacks[method_name] )
+
 
    # remember generic shutdown so the signal handler can use it
-   if METHODS.has_key('driver_shutdown'):
+   if has_method( driver_mod, "driver_shutdown" ):
        global driver_shutdown
-       driver_shutdown = METHODS['driver_shutdown']
+       driver_shutdown = driver_mod.driver_shutdown 
 
    # do our one-time init, if given 
-   if not fail and METHODS.has_key('driver_init'):
+   if not fail and has_method( driver_mod, "driver_init" ):
 
        try:
-           fail = METHODS['driver_init']( CONFIG, SECRETS )
+           fail = driver_mod.driver_init( CONFIG, SECRETS )
        except:
            print >> sys.stderr, "driver_init raised an exception"
            print >> sys.stderr, traceback.format_exc()
@@ -347,5 +386,7 @@ def driver_setup( operation_modes, expected_callback_names ):
       print "1"
       sys.stdout.flush()
       sys.exit(2)
-  
-   return (usage, CONFIG, SECRETS, METHODS)
+ 
+   driver_mod.CONFIG = CONFIG 
+   driver_mod.SECRETS = SECRETS
+   return (usage, driver_mod)
