@@ -37,7 +37,7 @@ struct UG_state {
    
    struct fskit_core* fs;               // filesystem core 
    
-   struct UG_vacuumer vacuumer;         // vacuumer instance 
+   struct UG_vacuumer* vacuumer;        // vacuumer instance 
    
    pthread_rwlock_t lock;               // lock governing access to this structure
    
@@ -47,6 +47,15 @@ struct UG_state {
    pthread_t thread;                    // the main loop thread
    
    struct md_wq* wq;                    // workqueue for deferred operations (like blowing away dead inodes)
+};
+
+
+// RG context 
+struct UG_RG_context {
+
+   uint64_t* rg_ids;
+   int* rg_status;
+   size_t num_rgs;
 };
 
 
@@ -110,6 +119,238 @@ int UG_state_reload_replica_gateway_ids( struct UG_state* state ) {
 }
 
 
+// make an RG context 
+struct UG_RG_context* UG_RG_context_new() {
+   return SG_CALLOC( struct UG_RG_context, 1 );
+}
+
+// set up an RG context
+// return 0 on success, and populate *rctx 
+// return -ENOMEM on OOM
+// return -EPERM on error
+int UG_RG_context_init( struct UG_state* state, struct UG_RG_context* rctx ) {
+
+   int rc = 0;
+   memset( rctx, 0, sizeof( struct UG_RG_context ) );
+
+   // get RGs 
+   rc = UG_state_list_replica_gateway_ids( state, &rctx->rg_ids, &rctx->num_rgs );
+   if( rc != 0 ) {
+     
+      SG_error("UG_state_list_replica_gateway_ids rc = %d\n", rc ); 
+      return rc;
+   }
+
+   rctx->rg_status = SG_CALLOC( int, rctx->num_rgs );
+   if( rc != 0 ) {
+
+      rc = -ENOMEM;
+      UG_RG_context_free( rctx );
+      return rc;
+   }
+
+   return 0;
+}
+
+
+// free an RG context's memory 
+int UG_RG_context_free( struct UG_RG_context* rctx ) {
+
+   SG_safe_free( rctx->rg_status );
+   SG_safe_free( rctx->rg_ids );
+   memset( rctx, 0, sizeof(struct UG_RG_context) );
+   return 0;
+}
+
+
+// get the RG IDs
+uint64_t* UG_RG_context_RG_ids( struct UG_RG_context* rctx ) {
+   return rctx->rg_ids;
+}
+
+// get the number of RGs
+size_t UG_RG_context_num_RGs( struct UG_RG_context* rctx ) {
+   return rctx->num_rgs;
+}
+
+// get the status of a particular RG RPC
+int UG_RG_context_get_status( struct UG_RG_context* rctx, int i ) {
+   return rctx->rg_status[i];
+}
+
+// set the status of a particular RG RPC
+int UG_RG_context_set_status( struct UG_RG_context* rctx, int i, int status ) {
+   rctx->rg_status[i] = status;
+   return 0;
+}
+
+// send a request (controlplane/dataplane) to all RGs.
+// individual RG statuses will be recorded in rctx.
+// return 0 if all requests succeeded
+// return -EPERM if at least one request failed.
+int UG_RG_send_all( struct SG_gateway* gateway, struct UG_RG_context* rctx, SG_messages::Request* controlplane_request, struct SG_chunk* dataplane_request ) {
+
+   int rc = 0;
+   size_t i = 0;
+   struct md_download_loop* dlloop = NULL;
+   struct md_download_context* dlctx = NULL;
+   int num_started = 0;
+   int num_finished = 0;
+   SG_messages::Reply reply;
+   map< struct md_download_context*, int > download_idxs;
+
+   dlloop = md_download_loop_new();
+   if( dlloop == NULL ) {
+      return -ENOMEM;
+   }
+
+   rc = md_download_loop_init( dlloop, SG_gateway_dl( gateway ), rctx->num_rgs );
+   if( rc != 0 ) {
+
+      SG_error("md_download_loop_init rc = %d\n", rc );
+      SG_safe_free( dlloop );
+      return rc;
+   }
+
+   for( i = 0; i < rctx->num_rgs; i++ ) {
+      rctx->rg_status[i] = UG_RG_REQUEST_NOT_STARTED;
+   }
+
+   SG_debug("Send to %zu RGs\n", rctx->num_rgs );
+
+   // try to send to each RG 
+   do {
+ 
+       // start sending to the next UG_RG_REQUEST_NOT_STARTED-tagged RG 
+       for( i = 0; i < rctx->num_rgs; i++ ) {
+
+           if( rctx->rg_status[i] == UG_RG_REQUEST_NOT_STARTED ) {
+              
+               rc = md_download_loop_next( dlloop, &dlctx );
+               if( rc == 0 ) { 
+
+                  SG_debug("RG request %" PRIu64 ": %p\n", rctx->rg_ids[i], dlctx );
+               
+                  try {
+                     download_idxs[dlctx] = i;
+                  }
+                  catch( bad_alloc& ba ) {
+                     rc = -ENOMEM;
+                     break;
+                  }
+
+                  rc = SG_client_request_send_async( gateway, rctx->rg_ids[i], controlplane_request, dataplane_request, dlloop, dlctx );
+                  if( rc != 0 ) {
+
+                     SG_error("SG_client_request_send_async(to %" PRIu64 ") rc = %d\n", rctx->rg_ids[i], rc );
+                     break;
+                  }
+
+                  rctx->rg_status[i] = UG_RG_REQUEST_IN_PROGRESS;
+                  num_started++;
+                  break;
+               }
+               else if( rc == -EAGAIN ) {
+                  rc = 0;
+                  break;
+               }
+               else {
+                  // fatal error 
+                  SG_error("md_download_loop_next(%p) rc = %d\n", dlloop, rc );
+                  break;
+               }
+           }
+       }
+
+       // run until at least one finishes 
+       rc = md_download_loop_run( dlloop );
+       if( rc < 0 ) {
+
+          SG_error("md_download_loop_run rc = %d\n", rc );
+          break;
+       }
+       rc = 0;
+
+       while( 1 ) {
+
+           // next finished
+           rc = md_download_loop_finished( dlloop, &dlctx );
+           if( rc == 0 ) {
+
+             // one finished
+             rc = SG_client_request_send_finish( gateway, dlctx, &reply );
+             if( rc != 0 ) {
+         
+                 SG_error("SG_client_request_send_finish rc = %d\n", rc );
+                 break;
+             }
+
+             num_finished++;
+
+             auto itr = download_idxs.find( dlctx );
+             if( itr == download_idxs.end() ) {
+
+                SG_error("BUG: no download context %p\n", dlctx );
+                exit(1);
+             }
+
+             i = itr->second;
+
+             // did the request succeed?
+             if( reply.error_code() != 0 ) {
+
+                SG_error("RG request %p failed: %d\n", dlctx, reply.error_code());
+                rc = reply.error_code();
+
+                rctx->rg_status[i] = -abs(rc);
+                break;
+             }
+             else {
+
+                rctx->rg_status[i] = UG_RG_REQUEST_SUCCESS;
+             }
+           }
+        
+           else if( rc == -EAGAIN ) {
+
+              // all finished 
+              rc = 0;
+              break;
+           }
+           else {
+
+              // error 
+              SG_error("md_download_loop_finished rc = %d\n", rc );
+              break;
+           }
+       }
+
+       if( rc != 0 ) {
+          break;
+       }
+
+       SG_debug("%d started, %d finished\n", num_started, num_finished );
+
+   } while( md_download_loop_running( dlloop ) || (unsigned)num_finished < rctx->num_rgs );
+
+   if( rc != 0 ) {
+      
+      // request failed failed. terminate.
+      SG_error("Terminating RG requests, rc = %d\n", rc );
+      md_download_loop_abort( dlloop );
+
+      rc = -EIO;
+   }
+
+   md_download_loop_cleanup( dlloop, NULL, NULL );
+   md_download_loop_free( dlloop );
+   SG_safe_free( dlloop );
+
+   return rc;
+
+}
+
+
 // read-lock state.  return 0 on success
 int UG_state_rlock( struct UG_state* state ) {
    return pthread_rwlock_rdlock( &state->lock );
@@ -136,6 +377,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    struct md_entry root_inode_data;
    struct fskit_entry* fs_root = NULL;
    struct UG_inode* root_inode = NULL;
+   struct UG_vacuumer* vacuumer = NULL;
    struct md_wq* wq = NULL;
    struct md_opts* overrides = md_opts_new( 1 );
    struct md_syndicate_conf* conf = NULL;
@@ -167,6 +409,8 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       return NULL;
    }
 
+   state->gateway = gateway;
+
    SG_debug("%s", "Activating filesystem\n");
    
    // set up fskit library...
@@ -195,7 +439,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    SG_debug("%s", "Setting up gateway core\n");
    
    // set up gateway...
-   rc = SG_gateway_init( gateway, SYNDICATE_UG, argc, argv, overrides );
+   rc = SG_gateway_init( state->gateway, SYNDICATE_UG, argc, argv, overrides );
    
    md_opts_free( overrides );
    SG_safe_free( overrides );
@@ -253,7 +497,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       return NULL;
    }
    
-   rc = fskit_core_init( state->fs, &state->gateway );
+   rc = fskit_core_init( state->fs, state->gateway );
    if( rc != 0 ) {
       
       SG_error("fskit_core_init rc = %d\n", rc );
@@ -268,13 +512,12 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    }
    
    // propagate UG to gateway 
-   SG_gateway_set_cls( gateway, state );
-   state->gateway = gateway;
+   SG_gateway_set_cls( state->gateway, state );
    
    SG_debug("%s", "Looking up volume root\n");
    
    // set up root inode
-   rc = ms_client_get_volume_root( SG_gateway_ms( gateway ), 0, 0, &root_inode_data );
+   rc = ms_client_get_volume_root( SG_gateway_ms( state->gateway ), 0, 0, &root_inode_data );
    if( rc != 0 ) {
       
       SG_error("ms_client_get_volume_root() rc = %d\n", rc );
@@ -309,6 +552,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    
    fskit_entry_set_owner( fs_root, root_inode_data.owner );
    fskit_entry_set_group( fs_root, root_inode_data.volume );
+   fskit_entry_set_size( fs_root, root_inode_data.size );
    
    rc = UG_inode_init_from_export( root_inode, &root_inode_data, fs_root );
    if( rc == 0 ) {
@@ -372,7 +616,15 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    SG_debug("%s", "Starting vacuumer\n");
    
    // set up vacuumer 
-   rc = UG_vacuumer_init( &state->vacuumer, state->gateway );
+   vacuumer = UG_vacuumer_new();
+   if( vacuumer == NULL ) {
+
+      UG_shutdown( state );
+      return NULL;
+   }
+
+   state->vacuumer = vacuumer;
+   rc = UG_vacuumer_init( state->vacuumer, state->gateway );
    if( rc != 0 ) {
       
       UG_shutdown( state );
@@ -380,7 +632,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    }
    
    // start threads
-   rc = UG_vacuumer_start( &state->vacuumer );
+   rc = UG_vacuumer_start( state->vacuumer );
    if( rc != 0 ) {
    
       UG_shutdown( state );
@@ -473,11 +725,19 @@ int UG_shutdown( struct UG_state* state ) {
    // stop taking requests
    UG_fs_uninstall_methods( state->fs );
    
-   SG_debug("%s", "Shut down vacuuming\n");
    
-   // stop the vacuumer 
-   UG_vacuumer_stop( &state->vacuumer );
-   UG_vacuumer_shutdown( &state->vacuumer );
+   // stop the vacuumer
+   if( state->vacuumer != NULL ) {
+   
+       SG_debug("%s", "Quiesce vacuuming\n");
+       UG_vacuumer_quiesce( state->vacuumer );
+       UG_vacuumer_wait_all( state->vacuumer ); 
+      
+       SG_debug("%s", "Shut down vacuuming\n");
+       UG_vacuumer_stop( state->vacuumer );
+       UG_vacuumer_shutdown( state->vacuumer );
+       SG_safe_free( state->vacuumer );
+   }
    
    // stop the deferred workqueue 
    if( state->wq != NULL ) {
@@ -487,39 +747,47 @@ int UG_shutdown( struct UG_state* state ) {
    }
    
    // prepare to shutdown 
-   UG_fs_install_shutdown_methods( state->fs );
-   
-   SG_debug("%s", "Gateway shutdown\n");
-   
-   // destroy the gateway 
-   rc = SG_gateway_shutdown( state->gateway );
-   if( rc != 0 ) {
-      SG_error("SG_gateway_shutdown rc = %d\n", rc );
+   if( state->fs != NULL ) {
+       UG_fs_install_shutdown_methods( state->fs );
    }
 
-   SG_safe_free( state->gateway );
+   if( state->gateway != NULL ) {
    
-   SG_debug("%s", "Free all cached inodes\n");
-   
-   // blow away all inode data
-   rc = fskit_detach_all( state->fs, "/" );
-   if( rc != 0 ) {
-      SG_error( "fskit_detach_all('/') rc = %d\n", rc );
+       SG_debug("%s", "Gateway shutdown\n");
+       // destroy the gateway 
+       rc = SG_gateway_shutdown( state->gateway );
+       if( rc != 0 ) {
+          SG_error("SG_gateway_shutdown rc = %d\n", rc );
+       }
+
+       SG_safe_free( state->gateway );
    }
    
-   // blow away root 
-   // TODO
+   if( state->fs != NULL ) {
    
-   SG_debug("%s", "Filesystem core shutdown\n");
+       SG_debug("%s", "Free all cached inodes\n");
+
+       // blow away all inode data
+       rc = fskit_detach_all( state->fs, "/" );
+       if( rc != 0 ) {
+          SG_error( "fskit_detach_all('/') rc = %d\n", rc );
+       }
    
-   // destroy the core and its root inode
-   rc = fskit_core_destroy( state->fs, NULL );
-   if( rc != 0 ) {
-      SG_error( "fskit_core_destroy rc = %d\n", rc );
-   }
+       // blow away root 
+       // TODO
+   
+       SG_debug("%s", "Filesystem core shutdown\n");
+   
+       // destroy the core and its root inode
+       rc = fskit_core_destroy( state->fs, NULL );
+       if( rc != 0 ) {
+          SG_error( "fskit_core_destroy rc = %d\n", rc );
+       }
+       
+       SG_safe_free( state->fs );
+    }
    
    SG_safe_free( state->replica_gateway_ids );
-   SG_safe_free( state->fs );
    
    pthread_rwlock_destroy( &state->lock );
    
@@ -545,7 +813,7 @@ struct fskit_core* UG_state_fs( struct UG_state* state ) {
 
 // get a pointer to the vacuumer core 
 struct UG_vacuumer* UG_state_vacuumer( struct UG_state* state ) {
-   return &state->vacuumer;
+   return state->vacuumer;
 }
 
 // get the owner ID of the gateway 

@@ -24,7 +24,13 @@
 
 #include <fskit/fskit.h>
 
+#ifndef UG_DEFAULT_DRIVER_EXEC_STR
 #define UG_DEFAULT_DRIVER_EXEC_STR "/usr/local/lib/syndicate/ug-driver"
+#endif
+
+#define UG_RG_REQUEST_NOT_STARTED     0
+#define UG_RG_REQUEST_IN_PROGRESS     1
+#define UG_RG_REQUEST_SUCCESS         2
 
 // prototypes...
 struct UG_vacuumer;
@@ -32,10 +38,22 @@ struct UG_vacuumer;
 // global UG state
 struct UG_state;
 
+// RG RPC state (for replication and vacuuming)
+struct UG_RG_context;
+
 extern "C" {
    
 int UG_state_list_replica_gateway_ids( struct UG_state* state, uint64_t** replica_gateway_ids, size_t* num_replica_gateway_ids );
 int UG_state_reload_replica_gateway_ids( struct UG_state* state );
+
+struct UG_RG_context* UG_RG_context_new();
+int UG_RG_context_init( struct UG_state* state, struct UG_RG_context* rctx );
+int UG_RG_context_free( struct UG_RG_context* rctx );
+uint64_t* UG_RG_context_RG_ids( struct UG_RG_context* rctx );
+size_t UG_RG_context_num_RGs( struct UG_RG_context* rctx );
+int UG_RG_context_get_status( struct UG_RG_context* rctx, int i );
+int UG_RG_context_set_status( struct UG_RG_context* rctx, int i, int status );
+int UG_RG_send_all( struct SG_gateway* gateway, struct UG_RG_context* rctx, SG_messages::Request* controlplane_request, struct SG_chunk* dataplane_request );
 
 int UG_state_rlock( struct UG_state* state );
 int UG_state_wlock( struct UG_state* state );
