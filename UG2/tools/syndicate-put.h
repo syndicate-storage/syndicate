@@ -14,8 +14,8 @@
    limitations under the License.
 */
 
-#ifndef _SYNDICATE_MKDIR_H_
-#define _SYNDICATE_MKDIR_H_
+#ifndef _SYNDICATE_PUT_H_
+#define _SYNDICATE_PUT_H_
 
 #include <syndicate-ug/client.h>
 #include <syndicate-ug/core.h>

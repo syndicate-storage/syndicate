@@ -16,6 +16,8 @@
 
 #include "syndicate-put.h"
 
+#define BUF_SIZE 4096
+
 // entry point 
 int main( int argc, char** argv ) {
    
@@ -26,8 +28,7 @@ int main( int argc, char** argv ) {
    int path_optind = 0;
    char* file_path = NULL;
    int fd = 0;
-   char* buf = NULL;
-   uint64_t buf_size = 0;
+   char buf[BUF_SIZE];
    ssize_t nr = 0;
    UG_handle_t* fh = NULL;
 
@@ -60,7 +61,7 @@ int main( int argc, char** argv ) {
    path_optind = SG_gateway_first_arg_optind( gateway );
    if( path_optind == argc ) {
       
-      usage( argv[0], "file [file...]" );
+      usage( argv[0], "local_file syndicate_file" );
       UG_shutdown( ug );
       exit(1);
    }
@@ -71,15 +72,6 @@ int main( int argc, char** argv ) {
    // get the syndicate path...
    path_optind++;
    path = argv[path_optind];
-
-   // make the buffer (write one volume block at a time)
-   buf_size = ms_client_get_volume_blocksize( SG_gateway_ms( gateway ) );
-   buf = SG_CALLOC( char, buf_size );
-   if( buf == NULL ) {
-      rc = -ENOMEM;
-      fprintf(stderr, "Out of memory\n");
-      goto put_end;
-   }
 
    // get the file...
    fd = open( file_path, O_RDONLY );
@@ -113,7 +105,7 @@ int main( int argc, char** argv ) {
 
    // write the file
    while( 1 ) {
-      nr = read( fd, buf, buf_size );
+      nr = read( fd, buf, 4096 );
       if( nr == 0 ) {
          break;
       }
@@ -133,7 +125,7 @@ int main( int argc, char** argv ) {
 
    close( fd );
 
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       rc = 1;
       goto put_end;
    }
@@ -157,9 +149,12 @@ int main( int argc, char** argv ) {
 
 put_end:
 
-   if( buf != NULL ) {
-      SG_safe_free( buf );
-   }
    UG_shutdown( ug );
-   exit(rc);
+
+   if( rc != 0 ) {
+      exit(1);
+   }
+   else {
+      exit(0);
+   }
 }
