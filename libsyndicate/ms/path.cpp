@@ -346,7 +346,7 @@ int ms_client_listing_read_entry( struct ms_client* client, struct md_download_c
 int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* ret_listings ) {
    
    int rc = 0;
-   struct ms_client_multi_result result;
+   struct md_entry ent;
    
    // sanity check 
    if( path->size() == 0 ) {
@@ -374,59 +374,48 @@ int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct m
    for( unsigned int i = 0; i < path->size(); i++ ) {
       
       // get the next child 
-      memset( &result, 0, sizeof(struct ms_client_multi_result) );
+      memset( &ent, 0, sizeof(struct md_entry) );
       
       if( i > 0 ) {
           // set parent too 
           (*path)[i].parent_id = (*path)[i-1].file_id;
       }
       
-      rc = ms_client_getchild( client, &path->at(i), &result );
+      rc = ms_client_getchild( client, &path->at(i), &ent );
       
       if( rc != 0 ) {
          
-         SG_error("ms_client_getchild(%" PRIX64 " (%s)) rc = %d\n", path->at(i).parent_id, path->at(i).name, rc );
-         
-         ms_client_multi_result_free( &result );
-         
-         break;
-      }
-      
-      if( result.reply_error != 0 ) {
-         
-         SG_error("MS replied %d for GETCHILD(%" PRIX64 ", %s)\n", result.reply_error, path->at(i).parent_id, path->at(i).name );
-         
-         ret_listings->reply_error = result.reply_error;
-         
-         ms_client_multi_result_free( &result );
+         SG_error("ms_client_getchild(%" PRIX64 " (%s)) rc = %d, MS reply %d\n", path->at(i).parent_id, path->at(i).name, rc, ent.error );
+         if( ent.error < 0 ) {
+            // more specific than generic -ENODATA
+            rc = ent.error;
+         }
+
          break;
       }
       
       // fill in the information 
       SG_debug("Got '%s' %" PRIX64 ".%" PRId64 ".%" PRId64 " (num_children = %" PRIu64 ", generation = %" PRId64 ", capacity = %" PRId64 ")\n",
-               result.ents[0].name, result.ents[0].file_id, result.ents[0].version, result.ents[0].write_nonce, result.ents[0].num_children,
-               result.ents[0].generation, result.ents[0].capacity );
+               ent.name, ent.file_id, ent.version, ent.write_nonce, ent.num_children, ent.generation, ent.capacity );
       
-      (*path)[i].file_id = result.ents[0].file_id;
-      (*path)[i].version = result.ents[0].version;
-      (*path)[i].write_nonce = result.ents[0].write_nonce;
-      (*path)[i].num_children = result.ents[0].num_children;
-      (*path)[i].generation = result.ents[0].generation;
-      (*path)[i].capacity = result.ents[0].capacity;
+      (*path)[i].file_id = ent.file_id; 
+      (*path)[i].version = ent.version;
+      (*path)[i].write_nonce = ent.write_nonce;
+      (*path)[i].num_children = ent.num_children;
+      (*path)[i].generation = ent.generation;
+      (*path)[i].capacity = ent.capacity;
       
       // preserve this listing--move the data over
-      ret_listings->ents[i] = result.ents[0];
+      ret_listings->ents[i] = ent;
       ret_listings->num_processed = i+1;
-      
-      memset( &result.ents[0], 0, sizeof(struct md_entry) );
+     
+      memset( &ent, 0, sizeof(struct md_entry) ); 
       
       // provide parent if we can 
       if( i > 0 ) {
          
          (*path)[i].parent_id = path->at(i-1).file_id;
       }
-      
-      ms_client_multi_result_free( &result );
    }
    
    return rc;
