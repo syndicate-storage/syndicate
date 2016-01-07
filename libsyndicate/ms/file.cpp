@@ -19,139 +19,92 @@
 #include "libsyndicate/ms/cert.h"
 #include "libsyndicate/ms/volume.h"
 #include "libsyndicate/ms/url.h"
+#include "libsyndicate/download.h"
+#include "libsyndicate/ms/vacuum.h"
 
-// state per request 
-struct ms_client_request_context {
-   
-   struct ms_client_timing* timing;
-   
-   char* serialized_updates;
-   ssize_t serialized_updates_len;
-   
-   int* ops;                            // list of operations that this request entails
-   uint64_t* file_ids;                  // inodes we're operating on (in correspondence with ops)
-   int num_ops;                         // how many operations this context represents
-   
-   int result_offset;                   // offset into client result buffer where the results of these requests will be stored
-   
-   struct curl_httppost* forms;
-   struct curl_slist* headers;
-};
-
-// private, multi-operation upload/download context 
-struct ms_client_multi_context {
-   
-   struct ms_client* client;
-   
-   // result from each request (kept in the same order as the given request)
-   struct ms_client_request_result* results;
-   
-   // context per network connection
-   struct ms_client_request_context* request_contexts;
-   size_t num_request_contexts;
-   
-   queue<int>* request_queue;            // which requests above should be sent next
-   
-   map< struct md_download_context*, int >* attempts;           // map download context to retry count
-   map< struct md_download_context*, int >* downloading;        // map download context to index into request_data
-   
-   pthread_mutex_t lock;
-};
-
-// convert an update_set into a protobuf
+// convert a list of requests into a protobuf
 // return 0 on success
 // return -EINVAL if the an update in updates is invalid
 // return -ENOMEM if we're out of memory
-static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms_updates* ms_updates ) {
+static int ms_client_requests_protobuf( ms_client_request_list* requests, ms::ms_request_multi* ms_requests ) {
    
    try {
       // populate the protobuf
-      for( ms_client_update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
+      for( ms_client_request_list::iterator itr = requests->begin(); itr != requests->end(); itr++ ) {
 
-         struct md_update* update = &itr->second;
+         struct ms_client_request* request = *itr;
          
          // verify that we have a valid update type...
-         if( update->op <= 0 || update->op >= ms::ms_update::NUM_UPDATE_TYPES ) {
+         if( request->op <= 0 || request->op >= ms::ms_request::NUM_UPDATE_TYPES ) {
             
-            SG_error("Invalid update type %d\n", update->op );
+            SG_error("Invalid update type %d\n", request->op );
             return -EINVAL;
          }
          
-         ms::ms_update* ms_up = ms_updates->add_updates();
+         ms::ms_request* ms_req = ms_requests->add_requests();
+         ms::ms_entry* ms_ent = ms_req->mutable_entry();
 
-         ms_up->set_type( update->op );
-
-         ms::ms_entry* ms_ent = ms_up->mutable_entry();
-
-         md_entry_to_ms_entry( ms_ent, &update->ent );
+         ms_req->set_type( request->op );
+         md_entry_to_ms_entry( ms_ent, request->ent );
          
-         // if this an UPDATE, then add the affected blocks 
-         if( update->op == ms::ms_update::UPDATE ) {
-            if( update->affected_blocks != NULL ) {
-               for( size_t i = 0; i < update->num_affected_blocks; i++ ) {
-                  ms_up->add_affected_blocks( update->affected_blocks[i] );
+         // if this an UPDATE or a VACUUMAPPEND, then add the affected blocks 
+         if( request->op == ms::ms_request::UPDATE || request->op == ms::ms_request::VACUUMAPPEND ) {
+            
+            // VACUUMAPPEND requires blocks 
+            if( request->op == ms::ms_request::VACUUMAPPEND && request->affected_blocks == NULL ) {
+               
+               SG_error("%s", "VACUUMAPPEND requires block IDs\n");
+               return -EINVAL;
+            }
+            
+            // fill in blocks and signature
+            if( request->affected_blocks != NULL ) {
+               
+               if( request->vacuum_signature == NULL ) {
+                  
+                  SG_error("%s", "Missing vacuum signature\n");
+                  return -EINVAL;
                }
+               
+               for( size_t i = 0; i < request->num_affected_blocks; i++ ) {
+                  ms_req->add_affected_blocks( request->affected_blocks[i] );
+               }
+               
+               ms_req->set_vacuum_signature( string((char*)request->vacuum_signature, request->vacuum_signature_len) );
             }
          }
          
          // if this is a RENAME, then add the 'dest' argument
-         else if( update->op == ms::ms_update::RENAME ) {
-            ms::ms_entry* dest_ent = ms_up->mutable_dest();
-            md_entry_to_ms_entry( dest_ent, &update->dest );
+         else if( request->op == ms::ms_request::RENAME ) {
+            ms::ms_entry* dest_ent = ms_req->mutable_dest();
+            md_entry_to_ms_entry( dest_ent, request->dest );
          }
          
-         // if this is a SETXATTR, then set the flags, attr name, and attr value
-         else if( update->op == ms::ms_update::SETXATTR ) {
+         // if this is a SETXATTR, then set the attr name and attr value
+         else if( request->op == ms::ms_request::PUTXATTR ) {
+            
             // sanity check...
-            if( update->xattr_name == NULL || update->xattr_value == NULL ) {
+            if( request->xattr_name == NULL || request->xattr_value == NULL ) {
                return -EINVAL;
             }
             
-            // set flags 
-            ms_up->set_xattr_create( (update->flags & XATTR_CREATE) ? true : false );
-            ms_up->set_xattr_replace( (update->flags & XATTR_REPLACE) ? true : false );
-         
-            // set names
-            ms_up->set_xattr_name( string(update->xattr_name) );
-            ms_up->set_xattr_value( string(update->xattr_value, update->xattr_value_len) );
-            
-            // set requesting user 
-            ms_up->set_xattr_owner( update->xattr_owner );
-            ms_up->set_xattr_mode( update->xattr_mode );
+            // set name, value, signature
+            ms_req->set_xattr_name( string(request->xattr_name) );
+            ms_req->set_xattr_value( string(request->xattr_value, request->xattr_value_len) );
          }
          
          // if this is a REMOVEXATTR, then set the attr name
-         else if( update->op == ms::ms_update::REMOVEXATTR ) {
+         else if( request->op == ms::ms_request::REMOVEXATTR ) {
             // sanity check ...
-            if( update->xattr_name == NULL ) {
+            if( request->xattr_name == NULL ) {
                return -EINVAL;
             }
             
-            ms_up->set_xattr_name( string(update->xattr_name) );
-         }
-         
-         // if this is a CHOWNXATTR, then set the attr name and owner 
-         else if( update->op == ms::ms_update::CHOWNXATTR ) {
-            if( update->xattr_name == NULL ) {
-               return -EINVAL;
-            }
-            
-            ms_up->set_xattr_name( string(update->xattr_name) );
-            ms_up->set_xattr_owner( update->xattr_owner );
-         }
-         
-         // if this is a CHMODXATTR, then set the attr name and mode 
-         else if( update->op == ms::ms_update::CHMODXATTR ) {
-            if( update->xattr_name == NULL ) {
-               return -EINVAL;
-            }
-               
-            ms_up->set_xattr_name( string(update->xattr_name) );
-            ms_up->set_xattr_mode( update->xattr_mode );
+            ms_req->set_xattr_name( string(request->xattr_name) );
          }
       }
 
-      ms_updates->set_signature( string("") );
+      ms_requests->set_signature( string("") );
    }
    catch( bad_alloc& ba ) {
       return -ENOMEM;
@@ -165,13 +118,13 @@ static int ms_client_update_set_serialize( ms_client_update_set* updates, ms::ms
 // return the number of bytes on success, and set *update_text 
 // return -EINVAL if we failed to serialize
 // return -ENOMEM if OOM
-ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** update_text ) {
+ssize_t ms_client_update_set_to_string( ms::ms_request_multi* ms_requests, char** update_text ) {
    
    string update_bits;
    bool valid;
 
    try {
-      valid = ms_updates->SerializeToString( &update_bits );
+      valid = ms_requests->SerializeToString( &update_bits );
    }
    catch( exception e ) {
       SG_error("%s", "failed to serialize update set\n");
@@ -193,50 +146,40 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 }
 
 
-// sign an update set
+// sign a sequence of requests, to show that they come from the same origin
 // return 0 on success
-// return -EINVAL if pkey or ms_updates is NULL
+// return -EINVAL if pkey or ms_requests is NULL
 // return -EINVAL if we can't sign 
 // return -ENOMEM if OOM
-static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
-   if( pkey == NULL || ms_updates == NULL ) {
+static int ms_client_sign_requests( EVP_PKEY* pkey, ms::ms_request_multi* ms_requests ) {
+   if( pkey == NULL || ms_requests == NULL ) {
       return -EINVAL;
    }
-   return md_sign<ms::ms_updates>( pkey, ms_updates );
+   return md_sign<ms::ms_request_multi>( pkey, ms_requests );
 }
 
-
-// populate an ms_update with an md_entry and associated fields
-// NOTE: ths is a shallow copy of ent and affected_blocks.  The caller should NOT free them; they'll be freed internally
-int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent ) {
-   memset( up, 0, sizeof(struct md_update) );
-   up->op = op;
-   up->flags = flags;
-   up->affected_blocks = NULL;
-   up->num_affected_blocks = 0;
-   
-   memcpy( &up->ent, ent, sizeof(struct md_entry) );
-   return 0;
-}
-
-// add an update to an update set
-// return 0 on success 
-// return -ENOMEM on OOM
-static int ms_client_add_update( ms_client_update_set* updates, struct md_update* up ) {
-   
-   try {
-      (*updates)[ up->ent.file_id ] = *up;
-   }
-   catch( bad_alloc& ba ) {
-      return -ENOMEM;
-   }
-   
-   return 0;
-}
 
 // generate the next file ID
 uint64_t ms_client_make_file_id() {
    return (uint64_t)md_random64();
+}
+
+
+// allocate a multi-result
+// return 0 on success 
+// return -ENOMEM on OOM 
+int ms_client_multi_result_init( struct ms_client_multi_result* result, size_t num_ents ) {
+   
+   memset( result, 0, sizeof(struct ms_client_multi_result) );
+   
+   result->ents = SG_CALLOC( struct md_entry, num_ents );
+   if( result->ents == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   result->num_ents = num_ents;
+   return 0;
 }
 
 // free a multi-result 
@@ -257,55 +200,6 @@ int ms_client_multi_result_free( struct ms_client_multi_result* result ) {
    return 0;
 }
 
-// interpret error messages from a download context into an apporpriate return code to the downloader.
-// return 0 if there was no error
-// return -EAGAIN if the download should be retried 
-// return -EREMOTEIO if the HTTP status was >= 500, or if an indeterminate error occurred but errno was not set.
-// return -http_status if the HTTP status was between 400 and 499
-int ms_client_download_interpret_errors( char const* url, int http_status, int curl_rc, int os_err ) {
-   
-   int rc = 0;
-   
-   if( http_status == SG_HTTP_TRYAGAIN || curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT || curl_rc == CURLE_GOT_NOTHING ) {
-      
-      if( http_status == SG_HTTP_TRYAGAIN ) {
-         SG_error("MS says try (%s) again\n", url );
-      }
-      else {
-         SG_error("Download (%s) timed out (curl_rc = %d, errno = %d)\n", url, curl_rc, os_err );
-      }
-      
-      return -EAGAIN;
-   }
-   
-   // serious MS error?
-   if( http_status >= 500 ) {
-      SG_error("Download (%s) HTTP status %d\n", url, http_status );
-      
-      return -EREMOTEIO;
-   }
-   
-   // some other error?
-   if( http_status != 200 || curl_rc != 0 ) {
-      
-      SG_error("Download (%s) failed, HTTP status = %d, cURL rc = %d, errno = %d\n", url, http_status, curl_rc, os_err );
-      
-      if( os_err != 0 ) {
-         rc = os_err;
-      }
-      else if( http_status >= 400 && http_status <= 499 ) {
-         rc = -http_status;
-      }
-      else {
-         rc = -EREMOTEIO;
-      }
-      
-      return rc;
-   }
-   
-   return 0;
-}
-
 // handle errors from a download 
 // return 0 if there was no error
 // return -EPERM if the download was cancelled, or is not finalized
@@ -315,7 +209,6 @@ int ms_client_download_parse_errors( struct md_download_context* dlctx ) {
    
    int rc = 0;
    int http_status = 0;
-   char* final_url = NULL;
    int os_err = 0;
    int curl_rc = 0;
    
@@ -328,463 +221,24 @@ int ms_client_download_parse_errors( struct md_download_context* dlctx ) {
    http_status = md_download_context_get_http_status( dlctx );
    os_err = md_download_context_get_errno( dlctx );
    curl_rc = md_download_context_get_curl_rc( dlctx );
-   md_download_context_get_effective_url( dlctx, &final_url );
    
-   rc = ms_client_download_interpret_errors( final_url, http_status, curl_rc, os_err );
-   
-   free( final_url );
+   rc = md_download_interpret_errors( http_status, curl_rc, os_err );
    
    return rc;
 }
-
-
-// retry a multi request 
-// return 0 on success
-// return -ENODATA if we've exceeded the maximum number of retries 
-// return -ENOMEM if OOM
-static int ms_client_multi_retry( struct ms_client_multi_context* ctx, struct md_download_context* dlctx, int request_idx ) {
-   
-   int num_attempts = 0;
-   int rc = 0;
-   
-   try {
-      (*ctx->attempts)[dlctx]++;
-      num_attempts = (*ctx->attempts)[dlctx];
-   }
-   catch( bad_alloc& ba ) {
-      return -ENOMEM;
-   }
-   
-   if( num_attempts > ctx->client->conf->max_metadata_read_retry ) {
-      // don't try again
-      rc = -ENODATA;
-   }
-   else {
-      // re-enqueue 
-      try {
-         ctx->request_queue->push( request_idx );
-      }
-      catch( bad_alloc& ba ) {
-         return -ENOMEM;
-      }
-   }
-   
-   return rc;
-}
-
-
-// set up a CURL for an upload 
-// return a curl handle on success
-// return NULL if OOM
-static CURL* ms_client_multi_curl_generator( void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   
-   // set up a cURL handle to the MS 
-   // TODO: conection pool
-   CURL* curl = curl_easy_init();
-   if( curl == NULL ) {
-      return NULL;
-   }
-   
-   ms_client_init_curl_handle( ctx->client, curl, NULL );
-   
-   return curl;
-}
-
-
-// generate the url for an upload, and set up the download context accordingly
-// return NULL if OOM, or if we're out of URLs
-static char* ms_client_multi_url_generator( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   struct ms_client_request_context* rctx = NULL;
-   int request_idx = 0;
-   char* url = NULL;
-   uint64_t volume_id = ms_client_get_volume_id( ctx->client );
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   try {
-      // have more work?
-      if( ctx->request_queue->size() == 0 ) {
-         pthread_mutex_unlock( &ctx->lock );
-         return NULL;
-      }
-   
-      // which request is this?
-      request_idx = ctx->request_queue->front();
-      rctx = &(ctx->request_contexts[ request_idx ]);
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return NULL;
-   }
-   
-   // program this download context
-   curl_easy_setopt( dlctx->curl, CURLOPT_POST, 1L);
-   curl_easy_setopt( dlctx->curl, CURLOPT_HTTPPOST, rctx->forms );
-   
-   if( rctx->timing != NULL ) {
-      curl_easy_setopt( dlctx->curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
-      curl_easy_setopt( dlctx->curl, CURLOPT_WRITEHEADER, rctx->timing );      
-   }
-   
-   try {
-      // mark as downloading 
-      ctx->request_queue->pop();
-      (*ctx->downloading)[ dlctx ] = request_idx;
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return NULL;
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   
-   // make our URL (could be NULL)
-   url = ms_client_file_url( ctx->client->url, volume_id );
-   return url;
-}
-
-
-// verify that a reply listing has no duplicate entries 
-// return 0 if no duplicates
-// return -EBADMSG if there are duplicates
-// return -ENOMEM if OOM
-static int ms_client_multi_verify_no_duplicate_listing( ms::ms_reply* reply ) {
-      
-   int rc = 0;
-
-   // verify no duplicate IDs
-   set<uint64_t> ids;
-   
-   try {
-      for( int i = 0; i < reply->listing().entries_size(); i++ ) {
-         
-         string name = reply->listing().entries(i).name();
-         uint64_t id = reply->listing().entries(i).file_id();
-         
-         if( ids.count(id) ) {
-            SG_error("Duplicate entry '%s' (%" PRIX64 ")\n", name.c_str(), id );
-            rc = -EBADMSG;
-         }
-         
-         ids.insert( id );
-      }
-   }
-   catch( bad_alloc& ba ) {
-      return -ENOMEM;
-   }
-   
-   return rc;
-}
-
-
-// verify that a reply has an appropriate response for each request (i.e. every successful request that expects an entry from the MS *has* an entry),
-// return 0 if we succeeded
-// return -EINVAL if the request context doesn't have the same number of requests as the reply
-// return -EBADMSG if we're missing an entry, or have too many
-static int ms_client_multi_verify_matching_responses( ms::ms_reply* reply, struct ms_client_request_context* rctx ) {
-   
-   int rc = 0;
-   
-   if( reply->errors_size() != rctx->num_ops ) {
-      SG_error("MS replied %d errors; expected %d\n", reply->errors_size(), rctx->num_ops );
-      return -EINVAL;
-   }
-   
-   // verify that each request has a matching response
-   int entry_count = 0;
-   for( int i = 0; i < reply->errors_size(); i++ ) {
-      
-      int ms_rc = reply->errors(i);
-      int op = rctx->ops[i];
-      
-      if( MS_CLIENT_OP_RETURNS_ENTRY( op ) && ms_rc == 0 ) {
-         
-         // make sure we have an entry for this 
-         if( entry_count >= reply->listing().entries_size() ) {
-            
-            // not enough
-            SG_error("MS did not return an entry for operation %d (op #%d)\n", op, entry_count );
-            rc = -EBADMSG;
-            break;
-         }
-         else {
-            
-            // accounted 
-            entry_count++;
-         }
-      }
-   }
-   
-   // too many/not enough entries?
-   if( rc == 0 && entry_count != reply->listing().entries_size() ) {
-      SG_error("MS returned too many entries (expected %d, got %d)\n", entry_count, reply->listing().entries_size() );
-      return -EBADMSG;
-   }
-   
-   return rc;
-}
-
-// extract results from a reply.
-// only process results if the MS gave back a reply for each request sent.
-// make sure the MS gave back appropriate data (no duplicate entires).
-// return 0 on success
-// return -EBADMSG if the reply was malformed (i.e. missing fields, duplicate entries, etc.)
-// return -ENODATA if we're missing replies
-// return -EPERM if the MS reply error was nonzero (the error will be set in *reply_error)
-// return -ENOMEM if OOM
-static int ms_client_multi_parse_results( struct ms_client_multi_context* ctx, ms::ms_reply* reply, struct ms_client_request_context* rctx, int* reply_error ) {
-   
-   int rc = 0;
-   int num_items_processed = 0;
-   
-   *reply_error = reply->error();
-   
-   if( *reply_error != 0 ) {
-      return -EPERM;
-   }
-   
-   num_items_processed = reply->errors_size();
-   
-   // sanity check--did anything get through at all?
-   if( num_items_processed == 0 ) {
-      SG_error("MS processed %d items\n", num_items_processed );
-      
-      return -ENODATA;
-   }
-   
-   if( num_items_processed != rctx->num_ops ) {
-      SG_error("Partial data: Requested %d items, but %d were processed\n", rctx->num_ops, num_items_processed );
-      
-      return -ENODATA;
-   }
-   
-   if( reply->has_listing() ) {
-      
-      // verify no duplicate IDs
-      rc = ms_client_multi_verify_no_duplicate_listing( reply );
-      if( rc != 0 ) {
-         
-         // invalid message
-         SG_error("ms_client_multi_verify_no_duplicate_listing rc = %d\n", rc );
-         return rc;
-      }
-      
-      // verify that each request has a matching response
-      rc = ms_client_multi_verify_matching_responses( reply, rctx );
-      if( rc != 0 ) {
-         
-         // invalid message 
-         SG_error("ms_client_multi_verify_matching_responses rc = %d\n", rc );
-         return -EBADMSG;
-      }
-      
-      // store at least partial results
-      int k = 0;        // indexes reply->listing().entries
-      for( int i = 0; i < num_items_processed; i++ ) {
-         
-         int ms_rc = reply->errors(i);
-         int op = rctx->ops[i];
-         
-         struct md_entry* ent = NULL;
-         
-         if( MS_CLIENT_OP_RETURNS_ENTRY( op ) && ms_rc == 0 ) {
-            
-            if( k >= reply->listing().entries_size() ) {
-               // out of entries
-               break;
-            }
-            
-            ent = SG_CALLOC( struct md_entry, 1 );
-            if( ent == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            
-            rc = ms_entry_to_md_entry( reply->listing().entries(k), ent );
-            if( rc != 0 ) {
-               break;
-            }
-            
-            SG_debug("%s (at %d + %d): output file_id: %" PRIX64 ", write_nonce: %" PRId64 ", coordinator_id: %" PRIu64 "\n", ent->name, rctx->result_offset, i, ent->file_id, ent->write_nonce, ent->coordinator );
-            
-            // next entry
-            k++;
-         
-            // verify the returned entry matches this request 
-            if( ent->file_id != rctx->file_ids[i] ) {
-               SG_error("Mismatched file ID at %d: %" PRIX64 " != %" PRIX64 "\n", i, ent->file_id, rctx->file_ids[i] );
-               
-               rc = -EBADMSG;
-               break;
-            }
-         }
-         
-         // bundle the entry with its return code
-         struct ms_client_request_result result;
-         memset( &result, 0, sizeof(struct ms_client_request_result) );
-         
-         result.file_id = rctx->file_ids[i];
-         result.ent = ent;
-         result.rc = ms_rc;
-         result.reply_error = *reply_error;
-         
-         ctx->results[ rctx->result_offset + i ] = result;
-         
-         ent = NULL;
-      }
-   }
-   
-   return rc;
-}
-
-
-// post-process an upload 
-// return 0 on success
-// return -EINVAL if the download was not tracked (should never happen)
-// return -ENODATA if no data could be obtained, despite retries.
-// return -ERESTART if we got partial data
-// return -EBADMSG if the data could not be parsed or verified
-// return -ENOMEM if OOM
-static int ms_client_multi_postprocesser( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   int rc = 0;
-   int request_idx = 0;
-   char* buf = NULL;
-   off_t buf_len = 0;
-   ms::ms_reply reply;
-   struct ms_client_request_context* rctx = NULL;
-   int reply_error = 0;
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   map< struct md_download_context*, int >::iterator itr = ctx->downloading->find( dlctx );
-   if( itr == ctx->downloading->end() ) {
-      
-      // not downloading???
-      SG_error("BUG: no request for %p\n", dlctx );
-      pthread_mutex_unlock( &ctx->lock );
-      return -EINVAL;
-   }
-   
-   try {
-      request_idx = itr->second;
-      rctx = &(ctx->request_contexts[ request_idx ]);
-      
-      ctx->downloading->erase( itr );
-   }
-   catch( bad_alloc& ba ) {
-      pthread_mutex_unlock( &ctx->lock );
-      return -ENOMEM;
-   }
-   
-   // process download errors
-   rc = ms_client_download_parse_errors( dlctx );
-   if( rc == -EAGAIN ) {
-      
-      // try again 
-      rc = ms_client_multi_retry( ctx, dlctx, request_idx );
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return 0;
-   }
-   else if( rc != 0 ) {
-      
-      // fatal error 
-      SG_error("ms_client_download_parse_errors(%p) rc = %d\n", dlctx, rc );
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // get result
-   // get the buffer 
-   rc = md_download_context_get_buffer( dlctx, &buf, &buf_len );
-   if( rc != 0 || buf == NULL ) {
-      
-      SG_error("md_download_context_get_buffer(%p) rc = %d\n", dlctx, rc );
-      
-      if( rc != -ENOMEM ) {
-         rc = -EBADMSG;
-      }
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // parse and verify
-   rc = ms_client_parse_reply( ctx->client, &reply, buf, buf_len, true );
-   
-   SG_safe_free( buf );
-   
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_parse_reply rc = %d\n", rc );
-      rc = -EBADMSG;
-      
-      pthread_mutex_unlock( &ctx->lock );
-      return rc;
-   }
-   
-   // extract results 
-   rc = ms_client_multi_parse_results( ctx, &reply, rctx,  &reply_error );
-   if( rc != 0 ) {
-      
-      // failed to process
-      SG_error("WARN: ms_client_multi_parse_results rc = %d\n", rc );
-      
-      if( rc == -EPERM ) {
-         // mask this--the actual reply error is contained in the results 
-         rc = 0;
-      }
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   
-   return rc;
-}
-
-
-// post-cancel an upload 
-// return 0 on success
-// return -ENOMEM on OOM
-static int ms_client_multi_canceller( struct md_download_context* dlctx, void* cls ) {
-   
-   struct ms_client_multi_context* ctx = (struct ms_client_multi_context*)cls;
-   int rc = 0;
-   
-   pthread_mutex_lock( &ctx->lock );
-   
-   try {
-      // mark as not downloading 
-      ctx->downloading->erase( dlctx );
-      ctx->attempts->erase( dlctx );
-   }
-   catch( bad_alloc& ba ) {
-      rc = -ENOMEM;
-   }
-   
-   pthread_mutex_unlock( &ctx->lock );
-   return rc;
-}
-
 
 // generate data to upload and HTTP forms wrapping it.
 // return 0 on success, and set *serialized_text and *serialized_text_len to the serialized buffer holding all of the updates, and set *ret_post and *ret_last to a CURL form structure 
 //   that maps the 'ms-metadata-updates' field to the serialized data.
 // return positive error if we failed to generate forms (see curl error codes)
-// return negative on error (result of either ms_client_update_set_serialize, ms_client_sign_updates, ms_client_update_set_to_string)
-static int ms_client_request_serialize( struct ms_client* client, ms_client_update_set* all_updates, char** serialized_text, size_t* serialized_text_len, struct curl_httppost** ret_post, struct curl_httppost** ret_last ) {
+// return negative on error (result of either ms_client_update_set_serialize, ms_client_sign_requests, ms_client_update_set_to_string)
+static int ms_client_requests_serialize( struct ms_client* client, ms_client_request_list* requests, char** serialized_text, size_t* serialized_text_len, struct curl_httppost** ret_post, struct curl_httppost** ret_last ) {
    
    int rc = 0;
    
    // pack the updates into a protobuf
-   ms::ms_updates ms_updates;
-   rc = ms_client_update_set_serialize( all_updates, &ms_updates );
+   ms::ms_request_multi ms_requests;
+   rc = ms_client_requests_protobuf( requests, &ms_requests );
    if( rc != 0 ) {
       
       SG_error("ms_client_update_set_serialize rc = %d\n", rc );
@@ -792,16 +246,16 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
    }
 
    // sign it
-   rc = ms_client_sign_updates( client->gateway_key, &ms_updates );
+   rc = ms_client_sign_requests( client->gateway_key, &ms_requests );
    if( rc != 0 ) {
       
-      SG_error("ms_client_sign_updates rc = %d\n", rc );
+      SG_error("ms_client_sign_requests rc = %d\n", rc );
       return rc;
    }
 
    // make it a string
    char* update_text = NULL;
-   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
+   ssize_t update_text_len = ms_client_update_set_to_string( &ms_requests, &update_text );
 
    if( update_text_len < 0 ) {
       
@@ -828,312 +282,6 @@ static int ms_client_request_serialize( struct ms_client* client, ms_client_upda
 }
 
 
-// set up a request context 
-// return 0 on success
-// return -ENOMEM on OOM
-// return negative on error (see ms_client_request_serialize)
-static int ms_client_request_context_init( struct ms_client* client, struct ms_client_request_context* rctx, ms_client_update_set* all_updates, int64_t result_offset ) {
-   
-   int rc = 0;
-   struct curl_httppost *post = NULL, *last = NULL;
-   char* serialized_text = NULL;
-   size_t serialized_text_len = 0;
-   
-   memset( rctx, 0, sizeof(struct ms_client_request_context) );
-   
-   rc = ms_client_request_serialize( client, all_updates, &serialized_text, &serialized_text_len, &post, &last );
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_request_serialize rc = %d\n", rc );
-      return rc;
-   }
-   
-   // record order of operations on files 
-   rctx->ops = SG_CALLOC( int, rctx->num_ops );
-   rctx->file_ids = SG_CALLOC( uint64_t, rctx->num_ops );
-   
-   // benchmark data 
-   rctx->timing = SG_CALLOC( struct ms_client_timing, 1 );
-   
-   if( rctx->ops == NULL || rctx->file_ids == NULL || rctx->timing == NULL ) {
-      
-      SG_safe_free( rctx->ops );
-      SG_safe_free( rctx->file_ids );
-      SG_safe_free( rctx->timing );
-      
-      SG_safe_free( serialized_text );
-      curl_formfree( post );
-      return -ENOMEM;
-   }
-   
-   rctx->serialized_updates = serialized_text;
-   rctx->serialized_updates_len = serialized_text_len;
-   rctx->forms = post;
-   rctx->num_ops = all_updates->size();
-   rctx->result_offset = result_offset; 
-   
-   int i = 0;
-   for( ms_client_update_set::iterator itr = all_updates->begin(); itr != all_updates->end(); itr++ ) {
-      rctx->ops[i] = itr->second.op;
-      rctx->file_ids[i] = itr->second.ent.file_id;
-      i++;
-   }
-   
-   return 0;
-}
-
-
-// free a request context 
-// always succeeds
-static int ms_client_request_context_free( struct ms_client_request_context* rctx ) {
-   
-   if( rctx->timing != NULL ) {
-      ms_client_timing_free( rctx->timing );
-      SG_safe_free( rctx->timing );
-   }
-   
-   if( rctx->headers != NULL ) {
-      curl_slist_free_all( rctx->headers );
-      rctx->headers = NULL;
-   }
-   
-   if( rctx->forms != NULL ) {
-      curl_formfree( rctx->forms );
-      rctx->forms = NULL;
-   }
-   
-   if( rctx->serialized_updates != NULL ) {
-      SG_safe_free( rctx->serialized_updates );
-   }
-   
-   if( rctx->ops != NULL ) {
-      SG_safe_free( rctx->ops );
-   }
-   
-   if( rctx->file_ids != NULL ) {
-      SG_safe_free( rctx->file_ids );
-   }
-   
-   return 0;
-}
-
-
-// convert an update into a request 
-// NOTE: this is a shallow copy!  do NOT free request
-// always succeeds
-static int ms_client_request_to_update( struct ms_client_request* request, struct md_update* up ) {
-
-   // generate our update
-   memset( up, 0, sizeof(struct md_update) );
-   
-   ms_client_populate_update( up, request->op, request->flags, request->ent );
-   
-   // affected blocks? shallow-copy them over so we can serialize
-   if( request->affected_blocks != NULL ) {
-      
-      up->affected_blocks = request->affected_blocks;
-      up->num_affected_blocks = request->num_affected_blocks;
-   }
-   
-   // destination?  i.e. due to a RENAME?
-   // shallow-copy it over
-   if( request->dest != NULL ) {
-      up->dest = *(request->dest);
-   }
-   
-   return 0;
-}
-
-
-// free a multi context 
-// always succeeds
-static int ms_client_multi_context_free( struct ms_client_multi_context* ctx ) {
-   
-   if( ctx->downloading != NULL ) {
-      
-      SG_safe_delete( ctx->downloading );
-   }
-   
-   if( ctx->attempts != NULL ) {
-      
-      SG_safe_delete( ctx->attempts );
-   }
-   
-   if( ctx->request_queue != NULL ) {
-      
-      SG_safe_delete( ctx->request_queue );
-   }
-   
-   if( ctx->request_contexts != NULL ) {
-      for( unsigned int i = 0; i < ctx->num_request_contexts; i++ ) {
-         
-         ms_client_request_context_free( &ctx->request_contexts[i] );
-      }
-      
-      SG_safe_free( ctx->request_contexts );
-   }
-   
-   pthread_mutex_destroy( &ctx->lock );
-   
-   memset( ctx, 0, sizeof(struct ms_client_multi_context) );
-   
-   return 0;
-}
-
-// set up a multi context 
-// return 0 on success
-// return -ENOMEM on OOM 
-static int ms_client_multi_context_init( struct ms_client_multi_context* ctx, struct ms_client* client, struct ms_client_request* requests, struct ms_client_request_result* results, size_t num_requests ) {
-   
-   ctx->downloading = new (nothrow) map< struct md_download_context*, int >();
-   ctx->attempts = new (nothrow) map< struct md_download_context*, int >();
-   ctx->request_queue = new (nothrow) queue<int>();
-   
-   // serialize all requests into batches
-   size_t num_request_contexts = num_requests / client->max_request_batch;
-   if( (num_requests % client->max_request_batch) != 0 ) {
-      num_request_contexts++;
-   }
-   
-   ctx->request_contexts = SG_CALLOC( struct ms_client_request_context, num_request_contexts );
-   ctx->num_request_contexts = num_request_contexts;
-   
-   int rc = pthread_mutex_init( &ctx->lock, NULL );
-   
-   if( ctx->downloading == NULL || ctx->attempts == NULL || ctx->request_queue == NULL || ctx->request_contexts == NULL || rc != 0 ) {
-   
-      SG_safe_delete( ctx->downloading );
-      SG_safe_delete( ctx->attempts );
-      SG_safe_delete( ctx->request_queue );
-      
-      SG_safe_free( ctx->request_contexts );
-      
-      if( rc == 0 ) {
-         pthread_mutex_destroy( &ctx->lock );
-      }
-      
-      return -ENOMEM;
-   }
-   
-   ctx->client = client;
-   ctx->results = results;
-   
-   
-   int i = 0;   // index requests
-   int k = 0;   // index request_contexts
-   
-   while( (unsigned)i < num_requests ) {
-      
-      // next batch 
-      ms_client_update_set updates;
-      
-      int offset = i;
-      
-      for( int j = 0; j < client->max_request_batch && (unsigned)i < num_requests; j++ ) {
-         
-         // generate our update
-         struct md_update up;
-         rc = ms_client_request_to_update( &requests[i], &up );
-         
-         if( rc != 0 ) {
-            
-            SG_error("ms_client_request_to_update( %" PRIX64 " ) rc = %d\n", requests[i].ent->file_id, rc );
-            break;
-         }
-         
-         rc = ms_client_add_update( &updates, &up );
-         if( rc != 0 ) {
-            
-            SG_error("ms_client_add_update( %" PRIX64 " ) rc = %d\n", up.ent.file_id, rc );
-            break;
-         }
-         
-         // next request
-         i++;
-      }
-      
-      if( rc != 0 ) {
-         break;
-      }
-      
-      // stuff it into the next request 
-      rc = ms_client_request_context_init( client, &ctx->request_contexts[k], &updates, offset );
-      
-      if( rc != 0 ) {
-         
-         SG_error("ms_client_request_context_init( batch=%d ) rc = %d\n", k, rc );
-         break;
-      }
-      
-      // queue for upload 
-      try {
-         ctx->request_queue->push( k );
-      }
-      catch( bad_alloc& ba ) {
-         rc = -ENOMEM;
-         break;
-      }
-      
-      k++;
-   }
-   
-   if( rc != 0 ) {
-      // failure; clean up 
-      ms_client_multi_context_free( ctx );
-   }
-   else {
-      SG_debug("%zu requests / %d requests per batch = %zu uploads\n", num_requests, client->max_request_batch, ctx->request_queue->size() );
-   }
-   
-   return rc;
-}
-
-
-// run multiple batch requests, using a download config.
-// request[i]'s result will be stored to results[i]
-// NOTE: requests and results must be the same length
-// return 0 on success, or if num_requests == 0
-// return negative on error (see ms_client_multi_context_init, md_download_all)
-int ms_client_run_requests( struct ms_client* client, struct ms_client_request* requests, struct ms_client_request_result* results, size_t num_requests ) {
-   
-   // sanity check 
-   if( num_requests == 0 ) {
-      return 0;
-   }
-   
-   int rc = 0;
-   struct md_download_config dlconf;
-   md_download_config_init( &dlconf );
-   
-   struct ms_client_multi_context ctx;
-   memset( &ctx, 0, sizeof(struct ms_client_multi_context) );
-   
-   rc = ms_client_multi_context_init( &ctx, client, requests, results, num_requests );
-   if( rc != 0 ) {
-      
-      SG_error("ms_client_multi_context_init rc = %d\n", rc );
-      return rc;
-   }
-   
-   // setup downloads 
-   md_download_config_set_curl_generator( &dlconf, ms_client_multi_curl_generator, &ctx );
-   md_download_config_set_url_generator( &dlconf, ms_client_multi_url_generator, &ctx );
-   md_download_config_set_postprocessor( &dlconf, ms_client_multi_postprocesser, &ctx );
-   md_download_config_set_canceller( &dlconf, ms_client_multi_canceller, &ctx );
-   
-   md_download_config_set_limits( &dlconf, MIN( client->max_connections, (signed)(num_requests / client->max_request_batch) + 1 ), -1 );
-   
-   rc = md_download_all( &client->dl, client->conf, &dlconf );
-   
-   if( rc != 0 ) {
-      SG_error("md_download_all rc = %d\n", rc );
-   }
-   
-   ms_client_multi_context_free( &ctx );
-   
-   return rc;
-}
-
 // initialize a create request.
 // NOTE: this shallow-copies the data; do not free ent
 // always succeeds
@@ -1142,7 +290,7 @@ int ms_client_create_request( struct ms_client* client, struct md_entry* ent, st
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::CREATE;
+   request->op = ms::ms_request::CREATE;
    
    return 0;
 }
@@ -1155,7 +303,7 @@ int ms_client_create_async_request( struct ms_client* client, struct md_entry* e
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::CREATE_ASYNC;
+   request->op = ms::ms_request::CREATE_ASYNC;
    
    return 0;
 }
@@ -1178,7 +326,7 @@ int ms_client_mkdir_async_request( struct ms_client* client, struct md_entry* en
 // NOTE: this shallow-copies the data; do not free ent 
 // always succeeds
 int ms_client_update_request( struct ms_client* client, struct md_entry* ent, struct ms_client_request* request ) {
-   return ms_client_update_write_request( client, ent, NULL, 0, request );
+   return ms_client_update_write_request( client, ent, NULL, 0, NULL, 0, request );
 }
 
 // initialize an update-async request (but not one for writes)
@@ -1189,7 +337,7 @@ int ms_client_update_async_request( struct ms_client* client, struct md_entry* e
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::UPDATE_ASYNC;
+   request->op = ms::ms_request::UPDATE_ASYNC;
    request->affected_blocks = NULL;
    request->num_affected_blocks = 0;
    
@@ -1199,14 +347,17 @@ int ms_client_update_async_request( struct ms_client* client, struct md_entry* e
 // initialize an update request for a write 
 // NOTE: this shallow-copies the data; do not free ent, affected_blocks
 // always succeeds
-int ms_client_update_write_request( struct ms_client* client, struct md_entry* ent, uint64_t* affected_blocks, size_t num_affected_blocks, struct ms_client_request* request ) {
+int ms_client_update_write_request( struct ms_client* client, struct md_entry* ent, uint64_t* affected_blocks, size_t num_affected_blocks,
+                                    unsigned char* vacuum_signature, size_t vacuum_signature_len, struct ms_client_request* request ) {
    
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::UPDATE;
+   request->op = ms::ms_request::UPDATE;
    request->affected_blocks = affected_blocks;
    request->num_affected_blocks = num_affected_blocks;
+   request->vacuum_signature = vacuum_signature;
+   request->vacuum_signature_len = vacuum_signature_len;
    
    return 0;
 }
@@ -1215,12 +366,13 @@ int ms_client_update_write_request( struct ms_client* client, struct md_entry* e
 // initialize a coordinate request
 // NOTE: this shallow-copies the data; do not free ent 
 // always succeeds
-int ms_client_coordinate_request( struct ms_client* client, struct md_entry* ent, struct ms_client_request* request ) {
+int ms_client_coordinate_request( struct ms_client* client, struct md_entry* ent, unsigned char* xattr_hash, struct ms_client_request* request ) {
    
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::CHCOORD;
+   request->op = ms::ms_request::CHCOORD;
+   request->xattr_hash = xattr_hash;
    
    return 0;
 }
@@ -1247,7 +399,7 @@ int ms_client_delete_request( struct ms_client* client, struct md_entry* ent, st
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::DELETE;
+   request->op = ms::ms_request::DELETE;
    
    return 0;
 }
@@ -1260,7 +412,7 @@ int ms_client_delete_async_request( struct ms_client* client, struct md_entry* e
    memset( request, 0, sizeof(struct ms_client_request) );
    
    request->ent = ent;
-   request->op = ms::ms_update::DELETE_ASYNC;
+   request->op = ms::ms_request::DELETE_ASYNC;
    
    return 0;
 }
@@ -1301,22 +453,20 @@ int ms_client_request_result_free_all( struct ms_client_request_result* results,
 
 // perform a single operation on the MS, synchronously, given the single update to send
 // return 0 on success, which means that we successfully got a response from the MS.  The response will be stored to result (which can encode an error from the MS, albeit successfully transferred).
-// return negative on lower-level errors, like protocol, transport, marshalling problems.
+// return -EBADMSG if the reply was improperly structured, or contained an entry whose authenticity could not be verified
+// return negative on lower-level errors, like protocol, transport, marshalling problems. (TODO: better documentation)
 // return -ENOMEM on OOM
-static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_update* up, struct ms_client_request_result* result ) {
+int ms_client_single_rpc( struct ms_client* client, struct ms_client_request* request, struct ms_client_request_result* result ) {
    
    int rc = 0;
-   int curl_rc = 0;
-   ms_client_update_set updates;
-   ms::ms_updates ms_updates;
+   ms_client_request_list requests;
    CURL* curl = NULL;
    struct curl_httppost *post = NULL, *last = NULL;
    struct ms_client_timing timing;
    char* url = NULL;
+   char* auth_header = NULL;
    char* serialized_text = NULL;
    size_t serialized_text_len = 0;
-   long curl_errno = 0;
-   long http_status = 0;
    char* buf = NULL;
    off_t buflen = 0;
    ms::ms_reply reply;
@@ -1327,12 +477,12 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    uint64_t volume_id = ms_client_get_volume_id( client );
    
    // generate our update
-   ms_client_add_update( &updates, up );
+   requests.push_back( request );
    
-   rc = ms_client_request_serialize( client, &updates, &serialized_text, &serialized_text_len, &post, &last );
+   rc = ms_client_requests_serialize( client, &requests, &serialized_text, &serialized_text_len, &post, &last );
    if( rc != 0 ) {
       
-      SG_error("ms_client_request_serialize rc = %d\n", rc );
+      SG_error("ms_client_requests_serialize rc = %d\n", rc );
       return rc;
    }
    
@@ -1345,7 +495,7 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
       return -ENOMEM;
    }
    
-   url = ms_client_file_url( client->url, volume_id );
+   url = ms_client_file_url( client->url, volume_id, ms_client_volume_version( client ), ms_client_cert_version( client ) );
    if( url == NULL ) {
       
       curl_easy_cleanup( curl );
@@ -1353,37 +503,44 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
       curl_formfree( post );
       return -ENOMEM;
    }
+   
+   // generate auth header
+   rc = ms_client_auth_header( client, url, &auth_header );
+   if( rc != 0 ) {
+      
+      // failed!
+      curl_easy_cleanup( curl );
+      SG_safe_free( serialized_text );
+      curl_formfree( post );
+      SG_safe_free( url );
+      return -ENOMEM;
+   }
                              
-   ms_client_init_curl_handle( client, curl, url );
+   ms_client_init_curl_handle( client, curl, url, auth_header );
    
    curl_easy_setopt( curl, CURLOPT_POST, 1L);
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, post );
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &timing );
-   
+  
    // run 
-   curl_rc = md_download_file( curl, &buf, &buflen );
-   
-   // check download status
-   curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &curl_errno );
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_status );
-   
-   rc = ms_client_download_interpret_errors( url, http_status, curl_rc, -curl_errno );
+   rc = md_download_run( curl, MS_MAX_MSG_SIZE, &buf, &buflen );
    
    curl_easy_cleanup( curl );
    curl_formfree( post );
    SG_safe_free( serialized_text );
    SG_safe_free( url );
+   SG_safe_free( auth_header );
    
    if( rc != 0 ) {
-      SG_error("download error: curl rc = %d, http status = %ld, errno = %ld, rc = %d\n", curl_rc, http_status, curl_errno, rc );
+      SG_error("md_download_run rc = %d\n", rc );
       
       ms_client_timing_free( &timing );
       return rc;
    }
    
    // parse and verify
-   rc = ms_client_parse_reply( client, &reply, buf, buflen, true );
+   rc = ms_client_parse_reply( client, &reply, buf, buflen );
    
    SG_safe_free( buf );
    
@@ -1412,10 +569,10 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    }
    
    if( reply.errors(0) != 0 ) {
-      SG_error("MS operation %d error %d\n", up->op, reply.errors(0) );
+      SG_error("MS operation %d error %d\n", request->op, reply.errors(0) );
    }
    
-   else if( MS_CLIENT_OP_RETURNS_ENTRY( up->op ) ) {
+   else if( MS_CLIENT_OP_RETURNS_ENTRY( request->op ) ) {
       
       if( !reply.has_listing() ) {
          SG_error("%s", "MS replied 0 entries (expected 1)\n" );
@@ -1431,6 +588,16 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
          return -EBADMSG;
       }
       
+      // verify authenticity
+      ms::ms_entry* msent = reply.mutable_listing()->mutable_entries(0);
+      rc = ms_entry_verify( client, msent );
+      if( rc != 0 ) {
+         SG_error("Invalid entry %" PRIX64 "\n", reply.listing().entries(0).file_id() );
+            
+         ms_client_timing_free( &timing );
+         return -EBADMSG;
+      }
+         
       // get the entry 
       ent = SG_CALLOC( struct md_entry, 1 );
       if( ent == NULL ) {
@@ -1456,67 +623,27 @@ static int ms_client_single_rpc_lowlevel( struct ms_client* client, struct md_up
    return 0;
 }
 
-// perform a single RPC, using the request/request_result structures
-// return the result of the RPC 
-// return 0 on success 
-// return negative on error
-int ms_client_single_rpc( struct ms_client* client, struct ms_client_request* request, struct ms_client_request_result* result ) {
-   
-   struct md_update up;
-   memset( &up, 0, sizeof(struct md_update) );
-   
-   ms_client_request_to_update( request, &up );
-   
-   return ms_client_single_rpc_lowlevel( client, &up, result );
-}
-
-
-// perform one update rpc with the MS, synchronously.  Don't bother with the result--just return an error, if one occurred
-// return 0 on success
-// return negative negative on error (be it protocol, formatting, or RPC error)
-int ms_client_update_rpc( struct ms_client* client, struct md_update* up ) {
-   
-   int rc = 0;
-   struct ms_client_request_result result;
-   
-   memset( &result, 0, sizeof(struct ms_client_request_result) );
-   
-   rc = ms_client_single_rpc_lowlevel( client, up, &result );
-   
-   if( rc != 0 ) {
-      ms_client_request_result_free( &result );
-      return rc;
-   }
-   
-   if( result.reply_error != 0 ) {
-      rc = result.reply_error;
-   }
-   
-   else if( result.rc != 0 ) {
-      rc = result.rc;
-   }
-   
-   ms_client_request_result_free( &result );
-   return rc;
-}
-
-
 // create a single file or directory record on the MS, synchronously
-// assert that the entry's type (MD_ENTRY_FILE or MD_ENTRY_DIRECTORY) matches a given type (return -EINVAL if it doesn't)
+// Sign the entry if we haven't already.
 // NOTE: ent will be modified internally, so don't call this method or access this ent while this method is running
 // return 0 on success
 // return negative on error
-static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, int type, struct md_entry* ent ) {
-   
-   // sanity check 
-   if( ent->type != type ) {
-      SG_error("Entry '%s' has type %d; expected type %d\n", ent->name, ent->type, type );
-      return EINVAL;
-   }
+// TODO: better documentation
+static int ms_client_create_or_mkdir( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent ) {
    
    int rc = 0;
    struct ms_client_request_result result;
    struct ms_client_request req;
+   
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   
+   int64_t write_nonce = ent->write_nonce;
+   int64_t xattr_nonce = ent->xattr_nonce;
+   int64_t version = ent->version;
+   int64_t generation = ent->generation;
+   int64_t num_children = ent->num_children;
+   int64_t capacity = ent->capacity;
    
    memset( &req, 0, sizeof( struct ms_client_request ) );
    memset( &result, 0, sizeof(struct ms_client_request_result) );
@@ -1527,12 +654,26 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
    
    // request a particular file ID
    ent->file_id = new_file_id;
+   ent->version = 1;
+   ent->write_nonce = 1;        // initial version; will be regenerated by the MS as needed
+   ent->generation = 1;         // initial version 
+   ent->num_children = 0;       // initial version 
+   ent->capacity = 16;          // initial version
+   ent->xattr_nonce = 0;        // initial version
    
    SG_debug("desired file_id: %" PRIX64 "\n", ent->file_id );
    
+   // sign the request
+   rc = md_entry_sign( client->gateway_key, ent, &sig, &sig_len );
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
+   
+   ent->ent_sig = sig;
+   ent->ent_sig_len = sig_len;
+
    // populate the request 
-   req.ent = ent;
-   req.op = ms::ms_update::CREATE;
+   ms_client_create_request( client, ent, &req );
    
    // perform the operation 
    rc = ms_client_single_rpc( client, &req, &result );
@@ -1569,11 +710,22 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
          
          else {
             
-            *file_id_ret = result.ent->file_id;
-            *write_nonce_ret = result.ent->write_nonce;
+            rc = md_entry_dup2( &result.ent[0], ent_out );
          }
       }
    }
+   
+   // restore
+   ent->ent_sig = NULL;
+   ent->ent_sig_len = 0;
+   ent->write_nonce = write_nonce;
+   ent->version = version;
+   ent->generation = generation;
+   ent->num_children = num_children;
+   ent->capacity = capacity;
+   ent->xattr_nonce = xattr_nonce;
+   
+   SG_safe_free( sig );
    
    ms_client_request_result_free( &result );
    
@@ -1582,23 +734,27 @@ static int ms_client_create_or_mkdir( struct ms_client* client, uint64_t* file_i
 
 
 // create a single file on the MS, synchronously.
-// unlike ms_client_create_or_mkdir, this only works for files
+// unlike ms_client_create_or_mkdir, this only works for files.
+// Sign the entry if we haven't already.
 // return 0 on success
 // return negative on error
-int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
-   return ms_client_create_or_mkdir( client, file_id_ret, write_nonce_ret, MD_ENTRY_FILE, ent );
+int ms_client_create( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent ) {
+   return ms_client_create_or_mkdir( client, ent_out, ent );
 }
 
 // create a single directory on the MS, synchronously 
 // unlike ms_client_create_or_mkdir, this only works for diretories 
+// Sign the entry if we haven't already.
 // return 0 on success 
 // return negative on error
-int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
-   return ms_client_create_or_mkdir( client, file_id_ret, write_nonce_ret, MD_ENTRY_DIR, ent );
+int ms_client_mkdir( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent ) {
+   return ms_client_create_or_mkdir( client, ent_out, ent );
 }
 
 
 // delete a record from the MS, synchronously
+// Sign the entry if we haven't already.
+// Only ent's coordinator should call this.
 // return 0 on success 
 // return negative on error
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
@@ -1607,12 +763,23 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
    struct ms_client_request_result result;
    struct ms_client_request req;
    
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   
    memset( &req, 0, sizeof( struct ms_client_request ) );
    memset( &result, 0, sizeof(struct ms_client_request_result) );
    
+   // sign the request 
+   rc = md_entry_sign( client->gateway_key, ent, &sig, &sig_len );
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
+   
+   ent->ent_sig = sig;
+   ent->ent_sig_len = sig_len;
+   
    // populate the request 
-   req.ent = ent;
-   req.op = ms::ms_update::DELETE;
+   ms_client_delete_request( client, ent, &req );
    
    // perform the operation 
    rc = ms_client_single_rpc( client, &req, &result );
@@ -1633,6 +800,11 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
       }
    }
    
+   ent->ent_sig = NULL;
+   ent->ent_sig_len = 0;
+   
+   SG_safe_free( sig );
+   
    ms_client_request_result_free( &result );
    
    return rc;
@@ -1640,24 +812,45 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
 
 
 // update a record on the MS, synchronously.
-// if in_affected_blocks is not NULL, send the affected blocks to the MS as part of the update (i.e. so we can vacuum them later)
-// in_affected_blocks will be referenced, but not duplicated, so don't free it.
+// Sign the entry if we haven't already.
+// only ent's coordinator should call this.
 // return 0 on success 
 // return negative on error
-int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
+int ms_client_update( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent ) {
    
    int rc = 0;
    struct ms_client_request_result result;
    struct ms_client_request req;
    
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   
+   int64_t write_nonce = ent->write_nonce;
+      
    memset( &req, 0, sizeof(struct ms_client_request) );
    memset( &result, 0, sizeof(struct ms_client_request_result) );
    
-   // populate the request 
-   req.ent = ent;
-   req.op = ms::ms_update::UPDATE;
-   req.affected_blocks = in_affected_blocks;
-   req.num_affected_blocks = num_affected_blocks;
+   if( ent->type == MD_ENTRY_DIR ) {
+       // for directories, choose a random nonce 
+       ent->write_nonce = md_random64();
+   }
+   else {
+       
+       // for files, writes only come from the coordinator, so we can sequentially increment.
+       ent->write_nonce = write_nonce + 1;
+   }
+   
+   // sign the request 
+   rc = md_entry_sign( client->gateway_key, ent, &sig, &sig_len );
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
+   
+   ent->ent_sig = sig;
+   ent->ent_sig_len = sig_len;
+
+   // build the request
+   ms_client_update_request( client, ent, &req );
    
    // perform the operation 
    rc = ms_client_single_rpc( client, &req, &result );
@@ -1676,10 +869,35 @@ int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, stru
          SG_error("MS file_update rc = %d\n", result.rc );
          rc = result.rc;
       }
+      else if( result.ent == NULL ) {
+          
+         SG_error("BUG: No entry given (%p)\n", result.ent );
+         rc = -ENODATA;
+      }
       else {
-         *write_nonce = result.ent->write_nonce;
+         
+         rc = md_entry_dup2( result.ent, ent_out );
+         if( rc == 0 ) {
+            
+            // advance write nonce 
+            if( ent->type == MD_ENTRY_DIR ) {
+                
+                // MS controls directory consistency information 
+                ent_out->write_nonce = result.ent->write_nonce;
+            }
+            else {
+                
+                // we're only calling this because we're the coordinator.
+                ent_out->write_nonce = write_nonce + 1;
+            }
+         }
       }
    }
+   
+   ent->ent_sig = NULL;
+   ent->ent_sig_len = 0;
+   
+   SG_safe_free( sig );
    
    ms_client_request_result_free( &result );
    
@@ -1687,28 +905,49 @@ int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, stru
 }
 
 
-// update a record on the MS, synchronously, NOT due to a write()
-// return 0 on success 
-// return negative on error
-int ms_client_update( struct ms_client* client, int64_t* write_nonce_ret, struct md_entry* ent ) {
-   return ms_client_update_write( client, write_nonce_ret, ent, NULL, 0 );
-}
-
 // change coordinator ownership of a file on the MS, synchronously
+// Sign the entry if we haven't already.
+// Populate *ent_out with the data on the MS.  The caller must free it.
 // return 0 on success, and give back the write nonce and new coordinator ID of the file
+// return -EINVAL if the xattr hash is missing from ent
 // return negative on error
-int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, int64_t* write_nonce, struct md_entry* ent ) {
+int ms_client_coordinate( struct ms_client* client, struct md_entry* ent_out, struct md_entry* ent, unsigned char* xattr_hash ) {
    
    int rc = 0;
    struct ms_client_request_result result;
    struct ms_client_request req;
    
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   
+   int64_t version = ent->version;
+   int64_t write_nonce = ent->write_nonce;
+   
+   unsigned char* old_xattr_hash = NULL;
+   
    memset( &req, 0, sizeof(struct ms_client_request) );
    memset( &result, 0, sizeof(struct ms_client_request_result) );
    
-   // populate the request 
-   req.ent = ent;
-   req.op = ms::ms_update::CHCOORD;
+   // signature must cover xattr hash...
+   old_xattr_hash = ent->xattr_hash;
+   ent->xattr_hash = xattr_hash;
+   ent->version = version + 1;
+   ent->write_nonce = write_nonce + 1;
+   
+   // sign the request 
+   rc = md_entry_sign( client->gateway_key, ent, &sig, &sig_len );
+   
+   ent->xattr_hash = old_xattr_hash;
+   
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
+   
+   ent->ent_sig = sig;
+   ent->ent_sig_len = sig_len;
+   
+   // populate...
+   ms_client_coordinate_request( client, ent, xattr_hash, &req );
    
    // perform the operation 
    rc = ms_client_single_rpc( client, &req, &result );
@@ -1729,11 +968,33 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
       }
       else {
          
-         // got data too!
-         *write_nonce = result.ent->write_nonce;
-         *new_coordinator = result.ent->coordinator;
+         // if we changed coordinators, then the version and write nonces will advance 
+         if( result.ent->coordinator == client->gateway_id ) {
+            
+            rc = md_entry_dup2( ent, ent_out );
+            if( rc == 0 ) {
+                
+                ent_out->coordinator = client->gateway_id;
+                
+                // advance locally
+                ent_out->write_nonce = write_nonce + 1;
+                ent_out->version = version + 1;
+            }
+         }
+         else {
+             
+            // need to try again, with higher versions (i.e. the caller should refresh)
+            rc = md_entry_dup2( &result.ent[0], ent_out );
+         }
       }
    }
+   
+   ent->ent_sig = NULL;
+   ent->ent_sig_len = 0;
+   ent->version = version;
+   ent->write_nonce = write_nonce;
+   
+   SG_safe_free( sig );
    
    ms_client_request_result_free( &result );
    
@@ -1741,11 +1002,12 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, i
 }
 
 // rename from src to dest, synchronously
+// Sign the src entry if we haven't already.
 // return 0 on success
 // return -EXDEV if the volumes do not agree between src and dest 
 // return -EINVAL if dest is NULL
 // return negative on error 
-int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest ) {
+int ms_client_rename( struct ms_client* client, struct md_entry* ent_out, struct md_entry* src, struct md_entry* dest ) {
    
    // sanity check
    if( src->volume != dest->volume ) {
@@ -1761,13 +1023,27 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
    struct ms_client_request_result result;
    struct ms_client_request req;
    
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   
+   int64_t write_nonce = src->write_nonce;
+   
    memset( &req, 0, sizeof(struct ms_client_request) );
    memset( &result, 0, sizeof(struct ms_client_request_result) );
    
+   src->write_nonce = write_nonce + 1;
+   
+   // sign the request 
+   rc = md_entry_sign( client->gateway_key, src, &sig, &sig_len );
+   if( rc != 0 ) {
+      return -ENOMEM;
+   }
+   
+   src->ent_sig = sig;
+   src->ent_sig_len = sig_len;
+   
    // populate the request 
-   req.ent = src;
-   req.dest = dest;
-   req.op = ms::ms_update::RENAME;
+   ms_client_rename_request( client, src, dest, &req );
    
    // perform the operation 
    rc = ms_client_single_rpc( client, &req, &result );
@@ -1789,11 +1065,22 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
       else {
          
          // got data too!
-         *write_nonce = result.ent->write_nonce;
+         // advance the write nonce
+         rc = md_entry_dup2( src, ent_out );
+         if( rc == 0 ) {
          
-         SG_debug("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, *write_nonce );
+            // advance
+            ent_out->write_nonce = write_nonce + 1;
+            SG_debug("New write_nonce of %" PRIX64 " is %" PRId64 "\n", src->file_id, write_nonce );
+         }
       }
    }
+   
+   src->ent_sig = NULL;
+   src->ent_sig_len = 0;
+   src->write_nonce = write_nonce;
+   
+   SG_safe_free( sig );
    
    ms_client_request_result_free( &result );
    
@@ -1804,31 +1091,27 @@ int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_
 // NOTE: the MS client cannot be config-locked
 // return 0 on success
 // return negative on error
-int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify ) {
+int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* reply, char const* buf, size_t buf_len ) {
 
-   ms_client_config_rlock( client );
-   
-   int rc = md_parse< ms::ms_reply >( src, buf, buf_len );
+   int rc = md_parse< ms::ms_reply >( reply, buf, buf_len );
    if( rc != 0 ) {
-      
-      ms_client_config_unlock( client );
       
       SG_error("md_parse ms_reply failed, rc = %d\n", rc );
       
       return rc;
    }
    
-   if( verify ) {
-      // verify integrity and authenticity
-      rc = md_verify< ms::ms_reply >( client->volume->volume_public_key, src );
-      if( rc != 0 ) {
-         
-         ms_client_config_unlock( client );
-         
-         SG_error("md_verify ms_reply failed, rc = %d\n", rc );
-         
-         return rc;
-      }
+   ms_client_config_rlock( client );
+
+   // verify integrity and authenticity
+   rc = md_verify< ms::ms_reply >( client->syndicate_pubkey, reply );
+   if( rc != 0 ) {
+      
+      ms_client_config_unlock( client );
+      
+      SG_error("md_verify ms_reply failed, rc = %d\n", rc );
+      
+      return rc;
    }
    
    ms_client_config_unlock( client );

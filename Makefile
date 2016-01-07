@@ -6,6 +6,10 @@ protobufs: build_setup
 libsyndicate: build_setup
 	$(MAKE) -C libsyndicate
 
+.PHONY: libsyndicate-install
+libsyndicate-install: libsyndicate
+	$(MAKE) -C libsyndicate install
+
 UG: build_setup
 	$(MAKE) -C UG2
 

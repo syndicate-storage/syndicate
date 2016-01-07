@@ -65,7 +65,7 @@ static void AG_connection_data_free( struct AG_connection_data* con_data ) {
       con_data->pubinfo = NULL;
    }
    
-   md_gateway_request_data_free( &con_data->ctx.reqdat );
+   SG_request_data_free( &con_data->ctx.reqdat );
 }
 
 // get the HTTP status given by the driver to an AG_connection_context, or set a default one 
@@ -158,7 +158,7 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
 
 
 // what kind of request?
-static int AG_request_type( struct md_gateway_request_data* reqdat ) {
+static int AG_request_type( struct SG_request_data* reqdat ) {
    
    int request_type = 0;
    
@@ -176,7 +176,7 @@ static int AG_request_type( struct md_gateway_request_data* reqdat ) {
 
 // redirect to latest block
 // mi must be coherent
-static int AG_HTTP_redirect_latest_block( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat, struct AG_map_info* mi ) {
+static int AG_HTTP_redirect_latest_block( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct SG_request_data* reqdat, struct AG_map_info* mi ) {
    
    if( !mi->cache_valid ) {
       return -ESTALE;
@@ -187,9 +187,9 @@ static int AG_HTTP_redirect_latest_block( struct AG_state* state, struct md_HTTP
    
    char* current_url = md_url_public_block_url( state->conf->content_url, state->conf->volume, reqdat->fs_path, mi->file_id, mi->file_version, reqdat->block_id, mi->block_version );
    
-   md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 302, MD_HTTP_302_MSG, strlen(MD_HTTP_302_MSG) + 1 );
-   md_HTTP_add_header( md_con_data->resp, "Location", current_url );
-   md_HTTP_add_header( md_con_data->resp, "Cache-Control", "no-store" );
+   md_HTTP_create_response_ram_static( md_con_data->resp, "text/plain", 302, MD_HTTP_302_MSG, strlen(MD_HTTP_302_MSG) + 1 );
+   md_HTTP_header_add( md_con_data->resp, "Location", current_url );
+   md_HTTP_header_add( md_con_data->resp, "Cache-Control", "no-store" );
    
    free( current_url );
    
@@ -198,7 +198,7 @@ static int AG_HTTP_redirect_latest_block( struct AG_state* state, struct md_HTTP
 
 // redirect to latest manifest
 // mi must be coherent
-static int AG_HTTP_redirect_latest_manifest( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
+static int AG_HTTP_redirect_latest_manifest( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct SG_request_data* reqdat, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
 
    if( pubinfo == NULL ) {
       return -EINVAL;
@@ -217,9 +217,9 @@ static int AG_HTTP_redirect_latest_manifest( struct AG_state* state, struct md_H
    
    char* current_url = md_url_public_manifest_url( state->conf->content_url, state->conf->volume, reqdat->fs_path, mi->file_id, mi->file_version, &ts );
    
-   md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 302, MD_HTTP_302_MSG, strlen(MD_HTTP_302_MSG) + 1 );
-   md_HTTP_add_header( md_con_data->resp, "Location", current_url );
-   md_HTTP_add_header( md_con_data->resp, "Cache-Control", "no-store" );
+   md_HTTP_create_response_ram_static( md_con_data->resp, "text/plain", 302, MD_HTTP_302_MSG, strlen(MD_HTTP_302_MSG) + 1 );
+   md_HTTP_header_add( md_con_data->resp, "Location", current_url );
+   md_HTTP_header_add( md_con_data->resp, "Cache-Control", "no-store" );
    
    free( current_url );
    
@@ -232,7 +232,7 @@ static int AG_HTTP_error( struct md_HTTP_connection_data* md_con_data, int http_
    
    md_con_data->status = http_status;
    md_con_data->resp = SG_CALLOC( struct md_HTTP_response, 1 );
-   md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", http_status, http_msg, strlen(http_msg) + 1 );
+   md_HTTP_create_response_ram_static( md_con_data->resp, "text/plain", http_status, http_msg, strlen(http_msg) + 1 );
    
    return 0;
 }
@@ -266,7 +266,7 @@ static int AG_HTTP_driver_error( struct md_HTTP_connection_data* md_con_data, in
 // verify that the request is fresh.  mi must be coherent
 // return 1 if redirected
 // return 0 if fresh.
-static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
+static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct SG_request_data* reqdat, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
    // determine request type 
    int request_type = AG_request_type( reqdat );
@@ -327,7 +327,7 @@ static int AG_HTTP_verify_fresh( struct AG_state* state, struct md_HTTP_connecti
 // if the request is for a manifest, then get the pubinfo for the mi as well.
 // if we can't give back a fresh AG_map_info, then populate md_con_data with an appropriate response and return NULL.
 // if the AG_map_info exists, but is stale, queue it for reversioning
-static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat, struct AG_driver_publish_info* pubinfo ) {
+static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct md_HTTP_connection_data* md_con_data, struct SG_request_data* reqdat, struct AG_driver_publish_info* pubinfo ) {
    
    // make sure the map info is fresh 
    int rc = AG_fs_refresh_path_metadata( state->ag_fs, reqdat->fs_path, false );
@@ -405,7 +405,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       return NULL;
    }
    
-   struct md_gateway_request_data reqdat;
+   struct SG_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
    
    struct AG_driver_publish_info pubinfo;
@@ -425,7 +425,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    if( state == NULL ) {
       
       // shutting down
-      md_gateway_request_data_free( &reqdat );
+      SG_request_data_free( &reqdat );
       
       AG_HTTP_try_again( md_con_data );
       
@@ -439,7 +439,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       
       SG_error("Invalid volume %" PRIu64 " (expected %" PRIu64 ")\n", reqdat.volume_id, state->conf->volume );
       
-      md_gateway_request_data_free( &reqdat );
+      SG_request_data_free( &reqdat );
       
       AG_HTTP_bad_request( md_con_data );
       
@@ -457,7 +457,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    if( mi == NULL ) {
       // we're done here 
       AG_release_state( state );
-      md_gateway_request_data_free( &reqdat );
+      SG_request_data_free( &reqdat );
       
       return NULL;
    }
@@ -472,7 +472,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
       // not fresh 
       AG_release_state( state );
       
-      md_gateway_request_data_free( &reqdat );
+      SG_request_data_free( &reqdat );
       
       AG_map_info_free( mi );
       free( mi );
@@ -579,11 +579,10 @@ static int AG_serialize_block( struct AG_state* state, struct AG_connection_data
 
 
 // AG GET block handler 
-static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, struct AG_connection_data* rpc ) {
+static int AG_GET_block_handler( struct AG_state* state, struct AG_connection_data* rpc, struct md_HTTP_response* resp ) {
 
    int ret = 0;
    int rc = 0;
-   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    char* block_buf = NULL;
    size_t block_size = 0;
@@ -612,8 +611,9 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
          
          // clean up 
          free( block_buf );
-         md_create_HTTP_response_ram_static( resp, "text/plain", AG_get_driver_HTTP_status( &rpc->ctx, 502 ), AG_HTTP_DRIVER_ERROR, strlen(AG_HTTP_DRIVER_ERROR) + 1);
-         return resp;
+         
+         md_HTTP_create_response_ram_static( resp, "text/plain", AG_get_driver_HTTP_status( &rpc->ctx, 502 ), AG_HTTP_DRIVER_ERROR, strlen(AG_HTTP_DRIVER_ERROR) + 1);
+         return -ENODATA;
       }
       if( ret > 0 && (unsigned)ret < block_size ) {
          
@@ -630,16 +630,16 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
          SG_error("AG_serialize_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n",
                 rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version, rc );
          
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
-         return resp;
+         md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
+         return -ENODATA;
       }
       
       // duplicate: one for the cache, one for the HTTP server (!!)
       http_reply = SG_CALLOC( char, serialized_block_len );
       if( http_reply == NULL ) {
-         SG_error("%s\n", "OOM");
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
-         return resp;
+         
+         md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
+         return -ENOMEM;
       }
       
       http_reply_len = serialized_block_len;
@@ -676,30 +676,29 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
    }
    
    // send it off 
-   md_HTTP_add_header( resp, "Connection", "keep-alive" );
-   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
+   md_HTTP_header_add( resp, "Connection", "keep-alive" );
+   md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
    
    SG_debug("Send block %s.%" PRIX64 ".%" PRId64 ".%" PRIu64 ".%" PRId64 "\n",
             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.block_id, rpc->ctx.reqdat.block_version );
    
-   return resp;
+   return 0;
 }
 
 
 // AG GET manifest handler 
-static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state, struct AG_connection_data* rpc ) {
+static int AG_GET_manifest_handler( struct AG_state* state, struct AG_connection_data* rpc, struct md_HTTP_response* resp ) {
 
    // manifest request 
    Serialization::ManifestMsg mmsg;
    
    int rc = 0;
-   struct md_HTTP_response* resp = SG_CALLOC( struct md_HTTP_response, 1 );
    
    if( rpc->pubinfo == NULL ) {
       SG_error("BUG: %p is a manifest request, but no pubinfo given!\n", rpc );
       
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      return resp;
+      md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+      return -EINVAL;
    }
    
    char* serialized_manifest = NULL;
@@ -721,8 +720,8 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
          SG_error("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%ld ) rc = %d\n",
                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         return resp;
+         md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return rc;
       }
       
       // serialize the manifest 
@@ -733,8 +732,8 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
                rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
          
          // clean up 
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         return resp;
+         md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return rc;
       }
       
       // duplicate, since we need to hand off a copy to the HTTP server 
@@ -742,9 +741,8 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
       http_reply = SG_CALLOC( char, http_reply_len );
       if( http_reply == NULL ) {
          
-         SG_error("%s\n", "OOM");
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         return resp;
+         md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         return -ENOMEM;
       }
       
       memcpy( http_reply, serialized_manifest, http_reply_len );
@@ -780,60 +778,65 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
          
    
    // send it off 
-   md_HTTP_add_header( resp, "Connection", "keep-alive" );
-   md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
+   md_HTTP_header_add( resp, "Connection", "keep-alive" );
+   md_HTTP_create_response_ram_nocopy( resp, "application/octet-stream", 200, http_reply, http_reply_len );
    
    SG_debug("Send manifest %s.%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%ld\n",
             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec );
    
-   return resp;
+   return 0;
 }
 
 
 // AG GET handler
-static struct md_HTTP_response* AG_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
+static int AG_GET_handler( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp ) {
    
    struct AG_connection_data* rpc = (struct AG_connection_data*)md_con_data->cls;
-   struct md_HTTP_response* resp = NULL;
+   int rc = 0;
    
    // sanity check
    if( rpc == NULL ) {
       // shouldn't happen
       SG_error("%s", "BUG: connection data is NULL\n");
       
-      resp = SG_CALLOC( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
-      return resp;
+      md_HTTP_create_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1);
+      return -EINVAL;
    }
    
    struct AG_state* state = AG_get_state();
    if( state == NULL ) {
       
       // shutting down 
-      resp = SG_CALLOC( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram_static( resp, "text/plain", 503, MD_HTTP_503_MSG, strlen(MD_HTTP_503_MSG) + 1);
-      return resp;
+      md_HTTP_create_response_ram_static( resp, "text/plain", 503, MD_HTTP_503_MSG, strlen(MD_HTTP_503_MSG) + 1);
+      return -ENOTCONN;
    }
       
    // what kind of request?
    if( rpc->ctx.request_type == AG_REQUEST_MANIFEST ) {
       
       // manifest request 
-      resp = AG_GET_manifest_handler( state, rpc );
+      rc = AG_GET_manifest_handler( state, rpc, resp );
+      if( rc != 0 ) {
+         
+         SG_error("AG_GET_manifest_handler rc = %d\n", rc );
    }
    else {
       
       // block request 
-      resp = AG_GET_block_handler( state, rpc );
+      rc = AG_GET_block_handler( state, rpc, resp );
+      if( rc != 0 ) {
+      
+         SG_error("AG_GET_block_handler rc = %d\n", rc );
+      }
    }
 
    AG_release_state( state );
-   return resp;
+   return 0;
 }
 
 
 // clean up
-static void AG_cleanup( struct MHD_Connection *connection, void *user_cls, enum MHD_RequestTerminationCode term) {
+static void AG_cleanup( void *user_cls ) {
 
    struct AG_connection_data *con_data = (struct AG_connection_data*)(user_cls);
    

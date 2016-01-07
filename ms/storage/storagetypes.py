@@ -40,12 +40,13 @@ Integer = backend.Integer
 Float = backend.Float
 String = backend.String
 Text = backend.Text
+Blob = backend.Blob
 Key = backend.Key
 Boolean = backend.Boolean
 Json = backend.Json
 Blob = backend.Blob
 Cursor = backend.Cursor         # NOTE: need to have a constructor that takes urlsafe= as an argument for deserialization, and needs a urlsafe() method for serialization
-Computed = backend.Computed 
+Computed = backend.Computed
 Pickled = backend.Pickled
 
 # aliases for keys
@@ -751,6 +752,7 @@ class Object( Model ):
    
    @classmethod
    def ParseArgs( cls, *args, **kw ):
-      # used by python clients, but not the MS
+      # used by python clients (i.e. syntool), but not the MS.
+      # it just needs to exist to keep the MS happy.
       pass
    

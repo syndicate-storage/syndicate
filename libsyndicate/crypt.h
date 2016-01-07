@@ -44,6 +44,11 @@
 
 #define MD_DEFAULT_CIPHER EVP_aes_256_cbc
 
+#define MD_SCRYPT_MAX_TIME 5.0
+#define MD_SCRYPT_MAX_MEM 1024000000
+
+
+
 extern "C" {
 
 int md_crypt_init();
@@ -57,8 +62,8 @@ int md_openssl_error(void);
 
 int md_read_urandom( char* buf, size_t len );
 
-int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
-int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
+int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str, size_t len );
+int md_load_privkey( EVP_PKEY** key, char const* privkey_str, size_t len );
 int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str );
 
 int md_public_key_from_private_key( EVP_PKEY** ret_pubkey, EVP_PKEY* privkey );
@@ -76,10 +81,6 @@ int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem
 
 int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
 int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_pkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
-
-int md_password_seal( char const* data, size_t data_len, char const* password, size_t password_len, char** output, size_t* output_len );
-int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len );
-int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len );   // for python, which can't mlock anyway
 
 int md_encrypt_symmetric( unsigned char const* key, size_t key_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len );
 size_t md_encrypt_symmetric_ciphertext_len( size_t data_len );
@@ -101,6 +102,10 @@ size_t md_decrypt_symmetric_ex_plaintext_len( size_t ciphertext_len );
 // signature verifier
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE:  class T should be a protobuf, and should have a string signature field
+// return 0 on successful verification 
+// return -ENOMEM on OOM 
+// return -EINVAL if the signature length is invalid
+// return -EINVAL if the signature itself does not match
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    // get the signature
    size_t sigb64_len = protobuf->signature().size();

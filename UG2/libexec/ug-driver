@@ -1,0 +1,121 @@
+#!/usr/bin/python
+
+import os
+import sys
+import errno 
+import cStringIO
+import traceback
+import signal
+import json
+
+import syndicate.util.gateway as gateway
+
+# to be overwritten by the driver, when we load it.
+cdn_url = None
+read = None
+write = None
+
+if __name__ == "__main__":
+  
+    usage, driver_mod = gateway.driver_setup( ['cdn', 'serialize', 'deserialize'], ['cdn_url', 'serialize_chunk', 'deserialize_chunk'] )
+  
+    # tell the parent that we're ready 
+    print "0"
+    sys.stdout.flush()
+
+    if usage == 'cdn':
+
+        # transform a URL to a CDN-ified URL
+        while True:
+
+            # consume a URL from Syndicate
+            url = gateway.read_path( sys.stdin )
+            if url is None:
+                print >> sys.stderr, "Failed to read URL from stdin"
+                sys.exit(4)
+
+            # transform it
+            try:
+                cdnified_url = driver_mod.cdn_url( url, driver_mod.CONFIG, driver_mod.SECRETS )
+            except:
+                print >> sys.stderr, "Failed to transform '%s'" % url
+                print >> sys.stderr, traceback.format_exc()
+                sys.exit(4)
+
+            # send it back 
+            gateway.write_data( sys.stdout, cdnified_url )
+            sys.stdout.flush()
+
+
+    elif usage == 'deserialize':
+        
+       # transform serialized manifests and blocks back into consumable manifests and blocks
+       while True:
+
+           # consume the type of chunk from Syndicate 
+           chunk_type = gateway.read_path( sys.stdin )
+           if chunk_type not in ['manifest', 'block']:
+               print >> sys.stder, "read: Unknown chunk type '%s'" % chunk_type
+               sys.exit(4)
+
+           # consume the request metadata from Syndicate 
+           reqdat = gateway.read_path( sys.stdin )
+           if reqdat is None:
+               print >> sys.stderr, "read: No request data given"
+               sys.exit(4)
+
+           # consume chunk from Syndicate 
+           chunk = gateway.read_chunk( sys.stdin )
+           if chunk is None:
+               print >> sys.stderr, "read: Failed to read %s" % chunk_type
+               sys.exit(4)
+
+           # process the chunk
+           try:
+               processed_chunk = driver_mod.deserialize_chunk( chunk_type, reqdat, chunk, driver_mod.CONFIG, driver_mod.SECRETS )
+           except:
+               print >> sys.stderr, "read: Failed to transform %s '%s'" % (chunk_type, reqdat)
+               print >> sys.stderr, traceback.format_exc()
+               sys.exit(4)
+
+           # return the processed chunk 
+           gateway.write_data( sys.stdout, processed_chunk )
+           sys.stdout.flush()
+
+
+    elif usage == 'serialize':
+
+        # serialize manifests and blocks into a format suitable for sending over the network 
+        while True:
+
+            # consume the type of chunk from Syndicate 
+            chunk_type == gateway.read_path( sys.stdin )
+            if chunk_type not in ['manifest', 'block']:
+                print >> sys.stderr, "write: Unknown chunk type '%s'" % chunk_type 
+                sys.exit(4)
+
+            # consume the request metadata from Syndicate 
+            reqdat = gateway.read_path( sys.stdin )
+            if reqdat is None:
+                print >> sys.stderr, "write: No request data given"
+                sys.exit(4)
+
+            # consume chunk from syndicate 
+            chunk = gateway.read_chunk( sys.stdin )
+            if chunk is None:
+                print >> sys.stderr, "write: Failed to read %s" % chunk_type
+                sys.exit(4)
+
+            # serialize the chunk 
+            try:
+                processed_chunk = driver_mod.serialize_chunk( chunk_type, reqdat, chunk, driver_mod.CONFIG, driver_mod.SECRETS )
+            except:
+                print >> sys.stderr, "write: Failed to transform %s '%s'" % (chunk_type, reqdat)
+                print >> sys.stderr, traceback.format_exc()
+                sys.exit(4)
+
+            # return the processed chunk 
+            gateway.write_data( sys.stdout, processed_chunk )
+            sys.stdout.flush()
+
+

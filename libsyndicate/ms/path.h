@@ -18,6 +18,7 @@
 #define _LIBSYNDICATE_MS_PATH_
 
 #include "libsyndicate/ms/core.h"
+#include "libsyndicate/ms/file.h"
 
 // status responses from the MS on a locally cached metadata record
 #define MS_LISTING_NEW          ms::ms_listing::NEW             // new entry
@@ -54,9 +55,6 @@ struct ms_listing {
 // list of path entries is a path 
 typedef vector< struct ms_path_ent > ms_path_t;
 
-// callback for a downloaded path 
-typedef int (*ms_path_ent_download_cb)( struct ms_path_ent*, void* );
-
 extern "C" {
  
 // structures
@@ -64,7 +62,9 @@ int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, u
                              int64_t num_children, int64_t generation, int64_t capacity, char const* name, void* cls );
 
 // downloads 
-int ms_client_path_download( struct ms_client* client, ms_path_t* path, ms_path_ent_download_cb download_cb, void* download_cls, int* error, int* error_idx );
+int ms_client_path_download( struct ms_client* client, ms_path_t* path, struct ms_client_multi_result* listings );
+int ms_client_path_download_ent_head( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t parent_id, uint64_t file_id, char const* name, void* cls );
+int ms_client_path_download_ent_tail( struct ms_path_ent* path_ent, uint64_t volume_id, char const* name, void* cls );
 
 // list parsing
 int ms_client_listing_read_entry( struct ms_client* client, struct md_download_context* dlctx, struct md_entry* ent, int* listing_error );
@@ -77,6 +77,12 @@ void ms_client_free_path( ms_path_t* path, void (*free_cls)(void*) );
 
 // serialization
 char* ms_path_to_string( ms_path_t* ms_path, int max_index );
+
+// getters 
+void* ms_client_path_ent_get_cls( struct ms_path_ent* ent );
+
+// setters 
+void ms_client_path_ent_set_cls( struct ms_path_ent* ent, void* cls );
 
 }
 #endif

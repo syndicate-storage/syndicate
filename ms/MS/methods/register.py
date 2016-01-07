@@ -16,6 +16,8 @@
    limitations under the License.
 """
 
+# DEPRECATED
+
 import protobufs.ms_pb2 as ms_pb2
 
 from storage import storage
@@ -31,6 +33,7 @@ import logging
 import urllib
 import base64
 
+'''
 from openid.gaeopenid import GAEOpenIDRequestHandler
 
 # ----------------------------------
@@ -74,32 +77,22 @@ def register_make_openid_reply( oid_request, return_method, return_to, query ):
 
 
 # ----------------------------------
-def register_load_gateway( gateway_type_str, gateway_name ):
+def register_load_gateway( gateway_name ):
    """
    Load up a Gateway from the datastore.
    Return the status to be sent back, and the gateway
    """
-   # get the gateway
-   if gateway_type_str not in ["UG", "RG", "AG"]:
-      logging.error("Invalid gateway type '%s'" % gateway_type_str )
-      return (401, None)
-      
-      
+   
    gateway = storage.read_gateway( gateway_name )
    if gateway == None:
       logging.error("No such Gateway named %s" % (gateway_name))
       return (404, None)
    
-   for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
-      if gateway_type_str == type_str and gateway.gateway_type != type_id:
-         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
-         return (404, None)
-
    return (200, gateway)
 
 
 # ----------------------------------
-def register_load_objects( gateway_type_str, gateway_name, username ):
+def register_load_objects( gateway_name, username ):
    """
    Load up a gateway and user object from the datastore, given the type of gateway,
    the name of the gateway, and the username.  Return an HTTP status code, as well,
@@ -107,7 +100,7 @@ def register_load_objects( gateway_type_str, gateway_name, username ):
    """
 
    # get the gateway
-   status, gateway = register_load_gateway( gateway_type_str, gateway_name )
+   status, gateway = register_load_gateway( gateway_name )
    if status != 200:
       return (status, None, None)
    
@@ -117,7 +110,6 @@ def register_load_objects( gateway_type_str, gateway_name, username ):
       return (401, None, None)
 
    return (200, gateway, user)
-
 
 # ----------------------------------
 def protobuf_volume( volume_metadata, volume, root=None ):
@@ -136,23 +128,15 @@ def protobuf_volume( volume_metadata, volume, root=None ):
 # ----------------------------------
 def register_complete( gateway ):
    """
-   Complete a gateway's registration, generating a shared session password.
+   Generate the mount information for a Volume: give back the volume cert, the root inode, and extra flow-control info
    Only call this method once the given gateway has authenticated!
    Generate and return a serialized ms_registration_metadata protobuf.
    """
    
-   # generate a session password
-   # TODO: lock this operation, so we put the gateway and generate the password atomically?
-   session_pass = gateway.regenerate_session_password()
-   gateway_fut = gateway.put_async()
-   futs = [gateway_fut]
-
    registration_metadata = ms_pb2.ms_registration_metadata()
 
-   # registration information
-   registration_metadata.session_password = session_pass
-   registration_metadata.session_expires = gateway.session_expires
-   gateway.protobuf_cert( registration_metadata.cert, need_closure=True )
+   # send back gateway cert and driver
+   gateway.protobuf_cert( registration_metadata.cert )
    
    # find all Volumes
    volume = storage.read_volume( gateway.volume_id )
@@ -169,10 +153,6 @@ def register_complete( gateway ):
 
    # add volume and contents
    protobuf_volume( registration_metadata.volume, volume, root )
-
-   # add sealed private key, if given earlier 
-   if gateway.encrypted_gateway_private_key != None:
-      registration_metadata.encrypted_gateway_private_key = gateway.encrypted_gateway_private_key
    
    # add flow control data
    registration_metadata.resolve_page_size = RESOLVE_MAX_PAGE_SIZE
@@ -190,60 +170,6 @@ def register_complete( gateway ):
    
    data = registration_metadata.SerializeToString()
    
-   # save the gateway
-   storage.wait_futures( futs )
-   
-   gateway.FlushCache( gateway.g_id )
-   volume.FlushCache( volume.volume_id )
-   
    return (200, data)
-   
-   
-# ----------------------------------
-def register_request_parse( request_handler ):
-   """
-   Parse the raw data from the 'ms-register-request' POST field into an ms_register_request.
-   Return None on failure.
-   """
-   
-   # will have gotten metadata updates
-   reg_field = request_handler.request.POST.get( 'ms-register-request' )
-
-   if reg_field == None:
-      # no valid data given (malformed)
-      return None
-
-   # extract the data
-   data = reg_field.file.read()
-   
-   # parse it 
-   reg_req = ms_pb2.ms_register_request()
-
-   try:
-      reg_req.ParseFromString( data )
-   except:
-      return None
-   
-   return reg_req
-
-
-# ----------------------------------
-def register_request_verify( reg_req ):
-   """
-   Verify that a user (SyndicateUser) sent a registration request (ms_pb2.ms_register_request)
-   Return the user on success; None if the user doesn't exist; False if the signature doesn't match.
-   """
-   
-   username = reg_req.username
-   sig_b64 = reg_req.signature 
-   
-   reg_req.signature = ""
-   
-   reg_req_str = reg_req.SerializeToString()
-   sig = base64.b64decode( sig_b64 )
-   
-   user = SyndicateUser.Authenticate( username, reg_req_str, sig )
-   return user
-   
-   
+'''
    

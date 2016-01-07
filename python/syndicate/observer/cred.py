@@ -41,7 +41,7 @@ logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s
 logger = logging.getLogger()
 logger.setLevel( logging.INFO )
 
-import syndicate.client.common.api as api
+import syndicate.ms.api as api
 import syndicate.util.crypto as syndicate_crypto
 import syndicate.syndicate as c_syndicate
 

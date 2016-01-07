@@ -30,7 +30,7 @@ logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s
 log = logging.getLogger()
 
 
-import syndicate.client.common.api as api
+import syndicate.ms.api as api
 
 
 #-------------------------------

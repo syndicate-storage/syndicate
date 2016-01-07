@@ -97,13 +97,19 @@ Cursor = GoogleCursor
 # aliases for keys
 make_key = ndb.Key
 
-# aliases for asynchronous operations
 def wait_futures( future_list ):
+   """
+   Wait for all of a list of futures to finish.
+   Works with FutureWrapper.
+   """
    # see if any of these are NOT futures...then just wrap them into a future object
    # that implements a get_result()
    ret = []
    futs = []
    for f in future_list:
+      if f is None:
+         continue 
+      
       if not isinstance( f, ndb.Future ) and not isinstance( f, FutureWrapper ):
          # definitely not a future
          ret.append( FutureWrapper( f ) )

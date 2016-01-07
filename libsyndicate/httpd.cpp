@@ -36,30 +36,103 @@ char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
 
 
-// respond to a request
+// find the text to return for a particular status code 
+// return the default response if not found.
+static char const* md_HTTP_response_builtin_text( int status ) {
+   
+   char const* page = NULL;
+
+   // use a built-in status message
+   switch( status ) {
+      
+      case 200: {
+         page = MD_HTTP_200_MSG;
+         break;
+      }
+      
+      case 400: {
+         page = MD_HTTP_400_MSG;
+         break;
+      }
+      
+      case 401: {
+         page = MD_HTTP_401_MSG;
+         break;
+      }
+      
+      case 403: {
+         page = MD_HTTP_403_MSG;
+         break;
+      }
+      
+      case 404: {
+         page = MD_HTTP_404_MSG;
+         break;
+      }
+      
+      case 409: {
+         page = MD_HTTP_409_MSG;
+         break;
+      }
+      
+      case 413: {
+         page = MD_HTTP_413_MSG;
+         break;
+      }
+      
+      case 422: {
+         page = MD_HTTP_422_MSG;
+         break;
+      }
+      
+      case 500: {
+         page = MD_HTTP_500_MSG;
+         break;
+      }
+      
+      case 501: {
+         page = MD_HTTP_501_MSG;
+         break;
+      }
+      
+      case 502: { 
+         page = MD_HTTP_502_MSG;
+         break;
+      }
+      
+      case 503: {
+         page = MD_HTTP_503_MSG;
+         break;
+      }
+      
+      case 504: {
+         page = MD_HTTP_504_MSG;
+         break;
+      }
+      
+      default: {
+         page = MD_HTTP_DEFAULT_MSG;
+         break;
+      }
+   }
+   
+   return page;
+}
+
+
+// respond to a request with data (if non-NULL), or with a built-in response.
+// either way, md_HTTP takes over responsibility for the data (i.e. the caller should NOT free it)
+// return MHD_YES on success
+// return MHD_NO on failure (i.e. OOM, or no data given when the status code doesn't match a built-in page)
 static int md_HTTP_default_send_response( struct MHD_Connection* connection, int status_code, char* data ) {
+   
    char const* page = NULL;
    struct MHD_Response* response = NULL;
+   int rc = 0;
    
    if( data == NULL ) {
-      // use a built-in status message
-      switch( status_code ) {
-         case MHD_HTTP_BAD_REQUEST:
-            page = MD_HTTP_400_MSG;
-            break;
-         
-         case MHD_HTTP_INTERNAL_SERVER_ERROR:
-            page = MD_HTTP_500_MSG;
-            break;
-         
-         case MHD_HTTP_UNAUTHORIZED:
-            page = MD_HTTP_401_MSG;
-            break;
-            
-         default:
-            page = MD_HTTP_DEFAULT_MSG;
-            break;
-      }
+      
+      page = md_HTTP_response_builtin_text( status_code );
       response = MHD_create_response_from_buffer( strlen(page), (void*)page, MHD_RESPMEM_PERSISTENT );
    }
    else {
@@ -67,75 +140,198 @@ static int md_HTTP_default_send_response( struct MHD_Connection* connection, int
       response = MHD_create_response_from_buffer( strlen(data), (void*)data, MHD_RESPMEM_MUST_FREE );
    }
    
-   if( !response )
-      return MHD_NO;
+   if( response == NULL ) {
       
+      // no response allocated, or no data given
+      return MHD_NO;
+   }
+   
    // this is always a text/plain type
-   MHD_add_response_header( response, "Content-Type", "text/plain" );
-   int ret = MHD_queue_response( connection, status_code, response );
+   rc = MHD_add_response_header( response, "Content-Type", "text/plain" );
+   if( rc != MHD_YES ) {
+      
+      // OOM 
+      MHD_destroy_response( response );
+      return MHD_NO;
+   }
+   
+   rc = MHD_queue_response( connection, status_code, response );
+   if( rc != MHD_YES ) {
+      
+      // OOM or related 
+      MHD_destroy_response( response );
+      return MHD_NO;
+   }
+   
+   // unref
    MHD_destroy_response( response );
    
-   return ret;
+   return MHD_YES;
+}
+
+// make a built-in response (static RAM) from our built-in messages 
+// return 0 on success 
+// return -ENOMEM on OOM
+int md_HTTP_create_response_builtin( struct md_HTTP_response* resp, int status ) {
+   
+   char const* page = NULL;
+
+   page = md_HTTP_response_builtin_text( status );
+   resp->resp = MHD_create_response_from_buffer( strlen(page), (void*)page, MHD_RESPMEM_PERSISTENT );
+   
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   resp->status = status;
+   return 0;
 }
 
 // make a RAM response which MHD will defensively copy
-int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_create_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+   
+   int rc = 0;
+   
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_COPY );
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   rc = MHD_add_response_header( resp->resp, "Content-Type", mimetype );
+   if( rc != MHD_YES ) {
+      
+      MHD_destroy_response( resp->resp );
+      return -ENOMEM;
+   }
+   
    resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
    return 0;
 }
 
 // make a RAM response which MHD keep a pointer to and free later
-int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_create_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+   
+   int rc = 0;
+   
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_FREE );
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   rc = MHD_add_response_header( resp->resp, "Content-Type", mimetype );
+   if( rc != MHD_YES ) {
+      
+      MHD_destroy_response( resp->resp );
+      return -ENOMEM;
+   }
+   
    resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
    return 0;
 }
 
 // make a RAM response which MHD should not copy, but the caller will not free
-int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_create_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
+   
+   int rc = 0;
+   
    resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_PERSISTENT );
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   rc = MHD_add_response_header( resp->resp, "Content-Type", mimetype );
+   if( rc != MHD_YES ) {
+      
+      MHD_destroy_response( resp->resp );
+      return -ENOMEM;
+   }
+   
    resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
    return 0;
 }
 
 // make an file-descriptor-based response
-int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size ) {
-   resp->resp = MHD_create_response_from_fd_at_offset( size, fd, offset );
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_create_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size ) {
+   
+   int rc = 0;
+   
+   resp->resp = MHD_create_response_from_fd_at_offset64( size, fd, offset );
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   rc = MHD_add_response_header( resp->resp, "Content-Type", mimetype );
+   if( rc != MHD_YES ) {
+      
+      MHD_destroy_response( resp->resp );
+      return -ENOMEM;
+   }
+   
    resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
    return 0;
 }
 
 // make a callback response
-int md_create_HTTP_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb ) {
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_create_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb ) {
+   
+   int rc = 0;
+   
    resp->resp = MHD_create_response_from_callback( size, blk_size, scb, cls, fcb );
+   if( resp->resp == NULL ) {
+      return -ENOMEM;
+   }
+   
+   rc = MHD_add_response_header( resp->resp, "Content-Type", mimetype );
+   if( rc != MHD_YES ) {
+      
+      MHD_destroy_response( resp->resp );
+      return -ENOMEM;
+   }
+   
    resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
    return 0;
 }
 
 // give back a user-callback-created response
 static int md_HTTP_send_response( struct MHD_Connection* connection, struct md_HTTP_response* resp ) {
-   int ret = MHD_queue_response( connection, resp->status, resp->resp );
-   MHD_destroy_response( resp->resp );
    
-   return ret;
+   int rc = 0;
+   
+   rc = MHD_queue_response( connection, resp->status, resp->resp );
+   
+   SG_debug("connection %p: HTTP %d\n", connection, resp->status );
+   
+   // safe to unref 
+   MHD_destroy_response( resp->resp );
+   md_HTTP_response_free( resp );
+   SG_safe_free( resp );
+   
+   return rc;
 }
 
 
 // free an HTTP response
-void md_free_HTTP_response( struct md_HTTP_response* resp ) {
+void md_HTTP_response_free( struct md_HTTP_response* resp ) {
    return;
 }
 
 
 // find an http header value
-char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header ) {
+// return a const char* pointer to the header on success
+// return NULL on not found
+char const* md_HTTP_header_lookup( struct md_HTTP_header** headers, char const* header ) {
    for( int i = 0; headers[i] != NULL; i++ ) {
+      
       if( strcasecmp( headers[i]->header, header ) == 0 ) {
          return headers[i]->value;
       }
@@ -144,113 +340,217 @@ char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* he
 }
 
 // add a header
-int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value ) {
+// return 0 on success
+// return -ENOMEM on error
+int md_HTTP_header_add( struct md_HTTP_response* resp, char const* header, char const* value ) {
    if( resp->resp != NULL ) {
-      MHD_add_response_header( resp->resp, header, value );
+      
+      int rc = MHD_add_response_header( resp->resp, header, value );
+      if( rc == MHD_NO ) {
+         return -ENOMEM;
+      }
    }
    return 0;
 }
 
-
-// get the user's data out of a syndicate-managed connection data structure
-void* md_cls_get( void* cls ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   return dat->cls;
-}
-
-// set the status of a syndicate-managed connection data structure
-void md_cls_set_status( void* cls, int status ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   dat->status = status;
-}
-
-// set the response of a syndicate-managed connection data structure
-struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   struct md_HTTP_response* ret = dat->resp;
-   dat->resp = resp;
-   return ret;
-}
-
-
 // create an http header
-void md_create_HTTP_header( struct md_HTTP_header* header, char const* h, char const* v ) {
-   header->header = strdup( h );
-   header->value = strdup( v );
+// return 0 on success
+// return -ENOMEM on OOM
+int md_HTTP_header_create( struct md_HTTP_header* header, char const* h, char const* v ) {
+   
+   header->header = SG_strdup_or_null( h );
+   if( header->header == NULL ) {
+      return -ENOMEM;
+   }
+   
+   header->value = SG_strdup_or_null( v );
+   if( header->value == NULL ) {
+      
+      SG_safe_free( header->header );
+      return -ENOMEM;
+   }
+   
+   return 0;
 }
 
 // free an HTTP header
-void md_free_HTTP_header( struct md_HTTP_header* header ) {
-   if( header->header ) {
-      free( header->header );
+// always succeeds
+void md_HTTP_header_free( struct md_HTTP_header* header ) {
+   
+   if( header->header != NULL ) {
+      SG_safe_free( header->header );
    }
-   if( header->value ) {
-      free( header->value );
+   if( header->value != NULL ) {
+      SG_safe_free( header->value );
    }
+   
    memset( header, 0, sizeof(struct md_HTTP_header) );
 }
 
 
-// accumulate inbound headers
+// accumulate inbound headers callback
+// return MHD_YES on success
+// return MHD_NO on failure
+// NOTE: if we fail on allocating memory, free the whole header list and set the first entry to (struct md_HTTP_header*)(-ENOMEM)
 static int md_accumulate_headers( void* cls, enum MHD_ValueKind kind, char const* key, char const* value ) {
-   vector<struct md_HTTP_header*> *header_list = (vector<struct md_HTTP_header*> *)cls;
    
-   struct md_HTTP_header* hdr = (struct md_HTTP_header*)calloc( sizeof(struct md_HTTP_header), 1 );
-   md_create_HTTP_header( hdr, key, value );
+   int rc = 0;
+   int i = 0;
+   struct md_HTTP_header** headers = (struct md_HTTP_header**)cls;
    
-   header_list->push_back( hdr );
+   struct md_HTTP_header* hdr = SG_CALLOC( struct md_HTTP_header, 1 );
+   if( hdr == NULL ) {
+      
+      // OOM 
+      for( i = 0; headers[i] != NULL; i++ ) {
+         md_HTTP_header_free( headers[i] );
+      }
+      
+      headers[0] = (struct md_HTTP_header*)(-ENOMEM);
+      
+      return MHD_NO;
+   }
+   
+   rc = md_HTTP_header_create( hdr, key, value );
+   if( rc != 0 ) {
+      
+      // OOM 
+      for( i = 0; headers[i] != NULL; i++ ) {
+         md_HTTP_header_free( headers[i] );
+      }
+      
+      headers[0] = (struct md_HTTP_header*)(-ENOMEM);
+      return MHD_NO;
+   }
+   
+   // insert
+   for( i = 0; headers[i] != NULL; i++ );
+   headers[i] = hdr;
+   
    return MHD_YES;
 }
 
 // free a list of headers
 static void md_free_headers( struct md_HTTP_header** headers ) {
+   
    for( unsigned int i = 0; headers[i] != NULL; i++ ) {
-      md_free_HTTP_header( headers[i] );
-      free( headers[i] );
+      
+      md_HTTP_header_free( headers[i] );
+      SG_safe_free( headers[i] );
    }
-   free( headers );
+   
+   SG_safe_free( headers );
 }
 
-// short message upload handler, for accumulating smaller messages into RAM via a response buffer
-int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
-                                       const char *key,
-                                       const char *filename, const char *content_type,
-                                       const char *transfer_encoding, const char *data,
-                                       uint64_t off, size_t size) {
 
+// multiplex uploads by POST field (key), routing them to individual field handlers.
+// "*" is the catch-all field handler, if a more specific match cannot be found.
+// return MHD_YES on success
+// return MHD_NO on OOM or field handler error
+int md_HTTP_post_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
+                                  const char *key,
+                                  const char *filename, const char *content_type,
+                                  const char *transfer_encoding, const char *data,
+                                  uint64_t off, size_t size) {
 
-   SG_debug( "upload %zu bytes\n", size );
+   SG_debug( "field '%s': upload %zu bytes\n", key, size );
 
    struct md_HTTP_connection_data *md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
-   md_response_buffer_t* rb = md_con_data->rb;
-
-   // add a copy of the data
-   char* data_dup = SG_CALLOC( char, size );
-   memcpy( data_dup, data, size );
-
-   rb->push_back( md_buffer_segment_t( data_dup, size ) );
-
-   return MHD_YES;
+   struct md_HTTP* http = md_con_data->http;
+   int rc = MHD_YES;
+   
+   SG_HTTP_post_field_handler_t handler = NULL;
+   struct SG_HTTP_post_field* field = NULL;
+   
+   try {
+      
+      string field_name(key);
+      
+      SG_HTTP_post_field_handler_map_t::iterator itr = http->upload_field_handlers->find( field_name );
+      if( itr != http->upload_field_handlers->end() ) {
+         
+         handler = itr->second;
+      }
+      else {
+         
+         // is there a generic handler?
+         field_name = string("*");
+         
+         itr = http->upload_field_handlers->find( field_name );
+         if( itr != http->upload_field_handlers->end() ) {
+            
+            handler = itr->second;
+         }
+      }
+      
+      // find the matching field
+      SG_HTTP_post_field_map_t::iterator field_itr = md_con_data->post_fields->find( field_name );
+      if( field_itr != md_con_data->post_fields->end() ) {
+         
+         field = &field_itr->second;
+      }
+      else {
+         
+         // no field data; ignore
+         SG_warn("No field data for '%s'\n", key );
+         return MHD_YES;
+      }
+   }
+   catch( bad_alloc& ba ) {
+      
+      // OOM 
+      rc = MHD_NO;
+   }
+   
+   if( rc == MHD_YES && handler != NULL ) {
+   
+      rc = (*handler)( key, filename, data, off, size, field );
+      
+      if( rc != 0 ) {
+         
+         SG_error("Field handler for '%s': rc = %d\n", key, rc );
+         rc = MHD_NO;
+      }
+      else {
+         rc = MHD_YES;
+      }
+   }
+   
+   return rc;
 }
 
 // convert a sockaddr to a string containing the hostname and port number
+// return 0 on success
+// return -ENODATA on getnameinfo() failure 
+// return -ENOMEM on OOM
 static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf ) {
+   
    socklen_t addr_len = 0;
    switch( addr->sa_family ) {
-      case AF_INET:
+      
+      case AF_INET: {
+         
          addr_len = sizeof(struct sockaddr_in);
          break;
+      }
+      
+      case AF_INET6: {
          
-      case AF_INET6:
          addr_len = sizeof(struct sockaddr_in6);
          break;
+      }
       
-      default:
+      default: {
          SG_error("Address is not IPv4 or IPv6 (%d)\n", addr->sa_family);
          return -EINVAL;
+      }
    }
    
    *buf = SG_CALLOC( char, HOST_NAME_MAX + 10 );
+   if( *buf == NULL ) {
+      return -ENOMEM;
+   }
+   
    char portbuf[10];
    
    // prefix with :
@@ -259,6 +559,7 @@ static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf )
    // write hostname to buf, and portnum to portbuf + 1 (i.e. preserve the colon)
    int rc = getnameinfo( addr, addr_len, *buf, HOST_NAME_MAX + 1, portbuf + 1, 10, NI_NUMERICSERV );
    if( rc != 0 ) {
+      
       SG_error("getnameinfo rc = %d (%s)\n", rc, gai_strerror(rc) );
       rc = -ENODATA;
    }
@@ -270,8 +571,725 @@ static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf )
 }
 
 
+// field handler for holding data in a response buffer (RAM)
+// return 0 on success
+// return -EINVAL if cls is NULL
+// return -ENOMEM on OOM 
+// return -EOVERFLOW if the message is too big
+int md_HTTP_post_field_handler_ram( char const* field_name, char const* filename, char const* data, off_t offset, size_t len, void* cls ) {
+   
+   struct SG_HTTP_post_field* field = (struct SG_HTTP_post_field*)cls;
+   char* data_dup = NULL;
+   
+   // sanity checks
+   if( field == NULL ) {
+      return -EINVAL;
+   }
+   
+   if( field->rb == NULL ) {
+      return -EINVAL;
+   }
 
-// HTTP connection handler
+   // cap size 
+   if( len + field->num_written > field->max_size ) {
+      return -EOVERFLOW;
+   }
+
+   // store data
+   data_dup = SG_CALLOC( char, len );
+   if( data_dup == NULL ) {
+      return -ENOMEM;
+   }
+   
+   memcpy( data_dup, data, len );
+   
+   try {
+      field->rb->push_back( md_buffer_segment_t( data_dup, len ) );
+   }
+   catch( bad_alloc& ba ) {
+      
+      SG_safe_free( data_dup );
+      return -ENOMEM;
+   }
+   
+   return 0;
+}
+
+
+// field handler for holding data in a temporary file (disk)
+// return 0 on success
+// return -errno on write error
+// return -EOVERFLOW if the message is too big
+int md_HTTP_post_field_handler_disk( char const* field_name, char const* filename, char const* data, off_t offset, size_t len, void* cls ) {
+   
+   struct SG_HTTP_post_field* field = (struct SG_HTTP_post_field*)cls;
+   ssize_t nw = 0;
+   
+   // sanity checks
+   if( field == NULL ) {
+      return -EINVAL;
+   }
+   
+   if( field->tmpfd < 0 || field->tmpfd_path == NULL ) {
+      return -EINVAL;
+   }
+
+   // cap size 
+   if( len + field->num_written > field->max_size ) {
+      return -EOVERFLOW;
+   }
+
+   // store data 
+   nw = md_write_uninterrupted( field->tmpfd, data, len );
+   if( nw < 0 || (size_t)nw != len ) {
+      
+      SG_error("md_write_uninterrupted('%s' (%d), %zu) rc = %zd\n", field->tmpfd_path, field->tmpfd, len, nw );
+      return (int)nw;
+   }
+   
+   return 0;
+}
+
+
+// get an uploaded field's contents from RAM.
+// the field must have been uploaded by md_HTTP_post_field_handler_ram
+// return 0 on success, and set *buf and *buflen to the contents and length (non-null-terminated)
+// return -ENOMEM on OOM
+// return -EINVAL if the field was not uploaded to RAM 
+// return -ENOENT if there is no such field 
+int md_HTTP_upload_get_field_buffer( struct md_HTTP_connection_data* con_data, char const* field_name, char** buf, size_t* buflen ) {
+  
+   struct SG_HTTP_post_field* field = NULL;
+   
+   try {
+      
+      SG_HTTP_post_field_map_t::iterator itr = con_data->post_fields->find( string(field_name) );
+      if( itr != con_data->post_fields->end() ) {
+         
+         field = &itr->second;
+      }
+      else {
+         
+         // not found 
+         return -ENOENT;
+      }
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+   
+   // have ram buffer?
+   if( field->rb == NULL ) {
+      return -EINVAL;
+   }
+   
+   // get a copy 
+   *buf = md_response_buffer_to_string( field->rb );
+   *buflen = md_response_buffer_size( field->rb );
+   
+   if( *buf == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   return 0;
+}
+
+// get an uploaded field's temporary file path and descriptor.
+// the field must have been uploaded by md_HTTP_post_field_handler_disk
+// return 0 on success, and set *path and *fd to the file path and file descriptor, respectively (if they are not NULL)
+// return -ENOMEM on OOM 
+// return -EINVAL if the field was not uploaded to disk 
+// return -ENOENT if there is no such field
+int md_HTTP_upload_get_field_tmpfile( struct md_HTTP_connection_data* con_data, char const* field_name, char** path, int* fd ) {
+   
+   struct SG_HTTP_post_field* field = NULL;
+   
+   try {
+      
+      SG_HTTP_post_field_map_t::iterator itr = con_data->post_fields->find( string(field_name) );
+      if( itr != con_data->post_fields->end() ) {
+         
+         field = &itr->second;
+         
+      }
+      else {
+         
+         // not found 
+         return -ENOENT;
+      }
+   }
+   catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+      
+   // have disk buffer?
+   if( field->tmpfd < 0 || field->tmpfd_path == NULL ) {
+      return -EINVAL;
+   }
+   
+   // get copies 
+   if( path != NULL ) {
+      *path = SG_strdup_or_null( field->tmpfd_path );
+         
+      if( *path == NULL ) {
+         
+         return -ENOMEM;
+      }
+   }
+   
+   if( fd != NULL ) {
+      *fd = field->tmpfd;
+   }
+   
+   return 0;
+}
+
+
+// free a field 
+// always succeeds
+static int md_HTTP_post_field_free( struct SG_HTTP_post_field* field ) {
+   
+   if( field->tmpfd >= 0 ) {
+      
+      close( field->tmpfd );
+      field->tmpfd = -1;
+   }
+   
+   if( field->tmpfd_path != NULL ) {
+      
+      SG_safe_free( field->tmpfd_path );
+   }
+   
+   if( field->rb ) {
+      
+      md_response_buffer_free( field->rb );
+      SG_safe_delete( field->rb );
+   }
+   
+   return 0;
+}
+
+// free a field map 
+// always succeeds
+static int md_HTTP_post_field_map_free( SG_HTTP_post_field_map_t* fields ) {
+   
+   for( SG_HTTP_post_field_map_t::iterator itr = fields->begin(); itr != fields->end(); itr++ ) {
+      
+      md_HTTP_post_field_free( &itr->second );
+   }
+   
+   fields->clear();
+   
+   return 0;
+}
+
+
+// unlink all temporary files in a field map 
+// always succeeds
+static int md_HTTP_post_field_unlink_tmpfiles( SG_HTTP_post_field_map_t* fields ) {
+   
+   for( SG_HTTP_post_field_map_t::iterator itr = fields->begin(); itr != fields->end(); itr++ ) {
+      
+      if( itr->second.tmpfd_path != NULL ) {
+         
+         int rc = unlink( itr->second.tmpfd_path );
+         if( rc != 0 ) {
+            
+            rc = -errno;
+            if( rc != -ENOENT ) {
+               
+               SG_warn("unlink('%s') rc = %d\n", itr->second.tmpfd_path, rc );
+            }
+         }
+      }
+   }
+   
+   return 0;
+}
+
+// set up a post processor 
+// return 0 on success
+// return -ENODATA if we failed to set one up 
+// return -ENOMEM if OOM
+static int md_HTTP_connection_setup_upload( struct md_HTTP* http_ctx, struct md_HTTP_connection_data* con_data, struct MHD_Connection* connection ) {
+   
+   struct MHD_PostProcessor* pp = NULL;
+   SG_HTTP_post_field_map_t* field_data = NULL;
+   int rc = 0;
+   
+   pp = MHD_create_post_processor( connection, 4096, md_HTTP_post_upload_iterator, con_data );
+   if( pp == NULL ) {
+      
+      SG_error( "%s", "failed to create POST processor\n");
+      
+      return -ENODATA;
+   }
+   
+   // new field holders
+   field_data = SG_safe_new( SG_HTTP_post_field_map_t() );
+   if( field_data == NULL ) {
+      
+      MHD_destroy_post_processor( pp );
+      return -ENOMEM;
+   }
+   
+   // create field holders for each field we expect to handle
+   for( SG_HTTP_post_field_handler_map_t::iterator itr = http_ctx->upload_field_handlers->begin(); itr != http_ctx->upload_field_handlers->end(); itr++ ) {
+      
+      char const* field_name = itr->first.c_str();
+      SG_HTTP_post_field_handler_t field_handler = itr->second;
+      struct SG_HTTP_post_field field;
+      
+      memset( &field, 0, sizeof(struct SG_HTTP_post_field) );
+      field.tmpfd = -1;
+      
+      // hold field in RAM?
+      if( field_handler == md_HTTP_post_field_handler_ram ) {
+         
+         // set up a RAM field 
+         field.rb = SG_safe_new( md_response_buffer_t() );
+         if( field.rb == NULL ) {
+            
+            // out of memory 
+            rc = -ENOMEM;
+            break;
+         }
+
+         field.max_size = http_ctx->max_ram_upload_size;
+      }
+      
+      // hold on disk?
+      else if( field_handler == md_HTTP_post_field_handler_disk ) {
+         
+         // set up a disk field 
+         field.tmpfd_path = SG_strdup_or_null( SG_HTTP_TMPFILE_FORMAT );
+         if( field.tmpfd_path == NULL ) {
+            
+            // out of memory 
+            rc = -ENOMEM;
+            break;
+         }
+         
+         field.tmpfd = mkstemp( field.tmpfd_path );
+         if( field.tmpfd < 0 ) {
+            
+            // mkstemp error 
+            rc = -errno;
+            SG_error( "mkstemp('%s') rc = %d\n", field.tmpfd_path, rc );
+            
+            SG_safe_free( field.tmpfd_path );
+            break;
+         }
+
+         field.max_size = http_ctx->max_disk_upload_size;
+      }
+      
+      try {
+         
+         (*field_data)[ string(field_name) ] = field;
+      }
+      catch( bad_alloc& ba ) {
+         
+         md_HTTP_post_field_free( &field );
+         rc = -ENOMEM;
+         break;
+      }
+   }
+   
+   if( rc != 0 ) {
+      
+      // abort 
+      md_HTTP_post_field_map_free( field_data );
+      SG_safe_delete( field_data );
+      MHD_destroy_post_processor( pp );
+   }
+   else {
+      
+      // success!
+      con_data->pp = pp;
+      con_data->post_fields = field_data;
+   }
+   
+   return rc;
+}
+
+
+// convert the string representation of an HTTP method to a nuermic one 
+// return the numeric mode ( > 0) on success
+// return -EINVAL if not recognized 
+static int md_HTTP_parse_method( char const* method ) {
+   
+   if( strcmp(method, "HEAD" ) == 0 ) {
+      return MD_HTTP_HEAD;
+   }
+   else if( strcmp( method, "GET" ) == 0 ) {
+      return MD_HTTP_GET;
+   }
+   else if( strcmp(method, "POST") == 0 ) {
+      return MD_HTTP_POST;
+   }
+   else if( strcmp(method, "PUT") == 0 ) {
+      return MD_HTTP_PUT;
+   }
+   else if( strcmp(method, "DELETE") == 0 ) {
+      return MD_HTTP_DELETE;
+   }
+   
+   return -EINVAL;
+}
+
+
+// is a method supported by our server?
+// return 0 if so 
+// return -ENOSYS if not 
+static int md_HTTP_is_supported( struct md_HTTP* http_ctx, int method ) {
+   
+   if( method == MD_HTTP_GET && http_ctx->HTTP_GET_handler != NULL ) {
+      return 0;
+   }
+   else if( method == MD_HTTP_HEAD && http_ctx->HTTP_HEAD_handler != NULL ) {
+      return 0;
+   }
+   else if( method == MD_HTTP_POST && http_ctx->HTTP_POST_finish != NULL ) {
+      return 0;
+   }
+   else if( method == MD_HTTP_PUT && http_ctx->HTTP_PUT_finish != NULL ) {
+      return 0;
+   }
+   else if( method == MD_HTTP_DELETE && http_ctx->HTTP_DELETE_handler != NULL ) {
+      return 0;
+   }
+   
+   return -ENOSYS;
+}
+
+
+// parse the HTTP version 
+// return X*10 + Y for version X.Y on success
+// return -EINVAL on parse error
+static int md_HTTP_parse_version( char const* http_version ) {
+   
+   int major = 0;
+   int minor = 0;
+   
+   int rc = sscanf( http_version, "%d.%d", &major, &minor );
+   if( rc != 2 ) {
+      return -EINVAL;
+   }
+   
+   return major * 10 + minor;
+}
+
+
+// open a new HTTP connection
+// set up the given connection data, and call the http context's HTTP_connect method if given.
+// return 0 on success
+// return -EINVAL if we got a malformed URL, no headers were given, or we got a malformed Content-Length header
+// return -ENOMEM on OOM 
+// return -ENODATA if the caller is POST'ing or PUT'ing and we failed to create a post processor context 
+// return -ENOSYS if the HTTP method is not supported
+// return -ENOTCONN if we failed to look up the remote host 
+// return -ECONNREFUSED if the caller's HTTP_connect method failed
+static int md_HTTP_connection_setup( struct md_HTTP* http_ctx, struct md_HTTP_connection_data* con_data, struct MHD_Connection* connection, char const* url, char const* method, char const* version ) {
+
+   // opening a new connection
+   int mode = MD_HTTP_UNKNOWN;
+   const union MHD_ConnectionInfo* con_info = NULL;
+   char* remote_host = NULL;
+   int rc = 0;
+   char const* content_length_str = NULL;
+   char* tmp = NULL;
+   int num_headers = 0;
+   struct md_HTTP_header** headers = NULL;
+   long content_length = 0;
+   char* url_path = NULL;
+   
+   // verify that the URL starts with '/'
+   if( strlen(url) > 0 && url[0] != '/' ) {
+      
+      SG_error( "malformed URL '%s'\n", url );
+      return -EINVAL;
+   }
+   
+   // what's the method?
+   mode = md_HTTP_parse_method( method );
+   if( mode < 0 ) {
+      
+      SG_error("Unrecognized HTTP method '%s'\n", method );
+      return -EINVAL;
+   }
+   
+   // is it supported?
+   if( md_HTTP_is_supported( http_ctx, mode ) != 0 ) {
+      
+      SG_error("Unsupported HTTP method '%s'\n", method );
+      return -ENOSYS;
+   }
+   
+   // get remote host info 
+   con_info = MHD_get_connection_info( connection, MHD_CONNECTION_INFO_CLIENT_ADDRESS );
+   if( con_info == NULL ) {
+      
+      
+      SG_error("No connection info on '%s'\n", method);
+      
+      // internal error
+      return -ENOTCONN;
+   }
+   
+   // look up host:port string
+   rc = md_sockaddr_to_hostname_and_port( con_info->client_addr, &remote_host );
+   if( rc != 0 ) {
+      
+      SG_error("md_sockaddr_to_hostname_and_port rc = %d\n", rc );
+      
+      return -ENOTCONN;
+   }
+   
+   // build up con_data from what we know
+   // content length...
+   content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
+   if( content_length_str != NULL ) {
+      
+      content_length = strtol( content_length_str, &tmp, 10 );
+      if( (tmp != NULL && *tmp != '\0') || content_length == LONG_MAX ) {
+         
+         // invalid content length 
+         SG_safe_free( remote_host );
+         return -EINVAL;
+      }
+   }
+   else {
+      
+      content_length = 0;
+   }
+   
+   // get headers
+   num_headers = MHD_get_connection_values( connection, MHD_HEADER_KIND, NULL, NULL );
+   if( num_headers <= 0 ) {
+      
+      SG_error("%s: No headers\n", method );
+      
+      SG_safe_free( remote_host );
+      
+      return -EINVAL;
+   }
+   
+   headers = SG_CALLOC( struct md_HTTP_header*, num_headers + 1 );
+   if( headers == NULL ) {
+      
+      // OOM 
+      SG_safe_free( remote_host );
+      
+      return -ENOMEM;
+   }
+   
+   MHD_get_connection_values( connection, MHD_HEADER_KIND, md_accumulate_headers, headers );
+   
+   // check for error 
+   if( (intptr_t)headers[0] == -ENOMEM ) {
+      
+      // OOM 
+      SG_safe_free( headers );
+      SG_safe_free( remote_host );
+      
+      return -ENOMEM;
+   }
+   
+   // URL
+   url_path = md_flatten_path( url );
+   
+   if( url_path == NULL ) {
+      
+      // OOM
+      SG_safe_free( url_path );
+      SG_safe_free( remote_host );
+      
+      md_free_headers( headers );
+      
+      return -ENOMEM;
+   }
+   
+   // uploading?
+   if( mode == MD_HTTP_POST || mode == MD_HTTP_PUT ) {
+      
+      rc = md_HTTP_connection_setup_upload( http_ctx, con_data, connection );
+      if( rc != 0 ) {
+         
+         SG_error("md_HTTP_connection_setup_upload( %s '%s' ) rc = %d\n", method, url, rc );
+         
+         SG_safe_free( remote_host );
+         SG_safe_free( url_path );
+         
+         md_free_headers( headers );
+         return rc;
+      }
+   }
+   
+   // Got everything!
+   
+   // HTTP version
+   con_data->version = md_HTTP_parse_version( version );
+   if( con_data->version < 0 ) {
+      con_data->version = 0;
+   }
+   
+   // connection data
+   con_data->http = http_ctx;
+   con_data->headers = headers;
+   con_data->url_path = url_path;
+   con_data->query_string = (char*)strchr( con_data->url_path, '?' );
+   con_data->remote_host = remote_host;
+   con_data->mode = mode;
+   con_data->cls = NULL;
+   con_data->status = 200;
+   con_data->content_length = content_length;
+   con_data->connection = connection;
+   con_data->suspended = false;
+   
+   // split query string off of url_path
+   if( con_data->query_string != NULL ) {
+      char* p = con_data->query_string;
+      *p = 0;
+      con_data->query_string = p + 1;
+   }
+   
+   SG_debug("connection %p: %s %s, query=%s, remote_host=%s\n", connection, method, con_data->url_path, con_data->query_string, con_data->remote_host );
+   
+   // perform connection setup
+   if( http_ctx->HTTP_connect != NULL ) {
+      
+      // do caller-given connection setup 
+      rc = (*http_ctx->HTTP_connect)( con_data, &con_data->cls );
+
+      if( rc != 0 ) {
+         
+         // not going to serve data
+         SG_error("HTTP_connect('%s', '%s') rc = %d\n", url, con_data->remote_host, rc );
+         
+         SG_safe_free( con_data->url_path );
+         SG_safe_free( remote_host );
+         
+         md_free_headers( headers );
+         con_data->headers = NULL;
+         
+         return -ECONNREFUSED;
+      }
+   }
+   
+   return 0;
+}
+
+
+// handle an HTTP method.
+// return 0 on success, and allocate and fill in *resp
+// return -ENOMEM on OOM 
+static int md_HTTP_do_method( char const* method_name, SG_HTTP_method_t method, struct MHD_Connection* connection, struct md_HTTP_connection_data* con_data, struct md_HTTP_response** ret_resp ) {
+
+   struct md_HTTP_response* resp = NULL;
+   int rc = 0;
+   
+   resp = SG_CALLOC( struct md_HTTP_response, 1 );
+   if( resp == NULL ) {
+      
+      // OOM 
+      return -ENOMEM;
+   }
+   
+   rc = (*method)( con_data, resp );
+   if( rc != 0 ) {
+      
+      // failed to generate a response 
+      SG_error("%s('%s') rc = %d\n", method_name, con_data->url_path, rc );
+      SG_safe_free( resp );
+      
+      return rc;
+   }
+   else {
+      
+      // generated a response!
+      *ret_resp = resp;
+      return 0;
+   }
+}
+
+
+// dispatch an HTTP method 
+// this finishes up the connection handler's work 
+static int md_HTTP_dispatch_method( struct md_HTTP* http_ctx, struct md_HTTP_connection_data* con_data ) {
+   
+   int rc = 0;
+   char const* method = NULL;
+   SG_HTTP_method_t cb = NULL;
+   struct md_HTTP_response* resp = NULL;
+   
+   switch( con_data->mode ) {
+      
+      case MD_HTTP_GET: {
+         
+         method = "GET";
+         cb = http_ctx->HTTP_GET_handler;
+         break;
+      }
+      
+      case MD_HTTP_HEAD: {
+         
+         method = "HEAD";
+         cb = http_ctx->HTTP_HEAD_handler;
+         break;
+      }
+      
+      case MD_HTTP_POST: {
+         
+         method = "POST";
+         cb = http_ctx->HTTP_POST_finish;
+         break;
+      }
+      
+      case MD_HTTP_PUT: {
+         
+         method = "PUT";
+         cb = http_ctx->HTTP_PUT_finish;
+         break;
+      }
+      
+      case MD_HTTP_DELETE: {
+         
+         method = "DELETE";
+         cb = http_ctx->HTTP_DELETE_handler;
+         break;
+      }
+      
+      default: {
+         
+         return md_HTTP_default_send_response( con_data->connection, 501, NULL );
+      }
+   }
+
+   rc = md_HTTP_do_method( method, cb, con_data->connection, con_data, &resp );
+   if( rc != 0 ) {
+      
+      // failed to generate a response
+      return md_HTTP_default_send_response( con_data->connection, 500, NULL );
+   }
+   else {
+      
+      // were we suspended?
+      if( con_data->suspended ) {
+         
+         // don't send a response 
+         return MHD_YES;
+      }
+      
+      // generated a response!
+      return md_HTTP_send_response( con_data->connection, resp );
+   }
+}
+
+// HTTP connection handler, fed into libmicrohttpd
+// return MHD_YES on successful handing 
+// return MHD_NO if the connection should be terminated
 static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connection, 
                                        char const* url, 
                                        char const* method, 
@@ -281,439 +1299,281 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
    
    struct md_HTTP* http_ctx = (struct md_HTTP*)cls;
    struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)(*con_cls);
-
+   int rc = 0;
+   
    // need to create connection data?
    if( con_data == NULL ) {
 
-      // verify that the URL starts with '/'
-      if( strlen(url) > 0 && url[0] != '/' ) {
-         SG_error( "malformed URL %s\n", url );
-         return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
-      }
-      
+      // opening a new connection
       con_data = SG_CALLOC( struct md_HTTP_connection_data, 1 );
-      if( !con_data ) {
-         SG_error("%s\n", "out of memory" );
-         return md_HTTP_default_send_response( connection, MHD_HTTP_INTERNAL_SERVER_ERROR, NULL );
-      }
-
-      struct MHD_PostProcessor* pp = NULL;
-      int mode = MD_HTTP_UNKNOWN;
-
-      if( strcmp( method, "GET" ) == 0 ) {
-         if( http_ctx->HTTP_GET_handler )
-            mode = MD_HTTP_GET;
-      }
-      else if( strcmp( method, "HEAD" ) == 0 ) {
-         if( http_ctx->HTTP_HEAD_handler )
-            mode = MD_HTTP_HEAD;
-      }
-      else if( strcmp( method, "POST" ) == 0 ) {
-
-         if( http_ctx->HTTP_POST_iterator ) {
-
-            char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
-            if( encoding != NULL &&
-               (strncasecmp( encoding, MHD_HTTP_POST_ENCODING_FORM_URLENCODED, strlen( MHD_HTTP_POST_ENCODING_FORM_URLENCODED ) ) == 0 ||
-                strncasecmp( encoding, MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, strlen( MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA ) ) == 0 )) {
-
-               pp = MHD_create_post_processor( connection, 4096, http_ctx->HTTP_POST_iterator, con_data );
-               if( pp == NULL ) {
-                  SG_error( "failed to create POST processor for %s\n", method);
-                  free( con_data );
-                  return md_HTTP_default_send_response( connection, 400, NULL );
-               }
-            }
-            else {
-               con_data->offset = 0;
-            }
-
-            mode = MD_HTTP_POST;
-         }
-      }
-      else if( strcmp( method, "PUT" ) == 0 ) {
-
-         if( http_ctx->HTTP_PUT_iterator ) {
-
-            char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
-            if( strncasecmp( encoding, MHD_HTTP_POST_ENCODING_FORM_URLENCODED, strlen( MHD_HTTP_POST_ENCODING_FORM_URLENCODED ) ) == 0 ||
-                strncasecmp( encoding, MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, strlen( MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA ) ) == 0 ) {
-
-               pp = MHD_create_post_processor( connection, 4096, http_ctx->HTTP_PUT_iterator, con_data );
-               if( pp == NULL ) {
-                  SG_error( "failed to create POST processor for %s\n", method);
-                  free( con_data );
-                  return md_HTTP_default_send_response( connection, 400, NULL );
-               }
-            }
-            else {
-               con_data->offset = 0;
-            }
-            mode = MD_HTTP_PUT;
-         }
-      }
-      else if( strcmp( method, "DELETE" ) == 0 ) {
-         if( http_ctx->HTTP_DELETE_handler )
-            mode = MD_HTTP_DELETE;
-      }
-
-      if( mode == MD_HTTP_UNKNOWN ) {
-         // unsupported method
-         struct md_HTTP_response* resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
-         free( con_data );
+      if( con_data == NULL ) {
          
-         SG_error("unknown HTTP method '%s'\n", method);
-         
-         return md_HTTP_send_response( connection, resp );
+         // OOM
+         return md_HTTP_default_send_response( connection, 500, NULL );
       }
+
+      rc = md_HTTP_connection_setup( http_ctx, con_data, connection, url, method, version );
       
-      // get remote host 
-      const union MHD_ConnectionInfo* con_info = MHD_get_connection_info( connection, MHD_CONNECTION_INFO_CLIENT_ADDRESS );
-      if( con_info == NULL ) {
-         // internal error
-         struct md_HTTP_response* resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         free( con_data );
-         
-         SG_error("No connection info from daemon on '%s'\n", method);
-         
-         return md_HTTP_send_response( connection, resp );
-      }
-      
-      struct sockaddr* client_addr = con_info->client_addr;
-      char* remote_host = NULL;
-      
-      int rc = md_sockaddr_to_hostname_and_port( client_addr, &remote_host );
       if( rc != 0 ) {
          
-         struct md_HTTP_response* resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         free( con_data );
+         SG_error("md_HTTP_connection_setup('%s') rc = %d\n", url, rc );
          
-         SG_error("md_sockaddr_to_hostname_and_port rc = %d\n", rc );
+         SG_safe_free( con_data );
          
-         return md_HTTP_send_response( connection, resp );
-      }
-         
-      
-      // build up con_data from what we know
-      con_data->http = http_ctx;
-      con_data->url_path = md_flatten_path( url );
-      con_data->version = strdup(version);
-      con_data->query_string = (char*)index( con_data->url_path, '?' );
-      con_data->rb = new md_response_buffer_t();
-      con_data->remote_host = remote_host;
-      con_data->method = method;
-      con_data->mode = mode;
-      con_data->cls = NULL;
-      con_data->status = 200;
-      con_data->pp = pp;
-
-      char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
-      if( content_length_str != NULL )
-         con_data->content_length = strtol( content_length_str, NULL, 10 );
-      else
-         con_data->content_length = 0;
-
-      // split query string on '?'
-      if( con_data->query_string != NULL ) {
-         char* p = con_data->query_string;
-         *p = 0;
-         con_data->query_string = p + 1;
-      }
-
-      // get headers
-      vector<struct md_HTTP_header*> headers_vec;
-      MHD_get_connection_values( connection, MHD_HEADER_KIND, md_accumulate_headers, (void*)&headers_vec );
-
-      // convert to list
-      struct md_HTTP_header** headers = SG_CALLOC( struct md_HTTP_header*, headers_vec.size() + 1 );
-      for( unsigned int i = 0; i < headers_vec.size(); i++ ) {
-         headers[i] = headers_vec.at(i);
-      }
-
-      con_data->headers = headers;
-
-      SG_debug("%s %s, query=%s, requester=%s\n", method, con_data->url_path, con_data->query_string, con_data->remote_host );
-      
-      *con_cls = con_data;
-      
-      // perform connection setup
-      if( http_ctx->HTTP_connect != NULL ) {
-         con_data->cls = (*http_ctx->HTTP_connect)( con_data );
-
-         if( con_data->status >= 300 ) {
-            // not going to serve data
-            SG_error("connect status = %d\n", con_data->status );
-            
-            if( con_data->resp == NULL ) {
-               md_create_HTTP_response_ram_static( con_data->resp, "text/plain", con_data->status, "connection error", strlen("connection error") + 1 );
-            }
-            
-            return md_HTTP_send_response( connection, con_data->resp );
+         if( rc == -ENOSYS ) {
+            return md_HTTP_default_send_response( connection, 501, NULL );
+         }
+         else if( rc == -EINVAL || rc == -ENODATA ) {
+            return md_HTTP_default_send_response( connection, 400, NULL );
+         }
+         else {
+            return md_HTTP_default_send_response( connection, 500, NULL );
          }
       }
+      
+      *con_cls = con_data;
 
       return MHD_YES;
    }
-
-   // POST
-   if( con_data->mode == MD_HTTP_POST ) {
-
-      if( *upload_size != 0 && con_data->status > 0 ) {
-         if( con_data->pp ) {
-            SG_debug( "POST %s, postprocess %zu bytes\n", con_data->url_path, *upload_size );
-            MHD_post_process( con_data->pp, upload_data, *upload_size );
-            *upload_size = 0;
-            return MHD_YES;
-         }
-         else {
-            SG_debug( "POST %s, raw %zu bytes\n", con_data->url_path, *upload_size );
-            int rc = (*http_ctx->HTTP_POST_iterator)( con_data, MHD_POSTDATA_KIND, NULL, NULL, NULL, NULL, upload_data, con_data->offset, *upload_size );
-            con_data->offset += *upload_size;
-            *upload_size = 0;
-            return rc;
-         }
-      }
-      else {
-         (*http_ctx->HTTP_POST_finish)( con_data );
-         SG_debug( "POST finished (%s)\n", url);
+   
+   // are we suspended? then don't block 
+   if( con_data->suspended ) {
+      return MHD_YES;
+   }
+   
+   // were we resumed and given a response? if so, send it
+   if( con_data->resume_resp != NULL ) {
+      
+      struct md_HTTP_response* resp = con_data->resume_resp;
+      con_data->resume_resp = NULL;
+      
+      return md_HTTP_send_response( connection, resp );
+   }
+   
+   // need to receive data via an iterator?
+   if( con_data->mode == MD_HTTP_POST || con_data->mode == MD_HTTP_PUT ) {
+      
+      if( *upload_size != 0 ) {
          
-         if( con_data->resp == NULL ) {
+         // have data!
+         // send through the postprocessor 
+         SG_debug( "%s %s, postprocess %zu bytes\n", method, con_data->url_path, *upload_size );
+         
+         rc = MHD_post_process( con_data->pp, upload_data, *upload_size );
+         
+         if( rc == MHD_NO ) {
+            
+            // failed (parse error, OOM, etc)
             return md_HTTP_default_send_response( connection, 500, NULL );
          }
          else {
-            return md_HTTP_send_response( connection, con_data->resp );
-         }
-      }
-   }
-   
-   // PUT
-   else if( con_data->mode == MD_HTTP_PUT ) {
-
-      if( *upload_size != 0 && con_data->status > 0 ) {
-         if( con_data->pp ) {
-            SG_debug( "PUT %s, postprocess %zu bytes\n", con_data->url_path, *upload_size );
-            MHD_post_process( con_data->pp, upload_data, *upload_size );
+            
+            // succeeded
             *upload_size = 0;
             return MHD_YES;
-         }
-         else {
-            SG_debug( "PUT %s, raw %zu bytes\n", con_data->url_path, *upload_size );
-            int rc = (*http_ctx->HTTP_PUT_iterator)( con_data, MHD_POSTDATA_KIND, NULL, NULL, NULL, NULL, upload_data, con_data->offset, *upload_size );
-            con_data->offset += *upload_size;
-            *upload_size = 0;
-            return rc;
          }
       }
       else {
          
-         (*http_ctx->HTTP_PUT_finish)( con_data );
-         SG_debug( "PUT finished (%s)\n", url);
-         
-         if( con_data->resp == NULL ) {
-            return md_HTTP_default_send_response( connection, 500, NULL );
-         }
-         else {
-            return md_HTTP_send_response( connection, con_data->resp );
-         }
+         // got all data.  process it and dispatch the response
+         return md_HTTP_dispatch_method( http_ctx, con_data );
       }
    }
+   else {
+      
+      // no data to receive--just dispatch to the handler 
+      return md_HTTP_dispatch_method( http_ctx, con_data );
+   }
+}
 
-   // DELETE
-   else if( con_data->mode == MD_HTTP_DELETE ) {
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_DELETE_handler)( con_data, 0 );
 
-      if( resp == NULL ) {
-         resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
-
-      con_data->resp = resp;
-      return md_HTTP_send_response( connection, con_data->resp );
+// suspend a connection.
+// must be resumed later.
+// return 0 on success
+// return -EINVAL if already suspended
+int md_HTTP_connection_suspend( struct md_HTTP_connection_data* con_data ) {
+   
+   if( con_data->suspended ) {
+      return -EINVAL;
    }
    
-   // GET
-   else if( con_data->mode == MD_HTTP_GET ) {
-      
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_GET_handler)( con_data );
-      if( resp == NULL ) {
-         resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
+   MHD_suspend_connection( con_data->connection );
 
-      con_data->resp = resp;
+   con_data->suspended = true;
+   
+   SG_debug("Suspend connection %p\n", con_data->connection );
+   
+   return 0;
+}
 
-      return md_HTTP_send_response( connection, resp );
+
+// resume a connection 
+// return 0 on success
+// return -EINVAL if already resumed 
+int md_HTTP_connection_resume( struct md_HTTP_connection_data* con_data, struct md_HTTP_response* resp ) {
+   
+   if( !con_data->suspended ) {
+      return -EINVAL;
    }
    
-   // HEAD
-   else if( con_data->mode == MD_HTTP_HEAD ) {
+   // send this response back once we resume 
+   con_data->resume_resp = resp;
+   
+   // send it back
+   MHD_resume_connection( con_data->connection );
+   con_data->suspended = false;
       
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_HEAD_handler)( con_data );
-      if( resp == NULL ) {
-         resp = SG_CALLOC(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
-
-      con_data->resp = resp;
-
-      return md_HTTP_send_response( connection, resp );
-   }
-
-   return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
+   SG_debug("Resume connection %p\n", con_data->connection );
+      
+   return 0;
 }
 
 
 // free a connection state
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
-   if( con_data->pp ) {
+   
+   if( con_data->pp != NULL ) {
+      
       MHD_destroy_post_processor( con_data->pp );
+      con_data->pp = NULL;
    }
-   if( con_data->resp ) {
-      md_free_HTTP_response( con_data->resp );
-      free( con_data->resp );
+   
+   if( con_data->url_path != NULL ) {
+      
+      SG_safe_free( con_data->url_path );
    }
-   if( con_data->url_path ) {
-      free( con_data->url_path );
-      con_data->url_path = NULL;
+   
+   if( con_data->remote_host != NULL ) {
+      
+      SG_safe_free( con_data->remote_host );
    }
-   if( con_data->query_string ) {
-      free( con_data->query_string );
-      con_data->query_string = NULL;
-   }
-   if( con_data->remote_host ) {
-      free( con_data->remote_host );
-      con_data->remote_host = NULL;
-   }
-   if( con_data->version ) {
-      free( con_data->version );
-      con_data->version = NULL;
-   }
-   if( con_data->headers ) {
+   
+   if( con_data->headers != NULL ) {
+      
       md_free_headers( con_data->headers );
       con_data->headers = NULL;
    }
-   if( con_data->rb ) {
-      md_response_buffer_free( con_data->rb );
-      delete con_data->rb;
-      con_data->rb = NULL;
+   
+   if( con_data->post_fields != NULL ) {
+      
+      // remove temprary files
+      md_HTTP_post_field_unlink_tmpfiles( con_data->post_fields );
+      md_HTTP_post_field_map_free( con_data->post_fields );
+      SG_safe_delete( con_data->post_fields );
    }
+   
+   memset( con_data, 0, sizeof( struct md_HTTP_connection_data ) );
 }
 
 // default cleanup handler
 // calls user-supplied cleanup handler as well
 void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_cls, enum MHD_RequestTerminationCode term ) {
-   struct md_HTTP* http = (struct md_HTTP*)cls;
    
+   struct md_HTTP* http = (struct md_HTTP*)cls;
    struct md_HTTP_connection_data* con_data = NULL;
-   if( con_cls ) {
+   
+   if( con_cls != NULL ) {
+      
       con_data = (struct md_HTTP_connection_data*)(*con_cls);
    }
    
-   if( http->HTTP_cleanup && con_data) {
-      (*http->HTTP_cleanup)( connection, con_data->cls, term );
+   if( http->HTTP_cleanup != NULL && con_data != NULL ) {
+      
+      // do the clean up
+      (*http->HTTP_cleanup)( con_data->cls );
       con_data->cls = NULL;
    }
-   if( con_data ) {
+   if( con_data != NULL ) {
+      
       md_HTTP_free_connection_data( con_data );
-      free( con_data );
+      SG_safe_free( con_data );
+      
+      *con_cls = NULL;
    }
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls ) {
    memset( http, 0, sizeof(struct md_HTTP) );
+   
+   http->upload_field_handlers = SG_safe_new( SG_HTTP_post_field_handler_map_t() );
+   if( http->upload_field_handlers == NULL ) {
+      return -ENOMEM;
+   }
+   
    http->server_type = server_type;
+   http->server_cls = server_cls;
+   
+   http->max_ram_upload_size = 1024*1024;   // 1MB default
+   http->max_disk_upload_size = 100 * 1024 * 1024;  // 100MB default
+   return 0;
+}
+
+
+// set HTTP limits 
+int md_HTTP_set_limits( struct md_HTTP* http, uint64_t max_ram_upload_size, uint64_t max_disk_upload_size ) {
+   http->max_ram_upload_size = max_ram_upload_size;
+   http->max_disk_upload_size = max_disk_upload_size;
    return 0;
 }
 
 
 // start the HTTP thread
-int md_start_HTTP( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf ) {
+// return 0 on success
+// return -EPERM on failure to start
+int md_HTTP_start( struct md_HTTP* http, int portnum ) {
    
-   pthread_rwlock_init( &http->lock, NULL );
-   
-   if( conf->server_cert && conf->server_key ) {
+   int rc = 0;
+   int num_http_threads = sysconf( _SC_NPROCESSORS_CONF );
 
-      http->server_pkey = conf->server_key;
-      http->server_cert = conf->server_cert;
-      
-      // SSL enabled
-      if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-   
-      if( http->http_daemon )
-         SG_debug( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert_path, conf->server_key_path, portnum);
+   if( (http->server_type & MHD_USE_THREAD_PER_CONNECTION) != 0 ) {
+      http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+                                             MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
+                                             MHD_OPTION_END );
    }
    else {
-      // SSL disabled
-      if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      
-      if( http->http_daemon )
-         SG_debug( "Started HTTP server on port %d\n", portnum);
+      http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SUSPEND_RESUME | MHD_USE_PIPE_FOR_SHUTDOWN, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+                                             MHD_OPTION_THREAD_POOL_SIZE, num_http_threads,
+                                             MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
+                                             MHD_OPTION_END );
    }
    
-   if( http->http_daemon == NULL ) {
-      pthread_rwlock_destroy( &http->lock );
-      return -1;
+   if( http->http_daemon != NULL ) {
+      SG_debug( "Started HTTP server on port %d\n", portnum);
+   }
+   else {
+      rc = -EPERM;
    }
    
-   return 0;
+   http->running = true;
+   
+   return rc;
 }
 
 // stop the HTTP thread
-int md_stop_HTTP( struct md_HTTP* http ) {
+int md_HTTP_stop( struct md_HTTP* http ) {
    MHD_stop_daemon( http->http_daemon );
    http->http_daemon = NULL;
+   
+   http->running = false;
    return 0;
 }
 
 // free the HTTP server
-int md_free_HTTP( struct md_HTTP* http ) {
-   pthread_rwlock_destroy( &http->lock );
+// always succeeds
+int md_HTTP_free( struct md_HTTP* http ) {
+   
+   if( http->upload_field_handlers != NULL ) {
+      SG_safe_delete( http->upload_field_handlers );
+   }
+   
    return 0;
 }
 
-int md_HTTP_rlock( struct md_HTTP* http ) {
-   return pthread_rwlock_rdlock( &http->lock );
-}
-
-int md_HTTP_wlock( struct md_HTTP* http ) {
-   return pthread_rwlock_wrlock( &http->lock );
-}
-
-int md_HTTP_unlock( struct md_HTTP* http ) {
-   return pthread_rwlock_unlock( &http->lock );
-}
-
-static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
+// parse a uint64_t 
+// return 0 on success, and set *out
+// return -EINVAL if it couldn't be parsed
+int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
    uint64_t ret = 0;
    int rc = sscanf( id_str, fmt, &ret );
    if( rc == 0 ) {
@@ -726,7 +1586,10 @@ static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
    return 0;
 }
 
-static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
+// parse a manifest timestamp 
+// return 0 on success, and set *manifest_timestamp
+// return -EINVAL if we fail
+int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
    long tv_sec = -1;
    long tv_nsec = -1;
    
@@ -745,8 +1608,10 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
    return 0;
 }
 
-
-static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
+// parse a string in the form of $BLOCK_ID.$BLOCK_VERSION 
+// return 0 on success, and set *_block_id and *_block_version 
+// return -EINVAL on failure
+int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
    uint64_t block_id = SG_INVALID_BLOCK_ID;
    int64_t block_version = 0;
    
@@ -764,8 +1629,9 @@ static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t*
 
 // parse the file ID and version
 // format is path.file_id.version 
-// get "file_id" and "version"
-static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_t* _file_id, int64_t* _file_version ) {
+// return 0 on success, and set *_file_id and *_file_version 
+// return -EINVAL on failure
+int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_t* _file_id, int64_t* _file_version ) {
    
    // scan back for the second-to-last '.'
    char* ptr = _name_id_and_version_str + strlen(_name_id_and_version_str);
@@ -801,188 +1667,8 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    return 0;
 }
 
-// clear the file ID from a string in the format of file_path.file_id 
-static int md_clear_file_id( char* name_and_id ) {
-   char* file_id_ptr = rindex( name_and_id, '.' );
-   if( file_id_ptr == NULL ) {
-      return -EINVAL;
-   }
-   
-   *file_id_ptr = '\0';
-   return 0;
+
+// get the HTTP server's closure 
+void* md_HTTP_cls( struct md_HTTP* http ) {
+   return http->server_cls;
 }
-
-// parse a URL in the format of:
-// /$PREFIX/$volume_id/$file_path.$file_id.$file_version/($block_id.$block_version || manifest.$mtime_sec.$mtime_nsec)
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, uint64_t* _file_id, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_ts ) {
-   char* url_path = strdup( _url_path );
-
-   // temporary values
-   uint64_t volume_id = SG_INVALID_VOLUME_ID;
-   char* file_path = NULL;
-   uint64_t file_id = SG_INVALID_FILE_ID;
-   int64_t file_version = -1;
-   uint64_t block_id = SG_INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   manifest_timestamp.tv_sec = -1;
-   manifest_timestamp.tv_nsec = -1;
-   int rc = 0;
-
-
-   int num_parts = 0;
-   char* prefix = NULL;
-   char* volume_id_str = NULL;
-
-   bool is_manifest = false;
-   int file_name_id_and_version_part = 0;
-   int manifest_part = 0;
-   int block_id_and_version_part = 0;
-   size_t file_path_len = 0;
-
-   char** parts = NULL;
-   char* tmp = NULL;
-   char* cursor = NULL;
-
-   
-   // break url_path into tokens, by /
-   int num_seps = 0;
-   for( unsigned int i = 0; i < strlen(url_path); i++ ) {
-      if( url_path[i] == '/' ) {
-         num_seps++;
-         while( url_path[i] == '/' && i < strlen(url_path) ) {
-            i++;
-         }
-      }
-   }
-
-   // minimum number of parts: data prefix, volume_id, path.file_id.file_version, (block.version || manifest.tv_sec.tv_nsec)
-   if( num_seps < 4 ) {
-      rc = -EINVAL;
-      SG_error("num_seps = %d\n", num_seps );
-      goto _md_HTTP_parse_url_path_finish;
-   }
-
-   num_parts = num_seps;
-   parts = SG_CALLOC( char*, num_seps + 1 );
-   tmp = NULL;
-   cursor = url_path;
-   
-   for( int i = 0; i < num_seps; i++ ) {
-      char* tok = strtok_r( cursor, "/", &tmp );
-      cursor = NULL;
-
-      if( tok == NULL ) {
-         break;
-      }
-
-      parts[i] = tok;
-   }
-   
-   prefix = parts[0];
-   volume_id_str = parts[1];
-   file_name_id_and_version_part = num_parts-2;
-   manifest_part = num_parts-1;
-   block_id_and_version_part = num_parts-1;
-
-   if( strcmp(prefix, SG_DATA_PREFIX) != 0 ) {
-      // invalid prefix
-      free( parts );
-      rc = -EINVAL;
-      SG_error("prefix = '%s'\n", prefix);
-      goto _md_HTTP_parse_url_path_finish;
-   }
-
-   // volume ID?
-   rc = md_parse_uint64( volume_id_str, "%" PRIu64, &volume_id );
-   if( rc < 0 ) {
-      free( parts );
-      rc = -EINVAL;
-      SG_error("could not parse '%s'\n", volume_id_str);
-      goto _md_HTTP_parse_url_path_finish;
-   }
-   
-   // is this a manifest request?
-   if( strncmp( parts[manifest_part], "manifest", strlen("manifest") ) == 0 ) {
-      rc = md_parse_manifest_timestamp( parts[manifest_part], &manifest_timestamp );
-      if( rc == 0 ) {
-         // success!
-         is_manifest = true;
-      }
-   }
-
-   if( !is_manifest ) {
-      // not a manifest request, so we must have a block ID and block version 
-      rc = md_parse_block_id_and_version( parts[block_id_and_version_part], &block_id, &block_version );
-      if( rc != 0 ) {
-         // invalid request--neither a manifest nor a block ID
-         SG_error("could not parse '%s'\n", parts[block_id_and_version_part]);
-         free( parts );
-         rc = -EINVAL;
-         goto _md_HTTP_parse_url_path_finish;
-      }
-   }
-   
-   // parse file ID and version
-   rc = md_parse_file_id_and_version( parts[file_name_id_and_version_part], &file_id, &file_version );
-   if( rc != 0 ) {
-      // invalid 
-      SG_error("could not parse ID and/or version of '%s'\n", parts[file_name_id_and_version_part] );
-      free( parts );
-      rc = -EINVAL;
-      goto _md_HTTP_parse_url_path_finish;
-   }
-   
-   // clear file version
-   md_clear_version( parts[file_name_id_and_version_part] );
-   
-   // clear file ID 
-   md_clear_file_id( parts[file_name_id_and_version_part] );
-
-   // assemble the path
-   for( int i = 2; i <= file_name_id_and_version_part; i++ ) {
-      file_path_len += strlen(parts[i]) + 2;
-   }
-
-   file_path = SG_CALLOC( char, file_path_len + 1 );
-   for( int i = 2; i <= file_name_id_and_version_part; i++ ) {
-      strcat( file_path, "/" );
-      strcat( file_path, parts[i] );
-   }
-
-   *_volume_id = volume_id;
-   *_file_path = file_path;
-   *_file_id = file_id;
-   *_file_version = file_version;
-   *_block_id = block_id;
-   *_block_version = block_version;
-   _manifest_ts->tv_sec = manifest_timestamp.tv_sec;
-   _manifest_ts->tv_nsec = manifest_timestamp.tv_nsec;
-
-   /*
-   if( manifest_timestamp.tv_sec > 0 || manifest_timestamp.tv_nsec > 0 ) {
-      SG_debug("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld\n", volume_id, file_path, file_id, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec );
-   }
-   else {
-      SG_debug("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", volume_id, file_path, file_id, file_version, block_id, block_version );
-   }
-   */
-   
-   free( parts );
-
-_md_HTTP_parse_url_path_finish:
-
-   free( url_path );
-
-   return rc;
-}
-
-
-// free a gateway_request_data
-void md_gateway_request_data_free( struct md_gateway_request_data* reqdat ) {
-   if( reqdat->fs_path ) {
-      free( reqdat->fs_path );
-   }
-   memset( reqdat, 0, sizeof(struct md_gateway_request_data) );
-}
-

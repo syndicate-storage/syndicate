@@ -19,7 +19,7 @@
 import webapp2
 
 import MS.handlers
-import openid.gaeopenid
+# import openid.gaeopenid
 
 import logging
 
@@ -28,47 +28,35 @@ from common.admin_info import *
 
 from MS.handlers import *
 
-have_debug = False
-
-try:
-   from tests.debughandler import MSDebugHandler
-   have_debug = True
-except:
-   pass
-
 VALID_PUNCTUATION = '!"#$%&\'\(\)\*\+,\-.:;<=>?@\[\\\]^_`\{\|\}~'         # missing '/'
 
 handlers = [
-    (r'[/]+FILE[/]+(GETCHILD)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([^/]+)[/]*', MSFileHandler ),                               # GET: for reading file metadata by name
-    (r'[/]+FILE[/]+(GETATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([-0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for refreshing file metadata.
-    (r'[/]+FILE[/]+(LISTDIR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                           # GET: for listing file metadata
-    (r'[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([a-zA-Z0-9!\"#$%&\'\(\)\*\+,\-.:;<=>?@\[\\\]^_`\{\|\}~]+)[/]*', MSFileHandler ),  # GET: for getting xattrs.
-    (r'[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                        # GET: for listing xattrs.
-    (r'[/]+FILE[/]+(VACUUM)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),
-    (r'[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                         # POST: for creating, updating, deleting, renaming, changing coordinator, setting/deleting/chown-ing/chmod-ing xattrs, and garbage collection
+    (r'[/]+FILE[/]+(GETCHILD)[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]+([0123456789ABCDEFabcdef]+)[/]+([^/]+)[/]*', MSFileHandler ),                               # GET: for reading file metadata by name
+    (r'[/]+FILE[/]+(GETATTR)[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]+([0123456789ABCDEFabcdef]+).([-0123456789]+).([-0123456789]+)[/]*', MSFileHandler ),   # GET: for refreshing file metadata.
+    (r'[/]+FILE[/]+(LISTDIR)[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]+([0123456789ABCDEFabcdef]+)[/]*', MSFileHandler ),                                           # GET: for listing file metadata
+    (r'[/]+FILE[/]+(FETCHXATTRS)[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]+([0123456789ABCDEFabcdef]+)[/]*', MSFileHandler ),                                       # GET: for getting the set of xattrs.
+    (r'[/]+FILE[/]+(VACUUM)[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]+([0123456789ABCDEFabcdef]+)[/]*', MSFileHandler ),
+    (r'[/]+FILE[/]+([0123456789]+).([0123456789]+).([0123456789]+)[/]*', MSFileHandler ),                         # POST: for creating, updating, deleting, renaming,
+                                                                                  # changing coordinator, setting/deleting/chown-ing/chmod-ing xattrs, and garbage collection
                                                                                   # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
-    (r'[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
-    (r'[/]+REGISTER[/]*', MSPublicKeyRegisterRequestHandler),
-    (r'[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
-    (r'[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
-    (r'[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
-    (r'[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
-    (r'[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
-    (r'[/]+API[/]+([^/]+)[/]*', MSJSONRPCHandler),
+    (r'[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeCertRequestHandler),
+    (r'[/]+USER[/]+([^/]+)[/]*', MSUserCertRequestHandler),
+    (r'[/]+CERTBUNDLE[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertBundleRequestHandler),
+    (r'[/]+GATEWAY[/]+([^/]+)[/]*', MSGatewayCertRequestHandler),
+    (r'[/]+DRIVER[/]+([0123456789ABCDEFabcdef]+)[/]*', MSDriverRequestHandler),
     (r'[/]+API[/]*', MSJSONRPCHandler),
     (r'[/]+PUBKEY[/]*', MSPubkeyHandler)
 ]
 
-if have_debug:
-   handlers.append(('/debug/([^/]+)/(.*)', MSDebugHandler))
-
-app = webapp2.WSGIApplication( handlers, debug=have_debug )
+app = webapp2.WSGIApplication( handlers )
 
 def ms_initialize():
    """
    Initialize the Syndicate MS
    """
-   admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_OPENID_URL, ADMIN_PUBLIC_KEY, ADMIN_REGISTER_PASSWORD )
+   admin = SyndicateUser.Read( ADMIN_EMAIL )
+   if admin is None:
+      admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_ID, ADMIN_PUBLIC_KEY, SYNDICATE_PRIVKEY )
    
    
 ms_initialize()

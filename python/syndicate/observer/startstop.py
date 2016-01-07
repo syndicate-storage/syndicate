@@ -47,7 +47,7 @@ log.setLevel( logging.INFO )
 
 import syndicate
 
-import syndicate.client.bin.syntool as syntool 
+import syndicate.ms.syntool as syntool 
 
 import syndicate.util.watchdog as watchdog
 import syndicate.util.provisioning as provisioning

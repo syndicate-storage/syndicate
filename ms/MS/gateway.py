@@ -35,6 +35,7 @@ import datetime
 import random
 import logging
 import string
+import binascii
 import traceback
 
 from common.msconfig import *
@@ -68,10 +69,121 @@ class GatewayNameHolder( storagetypes.Object ):
    def create_async( cls,  _name, _id ):
       return GatewayNameHolder.get_or_insert_async( GatewayNameHolder.make_key_name( _name ), name=_name, g_id=_id )
       
+
+class GatewayDriver( storagetypes.Object):
+   """
+   Gateway driver, addressed by hash.
+   """
+   
+   driver_hash = storagetypes.String()  # hex string
+   driver_text = storagetypes.Blob()
+   refcount = storagetypes.Integer()
+   
+   @classmethod 
+   def hash_driver( cls, driver_text ):
+      h = HashAlg.new() 
+      h.update( driver_text )
+      return h.hexdigest()
+      
+   @classmethod 
+   def make_key_name( cls, driver_hash ):
+      return "GatewayDriver: hash=%s" % (driver_hash)
+   
+   @classmethod 
+   def create_or_ref( cls, _text ):
+      """
+      Create a new driver, or re-ref the existing one.
+      Do so atomically.
+      """
+      driver_hash = cls.hash_driver( _text )
+      
+      def txn():
+          
+          dk = storagetypes.make_key( GatewayDriver, GatewayDriver.make_key_name( driver_hash ) )
+          d = dk.get()
+          f = None 
+          
+          if d is None:
+              d = GatewayDriver( key=dk, driver_hash=driver_hash, driver_text=_text, refcount=1 )
+              d.put()
+          
+          else:
+              d.refcount += 1
+              d.put()
+              
+          return d
+      
+      return storagetypes.transaction( txn )
+  
+  
+   @classmethod 
+   def ref( cls, driver_hash ):
+      """
+      Increment reference count.
+      Do this in an "outer" transaction (i.e. Gateway.Update)
+      """
+      dk = storagetypes.make_key( GatewayDriver, cls.make_key_name( driver_hash ) )
+      d = dk.get()
+      
+      if d is None:
+         return False 
+    
+      d.refcount += 1
+      d.put()
+      return True
+      
+   
+   @classmethod 
+   def unref( cls, driver_hash ):
+      """
+      Unref a driver
+      Delete it if its ref count goes non-positive.
+      Do this in an "outer" transaction (i.e. Gateway.Delete, Gateway.Update)
+      """
+      dk = storagetypes.make_key( GatewayDriver, cls.make_key_name( driver_hash ) )
+      d = dk.get()
+      
+      if d is None:
+          return True 
+      
+      d.refcount -= 1
+      if d.refcount <= 0:
+          dk.delete()
+      else:
+          d.put()
+          
+      return True
+  
+  
+   @classmethod 
+   def unref_async( cls, driver_hash ):
+      """
+      Unref a driver, asynchronously
+      Delete it if its ref count goes non-positive.
+      Do this in an "outer" transaction (i.e. Gateway.Delete, Gateway.Update)
+      """
+      dk = storagetypes.make_key( GatewayDriver, cls.make_key_name( driver_hash ) )
+      d = dk.get()
+      
+      if d is None:
+          return True 
+      
+      d.ref -= 1
+      if d.ref <= 0:
+          d.delete_async()
+      else:
+          d.put_async()
+          
+      return True
    
 
 class Gateway( storagetypes.Object ):
+
+   # signed gateaway certificate from the user
+   gateway_cert = storagetypes.Blob()                   # protobuf'ed gateway certificate generated and signed by the gateway owner upon creation
    
+   # all of the below information is derived from the above signed gateway certificate.
+   # it is NOT filled in by any method.
    gateway_type = storagetypes.Integer(default=0)
 
    owner_id = storagetypes.Integer(default=-1)         # ID of the SyndicateUser that owns this gateway
@@ -82,20 +194,14 @@ class Gateway( storagetypes.Object ):
    volume_id = storagetypes.Integer(default=-1)
 
    gateway_public_key = storagetypes.Text()             # PEM-encoded RSA public key to verify control-plane messages (metadata) sent from this gateway.
-   encrypted_gateway_private_key = storagetypes.Text()  # optional: corresponding RSA private key, sealed with user's password.  Can only be set on creation.
    
    caps = storagetypes.Integer(default=0)                # capabilities
-   
-   session_password_hash = storagetypes.Text()
-   session_password_salt = storagetypes.Text()
-   session_timeout = storagetypes.Integer(default=-1, indexed=False)
-   session_expires = storagetypes.Integer(default=-1)     # -1 means "never expires"
    
    cert_expires = storagetypes.Integer(default=-1)       # -1 means "never expires"
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
    
-   closure = storagetypes.Text()                # closure data for this gateway
+   driver_hash = storagetypes.String()                # driver hash for this gateway (addresses GatewayDriver).  hex string, not byte string
    
    need_cert = storagetypes.Boolean(default=False)      # whether or not other gateways in the volume need this gateway's certificate (i.e. will this gateway ever serve data)
    
@@ -103,56 +209,49 @@ class Gateway( storagetypes.Object ):
    key_type = "gateway"
    
    required_attrs = [
-      "owner_id",
-      "host",
-      "port",
-      "name",
-      "gateway_type",
-      "caps"
+      "gateway_cert"
    ]
    
    read_attrs_api_required = [
-      "closure",
+      "driver_hash",
       "host",
       "port",
       "owner_id",
       "g_id",
       "gateway_type",
       "volume_id",
-      "session_timeout",
-      "session_expires",
       "cert_version",
       "cert_expires",
       "caps",
-      "encrypted_gateway_private_key"
    ]
    
    read_attrs = [
       "gateway_public_key",
-      "name"
+      "name",
    ] + read_attrs_api_required
    
    
+   # fields an API call can set
    write_attrs = [
-      "closure",
+      "gateway_cert"
+   ]
+   
+   # attrs from the cert that are allowed to change between cert versions
+   modifiable_cert_attrs = [
+      "gateway_type",
       "host",
       "port",
+      "name",
+      "caps",
       "cert_expires",
-      "session_expires",
-      "session_timeout"
+      "cert_version",
+      "driver_hash"
    ]
    
    write_attrs_api_required = write_attrs
    
-   
-   # TODO: session expires in 3600 seconds
-   # TODO: cert expires in 86400 seconds
    default_values = {
-      "session_expires": (lambda cls, attrs: -1),
-      "cert_version": (lambda cls, attrs: 1),
-      "cert_expires": (lambda cls, attrs: -1),
-      "caps": (lambda cls, attrs: 0),
-      "encrypted_gateway_private_key": (lambda cls, attrs: None)
+      "gateway_cert": ""
    }
 
    key_attrs = [
@@ -160,113 +259,25 @@ class Gateway( storagetypes.Object ):
    ]
    
    validators = {
-      "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
       "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) )
    }
    
-   @classmethod 
-   def safe_caps( cls, gateway_type, given_caps ):
-      '''
-      Get this gateway's capability bits, while making sure that AGs and RGs 
-      get hardwired capabilities.
-      '''
-      if gateway_type == GATEWAY_TYPE_AG:
-         # caps are always read and write metadata
-         return (GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_WRITE_METADATA)
-      
-      elif gateway_type == GATEWAY_TYPE_RG:
-         # caps are always 0
-         return 0
-      
-      return given_caps
-      
-
+   
    @classmethod 
    def needs_cert( cls, gateway_type, caps ):
       """
       Given a gateway's capabilities, will another gateway need its certificate?
       """
-      if gateway_type == GATEWAY_TYPE_AG:
-         return True 
-      
-      if gateway_type == GATEWAY_TYPE_RG:
-         return True 
-      
       if (caps & (GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_COORDINATE)) != 0:
          return True 
       
       return False
    
+   
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
-
-   def authenticate_session( self, password ):
-      """
-      Verify that the session password is correct
-      """
-      pw_hash = Gateway.generate_password_hash( password, self.session_password_salt )
-      return pw_hash == self.session_password_hash
-
-      
-   @classmethod
-   def generate_password_hash( cls, pw, salt ):
-      '''
-      Given a password and salt, generate the hash to store.
-      '''
-      h = HashAlg.new()
-      h.update( salt )
-      h.update( pw )
-
-      pw_hash = h.hexdigest()
-
-      return unicode(pw_hash)
-
-
-   @classmethod
-   def generate_password( cls, length ):
-      '''
-      Create a random password of a given length
-      '''
-      password = "".join( [random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for i in xrange(length)] )
-      return password
-
-
-   @classmethod
-   def generate_session_password( cls ):
-      '''
-      Generate a session password
-      '''
-      return cls.generate_password( GATEWAY_SESSION_PASSWORD_LENGTH )
-
-
-   @classmethod
-   def generate_session_secrets( cls ):
-      """
-      Generate a password, password hash, and salt for this gateway
-      """
-      password = cls.generate_session_password()
-      salt = cls.generate_password( GATEWAY_SESSION_SALT_LENGTH )
-      pw_hash = Gateway.generate_password_hash( password, salt )
-
-      return ( password, pw_hash, salt )  
    
-
-   def regenerate_session_password( self ):
-      """
-      Regenerate a session password.  The caller should put() 
-      the gateway after this call to save the hash and salt.
-      """
-      password, pw_hash, salt = Gateway.generate_session_secrets()
-      if self.session_timeout > 0:
-         self.session_expires = now + self.session_timeout
-      else:
-         self.session_expires = -1
-
-      self.session_password_hash = pw_hash
-      self.session_password_salt = salt
-      return password
-
 
    def load_pubkey( self, pubkey_str, in_base64=True ):
       """
@@ -298,33 +309,13 @@ class Gateway( storagetypes.Object ):
       return 0
       
    
-   def protobuf_cert( self, cert_pb, need_closure=False ):
+   def protobuf_cert( self, cert_pb ):
       """
-      Populate an ms_volume_gateway_cred structure
+      Populate an ms_gateway_cert structure from our cert
       """
-      cert_pb.version = self.cert_version
-      cert_pb.gateway_type = self.gateway_type
-      cert_pb.owner_id = self.owner_id
-      cert_pb.gateway_id = self.g_id
-      cert_pb.name = self.name
-      cert_pb.host = self.host
-      cert_pb.port = self.port
-      cert_pb.caps = self.caps
-      cert_pb.cert_expires = self.cert_expires
-      cert_pb.volume_id = self.volume_id
       
-      if self.closure is None or not need_closure:
-         cert_pb.closure_text = ""
-         
-      elif self.closure is not None:
-         cert_pb.closure_text = str( self.closure )
-      
-      cert_pb.signature = ""
-
-      if self.gateway_public_key != None:
-         cert_pb.public_key = self.gateway_public_key
-      else:
-         cert_pb.public_key = "NONE"
+      gateway_cert_pb = ms_pb2.ms_gateway_cert.ParseFromString( self.gateway_cert )
+      cert_pb.CopyFrom( gateway_cert_pb )
          
 
    def check_caps( self, caps ):
@@ -350,21 +341,77 @@ class Gateway( storagetypes.Object ):
 
       return ret
    
+   
+   def authenticate_session( self, g_type, g_id, url, signature_b64 ):
+      """
+      Verify that the signature over the constructed string "${g_type}_${g_id}:${url}"
+      was signed by this gateway's private key.
+      """
+      sig = base64.b64decode( signature_b64 )
+      
+      data = "%s_%s:%s" % (g_type, g_id, url)
+      
+      ret = self.auth_verify( self.gateway_public_key, data, sig )
+      
+      return ret
+   
+   
+   @classmethod 
+   def cert_to_dict( cls, gateway_cert ):
+      """
+      Convert a protobuf structure to a dict of values,
+      using the Gateway property names.
+      """
+      
+      # unpack certificate
+      cert_version = gateway_cert.version
+      gateway_name = gateway_cert.name 
+      gateway_type = gateway_cert.gateway_type 
+      gateway_id = gateway_cert.gateway_id
+      host = gateway_cert.host 
+      port = gateway_cert.port 
+      pubkey_pem = gateway_cert.public_key 
+      cert_expires = gateway_cert.cert_expires 
+      requested_caps = gateway_cert.caps 
+      driver_hash = binascii.hexlify( gateway_cert.driver_hash )
+      volume_id = gateway_cert.volume_id 
+      owner_id = gateway_cert.owner_id
+      
+      kwargs = {
+         "cert_version": cert_version,
+         "name": gateway_name,
+         "gateway_type": gateway_type,
+         "host": host,
+         "port": port,
+         "gateway_public_key": pubkey_pem,
+         "cert_expires": cert_expires,
+         "caps": requested_caps,
+         "driver_hash": driver_hash,
+         "volume_id": volume_id,
+         "owner_id": owner_id,
+         "g_id": gateway_id,
+         "gateway_cert": gateway_cert.SerializeToString()
+      }
+      
+      return kwargs
+   
+   
    @classmethod
-   def Create( cls, user, volume, **kwargs ):
+   def Create( cls, user, volume, gateway_cert, driver_text ):
       """
-      Create a gateway.
-      NOTE: careful--caps are required!  don't let users call this directly.
+      Create a gateway, using its user-signed gateway certificate.
+      
+      NOTE: the caller must verify the authenticity of the certificate.
       """
       
-      # enforce volume ID
-      kwargs['volume_id'] = volume.volume_id
+      kwargs = cls.cert_to_dict( gateway_cert )
       
-      # enforce ownership--make sure the calling user owns this gateway
-      kwargs['owner_id'] = user.owner_id
+      # sanity check 
+      if kwargs['volume_id'] != volume.volume_id:
+         raise Exception("Volume ID mismatch: cert has %s; expected %s" % (kwargs['volume_id'], volume.volume_id))
       
-      # populate kwargs with default values for missing attrs
-      cls.fill_defaults( kwargs )
+      if kwargs['owner_id'] != user.owner_id:
+         raise Exception("User ID mismatch: cert has %s; expected %s" % (kwargs['owner_id'], user.owner_id) ) 
       
       # sanity check: do we have everything we need?
       missing = cls.find_missing_attrs( kwargs )
@@ -376,41 +423,56 @@ class Gateway( storagetypes.Object ):
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
       
-      # what kind of gateway are we?
+      # sanity check: does the driver match the driver's hash in the cert?
+      if driver_text is not None:
+         driver_hash = GatewayDriver.hash_driver( driver_text )
+         if driver_hash != binascii.hexlify( gateway_cert.driver_hash ):
+             raise Exception("Driver hash mismatch: len = %s, expected = %s, got = %s" % (len(driver_text), driver_hash, binascii.hexlify( cert.driver_hash )))
+      
       gateway_type = kwargs['gateway_type']
       
-      # set capabilities correctly and safely
-      kwargs['caps'] = cls.safe_caps( gateway_type, volume.default_gateway_caps )
-      
-      # enforce cert generation 
+      # enforce cert distribution 
       kwargs['need_cert'] = Gateway.needs_cert( gateway_type, kwargs['caps'] )
 
-      # ID...
-      g_id = random.randint( 0, 2**63 - 1 )
-      kwargs['g_id'] = g_id
-      
+      g_id = kwargs['g_id']
       g_key_name = Gateway.make_key_name( g_id=g_id )
       g_key = storagetypes.make_key( cls, g_key_name )
       
       # create a nameholder and this gateway at once---there's a good chance we'll succeed
+      futs = []
+      
       gateway_nameholder_fut = GatewayNameHolder.create_async( kwargs['name'], g_id )
       gateway_fut = cls.get_or_insert_async( g_key_name, **kwargs )
       
+      futs = [gateway_nameholder_fut, gateway_fut]
+      
+      gateway_driver = None
+      if driver_text is not None:
+          gateway_driver = GatewayDriver.create_or_ref( driver_text )
+      
       # wait for operations to complete
-      storagetypes.wait_futures( [gateway_nameholder_fut, gateway_fut] )
+      storagetypes.wait_futures( futs )
       
       # check for collision...
       gateway_nameholder = gateway_nameholder_fut.get_result()
       gateway = gateway_fut.get_result()
       
+      to_rollback = []
+
+      if gateway_driver is not None:
+         to_rollback.append( gateway_driver.key )
+      
       if gateway_nameholder.g_id != g_id:
          # name collision...
-         storagetypes.deferred.defer( Gateway.delete_all, [g_key] )
+         to_rollback.append( g_key )
+         storagetypes.deferred.defer( Gateway.delete_all, to_rollback )
          raise Exception( "Gateway '%s' already exists!" % kwargs['name'] )
       
       if gateway.g_id != g_id:
          # ID collision...
-         storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder.key, g_key] )
+         to_rollback.append( gateway_nameholder.key )
+         to_rollback.append( g_key )
+         storagetypes.deferred.defer( Gateway.delete_all, to_rollback )
          raise Exception( "Gateway ID collision.  Please try again." )
       
       # we're good!
@@ -510,6 +572,39 @@ class Gateway( storagetypes.Object ):
             
          return g
 
+   @classmethod 
+   def ReadDriver( cls, driver_hash ):
+      """
+      Given a driver's hash, return the driver.
+      """
+      driver_hash = driver_hash.lower()
+      driver_key_name = GatewayDriver.make_key_name( driver_hash )
+      
+      driver = storagetypes.memcache.get( driver_key_name )
+      if driver is not None:
+         return driver 
+      
+      driver_key = storagetypes.make_key( GatewayDriver, driver_key_name )
+      driver = driver_key.get()
+      if driver is None:
+          return None 
+
+      driver_text = driver.driver_text
+      if driver is not None:
+         storagetypes.memcache.set( driver_key_name, driver_text )
+      
+      return driver_text
+   
+
+   @classmethod 
+   def SetCache( cls, g_id, gateway ):
+      """
+      Cache a loaded gateway.
+      """
+      gateway_key_name = Gateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.set(gateway_key_name, gateway)
+      
+
    @classmethod
    def FlushCache( cls, g_id ):
       """
@@ -518,41 +613,50 @@ class Gateway( storagetypes.Object ):
       gateway_key_name = Gateway.make_key_name( g_id=g_id )
       storagetypes.memcache.delete(gateway_key_name)
 
+
+   @classmethod
+   def FlushCacheDriver( cls, driver_hash ):
+      """
+      Purge cached copies of this gateway's driver
+      """
+      driver_key_name = GatewayDriver.make_key_name( driver_hash )
+      storagetypes.memcache.delete(driver_key_name)
    
    @classmethod
-   def Update( cls, g_name_or_id, **fields ):
+   def Update( cls, gateway_cert, new_driver=None ):
       '''
-      Update a gateway identified by ID with fields specified as keyword arguments.
+      Update a gateway identified by ID with a new certificate.
+      
+      Return the gateway record's key on success
+      Raise an exception on error.
+      
+      NOTE: the caller must verify the authenticity of the certificate.
+      Only the volume owner should be able to update a gateway cert.
       '''
       
-      # get gateway ID
-      try:
-         g_id = int(g_name_or_id)
-      except:
-         gateway = Gateway.Read( g_name_or_id )
-         if gateway is not None:
-            g_id = gateway.g_id 
-         else:
-            raise Exception("No such Gateway '%s'" % g_name_or_id )
-      
-      if len(fields.keys()) == 0:
-         return True
+      fields = cls.cert_to_dict( gateway_cert )
+      g_id = fields['g_id']
       
       # validate...
       invalid = cls.validate_fields( fields )
       if len(invalid) != 0:
+         
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-      invalid = cls.validate_write( fields )
-      if len(invalid) != 0:
-         raise Exception( "Unwritable fields: %s" % (", ".join(invalid)) )
       
       rename = False
       gateway_nameholder_new_key = None
-      old_name = None
+      
+      new_driver_hash = None 
+      old_driver_hash = None
+      
+      # sanity check...
+      if new_driver is not None:
+         new_driver_hash = GatewayDriver.hash_driver( new_driver )
+         if binascii.hexlify( gateway_cert.driver_hash ) != new_driver_hash:
+            raise Exception("Certificate driver hash mismatch: expected %s, got %s" % (binascii.hexlify( gateway_cert.driver_hash ), new_driver_hash))
       
       # do we intend to rename?  If so, reserve the name
-      if "name" in fields.keys():
+      if "name" in fields.keys() and fields['name'] != gateway_cert.name:
          gateway_nameholder_new_fut = GatewayNameHolder.create_async( fields.get("name"), g_id )
          
          gateway_nameholder_new = gateway_nameholder_new_fut.get_result()
@@ -566,41 +670,66 @@ class Gateway( storagetypes.Object ):
             # reserved!
             rename = True
       
+      # drop cert; we'll store it separately 
+      gateway_cert_bin = fields['gateway_cert']
+      del fields['gateway_cert']
       
       def update_txn( fields ):
          '''
          Update the Gateway transactionally.
          '''
          
+         g_id = fields['g_id']
+         
          gateway = cls.Read(g_id)
-         if not gateway:
+         if gateway is None:
             # gateway does not exist...
             # if we were to rename it, then delete the new nameholder
             if rename:
                storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_new_key] )
                
             raise Exception("No Gateway with the ID %d exists.", g_id)
-
          
+         old_driver_hash = gateway.driver_hash
          old_name = gateway.name 
          
-         # purge from cache
-         Gateway.FlushCache( g_id )
+         # verify update
+         unwriteable = []
+         for (k, v) in fields.items():
+            if k not in cls.modifiable_cert_attrs and getattr(gateway, k) != v:
+               unwriteable.append(k)
+               
+         if len(unwriteable) > 0:
+            raise Exception("Tried to modify read-only fields: %s" % ",".join(unwriteable))
          
-         old_version = gateway.cert_version
+         # sanity check: valid version?
+         if gateway.cert_version >= gateway_cert.version:
+            raise Exception("Stale Gateway certificate: expected > %s; got %s" % (gateway.cert_version, gateway_cert.version))
          
          # apply update
          for (k,v) in fields.items():
             setattr( gateway, k, v )
          
-         gateway.cert_version = old_version + 1
+         gateway.need_cert = cls.needs_cert( gateway.gateway_type, fields['caps'] )
+         gateway.gateway_cert = gateway_cert_bin
          
-         return gateway.put()
+         gw_key = gateway.put()
+         
+         if old_driver_hash is not None:
+             # unref the old one 
+             GatewayDriver.unref( old_driver_hash )
+             cls.FlushCacheDriver( old_driver_hash )
+         
+         # purge from cache
+         cls.FlushCache( g_id )
+         
+         return gw_key, old_name
       
       
       gateway_key = None
+      old_name = None
       try:
-         gateway_key = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
+         gateway_key, old_name = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
          assert gateway_key is not None, "Transaction failed"
       except Exception, e:
          logging.exception( e )
@@ -615,72 +744,19 @@ class Gateway( storagetypes.Object ):
          g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( old_name )
          storagetypes.memcache.delete( g_name_to_id_cache_key )
          
-      return True
-   
-   
-   @classmethod
-   def SetCaps( cls, g_name_or_id, caps ):
-      """
-      Set this gateway's capabilities.
-      """
-      def set_caps_txn( g_name_or_id ):
-         gateway = Gateway.Read( g_name_or_id )
-         if gateway == None:
-            raise Exception("No such Gateway '%s'" % caps)
          
-         gateway.caps = Gateway.safe_caps( gateway.gateway_type, caps )
-         gateway.cert_version += 1
-         gateway.need_cert = Gateway.needs_cert( gateway.gateway_type, caps )
-         gateway.put()
-         return gateway
-      
-      try:
-         gateway = storagetypes.transaction( lambda: set_caps_txn( g_name_or_id ) )
-      except:
-         log.error("Failed to set caps")
-         return False
-      
-      if gateway is not None:
-         Gateway.FlushCache( gateway.g_id )
-         return True
-      else:
-         return False
-         
-   
-   @classmethod 
-   def SetUGCaps_ByUser( cls, owner_id, caps ):
-      """
-      Set the capabilities for all of a user's UGs.
-      """
-      def set_caps_func( gw ):
-         gw.caps = caps
-         gw.need_cert = Gateway.needs_cert( GATEWAY_TYPE_UG, caps )
-         return gw.put_async()
-         
-      gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.owner_id ==": owner_id}, map_func=set_caps_func )
-      storagetypes.wait_futures( gw_futs )
-      return True
-   
-   
-   @classmethod 
-   def SetUGCaps_ByVolume( cls, volume_id, caps ):
-      """
-      Set the capabilities of all of a Volume's UGs.
-      """
-      def set_caps_func( gw ):
-         gw.caps = caps
-         gw.need_cert = Gateway.needs_cert( GATEWAY_TYPE_UG, caps )
-         return gw.put_async()
-         
-      gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.volume_id ==": volume_id}, map_func=set_caps_func )
-      storagetypes.wait_futures( gw_futs )
-      return True
+      # update the driver as well 
+      if new_driver is not None:
+          GatewayDriver.create_or_ref( new_driver )
+          
+      return gateway_key
    
    
    @classmethod
    def Delete( cls, g_name_or_id ):
       """
-      Given a gateway ID, delete the corresponding gateway
+      Given a gateway ID, delete the corresponding gateway.
+      Unref the driver as well.
       """
       
       gateway = Gateway.Read( g_name_or_id )
@@ -690,19 +766,21 @@ class Gateway( storagetypes.Object ):
          raise Exception("No such Gateway '%s'" % g_name_or_id )
       
       key_name = Gateway.make_key_name( g_id=g_id )
-
+      
       g_key = storagetypes.make_key( cls, key_name )
       g_name_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( gateway.name ) )
       
       g_delete_fut = g_key.delete_async()
       g_name_delete_fut = g_name_key.delete_async()
-            
+      driver_fut = GatewayDriver.unref_async( gateway.driver_hash )
+      
+      storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut, driver_fut] )
+      
       Gateway.FlushCache( g_id )
+      Gateway.FlushCacheDriver( gateway.driver_hash )
       
       g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( g_name_or_id )
       storagetypes.memcache.delete( g_name_to_id_cache_key )
-      
-      storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut] )
       
       return True
 

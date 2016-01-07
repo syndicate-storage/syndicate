@@ -1,0 +1,187 @@
+/*
+   Copyright 2015 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+package SG_messages;
+
+import "ms.proto";
+
+// manifest block metadata
+message ManifestBlock {
+   enum ChunkType {
+      BLOCK = 1;
+      MANIFEST = 2;
+   }
+
+   required uint64 block_id = 1;        // or, gateway ID (for CERT); or, manifest modtime seconds (for MANIFEST)
+   required int64 block_version = 2;    // or, cert version (for CERT); or, manifest modtime nanoseconds (for MANIFEST)
+   
+   optional bytes hash = 3;             // if not given, then each block must be signed
+   optional uint64 owner_id = 4;        // for cert bundles (CERT), this is the user that owns the gateway
+   optional uint32 caps = 5;            // for cert bundles (CERT), this is the gateway's capability bits
+
+   // for when this block identifies a serialized chunk of data
+   optional int32 chunk_type = 6;
+   optional uint64 offset = 7;
+   optional uint64 size = 8; 
+}
+
+// manifest (data plane)
+message Manifest {
+   required uint64 volume_id = 1;       // ID of the volume this manifest belongs to
+   required uint64 coordinator_id = 2;  // if 0, this is the MS, and this is a certificate manifest
+   required uint64 owner_id = 3;        // ID of the user that owns this file
+   required uint64 file_id = 4;         
+   required int64 file_version = 5;     // or, volume version (if this is a certificate manifest)
+
+   required int64 mtime_sec = 6;        // manifest modtime
+   required int32 mtime_nsec = 7;
+
+   required uint64 size = 8;            // size of the file (or, number of certificates)
+   
+   repeated ManifestBlock blocks = 9;   // blocks for this manifest
+   
+   required string signature = 10;      // base64-encoded signature of this message using the coordinator's private key
+}
+
+// in-band block metadata, used to pass authenticity information for blocks on-the-fly
+message SignedBlockHeader {
+
+   enum Constants {
+      MAXIMUM_SIZE = 4096;
+   }
+   
+   required uint64 volume_id = 1;
+   required uint64 file_id = 2;
+   required int64 file_version = 3;
+   required uint64 block_id = 4;
+   required int64 block_version = 5;
+   required bytes block_hash = 6;
+   required uint64 gateway_id = 7;
+   required string signature = 8;       // signature over this message using the coordinator's private key
+}
+
+// control-plane request 
+message Request {
+   
+   enum RequestType {
+      WRITE = 1;                // update file manifest with new block versions
+      TRUNCATE = 2;             // truncate a file to a new size
+      DETACH = 3;               // delete file 
+      RENAME = 4;               // rename file
+      PUTCHUNKS = 5;            // send one or more chunks of data (can be serialized manifests and/or serialized blocks)
+      DELETECHUNKS = 6;         // delete one or more chunks of data (can be manifests and/or blocks)
+      SETXATTR = 7;             // set an xattr 
+      REMOVEXATTR = 8;          // remove an xattr 
+      RELOAD = 9;               // reload cert bundle; new versions in volume_version and cert_version
+   }
+
+   required uint64 volume_version = 1;    // volume configuration version
+   required uint64 cert_version = 2;      // certificate bundle version 
+   
+   // request type 
+   required int32 request_type = 3;
+   
+   // information about the file
+   required uint64 volume_id = 4;
+   required uint64 coordinator_id = 5;
+   required uint64 file_id = 6;
+   required int64 file_version = 7;
+   required string fs_path = 8;
+
+   repeated ManifestBlock blocks = 9;    // for WRITE, indicates new block versions and hashes; for PUTCHUNKS, indicates the accompanying chunk information
+   optional string new_fs_path = 10;     // for RENAME, indicates the new path 
+   optional uint64 new_size = 11;        // for TRUNCATE, indicates the new size
+   optional int64 new_manifest_mtime_sec = 12;    // for WRITE, indicates the new manifest modification time (seconds)
+   optional int32 new_manifest_mtime_nsec = 13;   // for WRITE, indicates the new manifest modification time (nanoseconds)
+   
+   required uint64 user_id = 14;         // ID of the user running this gateway
+   required uint64 src_gateway_id = 15;  // ID of the requesting gateway
+   required string signature = 16;       // signature over this message, with the requesting gateway's private key
+
+   required uint64 message_nonce = 17;   // unique number for this request
+
+   // for WRITE
+   optional uint64 new_owner_id = 18;           // owner to set 
+   optional int32 new_mode = 19;                // mode (permission bits) to set
+   optional int64 new_mtime_sec = 20;           // modtime to set (seconds)
+   optional int32 new_mtime_nsec = 21;          // modtime to set (nanoseconds)
+
+   // for SETXATTR and REMOVEXATTR
+   optional string xattr_name = 22;             // xattr name 
+   optional string xattr_value = 23;            // xattr value
+   optional int32 xattr_flags = 24;             // xattr flags (create/replace) (SETXATTR only)
+}
+
+// control-plane reply 
+message Reply {
+
+   required uint64 volume_version = 1;    // volume configuration version
+   required uint64 cert_version = 2;      // certificate bundle version 
+
+   required uint64 message_nonce = 3;     // nonce that matches this request
+   
+   required int32 error_code = 4;         // error code of the operation
+
+   required uint64 user_id = 5;           // ID of the user running this gateway
+   required uint64 gateway_id = 6;        // ID of the gateway replying
+   required uint64 gateway_type = 7;      // type of the gateway replying
+   required string signature = 8;         // signature over this message, with the replying gateway's private key
+
+   repeated string xattr_names = 9;       // one or more xattr names (listxattr)
+   optional string xattr_value = 10;      // xattr value (getxattr)
+
+   optional ms.ms_entry ent_out = 11;        // on UPDATE, this is the new state of the entry 
+}
+
+// driver request 
+message DriverRequest {
+
+   enum RequestType {
+      BLOCK = 1;
+      MANIFEST = 2;
+   }
+
+   enum IOType {
+      NONE = 0;
+      READ = 1;
+      WRITE = 2;
+      TRUNC = 3;
+      SYNC = 4;
+      REPLICATE = 5;
+      DELETE= 6;
+   }
+    
+   required uint64 volume_id = 1;
+   required uint64 user_id = 2;
+   required uint64 coordinator_id = 3;
+   required uint64 file_id = 4;
+   required uint64 file_version = 5;
+   required uint32 request_type = 6;
+   required string path = 7;
+
+   // extra optional hints the gateway can supply
+   optional uint64 block_id = 8;        // if block request
+   optional int64 block_version = 9;    // if block request 
+   optional int64 manifest_mtime_sec = 10;   // if manifest request 
+   optional int32 manifest_mtime_nsec = 11;  // if manifest request
+   optional uint64 offset = 12;          // logical read/write offset in the file 
+   optional uint64 len = 13;             // logical read/write length in the file
+   optional uint64 io_context = 14;      // opaque identifier that uniquely identifies a sequence of related requests
+   optional int32 io_type = 15;          // none, read, write, or truncate (IOType)
+   repeated bool cached_blocks = 16;     // vector of true|false where cached_blocks[i] is true if it's locally present in the cache
+   optional Manifest manifest = 17;      // for whole-file operations
+}
+

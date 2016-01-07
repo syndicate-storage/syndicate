@@ -32,15 +32,19 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/crypt.h"
-#include "libsyndicate/closure.h"
 #include "libsyndicate/download.h"
 
 #include "libsyndicate/ms/benchmark.h"
+#include "libsyndicate/ms/cert.h"
 
 // maximum cert size is 10MB
 #define MS_MAX_CERT_SIZE 10240000
 
+// maximum message length is 1MB 
+#define MS_MAX_MSG_SIZE 1024000
+
 // flow control defaults 
+#define MS_CLIENT_DEFAULT_RESOLVE_PAGE_SIZE 10
 #define MS_CLIENT_DEFAULT_MAX_REQUEST_BATCH 10
 #define MS_CLIENT_DEFAULT_MAX_ASYNC_REQUEST_BATCH 100
 #define MS_CLIENT_DEFAULT_MAX_CONNECTIONS 100
@@ -69,20 +73,23 @@ struct ms_client {
    
    char* url;                   // MS URL (read-only; never changes)
    
-   struct md_downloader dl;     // downloader instance
+   struct md_downloader* dl;    // downloader instance
    
    struct md_syndicate_conf* conf;      // reference to syndicate config (read-only, never changes)
    
    //////////////////////////////////////////////////////////////////
-   // NOTE: the following fields are filled in at runtime
+   // NOTE: the following fields are filled in at runtime, and do not change over the lifetime of the gateway 
+   // (except for portnum, TODO: restart the http server on a new port if this ever changes)
    bool inited;               // set to true if this structure was initialized
    uint64_t owner_id;         // ID of the User account running this ms_client
-   uint64_t gateway_id;       // ID of the Gateway running this ms_client
-   int gateway_type;          // what kind of gateway is this for?
+   uint64_t gateway_id;       // ID of the Gateway running this ms_client (pass SG_GATEWAY_ANON for the anonymous gateway)
+   uint64_t gateway_type;     // what kind of gateway is this for?
+   
    int portnum;               // port the gateway listens on
 
    bool running;              // set to true if threads are running for this ms_client
-   sem_t uploader_sem;        // uploader thread waits on this until signaled to reload 
+   sem_t config_sem;          // uploader thread waits on this until signaled to reload 
+   
    
    //////////////////////////////////////////////////////////////////
    // flow-control information 
@@ -94,21 +101,10 @@ struct ms_client {
    
    //////////////////////////////////////////////////////////////////
    // gateway volume-change structures (represents a consistent view of the Volume control state)
-   pthread_t view_thread;
-   bool view_thread_running;        // set to true if the view thread is running
-   
    struct ms_volume* volume;        // Volume we're bound to
-   
-   ms_client_config_change_callback config_change_callback;         // call this function when the Volume gets reloaded
-   void* config_change_callback_cls;                              // user-supplied argument to the above callbck
+   ms_cert_bundle* certs;           // certificates for all other gateways in the volume
    
    pthread_rwlock_t config_lock;          // lock governing the above
-
-   //////////////////////////////////////////////////////////////////
-   // session information
-   int64_t session_expires;                 // when the session password expires
-   char* session_password;                  // session password (used as HTTP Authentication: header)
-   char* userpass;                          // combined HTTP username:password string.  Username is the gateway ID; password is the session password
    
    //////////////////////////////////////////////////////////////////
    // identity and authentication
@@ -116,20 +112,19 @@ struct ms_client {
    EVP_PKEY* gateway_key;
    EVP_PKEY* gateway_pubkey;
    
+   // syndicate pubkey (never changes)
+   EVP_PKEY* syndicate_pubkey;
+   
    // raw private key (read-only, never changes)
    char* gateway_key_pem;
    size_t gateway_key_pem_len;
    bool gateway_key_pem_mlocked;     // if true, then gateway_key_pem is mlock'ed and needs to be munlock'ed before being freed
-   
-   EVP_PKEY* syndicate_public_key;      // syndicate public key (read-only, never changes)
-   char* syndicate_public_key_pem;      // raw data of the above
 };
 
 extern "C" {
 
 // module control 
-int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf );
-int ms_client_start_threads( struct ms_client* client );
+int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, EVP_PKEY* syndicate_pubkey, ms::ms_volume_metadata* volume_cert );
 int ms_client_destroy( struct ms_client* client );
 
 // key management 
@@ -155,30 +150,38 @@ int ms_client_config_unlock2( struct ms_client* client, char const* from_str, in
 #define ms_client_config_unlock( fent ) ms_client_config_unlock2( fent, __FILE__, __LINE__ )
 
 // low-level network I/O
-int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url );
-
+int ms_client_init_curl_handle( struct ms_client* client, CURL* curl, char const* url, char const* auth_header );
+int ms_client_auth_header( struct ms_client* client, char const* url, char** auth_header );
 int ms_client_download( struct ms_client* client, char const* url, char** buf, off_t* buflen );
-int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
+int ms_client_need_reload( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 int ms_client_is_async_operation( int oper );
 
 // higher-level network I/O 
 int ms_client_read( struct ms_client* client, char const* url, ms::ms_reply* reply );
 
-// CDN access closure
-extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
-int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char const* url );
-int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char const* url, void* cls );
-
-// control the thread that keeps a consistent view of the configuration
-int ms_client_set_config_change_callback( struct ms_client* client, ms_client_config_change_callback clb, void* cls );
-void* ms_client_set_config_change_callback_cls( struct ms_client* client, void* cls );
-int ms_client_start_config_reload( struct ms_client* client );
-int ms_client_config_change_callback_default( struct ms_client* client, void* cls );
-
 // misc getters
-int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str );
-char* ms_client_get_hostname( struct ms_client* client );
+int ms_client_gateway_type_str( uint64_t gateway_type, char* gateway_type_str );
 int ms_client_get_portnum( struct ms_client* client );
+uint64_t ms_client_volume_version( struct ms_client* client );
+uint64_t ms_client_cert_version( struct ms_client* client );
+uint64_t ms_client_get_volume_id( struct ms_client* client );
+uint64_t ms_client_get_owner_id( struct ms_client* client );
+uint64_t ms_client_get_gateway_id( struct ms_client* client );
+char* ms_client_get_volume_name( struct ms_client* client );
+uint64_t ms_client_get_volume_blocksize( struct ms_client* client );
+int ms_client_get_volume_root( struct ms_client* client, int64_t version, int64_t write_nonce, struct md_entry* root );
+EVP_PKEY* ms_client_my_pubkey( struct ms_client* client );
+EVP_PKEY* ms_client_my_privkey( struct ms_client* client );
+
+struct ms_gateway_cert* ms_client_get_gateway_cert( struct ms_client* client, uint64_t gateway_id );
+uint64_t ms_client_get_gateway_caps( struct ms_client* client, uint64_t gateway_id );
+
+int ms_client_get_gateways_by_type( struct ms_client* client, uint64_t gateway_type, uint64_t** gateway_ids, size_t* num_gateway_ids );
+
+// certs
+ms_cert_bundle* ms_client_swap_gateway_certs( struct ms_client* client, ms_cert_bundle* new_cert_bundle );
+struct ms_volume* ms_client_swap_volume_cert( struct ms_client* client, ms::ms_volume_metadata* new_volume_cert );
+EVP_PKEY* ms_client_swap_syndicate_pubkey( struct ms_client* client, EVP_PKEY* new_syndicate_pubkey );
 
 }
 

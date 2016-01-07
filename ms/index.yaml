@@ -30,6 +30,14 @@ indexes:
   - name: caps
   - name: cert_version
   - name: g_id
+
+- kind: Gateway
+  properties:
+  - name: need_cert
+  - name: volume_id
+  - name: caps
+  - name: cert_version
+  - name: g_id
   - name: gateway_type
 
 - kind: Gateway

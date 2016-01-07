@@ -143,7 +143,7 @@ int AG_cache_put_block_async( struct AG_state* state, char const* path, int64_t 
 
    int rc = 0;
    
-   struct md_cache_block_future* block_fut = md_cache_write_block_async( state->cache, file_id, file_version, block_id, block_version, block, block_len, true, &rc );
+   struct md_cache_block_future* block_fut = md_cache_write_block_async( state->cache, file_id, file_version, block_id, block_version, block, block_len, SG_CACHE_FLAG_UNSHARED | SG_CACHE_FLAG_DETACHED, &rc );
    
    if( block_fut == NULL || rc != 0 ) {
       

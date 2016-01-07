@@ -1,0 +1,122 @@
+#!/usr/bin/python
+"""
+   Copyright 2015 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+"""
+Usage:  fetch_cert_bundle [MS url] [volume id] [volume cert bundle version] [OPTIONAL: output path]
+
+On success, Writes the serialized cert to the given path (or stdout directly if there is no path given) and exits 0
+On failure, exits 1 and prints error messages to stderr
+"""
+
+import os
+import sys
+import requests 
+import traceback 
+
+import syndicate.protobufs.ms_pb2 as ms_pb2
+import syndicate.protobufs.sg_pb2 as sg_pb2
+
+MAX_CERT_LEN = 10 * 1024 * 1024
+
+def print_error( s ):
+   print >> sys.stderr, s
+
+
+def fetch_cert_bundle( ms_url, volume_id, cert_bundle_version ):
+   """
+   Go fetch a volume certificate bundle, and verify that it is said cert bundle
+   Return the deserialized protobuf on success.
+   Return None on error
+   """
+   
+   cert_bundle_url = ms_url + "/CERTBUNDLE/" + str(volume_id) + "/" + str(cert_bundle_version)
+   
+   req = requests.get( cert_bundle_url, stream=True )
+   if req.status_code != 200:
+      
+      req.close()
+      print_error("Failed to fetch volume cert bundle for '%s' from '%s': status code %s" % (cert_bundle_url, volume_id, req.status_code))
+      return None 
+   
+   if int(req.headers['content-length']) > MAX_CERT_LEN:
+      
+      req.close()
+      print_error("Cert bundle for volume '%s' from '%s' is too long (%s bytes)" % (volume_name, cert_bundle_url, req.headers['content-length']))
+      return None 
+   
+   cert_bundle_bin = req.content 
+   cert_bundle = None 
+   
+   req.close()
+   
+   try:
+      cert_bundle = sg_pb2.Manifest()
+      cert_bundle.ParseFromString( cert_bundle_bin )
+   except Exception, e:
+      
+      traceback.print_exc()
+      print_error("Failed to parse response for volume cert bundle from '%s'" % (cert_bundle_url))
+      return None 
+   
+   return cert_bundle
+
+
+def usage( progname ):
+   print_error("Usage: %s [MS url] [volume ID] [volume cert bundle version] [OPTIONAL: output path]" % progname )
+
+
+if __name__ == "__main__":
+   
+   if len(sys.argv) < 4:
+      usage( sys.argv[0] )
+      sys.exit(1)
+      
+   ms_url = None
+   volume_id = 0
+   volume_cert_bundle_version = 0
+   path = None
+   
+   try:
+      ms_url = sys.argv[1]
+      volume_id = int(sys.argv[2])
+      volume_cert_bundle_version = int(sys.argv[3])
+   except:
+      usage( sys.argv[0] )
+      sys.exit(1)
+      
+   if len(sys.argv) >= 5:
+      path = sys.argv[4]
+      
+   cert_bundle = fetch_cert_bundle( ms_url, volume_id, volume_cert_bundle_version )
+   if cert_bundle is None:
+      sys.exit(1)
+   
+   else:
+      
+      cert_bundle_bin = cert_bundle.SerializeToString()
+      
+      if path is None:
+         
+         sys.stdout.write( cert_bundle_bin )
+      else:
+         
+         with open(path, "w") as f:
+            f.write( cert_bundle_bin )
+         
+      sys.exit(0)
+      
+      

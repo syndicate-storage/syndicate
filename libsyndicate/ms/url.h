@@ -23,28 +23,27 @@ extern "C" {
 
 char* ms_client_url( char const* ms_url, uint64_t volume_id, char const* metadata_path );
 
-char* ms_client_file_url( char const* ms_url, uint64_t volume_id );
-char* ms_client_file_getattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce );
-char* ms_client_file_getchild_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, char* child );
-char* ms_client_file_listdir_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, int page_id, int least_unknown_generation );
+char* ms_client_file_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
+char* ms_client_file_getattr_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version, uint64_t file_id, int64_t version, int64_t write_nonce );
+char* ms_client_file_getchild_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version, uint64_t file_id, char* child );
+char* ms_client_file_listdir_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version, uint64_t file_id, int64_t page_id, int64_t least_unknown_generation );
 
-char* ms_client_getxattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id, char const* xattr_name );
-char* ms_client_listxattr_url( char const* ms_url, uint64_t volume_id, uint64_t file_id );
+char* ms_client_fetchxattrs_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version, uint64_t file_id );
 
-char* ms_client_vacuum_url( char const* ms_url, uint64_t volume_id, uint64_t file_id );
+char* ms_client_vacuum_url( char const* ms_url, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version, uint64_t file_id );
 
 char* ms_client_volume_url( char const* ms_url, uint64_t volume_id );
 char* ms_client_volume_url_by_name( char const* ms_url, char const* name );
 
-char* ms_client_public_key_register_url( char const* ms_url );
-char* ms_client_openid_register_url( char const* ms_url, int gateway_type, char const* gateway_name, char const* username );
+// char* ms_client_public_key_register_url( char const* ms_url );
+// char* ms_client_openid_register_url( char const* ms_url, uint64_t gateway_type, char const* gateway_name, char const* username );
 
 char* ms_client_openid_rpc_url( char const* ms_url );
 
 char* ms_client_syndicate_pubkey_url( char const* ms_url );
 
-char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
-char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t volume_cert_version, uint64_t include_gateway_id );
+char* ms_client_cert_url( char const* ms_url, uint64_t volume_id, uint64_t cert_version, uint64_t gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
+char* ms_client_cert_manifest_url( char const* ms_url, uint64_t volume_id, uint64_t cert_version, uint64_t include_gateway_id );
 
 }
 

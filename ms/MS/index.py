@@ -288,7 +288,7 @@ class MSEntryIndex( storagetypes.Object ):
    @storagetypes.concurrent 
    def __read_node( cls, file_id, index, idx_key, check_file_id=True ):
       """
-      Read an index node, given its key. 
+      Read a dir-index node, given its key. 
       Return (rc, idx):
       * return -ENOENT if the index node doesn't exist 
       * return -EINVAL if the file IDs don't match, and check_file_id is true
@@ -418,7 +418,7 @@ class MSEntryIndex( storagetypes.Object ):
                   
                else:
                   
-                  logging.info("/%s/%s: file id of /%s/%s at %s is %s\n", (volume_id, parent_id, volume_id, parent_id, free_dir_index, free_idx.file_id) )
+                  logging.info("/%s/%s: file id of /%s/%s at %s is %s\n" % (volume_id, parent_id, volume_id, parent_id, free_dir_index, free_idx.file_id) )
                   
       
       @storagetypes.concurrent
@@ -470,7 +470,7 @@ class MSEntryIndex( storagetypes.Object ):
                logging.error("/%s/%s: free index (/%s/%s, %s) is allocated" % (volume_id, parent_id, volume_id, free_idx.file_id, free_dir_index) )
                storagetypes.concurrent_return( (-errno.ESTALE, None, None) )
             
-            elif free_idx.free_dir_index != free_dir_index:
+            elif free_idx.dir_index != free_dir_index:
                raise Exception("/%s/%s: free index slot mismatch: %s != %s" % (volume_id, free_file_id, free_idx.dir_index, free_dir_index))
             
             else:
@@ -552,6 +552,10 @@ class MSEntryIndex( storagetypes.Object ):
       def delete_index_if_unallocated():
          
          idx_node = yield idx_key.get_async( use_cache=False, use_memcache=False )
+         
+         if idx_node is None:
+             # already gone
+             storagetypes.concurrent_return( 0 )
          
          if not idx_node.alloced:
             
@@ -638,7 +642,8 @@ class MSEntryIndex( storagetypes.Object ):
       while True:
          
          # refresh the index max cutoff--it may have changed
-         parent_max_cutoff = cls.GetNumChildren( volume_id, parent_id, num_shards )
+         # the cutoff is the new number of children, after this entry has been deleted
+         parent_max_cutoff = cls.GetNumChildren( volume_id, parent_id, num_shards ) - 1
          if parent_max_cutoff is None:
             
             # directory doesn't exist anymore...nothing to compactify 
@@ -686,6 +691,7 @@ class MSEntryIndex( storagetypes.Object ):
             # (can happen if another process creates an entry while we're compactifying)
             new_parent_max_cutoff = cls.GetNumChildren( volume_id, parent_id, num_shards )
             if new_parent_max_cutoff is None:
+               
                # directory doesn't exist anymore...nothing to compactify 
                logging.info("Index node /%s/%s does not exist" % (volume_id, parent_id) )
                return 0
@@ -727,8 +733,7 @@ class MSEntryIndex( storagetypes.Object ):
          cls.__compactify_parent_delete( volume_id, parent_id, free_file_id, free_dir_index, num_shards, compactify_continuation=compactify_continuation )
          
          # account that there is now one less index node
-         new_count = cls.__num_children_dec( volume_id, parent_id, num_shards )
-         logging.info("On delete, Directory /%s/%s now has about %s children" % (volume_id, parent_id, new_count))
+         cls.__num_children_dec( volume_id, parent_id, num_shards )
          
       except storagetypes.RequestDeadlineExceededError:
          
@@ -927,7 +932,7 @@ class MSEntryIndex( storagetypes.Object ):
             logging.error("Failed to free index node /%s/%s (%s,%s)" % (volume_id, parent_id, file_id, dir_index))
             storagetypes.concurrent_return( -errno.EAGAIN )
          
-         cls.__compactify_on_delete( volume_id, parent_id, dir_index, num_shards, retry=retry, compactify_continuation=compactify_continuation )
+         cls.__compactify_on_delete( volume_id, parent_id, file_id, dir_index, num_shards, retry=retry, compactify_continuation=compactify_continuation )
          
          storagetypes.concurrent_return( 0 )
          

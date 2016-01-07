@@ -1,12 +1,12 @@
 #!/usr/bin/python
 
-ADMIN_PUBLIC_KEY = """%(pubkey)s""".strip()
-ADMIN_EMAIL = "%(user_id)s".strip()
-ADMIN_OPENID_URL = "%(openid_url)s".strip()
-ADMIN_REGISTER_PASSWORD = "%(register_password)s".strip()
+# AUTO-GENERATED FILE
 
-SYNDICATE_NAME = "%(syndicate_name)s".strip()
-SYNDICATE_PUBKEY = """%(syndicate_public_key)s""".strip()
-SYNDICATE_PRIVKEY = """%(syndicate_private_key)s""".strip()
+ADMIN_PUBLIC_KEY = """@MS_APP_ADMIN_PUBLIC_KEY@""".strip()
+ADMIN_EMAIL = "@MS_APP_ADMIN_EMAIL@".strip()
+ADMIN_ID = 0
 
-OPENID_LOCAL = bool( "%(devel)s" )
+SYNDICATE_NAME = "@MS_APP_NAME@".strip()
+SYNDICATE_PUBKEY = """@MS_APP_PUBLIC_KEY@""".strip()
+SYNDICATE_PRIVKEY = """@MS_APP_PRIVATE_KEY@""".strip()
+

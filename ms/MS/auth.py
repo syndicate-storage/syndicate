@@ -37,7 +37,7 @@ import datetime
 import collections
 import inspect
 
-from volume import Volume, VolumeAccessRequest
+from volume import Volume #, VolumeAccessRequest
 from user import SyndicateUser
 from gateway import Gateway
 
@@ -108,26 +108,6 @@ def __get_readable_attrs( caller_user_or_object, target_object, object_cls ):
 
 
 # ----------------------------------
-def __get_writable_attrs( caller_user, target_object, object_cls ):
-   
-   write_attrs = []
-   
-   if is_admin( caller_user ):
-      # admin is about to write
-      write_attrs = object_cls.get_admin_write_attrs()
-   
-   elif caller_user != None and target_object != None and target_object.owned_by( caller_user ):
-      # the user that owns this object called us
-      write_attrs = object_cls.get_api_write_attrs()
-   
-   else:
-      # someone (possibly anonymous) is writing this object
-      write_attrs = object_cls.get_public_write_attrs()
-      
-   return write_attrs
-
-
-# ----------------------------------
 def __to_dict( obj, attr_list ):
    """
       Turn an object into a dictionary of its readable attributes.
@@ -178,18 +158,6 @@ def filter_result( caller_user_or_object, object_cls, result_raw ):
 
 
 # ----------------------------------
-def filter_write_attrs( caller_user, target_object, object_cls, write_attrs ):
-   ret = {}
-   attr_list = __get_writable_attrs( caller_user, target_object, object_cls )
-   
-   for attr in attr_list:
-      if write_attrs.has_key( attr ):
-         ret[attr] = write_attrs[attr]
-      
-   return ret
-
-
-# ----------------------------------
 def object_id_from_name( object_name, func, args, kw ):
    argspec = inspect.getargspec( func )
    
@@ -224,14 +192,14 @@ def assert_public_method( method ):
 # ----------------------------------
 class CreateAPIGuard:
    # creating an object requires a suitably capable user
-   def __init__(self, object_cls, admin_only=False, pass_caller_user=None, **kw ):
+   def __init__(self, object_cls, admin_only=False, caller_user=None, **kw ):
       self.object_cls = object_cls 
       self.admin_only = admin_only
-      self.pass_caller_user = pass_caller_user
+      self.pass_caller_user = caller_user
    
    def __call__(self, func):
       def inner( caller_user, *args, **kw ):
-         if caller_user == None:
+         if caller_user is None:
             raise Exception("Caller has insufficient privileges")
          
          if not is_user( caller_user ):
@@ -250,6 +218,7 @@ class CreateAPIGuard:
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.object_cls.key_attrs
+      inner.mutable = True
       return inner
       
 
@@ -281,14 +250,23 @@ class ReadAPIGuard:
 
 # ----------------------------------
 class UpdateAPIGuard:
-   # updating an object requires a suitably capable user.  An unprivileged user can only write to objects it owns, and only to some fields.
-   # NOTE: the decorated function must take an object's ID as its first argument!
-   def __init__(self, target_object_cls, admin_only=False, pass_caller_user=None, target_object_name=None, check_write_attrs=True, **kw ):
+   """
+   Decorator for an API method that will update an object.  The decorator ensures certain 
+   security invariants are met before allowing the update to happen.
+   """
+   
+   def __init__(self, target_object_cls, admin_only=False, caller_user=None, target_object_name=None, **kw ):
+      """
+      * target_object_cls:      Class of the object to be updated
+      * admin_only:             if True, then only a user with the 'admin' flag set can call this method.
+      * pass_caller_user:       if not None, then pass the SyndicateUser that called this method as a keyword argument with the name given in this variable.
+      * target_object_name:     if not None, then this is the name of the argument in the API call whose value identifies the object (i.e. it can be fed into the object's Read() method).
+      * parse_args (in **kw):   if set to a function, use that function to evaluate the API method's arguments before calling it (used client-side for pre-RPC processing)
+      """
       self.target_object_cls = target_object_cls
       self.admin_only = admin_only
-      self.pass_caller_user = pass_caller_user
+      self.pass_caller_user = caller_user
       self.target_object_name = target_object_name
-      self.check_write_attrs = check_write_attrs
    
    def __call__(self, func):
       def inner( caller_user, *args, **kw ):
@@ -329,29 +307,18 @@ class UpdateAPIGuard:
             else:
                write_kw[attr] = kw[attr]
          
-         if self.check_write_attrs:
-            # only include object-specific writable keywords that can be written by the principle
-            safe_write_kw = filter_write_attrs( caller_user, target_object, self.target_object_cls, write_kw )
-            
-            if len(safe_write_kw) != len(write_kw):
-               raise Exception("Caller is forbidden from writing the following fields: %s" % ",".join( list( set(write_kw.keys()) - set(safe_write_kw.keys()) ) ) )
-            
-            method_kw.update( safe_write_kw )
-            
-         else:
-            method_kw.update( write_kw )
+         method_kw.update( write_kw )
          
          if self.pass_caller_user:
             method_kw[self.pass_caller_user] = caller_user 
             
          ret = func( *args, **method_kw)
          
-         assert isinstance( ret, bool ), "Internal 'Update' error"
-         
          return ret
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.target_object_cls.key_attrs
+      inner.mutable = True
       return inner
    
    
@@ -359,10 +326,11 @@ class UpdateAPIGuard:
 class DeleteAPIGuard:
    # Deleting an object requires a suitably capable user.
    # NOTE: the decorated function must take an object's ID as its first argument!
-   def __init__(self, target_object_cls, admin_only=False, target_object_name=None, **kw ):
+   def __init__(self, target_object_cls, caller_user=None, admin_only=False, target_object_name=None, **kw ):
       self.admin_only = admin_only
       self.target_object_cls = target_object_cls
       self.target_object_name = target_object_name
+      self.pass_caller_user = caller_user
    
    def __call__(self, func):
       def inner( caller_user, *args, **kw ):
@@ -393,24 +361,26 @@ class DeleteAPIGuard:
          if not is_admin( caller_user ) and not target_object.owned_by( caller_user ):
             raise Exception("Object '%s: %s' is not owned by '%s'" % (self.target_object_cls.__name__, target_object_id, caller_user.email))
          
+         if self.pass_caller_user:
+            kw[self.pass_caller_user] = caller_user 
+            
          ret = func( *args, **kw)
-         
-         assert isinstance( ret, bool ), "Internal 'Delete' error"
          
          return ret
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.target_object_cls.key_attrs
+      inner.mutable = True
       return inner
          
    
 # ----------------------------------
 class ListAPIGuard:
    # listing objects requires a suitably capable user.  An unprivileged user can only list API-level attributes of objects it owns, and only public attributes of objects it does not own.
-   def __init__(self, object_cls, admin_only=False, pass_caller_user=None, **kw ):
+   def __init__(self, object_cls, admin_only=False, caller_user=None, **kw ):
       self.object_cls = object_cls
       self.admin_only = admin_only
-      self.pass_caller_user = pass_caller_user
+      self.pass_caller_user = caller_user
    
    def __call__(self, func):
       def inner(caller_user, *args, **kw):
@@ -441,13 +411,13 @@ class ListAPIGuard:
 class BindAPIGuard:
    # caller user is attempting to bind/unbind a source and target object.  Verify that the caller user owns it first, or is admin.
    # NOTE: the decorated function must take a source object ID as its first argument, and a target object ID as its second argument!
-   def __init__(self, source_object_cls, target_object_cls, caller_owns_source=True, caller_owns_target=True, admin_only=False, pass_caller_user=None, source_object_name=None, target_object_name=None, **kw ):
+   def __init__(self, source_object_cls, target_object_cls, caller_owns_source=True, caller_owns_target=True, admin_only=False, caller_user=None, source_object_name=None, target_object_name=None, **kw ):
       self.source_object_cls = source_object_cls
       self.target_object_cls = target_object_cls
       self.admin_only = admin_only
       self.caller_owns_source = caller_owns_source
       self.caller_owns_target = caller_owns_target
-      self.pass_caller_user = pass_caller_user
+      self.pass_caller_user = caller_user
       self.source_object_name = source_object_name
       self.target_object_name = target_object_name
    
@@ -524,21 +494,11 @@ class BindAPIGuard:
          return result
       
       inner.__name__ = func.__name__
+      inner.mutable = True
       return inner
 
 # ----------------------------------
 class Authenticate:
-   
-   def __init__(self, auth_methods=[], **kw ):
-      self.need_authentication = True
-      self.auth_methods = auth_methods
-      
-      if len(auth_methods) == 0:
-         raise Exception("INTERNAL ERROR: No authentication methods given")
-      
-      if AUTH_METHOD_NONE in self.auth_methods:
-         self.need_authentication = False
-         
    
    def __call__(self, func):
       def inner( authenticated_user, *args, **kw ):
@@ -551,9 +511,8 @@ class Authenticate:
       inner.object_id_attrs = getattr( func, "object_id_attrs", None )
       inner.target_object_name = getattr( func, "target_object_name", None )
       inner.source_object_name = getattr( func, "source_object_name", None )
+      inner.mutable = getattr( func, "mutable", False )
       inner.is_public = True
-      inner.auth_methods = self.auth_methods
-      inner.need_authentication = self.need_authentication
       return inner
 
 # ----------------------------------

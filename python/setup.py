@@ -56,33 +56,19 @@ ext_modules=[
     Extension("syndicate",
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
-              library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate")],             # libsyndicate local build
-              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "lib/libsyndicate/ms"), os.path.join(source_root, build_dir, "protobufs"), os.path.join(source_root, build_dir, "lib")],
+              library_dirs=[os.path.join(source_root, build_dir, "../lib/libsyndicate")],             # libsyndicate local build
+              include_dirs=[os.path.join(source_root, build_dir, "../include")],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
     
     Extension("volume",
               sources=["volume.pyx"],
-              libraries=["syndicate", "syndicateUGclient"],
-              library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
-              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
-                            os.path.join(source_root, build_dir, "lib/"),
-                            os.path.join(source_root, build_dir, "protobufs"),
-                            os.path.join(source_root, build_dir, "bin/UG"),
-                            os.path.join(source_root, build_dir, "bin/UG/fs"), 
-                            "/usr/local/include/syndicate"],
+              libraries=["syndicate", "syndicate-ug"],
+              library_dirs=[os.path.join(source_root, build_dir, "../lib/libsyndicate")],
+              include_dirs=[os.path.join(source_root, build_dir, "../include")],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
 ]
-
-# get the list of RG drivers
-driver_path = os.path.abspath( os.path.join(ext_source_root, "RG") )
-sys.path.append( driver_path )
-
-drivers = __import__("drivers")
-driver_package_names = ["syndicate.rg.drivers." + name for name in drivers.__all__]
-
-driver_package_paths = dict( [(package_name, os.path.join(ext_source_root, os.path.join("RG/drivers", package_name))) for package_name in drivers.__all__] )
 
 setup(name='syndicate',
       version='0.1',
@@ -94,9 +80,7 @@ setup(name='syndicate',
       ext_package='syndicate',
       ext_modules = ext_modules,
       packages = ['syndicate',
-                  'syndicate.client',
-                  'syndicate.client.common',
-                  'syndicate.client.bin',
+                  'syndicate.ms',
                   'syndicate.protobufs',
                   'syndicate.util',
                   'syndicate.observer',
@@ -105,21 +89,22 @@ setup(name='syndicate',
                   'syndicate.ag.curation',
                   'syndicate.ag.datasets',
                   'syndicate.rg',
-                  'syndicate.rg.drivers'] + driver_package_names,
-      package_dir = dict({
-                         'syndicate.client': os.path.join(ext_source_root, 'ms/clients/python'),
-                         'syndicate.client.common': os.path.join(ext_source_root, 'ms/common'),
-                         'syndicate.client.bin': os.path.join(ext_source_root, 'ms/clients/python/bin'),
-                         'syndicate.protobufs': os.path.join(ext_source_root, build_dir, 'protobufs'),
-                         'syndicate.util': os.path.join(ext_source_root, build_dir, 'python/syndicate/util'),
-                         'syndicate.observer': os.path.join(ext_source_root, build_dir, 'python/syndicate/observer'),
-                         'syndicate.observer.storage': os.path.join(ext_source_root, build_dir, 'python/syndicate/observer/storage'),
-                         'syndicate.rg': os.path.join(ext_source_root, 'RG'),
-                         'syndicate.rg.drivers': os.path.join(ext_source_root, 'RG/drivers'),
-                         'syndicate.ag': os.path.join(ext_source_root, 'AG/python'),
-                         'syndicate.ag.datasets': os.path.join(ext_source_root, 'AG/python/datasets'),
-                         'syndicate.ag.curation': os.path.join(ext_source_root, 'AG/python/curation')
-                        }.items() + driver_package_paths.items()
-                     ),
+                  'syndicate.rg.drivers',
+                  'syndicate.rg.drivers.s3',
+                  'syndicate.rg.drivers.disk'],
+      package_dir = {
+                  'syndicate.ms': os.path.join(ext_source_root, build_dir, 'syndicate/ms'),
+                  'syndicate.protobufs': os.path.join(ext_source_root, build_dir, '../protobufs/python'),
+                  'syndicate.util': os.path.join(ext_source_root, build_dir, 'syndicate/util'),
+                  'syndicate.observer': os.path.join(ext_source_root, build_dir, 'syndicate/observer'),
+                  'syndicate.observer.storage': os.path.join(ext_source_root, build_dir, 'syndicate/observer/storage'),
+                  'syndicate.rg': os.path.join(ext_source_root, build_dir, 'syndicate/rg'),
+                  'syndicate.rg.drivers': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers'),
+                  'syndicate.rg.drivers.s3': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/s3'),
+                  'syndicate.rg.drivers.disk': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/disk'),
+                  'syndicate.ag': os.path.join(ext_source_root, build_dir, 'syndicate/ag'),
+                  'syndicate.ag.datasets': os.path.join(ext_source_root, build_dir, 'syndicate/ag/datasets'),
+                  'syndicate.ag.curation': os.path.join(ext_source_root, build_dir, 'syndicate/ag/curation')
+      },
       cmdclass = {"build_ext": build_ext},
       zip_safe=False)

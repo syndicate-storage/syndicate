@@ -24,13 +24,8 @@
 char* md_url_local_block_url( char const* data_root, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* md_url_public_block_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 
-// URLs to block data in other gateways
-char* md_url_UG_block_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* md_url_AG_block_url( struct ms_client* ms, uint64_t AG_id, char const* fs_path, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
-char* md_url_RG_block_url( struct ms_client* ms, uint64_t RG_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
-
 // generate a URL to a block
-int md_url_make_block_url( struct ms_client* ms, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url );
+int md_url_make_block_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url );
 
 // URLs to file data in this gateway
 char* md_url_local_file_url( char const* data_root, uint64_t volume_id, uint64_t file_id, int64_t file_version );
@@ -39,12 +34,20 @@ char* md_url_public_file_url( char const* base_url, uint64_t volume_id, char con
 // URLs to manifest data in this gateway
 char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts );
 
-// URLs to manifests in other gateways
-char* md_url_UG_manifest_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts );
-char* md_url_RG_manifest_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t file_version, struct timespec* ts );
-char* md_url_AG_manifest_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t file_version, struct timespec* ts );
-
 // generate a URL to a manifest
-int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url );
+int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url );
+
+// URLs to xattr data in this gateway 
+char* md_url_public_getxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce );
+char* md_url_public_listxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce );
+
+// generate a URL to an xattr 
+int md_url_make_getxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce, char** url );
+
+// generate a URL to a list of xattrs
+int md_url_make_listxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char** url );
+
+// make a URL to the gateway's API server
+int md_url_make_gateway_url( struct ms_client* client, uint64_t gateway_id, char** url );
 
 #endif 

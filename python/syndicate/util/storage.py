@@ -27,15 +27,18 @@ import random
 import traceback
 
 from Crypto.PublicKey import RSA as CryptoKey
+import syndicate.util.config as conf
 
-import logging
-
-logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-log = logging.getLogger()
+log = conf.log
 
 
 # -------------------   
 def read_file( file_path ):
+   """
+   Read data from file_path
+   Return non-None on success
+   Return None on error.
+   """
    try:
       fd = open( file_path, "r" )
    except:
@@ -57,6 +60,11 @@ def read_file( file_path ):
 
 # -------------------   
 def write_file( file_path, data ):
+   """
+   Write data to file_path
+   Return True on success
+   Return False on failure
+   """
    try:
       fd = open(file_path, "w" )
       fd.write( data )
@@ -71,6 +79,13 @@ def write_file( file_path, data ):
 
 # -------------------
 def read_key( key_path, public=False ):
+   """
+   Read a key from key_path.
+   Verify that it is the kind of key Syndicate supports (i.e. RSA 4096-bit)
+   Verify that it is a private key, or if public is True, a public key.
+   Return the PEM-encoded key on success.
+   Return None on error
+   """
    try:
       key_text = read_file( key_path )
    except Exception, e:
@@ -94,14 +109,31 @@ def read_key( key_path, public=False ):
 
 # -------------------   
 def read_public_key( key_path ):
+   """
+   Read a PEM-encoded public key from key_path.
+   Return the PEM string on success 
+   Return None on error 
+   """
    return read_key( key_path, public=True )
 
+
 def read_private_key( key_path ):
+   """
+   Read a PEM-encoded private key from key_path.
+   Return the PEM string on success 
+   Return None on error 
+   """
    return read_key( key_path, public=False )
 
 
 # -------------------   
 def write_key( path, key_data, overwrite=False ):
+   """
+   Write a key's data to path.
+   If overwrite is True, then overwrite it if it exists (otherwise bail).
+   Returns True on success 
+   raises an exception on error
+   """
    umask_original = os.umask(0)
    try:
       handle = os.fdopen( os.open( path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0600 ), 'w' )
@@ -130,11 +162,18 @@ def write_key( path, key_data, overwrite=False ):
       else:
          raise e
    
-   return
+   return True
 
 
 # -------------------   
 def secure_erase_key( key_path ):
+   """
+   'Securely' erase a key at key_path.
+   Fill it with random data first, flush the data,
+   and then unlink it.
+   Return True on success
+   Return False on error.
+   """
    try:
       size = os.stat( key_path ).st_size
    except OSError, oe:
@@ -162,3 +201,98 @@ def secure_erase_key( key_path ):
    
    return True
    
+# -------------------
+def make_or_check_object_directory( key_path ):
+   """
+   Verify that a given object's directory on disk is well-formed.
+   Create it and chown it accordingly if it does not exist.
+   Print a warning if it does exist, but has potentially insecure settings.
+   Return True on success 
+   Return False on error
+   """
+   
+   if not os.path.exists( key_path ):
+      log.warn("Directory '%s' does not exist" % key_path )
+      
+      try:
+         os.makedirs( key_path, mode=0700 )
+         log.info("Created directory %s" % key_path)
+      except Exception, e:
+         log.error("Failed to create directory %s" % key_path)
+         log.exception( e )
+         
+         return False
+   
+   if not os.path.isdir( key_path ):
+      log.error("File '%s' is not a directory" % key_path )
+      return False
+      
+   try:
+      mode = os.stat( key_path ).st_mode
+      if (mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IXGRP | stat.S_IXOTH)) != 0:
+         log.warning("Directory %s is not privately readable.  Recommend 'chmod 0600 %s'" % (key_path, key_path))
+      
+      if (mode & (stat.S_IWGRP | stat.S_IWOTH)) != 0:
+         log.warning("Directory %s is not privately writable.  Recommend 'chmod 0600 %s'" % (key_path, key_path))
+      
+   except Exception, e:
+      log.error("Failed to stat directory %s" % key_path)
+      log.exception( e )
+      return False
+
+   return True
+
+
+def load_public_key( config, key_type, object_id ):
+   """
+   Load a public key of the given type for the given object.
+   """
+   key_path = conf.object_key_path( config, key_type, object_id, public=True )
+   return read_public_key( key_path )
+
+
+def load_private_key( config, key_type, object_id ):
+   """
+   Load a private key of the given type for the given object.
+   """
+   key_path = conf.object_key_path( config, key_type, object_id, public=False )
+   return read_private_key( key_path )
+
+
+def store_public_key( config, key_type, object_id, key_data ):
+   """
+   Store a public key for a given object of a given type.
+   """
+   key_path = conf.object_key_path( config, key_type, object_id, public=True )
+   return write_key( key_path, key_data )
+      
+
+def store_private_key( config, key_type, object_id, key_data ):
+   """
+   Store a private key for a given object of a given type.
+   """
+   key_path = conf.object_key_path( config, key_type, object_id, public=False )
+   return write_key( key_path, key_data )
+
+
+def erase_key( config, key_type, object_id, public=False ):
+   """
+   Erase a key for a given object of a given type.
+   """
+   key_path = conf.object_key_path( config, key_type, object_id, public=public )
+   return secure_erase_key( key_path )
+   
+   
+def erase_public_key( config, key_type, object_id ):
+   """
+   Erase a public key for a given object of a given type.
+   """
+   return erase_key( config, key_type, object_id, public=True )
+
+
+def erase_private_key( config, key_type, object_id ):
+   """
+   Erase a private for a given object of a given type.
+   """
+   return erase_key( config, key_type, object_id, public=False )
+

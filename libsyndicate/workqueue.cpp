@@ -68,12 +68,23 @@ static void* md_wq_main( void* cls ) {
             wreq.promise_ret = rc;
             sem_post( &wreq.promise_sem );
          }
+         else {
+            
+            // done with this 
+            md_wreq_free( &wreq );
+         }
       }
    }
    
    SG_debug("workqueue %p stop\n", wq );
    
    return NULL;
+}
+
+
+// alloc work queues
+struct md_wq* md_wq_new( int count ) {
+   return SG_CALLOC( struct md_wq, count );
 }
 
 // set up a work queue, but don't start it.
@@ -272,7 +283,9 @@ int md_wreq_promise_ret( struct md_wreq* wreq ) {
    return wreq->promise_ret;
 }
 
-// enqueue work 
+// enqueue work
+// the data within wreq must remain accessible until the work request is handled,
+// but a copy of the wreq struct will be made. 
 // return 0 on success
 // return -EINVAL if the work queue thread isn't running
 int md_wq_add( struct md_wq* wq, struct md_wreq* wreq ) {

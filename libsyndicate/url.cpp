@@ -105,97 +105,37 @@ char* md_url_public_block_url( char const* base_url, uint64_t volume_id, char co
    return md_url_block_url( base_url, volume_id, fs_path, file_id, file_version, block_id, block_version, false );
 }
 
-
-// generate a publicly-resolvable URL to a block in a UG
-// return the URL on success
-// return NULL on OOM, or if the UG is not known
-char* md_url_UG_block_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+// generate a publicly-routable block URL, based on what gateway hosts it.
+// return 0 on success
+// return -EAGAN if the gateway is currently unknown
+// return -ENOMEM on OOM 
+int md_url_make_block_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url ) {
    
-   // http:// URL to a remotely-hosted block
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_UG_content_url( ms, UG_id );
-   if( base_url == NULL ) {
-      return NULL;
+   uint64_t gateway_type = ms_client_get_gateway_type( ms, gateway_id );
+   
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      // unknown gateway---maybe try reloading the certs?
+      SG_error("Unknown gateway %" PRIu64 "\n", gateway_id );
+      return -EAGAIN;
    }
    
-   char* ret = md_url_block_url( base_url, volume_id, fs_path, file_id, file_version, block_id, block_version, false );
-   SG_safe_free( base_url );
-   return ret;
-}
-
-
-// generaate a publicly-resolvable URL to a block in an AG
-// return the URL on success
-// return NULL on OOM, or if the AG is not known
-char* md_url_AG_block_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
-   
    uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_AG_content_url( ms, ag_id );
+   char* base_url = ms_client_get_gateway_url( ms, gateway_id );
    if( base_url == NULL ) {
-      return NULL;
+      
+      return -ENOMEM;
    }
    
    char* ret = md_url_block_url( base_url, volume_id, fs_path, file_id, version, block_id, block_version, false );
    
    SG_safe_free( base_url );
-   return ret;
-}
-
-// generate a publicly-resolvable URL to a block in an RG
-// return the URL on success
-// return NULL on OOM, or if the RG is not known
-char* md_url_RG_block_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
    
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   char* base_url = ms_client_get_RG_content_url( ms, rg_id );
-   if( base_url == NULL ) {
-      return NULL;
+   if( ret == NULL ) {
+      return -ENOMEM;
    }
    
-   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
-   if( url == NULL ) {
-      SG_safe_free( base_url );
-      return NULL;
-   }
+   *url = ret;
    
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SG_DATA_PREFIX, volume_id, file_id, version, block_id, block_version );
-   
-   free( base_url );
-   return url;
-}
-
-
-// generate a block URL, based on what gateway hosts it.
-// return 0 on success
-// return -ENOENT if the gateway is currently unknown, or we're OOM
-int md_url_make_block_url( struct ms_client* ms, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url ) {
-   
-   int gateway_type = ms_client_get_gateway_type( ms, coordinator_id );
-   
-   if( gateway_type < 0 ) {
-      // unknown gateway---maybe try reloading the certs?
-      SG_error("Unknown gateway %" PRIu64 "\n", coordinator_id );
-      return -ENOENT;
-   }
-   
-   char* block_url = NULL;
-   
-   if( gateway_type == SYNDICATE_UG ) {
-      block_url = md_url_UG_block_url( ms, coordinator_id, fs_path, file_id, version, block_id, block_version );
-   }
-   else if( gateway_type == SYNDICATE_RG ) {
-      block_url = md_url_RG_block_url( ms, coordinator_id, file_id, version, block_id, block_version );
-   }
-   else if( gateway_type == SYNDICATE_AG ) {
-      block_url = md_url_AG_block_url( ms, coordinator_id, fs_path, file_id, version, block_id, block_version );
-   }
-   
-   if( block_url == NULL ) {
-      SG_error("Failed to compute block URL for Gateway %" PRIu64 " (type %d)\n", coordinator_id, gateway_type);
-      return -ENOENT;
-   }
-
-   *url = block_url;
    return 0;
 }
 
@@ -274,98 +214,168 @@ char* md_url_public_manifest_url( char const* base_url, uint64_t volume_id, char
    return ret;
 }
 
-// generate a URL to a UG's manifest
-// return the URL on success
-// return NULL on OOM, or if the UG is not known
-char* md_url_UG_manifest_url( struct ms_client* ms, uint64_t UG_id, char const* fs_path, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   
-   char* base_url = ms_client_get_UG_content_url( ms, UG_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
-   
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* ret = md_url_public_manifest_url( base_url, volume_id, fs_path, file_id, version, ts );
-   SG_safe_free( base_url );
-   
-   return ret;
-}
 
-// generate a URL to an RG's manifest
-// return the URL on success
-// return NULL on OOM, or if the RG is not known
-char* md_url_RG_manifest_url( struct ms_client* ms, uint64_t rg_id, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
-   char* base_url = ms_client_get_RG_content_url( ms, rg_id );
-   if( base_url == NULL ) {
-      return NULL;
-   }
+// generate a URL to an manifest, given its coordinator.  Automatically determine what kind of gateway hosts it.
+// return 0 on success, and set *url to point to a malloc'ed null-terminated string with the url
+// return -EAGAIN if the gatewya is not known to us
+// return -ENOMEM if we could not generate a URL 
+int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url ) {
    
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   char* url = SG_CALLOC( char, strlen(base_url) + 1 + 25 + 1 + 25 + 1 + 25 + 25 + 1 + strlen("manifest") + 25 + 1 + 25 );
-   if( url == NULL ) {
-      return NULL;
-   }
-   
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SG_DATA_PREFIX, volume_id, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
-   
-   SG_safe_free( base_url );
-   return url;
-}
+   // what kind of gateway?
+   uint64_t gateway_type = ms_client_get_gateway_type( ms, gateway_id );
 
-// generate a URL to an AG's manifest
-// return the URL on success
-// return NULL on OOM, or if the AG is not known 
-char* md_url_AG_manifest_url( struct ms_client* ms, uint64_t ag_id, char const* fs_path, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      // unknown gateway
+      SG_error("Unknown Gateway %" PRIu64 "\n", gateway_id );
+      return -EAGAIN;
+   }
    
-   char* base_url = ms_client_get_AG_content_url( ms, ag_id );
+   char* base_url = ms_client_get_gateway_url( ms, gateway_id );
    if( base_url == NULL ) {
-      return NULL;
+      return -ENOMEM;
    }
    
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
    char* ret = md_url_public_manifest_url( base_url, volume_id, fs_path, file_id, file_version, ts );
-   
    SG_safe_free( base_url );
-   return ret;
-}
-
-
-// generate a URL to an manifest, given its coordinator.  Automatically determine what kind of gateway hosts it.
-// return 0 on success, and set *url to point to a malloc'ed null-terminated string with the url
-// return -EINVAL if the gateway type could not be determined
-// return -ENOENT if we could not generate a URL (i.e. OOM, or the coordinator ID is not known);
-int md_url_make_manifest_url( struct ms_client* ms, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url ) {
    
-   // what kind of gateway?
-   int gateway_type = ms_client_get_gateway_type( ms, coordinator_id );
-
-   if( gateway_type < 0 ) {
-      // unknown gateway
-      SG_error("Unknown Gateway %" PRIu64 "\n", coordinator_id );
-      return -EINVAL;
+   if( ret == NULL ) {
+      
+      return -ENOMEM;
    }
    
-   char* manifest_url = NULL;
-   
-   if( gateway_type == SYNDICATE_UG ) {
-      manifest_url = md_url_UG_manifest_url( ms, coordinator_id, fs_path, file_id, file_version, ts );
-   }
-   else if( gateway_type == SYNDICATE_RG ) {
-      manifest_url = md_url_RG_manifest_url( ms, coordinator_id, file_id, file_version, ts );
-   }
-   else if( gateway_type == SYNDICATE_AG ) {
-      manifest_url = md_url_AG_manifest_url( ms, coordinator_id, fs_path, file_id, file_version, ts );
-   }
-   
-   if( manifest_url == NULL ) {
-      // gateway not found 
-      SG_error("Unknown Gateway %" PRIu64 " of type %d\n", coordinator_id, gateway_type );
-      return -ENOENT;
-   }
-   
-   *url = manifest_url;
+   *url = ret;
    return 0;
 }
+
+
+// generate a URL to a gateway's API server 
+// return 0 on success, and set *url to a malloc'ed URL to the gateway 
+// return -EAGAIN if there is no known gateway
+// return -ENOMEM if OOM
+int md_url_make_gateway_url( struct ms_client* ms, uint64_t gateway_id, char** url ) {
+   
+   // what kind of gateway?
+   uint64_t gateway_type = ms_client_get_gateway_type( ms, gateway_id );
+
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      // unknown gateway
+      SG_error("Unknown Gateway %" PRIu64 "\n", gateway_id );
+      return -EAGAIN;
+   }
+   
+   char* base_url = ms_client_get_gateway_url( ms, gateway_id );
+   if( base_url == NULL ) {
+      return -ENOMEM;
+   }
+   
+   *url = base_url;
+   return 0;
+}
+
+
+// generate a getxattr URL to another gateway
+// base_url/GETXATTR/volume_id/fs_path.file_id.file_version/xattr_name.xattr_nonce
+// return the URL on success 
+// return NULL on OOM
+char* md_url_public_getxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce ) {
+   
+   size_t len = strlen(base_url) + 1 + strlen(SG_GETXATTR_PREFIX) + 1 + 50 + 1 + strlen(fs_path) + 1 + 50 + 1 + 50 + 1 + strlen(xattr_name) + 1 + 50 + 1;
+   char* url = SG_CALLOC( char, len );
+   
+   if( url == NULL ) {
+      return NULL;
+   }
+   
+   sprintf(url, "%s/%s/%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%s.%" PRId64, base_url, SG_GETXATTR_PREFIX, volume_id, fs_path, file_id, file_version, xattr_name, xattr_nonce );
+   return url;
+}
+
+
+// generate a listxattr URL to another gateway
+// base_url/LISTXATTR/volume_id/fs_path.file_id.file_version.xattr_nonce 
+// return the URL on success 
+// return NULL on OOM 
+char* md_url_public_listxattr_url( char const* base_url, uint64_t volume_id, char const* fs_path, uint64_t file_id, int64_t file_version, int64_t xattr_nonce ) {
+   
+   size_t len = strlen(base_url) + 1 + strlen(SG_LISTXATTR_PREFIX) + 1 + 50 + 1 + strlen(fs_path) + 1 + 50 + 1 + 50 + 1 + 50 + 1;
+   char* url = SG_CALLOC( char, len );
+   
+   if( url == NULL ) {
+      return NULL;
+   }
+   
+   sprintf(url, "%s/%s/%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 ".%" PRId64, base_url, SG_LISTXATTR_PREFIX, volume_id, fs_path, file_id, file_version, xattr_nonce );
+   return url;
+}
+
+// generate a getxattr URL to a given gateway 
+// return 0 on success, and set the *url 
+// return -ENOMEM on OOM 
+// return -EAGAIN if the gateway is not known to us
+int md_url_make_getxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, char const* xattr_name, int64_t xattr_nonce, char** url ) {
+   
+   // what kind of gateway?
+   uint64_t gateway_type = ms_client_get_gateway_type( ms, gateway_id );
+
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      // unknown gateway
+      SG_error("Unknown Gateway %" PRIu64 "\n", gateway_id );
+      return -EAGAIN;
+   }
+   
+   char* base_url = ms_client_get_gateway_url( ms, gateway_id );
+   if( base_url == NULL ) {
+      return -ENOMEM;
+   }
+   
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+   
+   char* ret = md_url_public_getxattr_url( base_url, volume_id, fs_path, file_id, file_version, xattr_name, xattr_nonce );
+   SG_safe_free( base_url );
+   
+   if( ret == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   *url = ret;
+   return 0;
+}
+
+
+// generate a listxattr URL to a given gateway 
+// return 0 on success, and set the *url 
+// return -ENOMEM on OOM 
+// return -EAGAIN if the gateway is not known to us
+int md_url_make_listxattr_url( struct ms_client* ms, char const* fs_path, uint64_t gateway_id, uint64_t file_id, int64_t file_version, int64_t xattr_nonce, char** url ) {
+   
+   // what kind of gateway?
+   uint64_t gateway_type = ms_client_get_gateway_type( ms, gateway_id );
+
+   if( gateway_type == SG_INVALID_GATEWAY_ID ) {
+      // unknown gateway
+      SG_error("Unknown Gateway %" PRIu64 "\n", gateway_id );
+      return -EAGAIN;
+   }
+   
+   char* base_url = ms_client_get_gateway_url( ms, gateway_id );
+   if( base_url == NULL ) {
+      return -ENOMEM;
+   }
+   
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+   
+   char* ret = md_url_public_listxattr_url( base_url, volume_id, fs_path, file_id, file_version, xattr_nonce );
+   SG_safe_free( base_url );
+   
+   if( ret == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   *url = ret;
+   return 0;
+}
+

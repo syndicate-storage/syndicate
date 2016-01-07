@@ -16,6 +16,8 @@
    limitations under the License.
 """
 
+# NOTE: shared between the MS and the Syndicate python package
+
 import os
 
 try:
@@ -23,11 +25,13 @@ try:
 except:
    import protobufs.ms_pb2 as ms_pb2
 
+'''
 try:
    from admin_info import OPENID_LOCAL
 except:
    # imported by a client program, not the MS, since admin_info isn't available
    OPENID_LOCAL = False
+'''
 
 try:
    import syndicate.client.common.log as Log
@@ -42,23 +46,25 @@ MS_HOSTNAME = ""
 MS_PROTO = ""
 MS_URL = ""
 
+'''
 # OpenID
 OPENID_SESSION_SSL_ONLY = True
 OPENID_TRUST_ROOT_HOST = ""
 OPENID_HOST_URL = ""
 
 OPENID_POST_USERNAME = "openid_username"
-
+'''
 if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    
    # running locally in a development server
    MS_HOSTNAME = "localhost:%s" % str(os.environ.get("SERVER_PORT", 8080))
    MS_PROTO = "http://"
    
+   """
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY = False
-   
+   """
 else:
    # running publicly.
    try:
@@ -70,11 +76,14 @@ else:
       
    MS_PROTO = "https://"
    
+   """
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=True
    OPENID_LOCAL = False
+   """
 
+'''
 if OPENID_LOCAL:
    # OpenID debug on local server
    OPENID_PROVIDER_NAME = "localhost"
@@ -95,10 +104,11 @@ else:
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+'''
 
 MS_URL = MS_PROTO + MS_HOSTNAME
 
-log.info("OpenID provider: %s" % OPENID_PROVIDER_URL )
+# log.info("OpenID provider: %s" % OPENID_PROVIDER_URL )
 
 # security
 OBJECT_KEY_SIZE = 4096
@@ -119,14 +129,7 @@ USER_VOLUME_READONLY = 2
 USER_VOLUME_READWRITE = 4
 USER_VOLUME_HOST = 8
 
-# website
-MS_HOST = OPENID_TRUST_ROOT_HOST
-
-# Gateway static constants
-GATEWAY_TYPE_UG = ms_pb2.ms_gateway_cert.USER_GATEWAY
-GATEWAY_TYPE_AG = ms_pb2.ms_gateway_cert.ACQUISITION_GATEWAY
-GATEWAY_TYPE_RG = ms_pb2.ms_gateway_cert.REPLICA_GATEWAY
-
+# caps
 GATEWAY_CAP_READ_DATA = ms_pb2.ms_gateway_cert.CAP_READ_DATA
 GATEWAY_CAP_WRITE_DATA = ms_pb2.ms_gateway_cert.CAP_WRITE_DATA
 GATEWAY_CAP_READ_METADATA = ms_pb2.ms_gateway_cert.CAP_READ_METADATA
@@ -137,15 +140,7 @@ GATEWAY_ID_ANON = 0xFFFFFFFFFFFFFFFF    # taken from libsyndicate.h
 
 # JSON
 JSON_AUTH_COOKIE_NAME = "SynAuth"
-JSON_MS_API_VERSION = "1.0"
 JSON_SYNDICATE_CALLING_CONVENTION_FLAG = "__syndicate_json_rpc_calling_convention"
-
-# alternative names
-GATEWAY_TYPE_TO_STR = {
-   GATEWAY_TYPE_UG: "UG",
-   GATEWAY_TYPE_RG: "RG",
-   GATEWAY_TYPE_AG: "AG"
-}
 
 # key constants
 KEY_UNSET = "unset"
@@ -153,7 +148,7 @@ KEY_UNUSED = "unused"
 
 # verification methods
 AUTH_METHOD_PUBKEY = "VERIFY_PUBKEY"
-AUTH_METHOD_PASSWORD = "VERIFY_PASSWORD"
+# AUTH_METHOD_PASSWORD = "VERIFY_PASSWORD"
 AUTH_METHOD_NONE = "VERIFY_NONE"
 
 # activation properties
@@ -166,6 +161,9 @@ MAX_NUM_CONNECTIONS = 50
 MAX_BATCH_REQUEST_SIZE = 6
 MAX_BATCH_ASYNC_REQUEST_SIZE = 100
 MAX_TRANSFER_TIME = 300
+
+# ports 
+GATEWAY_DEFAULT_PORT = 31111
 
 # RESOLVE_MAX_PAGE_SIZE = 3       # for testing
 

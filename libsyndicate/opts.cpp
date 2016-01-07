@@ -1,5 +1,5 @@
 /*
-   Copyright 2014 The Trustees of Princeton University
+   Copyright 2015 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -14,12 +14,90 @@
    limitations under the License.
 */
 
+#include "libsyndicate/private/opts.h"
 #include "libsyndicate/opts.h"
+
+// new opt struct 
+struct md_opts* md_opts_new( int count ) {
+   return SG_CALLOC( struct md_opts, count );
+}
 
 // fill opts with defaults
 int md_opts_default( struct md_opts* opts ) {
    memset( opts, 0, sizeof(struct md_opts) );
+   
+   opts->config_file = SG_strdup_or_null( SG_DEFAULT_CONFIG_PATH );
+   if( opts->config_file == NULL ) {
+      return -ENOMEM;
+   }
+   
    return 0;
+}
+
+// get the client flag 
+bool md_opts_get_client( struct md_opts* opts ) {
+   return opts->client;
+}
+
+// get the ignore-driver disposition 
+bool md_opts_get_ignore_driver( struct md_opts* opts ) {
+   return opts->ignore_driver;
+}
+
+uint64_t md_opts_get_gateway_type( struct md_opts* opts ) {
+   return opts->gateway_type;
+}
+
+// set the "client" override 
+void md_opts_set_client( struct md_opts* opts, bool client ) {
+   opts->client = client;
+}
+
+// set the "ignore_driver" override 
+void md_opts_set_ignore_driver( struct md_opts* opts, bool ignore_driver ) {
+   opts->ignore_driver = ignore_driver;
+}
+
+// set the "gateway_type" field 
+void md_opts_set_gateway_type( struct md_opts* opts, uint64_t type ) {
+   opts->gateway_type = type;
+}
+
+// set path to config file 
+void md_opts_set_config_file( struct md_opts* opts, char* config_filepath ) {
+   opts->config_file = config_filepath;
+}
+
+// set username 
+void md_opts_set_username( struct md_opts* opts, char* username ) {
+   opts->username = username;
+}
+
+// set volume name 
+void md_opts_set_volume_name( struct md_opts* opts, char* volume_name ) {
+   opts->volume_name = volume_name;
+}
+
+// set gateway name 
+void md_opts_set_gateway_name( struct md_opts* opts, char* gateway_name ) {
+   opts->gateway_name = gateway_name;
+}
+
+// set MS url 
+void md_opts_set_ms_url( struct md_opts* opts, char* ms_url ) {
+   opts->ms_url = ms_url;
+}
+
+// toggle running in the foreground 
+void md_opts_set_foreground( struct md_opts* opts, bool foreground ) {
+   opts->foreground = foreground;
+}
+
+// set driver options 
+void md_opts_set_driver_config( struct md_opts* opts, char const* driver_exec_str, char const** driver_roles, size_t num_driver_roles ) {
+   opts->driver_exec_str = driver_exec_str;
+   opts->driver_roles = driver_roles;
+   opts->num_driver_roles = num_driver_roles;
 }
 
 // parse a long 
@@ -30,8 +108,8 @@ int md_opts_parse_long( int c, char* opt, long* result ) {
    errno = 0;
    *result = strtol( opt, &tmp, 10 );
    
-   if( tmp == opt || errno != 0 ) {
-      fprintf(stderr, "Invalid value for option -%c", c );
+   if( tmp == opt ) {
+      fprintf(stderr, "Invalid value '%s' for option -%c\n", opt, c );
       rc = -1;
    }
    return rc;
@@ -77,6 +155,7 @@ ssize_t md_read_stdin( char* stdin_buf ) {
 }
 
 // get options from stdin.
+// NOTE: there will be no subshell expansion.  Stdin must be formatted.
 // return 0 on success, and set *argc and *argv with the actual arguments (the caller must free them) and return 0
 // return -ENODATA if we failed to read stdin 
 // return -EINVAL if we failed to parse stdin
@@ -100,7 +179,7 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
    wordexp_t expanded_stdin;
    memset( &expanded_stdin, 0, sizeof(wordexp_t) );
    
-   int rc = wordexp( stdin_buf, &expanded_stdin, WRDE_SHOWERR );
+   int rc = wordexp( stdin_buf, &expanded_stdin, WRDE_SHOWERR | WRDE_NOCMD );
    if( rc != 0 ) {
       SG_error("wordexp rc = %d\n", rc );
       
@@ -117,32 +196,11 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
    }
 }
 
-
-// clean up the opts structure, freeing things we don't need 
-// always succeeds
-int md_opts_cleanup( struct md_opts* opts ) {
-   struct mlock_buf* to_free[] = {
-      &opts->user_pkey_pem,
-      &opts->gateway_pkey_pem,
-      &opts->gateway_pkey_decryption_password,
-      &opts->password,
-      NULL
-   };
-   
-   for( int i = 0; to_free[i] != NULL; i++ ) {
-      if( to_free[i]->ptr != NULL ) {
-         mlock_free( to_free[i] );
-      }
-   }
-   
-   return 0;
-}
-
 // free the opts structure 
 // always succeeds 
 int md_opts_free( struct md_opts* opts ) {
    
-   md_opts_cleanup( opts );
+   char EOL = 0;
    
    char* to_free[] = {
       opts->config_file,
@@ -150,20 +208,10 @@ int md_opts_free( struct md_opts* opts ) {
       opts->volume_name,
       opts->ms_url,
       opts->gateway_name,
-      opts->volume_pubkey_path,
-      opts->gateway_pkey_path,
-      opts->syndicate_pubkey_path,
-      opts->hostname,
-      opts->storage_root,
-      opts->first_nonopt_arg,
-      opts->volume_pubkey_pem,
-      opts->syndicate_pubkey_pem,
-      opts->tls_pkey_path,
-      opts->tls_cert_path,
-      NULL
+      &EOL
    };
    
-   for( int i = 0; to_free[i] != NULL; i++ ) {
+   for( int i = 0; to_free[i] != &EOL; i++ ) {
       SG_safe_free( to_free[i] );
    }
    
@@ -196,30 +244,18 @@ int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
 // return 0 on success
 // return -EINVAL if there are duplicate short opt definitions
 // return -ENOMEM if out of memory
+// return 1 if the caller wanted help
 int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
       {"volume-name",     required_argument,   0, 'v'},
       {"username",        required_argument,   0, 'u'},
-      {"password",        required_argument,   0, 'p'},
       {"gateway",         required_argument,   0, 'g'},
       {"MS",              required_argument,   0, 'm'},
-      {"volume-pubkey",   required_argument,   0, 'V'},
-      {"gateway-pkey",    required_argument,   0, 'G'},
-      {"syndicate-pubkey", required_argument,  0, 'S'},
-      {"gateway-pkey-password", required_argument, 0, 'K'},
-      {"tls-pkey",        required_argument,   0, 'T'},
-      {"tls-cert",        required_argument,   0, 'C'},
-      {"storage-root",    required_argument,   0, 'r'},
-      {"read-stdin",      no_argument,         0, 'R'},
-      {"user-pkey",       required_argument,   0, 'U'},
-      {"user-pkey-pem",   required_argument,   0, 'P'},
       {"debug-level",     required_argument,   0, 'd'},
-      {"hostname",        required_argument,   0, 'H'},
       {"foreground",      no_argument,         0, 'f'},
-      {"cache-soft-limit",required_argument,   0, 'l'},
-      {"cache-hard-limit",required_argument,   0, 'L'},
+      {"help",            no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
@@ -231,7 +267,7 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:g:m:V:G:S:K:T:C:r:RU:P:d:H:fl:L:";
+   char const* default_optstr = "c:v:u:g:m:d:fh";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -354,8 +390,9 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       
       c = getopt_long(argc, argv, optstr, all_options, &opt_index);
       
-      if( c == -1 )
+      if( c == -1 ) {
          break;
+      }
       
       switch( c ) {
          case 'v': {
@@ -388,17 +425,6 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             
             break;
          }
-         case 'p': {
-            
-            rc = md_load_mlock_buf( &opts->password, optarg );
-            if( rc != 0 ) {
-               break;
-            }
-            
-            // clear this--it's sensitive
-            memset( optarg, 0, strlen(optarg) );
-            break;
-         }
          case 'm': {
             
             opts->ms_url = SG_strdup_or_null( optarg );
@@ -419,106 +445,6 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             
             break;
          }
-         case 'V': {
-            
-            opts->volume_pubkey_path = SG_strdup_or_null( optarg );
-            if( opts->volume_pubkey_path == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'G': {
-            
-            opts->gateway_pkey_path = SG_strdup_or_null( optarg );
-            if( opts->gateway_pkey_path == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'S': {
-            
-            opts->syndicate_pubkey_path = SG_strdup_or_null( optarg );
-            if( opts->syndicate_pubkey_path == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'T': {
-            
-            opts->tls_pkey_path = SG_strdup_or_null( optarg );
-            if( opts->tls_pkey_path == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'C': {
-            
-            opts->tls_cert_path = SG_strdup_or_null( optarg );
-            if( opts->tls_pkey_path == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'r': {
-            
-            opts->storage_root = SG_strdup_or_null( optarg );
-            if( opts->storage_root == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'K': {
-            rc = md_load_mlock_buf( &opts->gateway_pkey_decryption_password, optarg );
-            if( rc != 0 ) {
-               break;
-            }
-            
-            // clear this--it's sensitive
-            memset( optarg, 0, strlen(optarg) );
-            break;
-         }
-         case 'U': {
-            
-            // read the file...
-            rc = md_load_secret_as_string( &opts->user_pkey_pem, optarg );
-            if( rc != 0 ) {
-               
-               SG_error("md_load_secret_as_string(%s) rc = %d\n", optarg, rc );
-               rc = -1;
-               break;
-            }
-            break;
-         }
-         case 'P': {
-            
-            rc = md_load_mlock_buf( &opts->user_pkey_pem, optarg );
-            if( rc != 0 ) {
-               break;
-            }
-            
-            // clear this--it's sensitive
-            memset( optarg, 0, strlen(optarg) );
-            break;
-         }
-         case 'R': {
-            
-            if( no_stdin ) {
-               // this is invalid--we're already parsing from stdin 
-               fprintf(stderr, "Invalid argument: cannot process -R when reading args from stdin\n");
-               rc = -EINVAL;
-            }
-            else {
-               SG_debug("%s", "Reading arguments from stdin\n");
-               opts->read_stdin = true;
-            }
-            break;
-         }
          case 'd': {
             
             long debug_level = 0;
@@ -536,39 +462,10 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
             opts->foreground = true;
             break;
          }
-         case 'H': {
+         
+         case 'h': {
             
-            opts->hostname = SG_strdup_or_null( optarg );
-            if( opts->hostname == NULL ) {
-               rc = -ENOMEM;
-               break;
-            }
-            break;
-         }
-         case 'l': {
-            
-            long l = 0;
-            rc = md_opts_parse_long( c, optarg, &l );
-            if( rc == 0 ) {
-               opts->cache_soft_limit = l;
-            }
-            else {
-               fprintf(stderr, "Failed to parse -l, rc = %d\n", rc );
-               rc = -1;
-            }
-            break;
-         }
-         case 'L': {
-            
-            long l = 0;
-            rc = md_opts_parse_long( c, optarg, &l );
-            if( rc == 0 ) {
-               opts->cache_hard_limit = l;
-            }
-            else {
-               fprintf(stderr, "Failed to parse -L, rc = %d\n", rc );
-               rc = -1;
-            }
+            rc = 1;
             break;
          }
          default: {
@@ -607,10 +504,6 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       if( out_optind != NULL ) {
          *out_optind = optind;
       }
-      
-      if( optind < argc ) {
-         opts->first_nonopt_arg = argv[optind];
-      }
    }
    else {
       // blow away the options 
@@ -628,95 +521,39 @@ int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* out_optind,
       return rc;
    }
    
-   // do we need to parse stdin?
-   if( opts->read_stdin ) {
-      
-      int new_argc = 0;
-      char** new_argv = NULL;
-      
-      int rc = md_read_opts_from_stdin( &new_argc, &new_argv );
-      if( rc != 0 ) {
-         SG_error("Failed to read args from stdin, rc = %d\n", rc );
-         return -ENODATA;
-      }
-      else {
-         // clear opts 
-         md_opts_free( opts );
-         md_opts_default( opts );
-         
-         // NOTE: set this to 0, since otherwise getopt_long decides to skip the first argument
-         optind = 0;
-         
-         // got new data.  parse it
-         rc = md_opts_parse_impl( opts, new_argc, new_argv, out_optind, special_opts, special_opt_handler, true );
-         
-         SG_FREE_LIST( new_argv, free );
-      }
-   }
+   optind = 0;
    
    return rc;
 }
 
 // print common usage
-void md_common_usage( char const* progname ) {
+void md_common_usage() {
    fprintf(stderr, "\
-Usage of %s\n\
-Common Syndicate command-line options\n\
-Common required arguments:\n\
-   -m, --MS MS_URL\n\
-            URL to your Metadata Service\n\
+Syndicate required arguments:\n\
    -u, --username USERNAME\n\
             Syndicate account username\n\
-   -p, --password PASSWORD\n\
-            Syndicate account password.\n\
-            Required if -U is not given.\n\
-   -U, --user-pkey PATH\n\
-            Path to user private key.\n\
-            Required if -p is not given.\n\
-   -P, --user-pkey-pem STRING\n\
-            Raw PEM-encoded user private key.\n\
-            Can be used in place of -U.\n\
    -v, --volume VOLUME_NAME\n\
             Name of the Volume you are going to access\n\
    -g, --gateway GATEWAY_NAME\n\
             Name of this gateway\n\
 \n\
-Common optional arguments:\n\
+Syndicate optional arguments:\n\
+   -m, --MS MS_URL\n\
+            URL to your Metadata Service.\n\
+            Loaded from the Syndicate config file if not given.\n\
+   -c, --config-file CONFIG_FILE_PATH\n\
+            Path to the config file to use.\n\
+            Default is '%s'\n\
    -f, --foreground\n\
             Run in the foreground.\n\
             Don't detach from the controlling TTY, and don't fork.\n\
             Print all logging information to stdout.\n\
-   -V, --volume-pubkey VOLUME_PUBLIC_KEY_PATH\n\
-            Path to the Volume's metadata public key\n\
-   -S, --syndicate-pubkey SYNDICATE_PUBLIC_KEY_PATH\n\
-            Path to the Syndicate public key.  If not given,\n\
-            it will be downloaded and logged when the gateway\n\
-            starts.\n\
-   -T, --tls-pkey TLS_PRIVATE_KEY_PATH\n\
-            Path to this gateway's TLS private key\n\
-   -C, --tls-cert TLS_CERTIFICATE_PATH\n\
-            Path to this gateway's TLS certificate\n\
-   -r, --storage-root STORAGE_ROOT\n\
-            Cache local state at a particular location\n\
-   -G, --gateway-pkey GATEWAY_PRIVATE_KEY_PATH\n\
-            Path to this gateway's private key.  If no private key\n\
-            is given, then it will be downloaded from the MS.\n\
-   -K, --gateway-pkey-decryption-password DECRYPTION_PASSWORD\n\
-            Password to decrypt the private key.\n\
-   -H, --hostname HOSTNAME\n\
-            Hostname to run under (default: look up via DNS).\n\
-   -R, --read-stdin\n\
-            If set, read all command-line options from stdin.\n\
    -d, --debug-level DEBUG_LEVEL\n\
             Debugging level.\n\
             Pass 0 (the default) for no debugging output.\n\
             Pass 1 for info messages.\n\
             Pass 2 for info and debugging messages.\n\
             Pass 3 for info, debugging, and locking messages.\n\
-   -l, --cache-soft-limit LIMIT\n\
-            Soft on-disk cache size limit (in bytes)\n\
-   -L, --cache-hard-limit LIMIT\n\
-            Hard on-disk cache size limit (in bytes)\n\
-\n", progname );
+\n", SG_DEFAULT_CONFIG_PATH );
 }
 

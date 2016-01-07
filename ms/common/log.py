@@ -16,7 +16,6 @@
    limitations under the License.
 """
 
-
 import logging
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )

@@ -25,11 +25,13 @@ from common.admin_info import *
 import logging
 import base64
 
+from MS.volume import Volume, VolumeCertBundle
+from MS.gateway import Gateway
 
 # ----------------------------------
 def response_read_gateway_basic_auth( headers ):
    """
-   Given a dict of HTTP headers, extract the gateway's type, id, and session secret.
+   Given a dict of HTTP headers, extract the gateway's type, id, and base64 signature over both the URL and Authorization header
    """
    
    basic_auth = headers.get("Authorization")
@@ -38,116 +40,109 @@ def response_read_gateway_basic_auth( headers ):
       return (None, None, None)
 
    # basic auth format:
-   # ${gateway_type}_${gateway_id}:${password}
+   # ${gateway_type}_${gateway_id}:${signatureb64}
    # example:
    # UG_3:01234567890abcdef
 
-   gateway_type, gateway_id, password = '', '', ''
+   gateway_type, gateway_id, signatureb64 = '', '', ''
    try:
       user_info = base64.decodestring( basic_auth[6:] )
-      gateway, password = user_info.split(":")
+      gateway, signatureb64 = user_info.split(":")
       gateway_type, gateway_id = gateway.split("_")
+      gateway_type = int(gateway_type)
       gateway_id = int(gateway_id)
    except:
       logging.info("incomprehensible Authorization header: '%s'" % basic_auth )
       return (None, None, None)
 
-   return gateway_type, gateway_id, password
+   return gateway_type, gateway_id, signatureb64
 
 
 # ----------------------------------
-def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
+def response_load_volume_and_gateway( request_handler, volume_id, gateway_id=None ):
    """
-   Given a gateway's numeric type and ID, load it from the datastore.
+   Load a volume and the gateway from the request handler.
+   
+   Return (volume, gateway, volume_cert_bundle, status, time)
    """
    
-   if gateway_id == None:
-      # invalid header
-      return (None, 403, None)
-
-   gateway_read_start = storagetypes.get_time()
-   gateway = storage.read_gateway( gateway_id )
+   read_start = storagetypes.get_time()
    
-   if gateway is None:
-      # not present
-      return (None, 404, None)
+   # get the gateway's ID and credentials
+   g_id = None 
    
-   if GATEWAY_TYPE_TO_STR.get( gateway.gateway_type ) == None:
-      # bad type (shouldn't happen)
-      return (None, 400, None)
+   if gateway_id is None:
+      gateway_type, g_id, signature_b64 = response_read_gateway_basic_auth( request_handler.request.headers )
+   else:
+      g_id = gateway_id
    
-   if GATEWAY_TYPE_TO_STR[ gateway.gateway_type ] != gateway_type:
-      # caller has the wrong type
-      return (None, 401, None)
+   volume = None 
+   gateway = None
+   cert_bundle = None 
+   
+   volume_fut = Volume.Read( volume_id, async=True )
+   cert_bundle_fut = VolumeCertBundle.Get( volume_id, async=True )
+   gateway_fut = None 
+   
+   if g_id is not None:
+      gateway_fut = Gateway.Read( g_id, async=True )
       
-   gateway_read_time = storagetypes.get_time() - gateway_read_start
-   return (gateway, 200, gateway_read_time)
-
-
-# ----------------------------------
-def response_load_volume( request_handler, volume_name_or_id ):
-   """
-   Load a volume from the data store, given either its name or ID.
-   Automatically reply with an error message via the given 
-   request handler.
-   """
+   storagetypes.wait_futures( [volume_fut, gateway_fut, cert_bundle_fut] )
    
-   volume_read_start = storagetypes.get_time()
-
-   volume = storage.read_volume( volume_name_or_id )
-
-   volume_read_time = storagetypes.get_time() - volume_read_start
-
-   if volume == None:
-      # no volume
-      response_volume_error( request_handler, 404 )
-      return (None, 404, None)
-
-   if not volume.active:
-      # inactive volume
-      response_volume_error( request_handler, 503 )
-      return (None, 503, None)
-
-   return (volume, 200, volume_read_time)
-
-
-# ----------------------------------
-def response_volume_error( request_handler, status ):
-   """
-   Reply with a failure to load a volume.
-   Optionally translate the status (if 404 or 503)
-   into a message as well.
-   """
-   request_handler.response.status = status
-   request_handler.response.headers['Content-Type'] = "text/plain"
+   volume = volume_fut.get_result()
+   cert_bundle = cert_bundle_fut.get_result()
+   if gateway_fut is not None:
+       gateway = gateway_fut.get_result()
    
-   if status == 404:
-      # no volume
-      request_handler.response.write("No such volume\n")
-
-   elif status == 503:
-      # inactive volume
-      request_handler.response.write("Service Not Available\n")
-
-   return
+   if volume is None or cert_bundle is None:
+      logging.error("No volume, gateway, or cert bundle")
+      response_user_error( request_handler, 404 )
+      return (None, None, None, 404, None)
    
-
-# ----------------------------------
-def response_server_error( request_handler, status, msg=None ):
-   """
-   Reply with a server failure (500 and above), with an optional message.
-   """
-   request_handler.response.status = status
-   request_handler.response.headers['Content-Type'] = "text/plain"
-
-   if status == 500:
-      # server error
-      if msg == None:
-         msg = "Internal Server Error"
-      request_handler.response.write( msg )
-
-   return
+   Volume.SetCache( volume.volume_id, volume )
+   VolumeCertBundle.SetCache( volume.volume_id, cert_bundle )
    
+   if gateway is not None:
+      Gateway.SetCache( gateway.g_id, gateway )
+      
+   # sanity checks
+   if (volume.need_gateway_auth()) and (gateway is None or gateway_type is None or signature_b64 is None):
+      # required authentication, but we don't have an Authentication header
+      logging.error("Unable to authenticate gateway")
+      return (None, None, None, 403, None)
+
+   # need auth?
+   if volume.need_gateway_auth() and gateway is None:
+      logging.error("Unable to authenticate gateway")
+      return (None, None, None, 403, None)
+   
+   # gateway validity
+   if gateway is not None:
+      
+      # type match?
+      if gateway_type is not None and gateway.gateway_type != gateway_type:
+         logging.error("Type mismatch on %s:%s" % (gateway_type, g_id))
+         response_user_error( request_handler, 403 )
+         return (None, None, None, 403, None )
+      
+      # is the gateway in this volume?
+      if not volume.is_gateway_in_volume( gateway ):
+         logging.error("Gateway '%s' is not in volume '%s'" % (gateway.name, volume.name))
+         response_user_error( request_handler, 403 )
+         return (None, None, None, 403, None)
+      
+      # make sure this gateway's cert is registered
+      valid_gateway = gateway.authenticate_session( gateway_type, g_id, request_handler.request.url, signature_b64 )
+
+      if not valid_gateway and volume.need_gateway_auth():
+         # invalid credentials
+         logging.error("Invalid authentication credentials")
+         response_user_error( request_handler, 403 )
+         return (None, None, None, 403, None)
+   
+   read_time = storagetypes.get_time() - read_start
+   
+   return (volume, gateway, cert_bundle, 200, read_time)
 
 # ----------------------------------
 def response_user_error( request_handler, status, message=None ):
@@ -188,93 +183,29 @@ def response_user_error( request_handler, status, message=None ):
 
 
 # ----------------------------------
-def response_load_gateway( request_handler, vol ):
-   """
-   Given a loaded Volume and a request handler, load the calling gateway record.
-   Return the gateway and an HTTP status, as well as some benchmark information.
-   """
-   
-   # get the gateway's credentials
-   gateway_type_str, g_id, password = response_read_gateway_basic_auth( request_handler.request.headers )
-
-   if (gateway_type_str == None or g_id == None or password == None) and vol.need_gateway_auth():
-      response_user_error( request_handler, 401 )
-      return (None, 401, None)
-
-   # look up the requesting gateway
-   gateway, status, gateway_read_time = response_load_gateway_by_type_and_id( gateway_type_str, g_id )
-
-   if vol.need_gateway_auth():
-      if status != 200:
-         response_user_error( request_handler, status )
-         return (None, status, None)
-
-      # make sure this gateway is legit
-      valid_gateway = gateway.authenticate_session( password )
-
-      if not valid_gateway and vol.need_gateway_auth():
-         # invalid credentials
-         logging.error("Invalid session credentials")
-         response_user_error( request_handler, 403 )
-         return (None, 403, None)
-
-   else:
-      status = 200
-      
-   return (gateway, status, gateway_read_time)
-   
-
-# ----------------------------------
-def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=True ):
+def response_begin( request_handler, volume_id ):
    """
    Begin a response to a calling gateway, given the request handler and either the volume name or ID.
    Load up the calling gateway and the volume it's trying to access, and return both along with 
-   some benchmark information.  Return Nones on failure.
+   some benchmark information.
    
-   TODO: load volume and gateway in parallel
+   Return (volume, gateway, status, benchmark dict) on success
+   Return Nones on failure.
    """
    
    timing = {}
    
-   timing['request_start'] = storagetypes.get_time()
-
-   # get the Volume
-   volume, status, volume_read_time = response_load_volume( request_handler, volume_name_or_id )
-
-   if status != 200:
-      return (None, None, None)
-
-   gateway_read_time = 0
-   gateway = None
-
-   # try to authenticate the gateway
-   gateway, status, gateway_read_time = response_load_gateway( request_handler, volume )
-
-   if fail_if_no_auth_header and (status != 200 or gateway == None):
-      return (None, None, None)
-
-   # make sure this gateway is allowed to access this Volume
-   if volume.need_gateway_auth():
-      if gateway is not None:
-         valid_gateway = volume.is_gateway_in_volume( gateway )
-         if not valid_gateway:
-            # gateway does not belong to this Volume
-            logging.error("Not in this Volume")
-            response_user_error( request_handler, 403 )
-            return (None, None, None)
-      
-      else:
-         logging.error("No gateway, but we required authentication")
-         response_user_error( request_handler, 403 )
-         return (None, None, None)
-
-   # if we're still here, we're good to go
-
-   timing['X-Volume-Time'] = str(volume_read_time)
-   timing['X-Gateway-Time'] = str(gateway_read_time)
+   volume, gateway, volume_cert_bundle, status, read_time = response_load_volume_and_gateway( request_handler, volume_id )
    
-   return (gateway, volume, timing)
-
+   # transfer over cert bundle to volume
+   if volume is not None and volume_cert_bundle is not None:
+      cert_bundle = VolumeCertBundle.Load( volume_cert_bundle )
+      volume.cert_bundle = cert_bundle
+   
+   timing['request_start'] = read_time 
+   
+   return (volume, gateway, status, timing)
+   
    
 # ----------------------------------
 def response_end( request_handler, status, data, content_type=None, timing=None ):

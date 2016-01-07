@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/bash -e
 
-BIN=../../bin/ms
+BIN=../../build/out/bin/
 SYNTOOL=$BIN/syntool.py
 SYNCONF=$HOME/.syndicate
 

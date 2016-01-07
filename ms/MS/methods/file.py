@@ -23,11 +23,13 @@ from storage import storage
 import storage.storagetypes as storagetypes
 
 from common import *
+from common.admin_info import *
 import common.msconfig as msconfig
 
 import random
 import os
 import errno
+import base64
 
 import traceback
 import logging
@@ -42,7 +44,7 @@ def make_ms_reply( volume, error ):
    reply = ms_pb2.ms_reply()
 
    reply.volume_version = volume.version
-   reply.cert_version = volume.cert_version
+   reply.cert_version = volume.cert_bundle.mtime_sec
    reply.error = error
 
    return reply
@@ -64,12 +66,33 @@ def file_update_init_response( volume ):
 # ----------------------------------
 def file_update_complete_response( volume, reply ):
    """
-   Sign a protobuf ms_reply structure, using the Volume's private key.
+   Sign a protobuf ms_reply structure, using Syndicate's private key
    """
+   import common.api as api
+   
+   # sign each directory entry in the reply with the Syndicate key,
+   # so the MS attests to its index information
+   for ent_pb in reply.listing.entries:
+       
+       if ent_pb.type == MSENTRY_TYPE_DIR:
+           
+           # sign the MS-related fields
+           ent_pb.ms_signature = ""
+           ent_str = ent_pb.SerializeToString()
+           sig = api.sign_data( SYNDICATE_PRIVKEY, ent_str )
+           sigb64 = base64.b64encode( sig )
+           
+           ent_pb.ms_signature = sigb64
+   
+   
+   # sign the entire reply
    reply.signature = ""
    reply_str = reply.SerializeToString()
-   sig = volume.sign_message( reply_str )
-   reply.signature = sig
+   
+   sig = api.sign_data( SYNDICATE_PRIVKEY, reply_str )
+   sigb64 = base64.b64encode( sig )
+   
+   reply.signature = sigb64
    reply_str = reply.SerializeToString()
    
    return reply_str
@@ -82,8 +105,15 @@ def file_update_get_attrs( entry_dict, attr_list ):
    Return None if at least one is missing.
    """
    ret = {}
+   missing = []
    for attr_name in attr_list:
       if not entry_dict.has_key(attr_name):
+
+         for attr_name in attr_list:
+             if not entry_dict.has_key(attr_name):
+                 missing.append( attr_name )
+
+         log.error("Missing: %s" % (",".join(missing)))
          return None 
       
       ret[attr_name] = entry_dict[attr_name]
@@ -111,6 +141,21 @@ def file_read_allowed( owner_id, file_data ):
          error = 0
 
    return error
+
+
+# ----------------------------------
+def file_write_allowed( owner_id, file_data ):
+   """
+   Can the user write to the file?  Return the appropriate error code.
+   """
+   
+   if file_data.owner_id == owner_id and (file_data.mode & 0444) == 0:
+      return -errno.EACCES
+   
+   if file_data.owner_id != owner_id and (file_data.mode & 0044) == 0:
+      return -errno.EACCES
+   
+   return 0
 
 
 # ----------------------------------
@@ -156,27 +201,8 @@ def _getattr( owner_id, volume, file_id, file_version, write_nonce ):
          
       else:
          reply.listing.status = ms_pb2.ms_listing.NEW
-         
-         # child count if directory 
-         num_children = file_data.num_children
-         generation = file_data.generation
-         
-         if num_children is None:
-            num_children = 0
-            
-         if generation is None:
-            generation = 0
-         
-         if file_data.ftype == MSENTRY_TYPE_DIR:
-            num_children_fut = MSEntryIndex.GetNumChildren( volume.volume_id, file_id, volume.num_shards, async=True )
-            
-            storagetypes.wait_futures( [num_children_fut] )
-            
-            num_children = num_children_fut.get_result()
-            
-         # full ent 
          ent_pb = reply.listing.entries.add()
-         file_data.protobuf( ent_pb, num_children=num_children, generation=generation )
+         MSEntry.protobuf( file_data, ent_pb )
          
          # logging.info("Getattr %s: Serve back: %s" % (file_id, file_data))
          
@@ -230,11 +256,11 @@ def _getchild( owner_id, volume, parent_id, name ):
       # child count if directory 
       num_children = 0
       if file_data.ftype == MSENTRY_TYPE_DIR:
-         num_children = MSEntry.GetNumChildren( volume, file_data.file_id )
+         num_children = MSEntryIndex.GetNumChildren( volume.volume_id, file_data.file_id, volume.num_shards )
          
       # full ent 
       ent_pb = reply.listing.entries.add()
-      file_data.protobuf( ent_pb, num_children=num_children )
+      MSEntry.protobuf( file_data, ent_pb )
       
       # logging.info("Getchild %s: Serve back: %s" % (parent_id, file_data))
    
@@ -265,7 +291,7 @@ def _listdir( owner_id, volume, file_id, page_id=None, least_unknown_generation=
 
       for ent in listing:         
          ent_pb = reply.listing.entries.add()
-         ent.protobuf( ent_pb )
+         MSEntry.protobuf( ent, ent_pb )
    
          # logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
    
@@ -334,11 +360,21 @@ def file_listdir( gateway, volume, file_id, page_id=None, lug=None ):
    
    logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s" % (volume.volume_id, file_id, page_id, lug) )
    
-   owner_id = msconfig.GATEWAY_ID_ANON
-   if gateway != None:
-      owner_id = gateway.owner_id
+   if page_id is not None or lug is not None:
+        
+      owner_id = msconfig.GATEWAY_ID_ANON
+      if gateway != None:
+         owner_id = gateway.owner_id
+        
+      rc, reply = _listdir( owner_id, volume, file_id, page_id=page_id, least_unknown_generation=lug )
+   
+   else:
+      logging.error("page_id or l.u.g. required")
+      rc = -errno.EINVAL
+      reply = make_ms_reply( volume, rc )
       
-   rc, reply = _listdir( owner_id, volume, file_id, page_id=page_id, least_unknown_generation=lug )
+      reply.listing.ftype = 0
+      reply.listing.status = ms_pb2.ms_listing.NONE 
    
    logging.info("listdir /%s/%s, page_id=%s, l.u.g.=%s rc = %d" % (volume.volume_id, file_id, page_id, lug, rc) )
    
@@ -381,7 +417,7 @@ def file_create( reply, gateway, volume, update, async=False ):
          # have an entry?
          if ent is not None:
             ent_pb = reply.listing.entries.add()
-            ent.protobuf( ent_pb )
+            MSEntry.protobuf( ent, ent_pb )
             
          return rc
       
@@ -442,25 +478,18 @@ def file_update( reply, gateway, volume, update, async=False ):
          
       attrs = MSEntry.unprotobuf_dict( update.entry )
       
-      affected_blocks = update.affected_blocks[:]
-      log_affected_blocks = True
+      logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
       
-      # don't log affected blocks if the writer was an AG, since they don't replicate anything
-      if gateway.gateway_type == GATEWAY_TYPE_AG:
-         log_affected_blocks = False
+      rc, ent = MSEntry.Update( gateway.owner_id, volume, gateway, **attrs )
       
-      logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
-      
-      rc, ent = MSEntry.Update( gateway.owner_id, volume, log_affected_blocks, affected_blocks, **attrs )
-      
-      logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
+      logging.info("update /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
       
       if not async:
          
          # have an entry 
          if ent is not None:
             ent_pb = reply.listing.entries.add()
-            ent.protobuf( ent_pb )
+            MSEntry.protobuf( ent, ent_pb )
          
          return rc
       
@@ -520,7 +549,7 @@ def file_delete( reply, gateway, volume, update, async=False ):
    
       logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
    
-      rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
+      rc = MSEntry.Delete( gateway.owner_id, volume, gateway, **attrs )
    
       logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
       
@@ -568,7 +597,7 @@ def file_rename( reply, gateway, volume, update ):
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s)" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id']) )
    
-   rc = MSEntry.Rename( gateway.owner_id, volume, src_attrs, dest_attrs )
+   rc = MSEntry.Rename( gateway.owner_id, gateway, volume, src_attrs, dest_attrs )
    
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s) rc = %s" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id'], rc) )
@@ -583,6 +612,11 @@ def file_chcoord( reply, gateway, volume, update ):
    Add a new entry to the given ms_reply protobuf, containing data from the updated MSEntry.
    This is part of the File Metadata API.
    """
+   
+   if gateway is None:
+     # coordinators can't be anonymous 
+     return -errno.EACCES
+  
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    logging.info("chcoord /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
@@ -594,7 +628,7 @@ def file_chcoord( reply, gateway, volume, update ):
    # have an entry 
    if ent is not None:
       ent_pb = reply.listing.entries.add()
-      ent.protobuf( ent_pb )
+      MSEntry.protobuf( ent, ent_pb )
    
    return rc
 
@@ -618,7 +652,7 @@ def file_update_parse( request_handler ):
    data = updates_field.file.read()
    
    # parse it 
-   updates_set = ms_pb2.ms_updates()
+   updates_set = ms_pb2.ms_request_multi()
 
    try:
       updates_set.ParseFromString( data )
@@ -630,10 +664,9 @@ def file_update_parse( request_handler ):
 
 
 # ----------------------------------
-def file_update_auth( gateway, volume ):
+def file_update_auth( gateway ):
    """
-   Verify whether or not the given gateway (which can be None) is allowed to update (POST) metadata
-   in the given volume.
+   Verify whether or not the given gateway (which can be None) is allowed to update (POST) metadata.
    """
    
    # gateway must be known
@@ -641,21 +674,8 @@ def file_update_auth( gateway, volume ):
       logging.error("Unknown gateway")
       return False
    
-   # NOTE: gateways run on behalf of a user, so gateway.owner_id is equivalent to the user's ID.
-   
-   # this can only be a User Gateway or an Acquisition Gateway
-   if gateway.gateway_type != GATEWAY_TYPE_UG and gateway.gateway_type != GATEWAY_TYPE_AG:
-      logging.error("Not a UG or RG")
-      return False
-   
-   # if this is an archive, on an AG owned by the same person as the Volume can write to it
-   if volume.archive:
-      if gateway.gateway_type != GATEWAY_TYPE_AG or gateway.owner_id != volume.owner_id:
-         logging.error("Not an AG, or not the Volume owner")
-         return False
-   
-   # if this is not an archive, then the gateway must have CAP_WRITE_METADATA
-   elif not gateway.check_caps( GATEWAY_CAP_WRITE_METADATA ):
+   # must have GATEWAY_CAP_WRITE_DATA
+   if (gateway.caps & msconfig.GATEWAY_CAP_WRITE_METADATA ) == 0:
       logging.error("Write metadata is forbidden to this Gateway")
       return False
    
@@ -675,13 +695,8 @@ def file_read_auth( gateway, volume ):
       logging.error( "no gateway" )
       return False
 
-   # this must be a User Gateway or Acquisition Gateway, if there is a specific gateway
-   if gateway is not None and not (gateway.gateway_type == GATEWAY_TYPE_UG or gateway.gateway_type == GATEWAY_TYPE_AG):
-      logging.error( "not UG or AG" )
-      return False
-   
    # this gateway must be allowed to read metadata
-   if gateway is not None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
+   if gateway is not None and not gateway.check_caps( msconfig.GATEWAY_CAP_READ_METADATA ):
       logging.error( "bad caps: %s" % gateway.caps )
       return False
    
@@ -689,281 +704,117 @@ def file_read_auth( gateway, volume ):
 
 
 # ----------------------------------
-def file_xattr_get_and_check_xattr_readable( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
+def file_xattr_fetchxattrs_response( volume, rc, xattr_names_and_values, xattr_nonce, xattr_hash ):
    """
-   Verify that an extended attribute is readable to the given gateway.
-   Return (rc, xattr)
+   Generate a serialized, signed ms_reply protobuf from
+   a fetchxattrs return code (rc) and xattr names list.
    """
-   
-   rc = 0
-   
-   rc, xattr = MSEntryXAttr.ReadXAttr( volume.volume_id, file_id, xattr_name )
-   
-   if rc != 0:
-      return (rc, None)
-   
-   if xattr is None:
-      return (-errno.ENOENT, None)
-   
-   # get gateway owner ID
-   gateway_owner_id = GATEWAY_ID_ANON
-   if gateway is not None:
-      gateway_owner_id = gateway.owner_id
 
-   # check permissions 
-   if not MSEntryXAttr.XAttrReadable( gateway_owner_id, xattr, caller_is_admin ):
-      logging.error("XAttr %s not readable by %s" % (xattr_name, gateway_owner_id))
-      return (-errno.EACCES, None)
+   # create and sign the response 
+   reply = file_update_init_response( volume )
+   reply.error = rc
    
-   return (0, xattr)
-
-
-# ----------------------------------
-def file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
-   """
-   Verify that an extended attribute is writable to the given gateway.
-   Return (rc, xattr)
-   """
-   
-   rc = 0
-   
-   rc, xattr = MSEntryXAttr.ReadXAttr( volume.volume_id, file_id, xattr_name )
-   
-   if xattr is None and rc == -errno.ENODATA:
-      # doesn't exist 
-      return (0, None)
-   
-   if rc != 0:
-      return (rc, None)
-   
-   if xattr is None:
-      return (-errno.ENOENT, None)
-   
-   # get gateway owner ID
-   gateway_owner_id = GATEWAY_ID_ANON
-   if gateway is not None:
-      gateway_owner_id = gateway.owner_id
-   
-   # check permissions 
-   if not MSEntryXAttr.XAttrWritable( gateway_owner_id, xattr, caller_is_admin ):
-      logging.error("XAttr %s not writable by %s" % (xattr_name, gateway_owner_id))
-      return (-errno.EACCES, None)
-   
-   return (0, xattr)
-
-
-# ----------------------------------
-def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin=False ):
-   """
-   Verify whether or not the given gateway (which can be None) is allowed 
-   to read or list an MSEntry's extended attributes.
-   """
-   
-   rc = 0
-   
-   # get the msentry
-   msent = MSEntry.Read( volume, file_id )
-   if msent is None:
-      # does not exist
-      rc = -errno.ENOENT
+   if rc == 0:
       
-   else:
-      # which gateway ID are we using?
-      gateway_owner_id = GATEWAY_ID_ANON
-      if gateway is not None:
-         gateway_owner_id = gateway.owner_id
-         
-      if not caller_is_admin and msent.owner_id != gateway_owner_id and (msent.mode & 0044) == 0:
-         # not readable.
-         # don't tell the reader that this entry even exists.
-         rc = -errno.ENOENT
-         
-   if rc != 0:
-      msent = None
+      for xattr_data in xattr_names_and_values:
+         reply.xattr_names.append( xattr_data.xattr_name )
+         reply.xattr_values.append( xattr_data.xattr_value )
       
-   return (rc, msent)
+      if xattr_hash is not None:
+          reply.xattr_hash = xattr_hash 
+      else:
+          reply.xattr_hash = ""
+          
+      reply.xattr_nonce = xattr_nonce
+      
+   return file_update_complete_response( volume, reply )
 
 
 # ----------------------------------
-def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin=False ):
+def file_xattr_fetchxattrs( gateway, volume, file_id, unused=None, caller_is_admin=False ):
    """
-   Verify whether or not the given gateway (which can be None) is allowed 
-   to update or delete an MSEntry's extended attributes.
+   Get the names, values, and hash of a file's extended attributes.
+   This is part of the File Metadata API.
+   
+   NOTE: unused=None is required for the File Metadata API dispatcher to work.
    """
    
+   logging.info("fetchxattrs /%s/%s" % (volume.volume_id, file_id) )
+
    rc = 0
+   owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      owner_id = gateway.owner_id
    
    # get the msentry
    msent = MSEntry.Read( volume, file_id )
    if msent == None:
       # does not exist
       rc = -errno.ENOENT
+   
+   elif file_read_allowed( owner_id, msent ) != 0:
+      # not allowed 
+      rc = -errno.EACCES
       
-   elif not caller_is_admin and msent.owner_id != gateway.owner_id and (msent.mode & 0022) == 0:
-      logging.error("MSEntry %s not writable by %s" % (file_id, gateway.owner_id))
-      
-      # not writeable 
-      # if not readable, then say ENOENT instead (don't reveal the existence of a metadata entry to someone who can't read it)
-      if msent.owner_id != gateway.owner_id and (msent.mode & 0044) == 0:
-         rc = -errno.ENOENT
-      else:
-         rc = -errno.EACCES
-
-   return (rc, msent)
-
-
-# ----------------------------------
-def file_xattr_getxattr_response( volume, rc, xattr_value ):
-   """
-   Generate a serialized, signed ms_reply protobuf from
-   a getxattr return code (rc) and xattr value.
-   """
-   
-   # create and sign the response 
-   reply = file_update_init_response( volume )
-   reply.error = rc
-   
-   if rc == 0:
-      reply.xattr_value = xattr_value
-   
-   return file_update_complete_response( volume, reply )
-
-
-# ----------------------------------
-def file_xattr_listxattr_response( volume, rc, xattr_names ):
-   """
-   Generate a serialized, signed ms_reply protobuf from
-   a listxattr return code (rc) and xattr names list.
-   """
-
-   # create and sign the response 
-   reply = file_update_init_response( volume )
-   reply.error = rc
-   
-   if rc == 0:
-      
-      for name in xattr_names:
-         reply.xattr_names.append( name )
-      
-   return file_update_complete_response( volume, reply )
-
-
-# ----------------------------------
-def file_xattr_getxattr( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
-   """
-   Get the value of the file's extended attributes, subject to access controls.
-   This is part of the File Metadata API.
-   """
-   
-   logging.info("getxattr /%s/%s/%s" % (volume.volume_id, file_id, xattr_name) )
-
-   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin )
-   xattr_value = None
-   
-   if rc == 0 and msent != None:
-      # check xattr readable 
-      rc, xattr = file_xattr_get_and_check_xattr_readable( gateway, volume, file_id, xattr_name, caller_is_admin )
-      
-      if rc == 0:
-         # success!
-         xattr_value = xattr.xattr_value 
-         
-         
-   logging.info("getxattr /%s/%s/%s rc = %d" % (volume.volume_id, file_id, xattr_name, rc) )
-
-   return file_xattr_getxattr_response( volume, rc, xattr_value )
-
-
-# ----------------------------------
-def file_xattr_listxattr( gateway, volume, file_id, unused=None, caller_is_admin=False ):
-   """
-   Get the names of a file's extended attributes, subject to access controls.
-   This is part of the File Metadata API.
-   
-   NOTE: unused=None is required for the File Metadata API dispatcher to work.
-   """
-   
-   logging.info("listxattr /%s/%s" % (volume.volume_id, file_id) )
-
-   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin )
-   xattr_names = []
-   
-   if rc == 0 and msent != None:
-      
-      # get gateway owner ID
-      gateway_owner_id = GATEWAY_ID_ANON
-      if gateway is not None:
-         gateway_owner_id = gateway.owner_id
-      
+   else:
       # get the xattr names
-      rc, xattr_names = MSEntryXAttr.ListXAttrs( volume, msent, gateway_owner_id, caller_is_admin )
+      rc, xattr_names_and_values = MSEntryXAttr.FetchXAttrs( volume, msent )
    
-   logging.info("listxattr /%s/%s rc = %d" % (volume.volume_id, file_id, rc) )
+   logging.info("fetchxattrs /%s/%s rc = %d" % (volume.volume_id, file_id, rc) )
 
-   return file_xattr_listxattr_response( volume, rc, xattr_names )
+   return file_xattr_fetchxattrs_response( volume, rc, xattr_names_and_values, msent.xattr_nonce, msent.xattr_hash )
 
 
 # ----------------------------------
-def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False ):
+def file_xattr_putxattr( reply, gateway, volume, update, caller_is_admin=False ):
    """
-   Set the value of a file's extended attributes, subject to access controls.
-   The affected file and attribute are determined from the given ms_update structure.
-   Use the XATTR_CREATE and XATTR_REPLACE semantics from setxattr(2) (these 
-   are fields in the given ms_update structure).
-   This is part of the File Metadata API.
+   Unconditionally put a new xattr.
+   This is part of the File Metadata API
+   
+   Only the coordinator can do this.
    """
-   
-   xattr_create = False 
-   xattr_replace = False 
-   xattr_mode = update.xattr_mode
-   xattr_owner = update.xattr_owner
-   
-   if update.HasField( 'xattr_create' ):
-      xattr_create = update.xattr_create
-   
-   if update.HasField( 'xattr_replace' ):
-      xattr_replace = update.xattr_replace 
    
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode))
+   logging.info("putxattr /%s/%s (name=%s, parent=%s) %s = %s" % 
+                (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value ))
       
    file_id = attrs['file_id']
    rc = 0
-
-   # find gateway owner ID
-   gateway_owner_id = GATEWAY_ID_ANON
-   if gateway is not None:
-      gateway_owner_id = gateway.owner_id
    
-   # if we're creating, then the requested xattr owner ID must match the gateway owner ID 
-   if xattr_create and gateway_owner_id != xattr_owner:
-      logging.error("Request to create xattr '%s' owned by %s does not match Gateway owner %s" % (update.xattr_name, xattr_owner, gateway_owner_id))
+   owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      owner_id = gateway.owner_id
+   
+   # get the msentry
+   msent = MSEntry.Read( volume, file_id )
+   if msent == None:
+      # does not exist
+      rc = -errno.ENOENT
+   
+   elif file_write_allowed( owner_id, msent ) != 0:
+      # not allowed 
       rc = -errno.EACCES
    
-   if rc == 0:
-      msent_rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
-      xattr_rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
+   elif msent.coordinator_id != GATEWAY_ID_ANON and msent.coordinator_id != gateway.g_id:
+      # only coordinator can call this
+      rc = -errno.EAGAIN
+   
+   else:
+      # can write
+      # set the xattr
+      rc = MSEntryXAttr.PutXAttr( volume, msent, update.xattr_name, update.xattr_value, update.xattr_nonce, update.xattr_hash )
       
-      # if the xattr doesn't exist and the msent isn't writable by the caller, then this is an error 
-      if (xattr is None or xattr_rc == -errno.ENOENT) and msent_rc != 0:
-         rc = msent_rc
-      
-      else:
-         # set the xattr
-         rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace, mode=xattr_mode, owner=gateway_owner_id, caller_is_admin=caller_is_admin )
-      
-   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o) rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode, rc) )
+   logging.info("putxattr /%s/%s (name=%s, parent=%s) %s = %s rc = %s" % 
+                (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, rc) )
          
    return rc
 
 
 # ----------------------------------
-def file_xattr_removexattr( reply, gateway, volume, update, caller_is_admin=False ):
+def file_xattr_removexattr( reply, gateway, volume, update ):
    """
-   Remove a file's extended attribute, subject to access controls.
+   Remove a file's extended attribute.
    The affected file and attribute are determined from the given ms_update structure.
    This is part of the File Metadata API.
    """
@@ -974,117 +825,51 @@ def file_xattr_removexattr( reply, gateway, volume, update, caller_is_admin=Fals
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name))
       
    file_id = attrs['file_id']
-   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
    
-   if rc == 0:
-      # check xattr writable 
-      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
-      
-      if rc == 0:
-         # get user id
-         gateway_owner_id = GATEWAY_ID_ANON
-         if gateway is not None:
-            gateway_owner_id = gateway.owner_id
-         
-         # delete it 
-         rc = MSEntryXAttr.RemoveXAttr( volume, msent, update.xattr_name, gateway_owner_id, caller_is_admin )
+   owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      owner_id = gateway.owner_id
+   
+   # get the msentry
+   msent = MSEntry.Read( volume, file_id )
+   if msent == None:
+      # does not exist
+      rc = -errno.ENOENT
+   
+   elif file_write_allowed( owner_id, msent ) != 0:
+      # not allowed 
+      rc = -errno.EACCES
+   
+   elif msent.coordinator_id != GATEWAY_ID_ANON and msent.coordinator_id != gateway.g_id:
+      # only coordinator can call this
+      rc = -errno.EAGAIN
+   
+   else: 
+      # delete it 
+      rc = MSEntryXAttr.RemoveXAttr( volume, msent, update.xattr_name, update.xattr_nonce, update.xattr_hash )
    
    logging.info("removexattr /%s/%s (name=%s, parent=%s) %s rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, rc) )
+                 (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, rc) )
    
    
-   return rc
-
-
-# ----------------------------------
-def file_xattr_chmodxattr( reply, gateway, volume, update, caller_is_admin=False ):
-   """
-   Set the access mode for an extended attribute.
-   """
-   
-   xattr_mode = None
-   
-   if update.HasField( 'xattr_mode' ):
-      xattr_mode = update.xattr_mode 
-   
-   if xattr_mode is None:
-      logging.error("chmodxattr: Missing xattr_mode field")
-      rc = -errno.EINVAL
-   
-   else:
-      attrs = MSEntry.unprotobuf_dict( update.entry )
-      
-      logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o)" % 
-                     (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode))
-         
-      file_id = attrs['file_id']
-      
-      # is this xattr writable?
-      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
-      
-      if rc == 0:
-         # allowed!
-         # get user id
-         gateway_owner_id = GATEWAY_ID_ANON
-         if gateway is not None:
-            gateway_owner_id = gateway.owner_id
-         
-         rc = MSEntryXAttr.ChmodXAttr( volume, file_id, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
-         
-      logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o) rc = %s" % 
-                     (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode, rc) )
-            
-   return rc
-
-
-# ----------------------------------
-def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False ):
-   """
-   Set the access mode for an extended attribute.
-   """
-   
-   attrs = MSEntry.unprotobuf_dict( update.entry )
-   
-   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner))
-   
-   
-   xattr_owner = None
-   
-   if update.HasField( 'xattr_owner' ):
-      xattr_owner = update.xattr_owner 
-   
-   if xattr_owner is None:
-      logging.error("Missing xattr_owner field")
-      rc = -errno.EINVAL
-   
-   else:
-      file_id = attrs['file_id']
-      
-      # is this xattr writable?
-      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
-      
-      if rc == 0:
-         # allowed!
-         # get user id
-         gateway_owner_id = GATEWAY_ID_ANON
-         if gateway is not None:
-            gateway_owner_id = gateway.owner_id
-         
-         rc = MSEntryXAttr.ChownXAttr( volume, file_id, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
-      
-   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s) rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner, rc) )
-         
    return rc
 
 
 # ----------------------------------
 def file_vacuum_log_check_access( gateway, msent ):
    """
-   Verify that the gateway is allowed to manipulate the MSEntry's manifest log.
+   Verify that the gateway is allowed to manipulate the MSEntry's vacuum log.
+   A gateway may do so if
+   * it is in the same volume
+   * it has the capabilties to coordinate, write metadata, and write data
+   * the file is writeable to the volume, or this gateway's owner is the owner
+   * the file is not a directory
+   
+   It does *not* have to be the coordinator, since the vacuum log is built before the write is submitted.
    """
-   return msent.coordinator_id == gateway.g_id
+   return gateway.volume_id == msent.volume_id and (gateway.owner_id == msent.owner_id or (msent.mode & 0060)) \
+       and gateway.check_caps( msconfig.GATEWAY_CAP_COORDINATE | msconfig.GATEWAY_CAP_WRITE_METADATA | msconfig.GATEWAY_CAP_WRITE_DATA ) \
+       and msent.ftype == MSENTRY_TYPE_FILE
 
 
 # ----------------------------------
@@ -1097,10 +882,14 @@ def file_vacuum_log_response( volume, rc, log_record ):
    reply.error = rc
    
    if rc == 0:
-      reply.file_version = log_record.version
-      reply.manifest_mtime_sec = log_record.manifest_mtime_sec 
-      reply.manifest_mtime_nsec = log_record.manifest_mtime_nsec
-      reply.affected_blocks.extend( log_record.affected_blocks )
+      reply.vacuum_ticket.volume_id = log_record.volume_id
+      reply.vacuum_ticket.file_id = MSEntry.serialize_id( log_record.file_id )
+      reply.vacuum_ticket.writer_id = log_record.writer_id
+      reply.vacuum_ticket.file_version = log_record.version
+      reply.vacuum_ticket.manifest_mtime_sec = log_record.manifest_mtime_sec 
+      reply.vacuum_ticket.manifest_mtime_nsec = log_record.manifest_mtime_nsec
+      reply.vacuum_ticket.affected_blocks.extend( log_record.affected_blocks )
+      reply.vacuum_ticket.signature = log_record.signature
    
    return file_update_complete_response( volume, reply )
 
@@ -1125,22 +914,20 @@ def file_vacuum_log_peek( gateway, volume, file_id, caller_is_admin=False ):
       
    else:
       
-      # security check
+      # security check--the caller must either be an admin, or the file's coordinator
       if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+         
          logging.error("Gateway %s is not allowed to access the vacuum log of %s" % (gateway.name, file_id))
          rc = -errno.EACCES
       
       else:
          # get the log head 
-         log_head_list = MSEntryVacuumLog.Peek( volume.volume_id, file_id )
+         log_head = MSEntryVacuumLog.Peek( volume.volume_id, file_id )
          
-         if log_head_list is None or len(log_head_list) == 0:
+         if log_head is None:
             # no more data
             rc = -errno.ENOENT 
          
-         else:
-            log_head = log_head_list[0]
-            
    logging.info("vacuum log peek /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
    
    return file_vacuum_log_response( volume, rc, log_head )
@@ -1156,7 +943,7 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    rc = 0
-   required_attrs =  ['file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   required_attrs =  ['volume_id', 'coordinator_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
    
    attrs = file_update_get_attrs( attrs, required_attrs )
    
@@ -1174,7 +961,7 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
       version = attrs['version']
       manifest_mtime_sec = attrs['manifest_mtime_sec']
       manifest_mtime_nsec = attrs['manifest_mtime_nsec']
-      
+     
       # get msent
       msent = MSEntry.Read( volume, file_id )
       if msent is None:
@@ -1182,6 +969,7 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
          rc = -errno.ENOENT
       
       else:
+         
          # security check 
          if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
             logging.error("Gateway %s is not allowed to access the vacuum log of %s" % (gateway.name, file_id))
@@ -1189,8 +977,65 @@ def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=Fals
             
          else:
             # Delete!
-            rc = MSEntryVacuumLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+            rc = MSEntryVacuumLog.Remove( volume.volume_id, attrs['coordinator_id'], file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
    
       logging.info("vacuum log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
+   
+   return rc
+
+
+# ----------------------------------
+def file_vacuum_log_append( reply, gateway, volume, update, caller_is_admin=False ):
+   """
+   Append a vacuum record to a file.  Only a coordinator can do this
+   """
+   
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   rc = 0
+   
+   required_attrs =  ['volume_id', 'coordinator_id', 'file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   
+   attrs = file_update_get_attrs( attrs, required_attrs )
+   
+   if attrs is None:
+      logging.error("vacuum log remove: Missing one of %s" % required_attrs )
+      rc = -errno.EINVAL
+   
+   else:
+      
+      if not hasattr(update, 'affected_blocks') or not hasattr(update, 'vacuum_signature'):
+          loging.error("Missing affected_blocks and/or vacuum_signature")
+          rc = -errno.EINVAL
+
+      else:
+          
+          vacuum_signature = update.vacuum_signature
+          affected_blocks = update.affected_blocks[:]
+          if affected_blocks is not None and len(affected_blocks) > 0:
+          
+             logging.info("vacuum log append /%s/%s, affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], affected_blocks ) )
+             
+             # entry must exist 
+             msent = MSEntry.Read( volume, attrs['file_id'] )
+             if msent is None:
+                
+                logging.error( "No entry for %s" % attrs['file_id'] )
+                rc = -errno.ENOENT 
+             
+             else:
+                
+                # security check 
+                if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+                   logging.error("Gateway %s is not allowed to access vacuum log of %s" % (gateway.name, attrs['file_id']))
+                   rc = -errno.EACCES
+                
+                else:
+                   
+                   # append!
+                   storagetypes.deferred.defer( MSEntryVacuumLog.Insert, attrs['volume_id'], attrs['coordinator_id'], attrs['file_id'], attrs['version'], \
+                                                attrs['manifest_mtime_sec'], attrs['manifest_mtime_nsec'], affected_blocks, vacuum_signature )
+                   rc = 0
+
+             logging.info("vacuum log append /%s/%s, affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], affected_blocks, rc ))
    
    return rc

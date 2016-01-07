@@ -45,9 +45,9 @@ if "/etc/syndicate" not in sys.path:
    
 import syndicatelib_config.config as CONFIG 
 
-import syndicate.client.bin.syntool as syntool
-import syndicate.client.common.msconfig as msconfig
-import syndicate.client.common.api as api
+import syndicate.ms.syntool as syntool
+import syndicate.ms.msconfig as msconfig
+import syndicate.ms.api as api
 import syndicate.util.storage as syndicate_storage_api
 import syndicate.util.crypto as syndicate_crypto
 import syndicate.util.provisioning as syndicate_provisioning
@@ -263,7 +263,7 @@ def ensure_principal_exists( principal_id, observer_secret, **user_kw ):
     # if we created a new user, then save its (sealed) credentials to the Django DB
     if created:
          try:
-            rc = put_sealed_principal_data( principal_id, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
+            rc = put_sealed_principal_data( principal_id, observer_secret, new_user['public_key'], new_user['private_key'] )
             assert rc == True, "Failed to save SyndicatePrincipal"
          except Exception, e:
             traceback.print_exc()
@@ -311,14 +311,12 @@ def ensure_volume_exists( principal_id, opencloud_volume, user=None ):
         vol_description = opencloud_volume.description
         vol_private = opencloud_volume.private
         vol_archive = opencloud_volume.archive 
-        vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read_data, opencloud_volume.cap_write_data, opencloud_volume.cap_host_data )
 
         try:
             vol_info = client.create_volume( principal_id, vol_name, vol_description, vol_blocksize,
                                              private=vol_private,
                                              archive=vol_archive,
                                              active=True,
-                                             default_gateway_caps=vol_default_gateway_caps,
                                              store_private_key=False,
                                              metadata_private_key="MAKE_METADATA_KEY" )
 
@@ -379,14 +377,12 @@ def update_volume( opencloud_volume ):
     vol_description = opencloud_volume.description
     vol_private = opencloud_volume.private
     vol_archive = opencloud_volume.archive
-    vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read_data, opencloud_volume.cap_write_data, opencloud_volume.cap_host_data )
 
     try:
         rc = client.update_volume( vol_name,
                                    description=vol_description,
                                    private=vol_private,
-                                   archive=vol_archive,
-                                   default_gateway_caps=vol_default_gateway_caps )
+                                   archive=vol_archive )
 
         if not rc:
             raise Exception("update_volume(%s) failed!" % vol_name )
@@ -401,7 +397,7 @@ def update_volume( opencloud_volume ):
 
 
 #-------------------------------
-def ensure_volume_access_right_exists( principal_id, volume_name, caps, allowed_gateways=[msconfig.GATEWAY_TYPE_UG] ):
+def ensure_volume_access_right_exists( principal_id, volume_name, caps, allowed_gateways=[] ):
     """
     Ensure that a particular user has particular access to a particular volume.
     Do not try to ensure that the user or volume exist, however!
@@ -537,7 +533,7 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     
     # it might be in the existing_user...
     if existing_user is not None:
-       user_pkey_pem = existing_user.get('signing_private_key', None)
+       user_pkey_pem = existing_user.get('private_key', None)
        
     # no luck?
     if user_pkey_pem is None:
