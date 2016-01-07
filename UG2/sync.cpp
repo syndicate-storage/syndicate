@@ -542,7 +542,8 @@ int UG_sync_fsync_ex( struct fskit_core* core, char const* path, struct fskit_en
       UG_inode_set_old_manifest_modtime( inode, &manifest_modtime );
       
       while( vctx != NULL ) {
-      
+     
+         SG_debug("Will vacuum %" PRIX64 "/manifest.%d.%d\n", UG_inode_file_id( inode ), (int)old_manifest_modtime.tv_sec, (int)old_manifest_modtime.tv_nsec ); 
          UG_vacuum_context_set_manifest_modtime( vctx, old_manifest_modtime.tv_sec, old_manifest_modtime.tv_nsec );
          
          // begin vacuuming the old manifest
