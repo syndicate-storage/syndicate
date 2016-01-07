@@ -51,8 +51,8 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
    // only non-anonymous gateways can write
    ms_cert_bundle::iterator itr = client->certs->find( gateway_id );
    if( itr == client->certs->end() ) {
-      // not found here--probably means we need to reload our certs
       
+      // not found here--probably means we need to reload our certs
       SG_warn("No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
       sem_post( &client->config_sem );
