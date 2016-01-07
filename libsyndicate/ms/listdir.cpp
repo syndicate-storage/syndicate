@@ -142,7 +142,7 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
    ms_client_get_dir_download_state_init( dlstate, batch_id, url, auth_header );
    
    // start download 
-   rc = md_download_context_start( &client->dl, dlctx );
+   rc = md_download_context_start( client->dl, dlctx );
    if( rc != 0 ) {
       
       md_download_context_free( dlctx, NULL );
@@ -183,13 +183,10 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
          SG_error("ms_client_download_parse_errors( %p ) rc = %d\n", dlctx, rc );
       }
       
-      int unref_rc = md_download_context_unref( dlctx );
-      if( unref_rc > 0 ) {
-
-         md_download_context_free( dlctx, &curl );
-         
-         // TODO: connection pool 
-         curl_easy_cleanup( curl );
+      // TODO: connection pool
+      md_download_context_unref_free( dlctx, &curl );
+      if( curl != NULL ) {
+          curl_easy_cleanup( curl );
       }
 
       ms_client_get_dir_download_state_free( dlstate );
@@ -201,10 +198,10 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
    rc = ms_client_listing_read_entries( client, dlctx, &children, &num_children, &listing_error );
    
    // done with the download
-   int unref_rc = md_download_context_unref( dlctx );
-   if( unref_rc > 0 ) { 
-       md_download_context_free( dlctx, &curl );
-       curl_easy_cleanup( curl );
+   // TODO: connection pool
+   md_download_context_unref_free( dlctx, &curl );
+   if( curl != NULL ) {
+      curl_easy_cleanup( curl );
    }
 
    ms_client_get_dir_download_state_free( dlstate );
@@ -284,7 +281,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
    
    int rc = 0;
    
-   struct md_download_loop dlloop;
+   struct md_download_loop* dlloop = NULL;
    queue< int64_t > batch_queue;
    
    ms_client_dir_listing children;
@@ -334,7 +331,17 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
    }
    
    // set up the md_download_loop
-   rc = md_download_loop_init( &dlloop, &client->dl, client->max_connections );
+   dlloop = md_download_loop_new();
+   if( dlloop == NULL ) {
+      return -ENOMEM;
+   }
+
+   rc = md_download_loop_init( dlloop, client->dl, client->max_connections );
+   if( rc != 0 ) {
+
+      SG_safe_free( dlloop );
+      return rc;
+   }
    
    // run the downloads!
    do {
@@ -348,7 +355,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          query_count++;
          
          // next download 
-         rc = md_download_loop_next( &dlloop, &dlctx );
+         rc = md_download_loop_next( dlloop, &dlctx );
          if( rc != 0 ) {
             
             if( rc == -EAGAIN ) {
@@ -361,7 +368,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          }
          
          // GOGOGO!
-         rc = ms_client_get_dir_metadata_begin( client, parent_id, least_unknown_generation, next_batch, &dlloop, dlctx );
+         rc = ms_client_get_dir_metadata_begin( client, parent_id, least_unknown_generation, next_batch, dlloop, dlctx );
          if( rc != 0 ) {
             
             SG_error("ms_client_get_dir_metadata_begin( LUG=%" PRId64 ", batch=%" PRId64 " ) rc = %d\n", least_unknown_generation, next_batch, rc );
@@ -374,7 +381,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       }
       
       // await next download 
-      rc = md_download_loop_run( &dlloop );
+      rc = md_download_loop_run( dlloop );
       if( rc != 0 ) {
          
          SG_error("md_download_loop_run rc = %d\n", rc );
@@ -385,7 +392,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       while( true ) {
          
          // next completed download 
-         rc = md_download_loop_finished( &dlloop, &dlctx );
+         rc = md_download_loop_finished( dlloop, &dlctx );
          if( rc != 0 ) {
             
             // out of downloads?
@@ -409,11 +416,13 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          
          // are we out of children to fetch?
          if( num_children_fetched == 0 ) {
+           
+            if( (unsigned)num_children_downloaded >= (unsigned)num_children ) { 
+                SG_error("Out of children (%" PRIu64 " fetched total)\n", num_children_downloaded );
             
-            SG_error("Out of children (%" PRIu64 " fetched total)\n", num_children_downloaded );
-            
-            rc = MD_DOWNLOAD_FINISH;
-            break;
+                rc = MD_DOWNLOAD_FINISH;
+                break;
+            }
          }
          
          num_children_downloaded += num_children_fetched;
@@ -433,29 +442,33 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
          break;
       }
       
-   } while( (batch_queue.size() > 0 || md_download_loop_running( &dlloop )) && num_children_downloaded < (unsigned)num_children );
+   } while( (batch_queue.size() > 0 || md_download_loop_running( dlloop )) && num_children_downloaded < (unsigned)num_children );
    
    if( rc != 0 && rc != MD_DOWNLOAD_FINISH ) {
       
-      md_download_loop_abort( &dlloop );
+      md_download_loop_abort( dlloop );
       
       int i = 0;
       
       // free all ms_client_get_dir_download_state
-      for( dlctx = md_download_loop_next_initialized( &dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( &dlloop, &i ) ) {
+      for( dlctx = md_download_loop_next_initialized( dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( dlloop, &i ) ) {
          
          if( dlctx == NULL ) {
             break;
          }
          
          struct ms_client_get_dir_download_state* dlstate = (struct ms_client_get_dir_download_state*)md_download_context_get_cls( dlctx );
-         
-         ms_client_get_dir_download_state_free( dlstate );
+         md_download_context_set_cls( dlctx, NULL );
+        
+         if( dlstate != NULL ) { 
+             ms_client_get_dir_download_state_free( dlstate );
+         }
       }
    }
    
-   md_download_loop_cleanup( &dlloop, NULL, NULL );
-   md_download_loop_free( &dlloop );
+   md_download_loop_cleanup( dlloop, NULL, NULL );
+   md_download_loop_free( dlloop );
+   SG_safe_free( dlloop );
    
    if( rc == MD_DOWNLOAD_FINISH ) {
       rc = 0;
