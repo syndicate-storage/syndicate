@@ -1701,14 +1701,19 @@ class Gateway( StubObject ):
          # non-default type--treat as int
          gtype = int(type_str)
       except Exception, e:
-         pass
+         # could be a type alias
+         type_aliases = load_gateway_type_aliases( lib.config )
+          
+         if type_str in type_aliases.keys():
+            gtype = type_aliases[ type_str ]
+            
+         else:
+            raise Exception("Unaliased gateway type '%s'" % type_str)
       
       if gtype is not None:
-         # needed for parse_gateway_config
-         if lib is not None:
-            lib.gateway_type = gtype
-            
+         lib.gateway_type = gtype
          return (gtype, {})
+
       raise Exception("Unknown Gateway type '%s'" % type_str)
    
    
@@ -2063,6 +2068,8 @@ class Gateway( StubObject ):
       driver_hash = None 
       if driver_json is not None:
          driver_hash = hash_data( driver_json )
+      elif existing_gateway_cert is not None:
+         driver_hash = existing_gateway_cert.driver_hash
       else:
          driver_hash = hash_data( "" )
       
