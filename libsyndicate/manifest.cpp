@@ -37,7 +37,7 @@ struct SG_manifest_block* SG_manifest_block_alloc( size_t num_blocks ) {
    return SG_CALLOC( struct SG_manifest_block, num_blocks );
 }
 
-// initialize a manifest block.
+// initialize a manifest block (for a block of data, instead of a serialized manifest)
 // duplicate all information 
 // return 0 on success
 // return -ENOMEM on OOM 
@@ -55,7 +55,8 @@ int SG_manifest_block_init( struct SG_manifest_block* dest, uint64_t block_id, i
       
       memcpy( dest->hash, hash, hash_len * sizeof(unsigned char) );
    }
-   
+  
+   dest->type = SG_MANIFEST_BLOCK_TYPE_BLOCK;   // default type 
    dest->block_id = block_id;
    dest->block_version = block_version;
    dest->hash_len = hash_len;
@@ -71,8 +72,9 @@ int SG_manifest_block_dup( struct SG_manifest_block* dest, struct SG_manifest_bl
    int rc = SG_manifest_block_init( dest, src->block_id, src->block_version, src->hash, src->hash_len );
    if( rc == 0 ) {
       
-      // preserve dirty status
+      // preserve dirty status and type
       dest->dirty = src->dirty;
+      dest->type = src->type;
    }
    
    return rc;
@@ -98,9 +100,19 @@ int SG_manifest_block_load_from_protobuf( struct SG_manifest_block* dest, const 
       
       hash = (unsigned char*)mblock->hash().data();
       hash_len = mblock->hash().size();
+
    }
    
+   
    int rc = SG_manifest_block_init( dest, mblock->block_id(), mblock->block_version(), hash, hash_len );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   if( mblock->has_chunk_type() ) {
+      dest->type = mblock->chunk_type();
+   }
+
    return rc;
 }
 
@@ -108,6 +120,13 @@ int SG_manifest_block_load_from_protobuf( struct SG_manifest_block* dest, const 
 int SG_manifest_block_set_dirty( struct SG_manifest_block* dest, bool dirty ) {
    
    dest->dirty = dirty;
+   return 0;
+}
+
+
+// set the type of block
+int SG_manifest_block_set_type( struct SG_manifest_block* dest, int type ) {
+   dest->type = type;
    return 0;
 }
 
@@ -136,6 +155,11 @@ int SG_manifest_block_init_from_chunk( struct SG_manifest_block* dest, uint64_t 
    return rc;
 }
 
+
+// allocate a manifest 
+struct SG_manifest* SG_manifest_new() {
+   return SG_CALLOC( struct SG_manifest, 1 );
+}
 
 // initialize a fresh, empty manifest.
 // it's modification time will be 0.
@@ -794,6 +818,11 @@ int SG_manifest_set_stale( struct SG_manifest* manifest, bool stale ) {
    manifest->stale = stale;
    
    SG_manifest_unlock( manifest );
+
+   if( stale ) {
+      SG_debug("%p: set stale\n", manifest);
+   }
+
    return 0;
 }
 
@@ -807,6 +836,11 @@ int64_t SG_manifest_block_version( struct SG_manifest_block* block ) {
    return block->block_version;
 }
 
+// get manifest block's type 
+int SG_manifest_block_type( struct SG_manifest_block* block ) {
+   return block->type;
+}
+
 // get a manifest block's dirty status 
 bool SG_manifest_block_is_dirty( struct SG_manifest_block* block ) {
    return block->dirty;
@@ -817,7 +851,14 @@ unsigned char* SG_manifest_block_hash( struct SG_manifest_block* block ) {
    return block->hash;
 }
 
+// set the block version 
+int SG_manifest_block_set_version( struct SG_manifest_block* block, int64_t version ) {
+   block->block_version = version;
+   return 0;
+}
+
 // set a manifest's block hash (freeing the previous one, if present)
+// the block takes ownership of the hash
 int SG_manifest_block_set_hash( struct SG_manifest_block* block, unsigned char* hash ) {
    if( block->hash != NULL ) {
       SG_safe_free( block->hash );
@@ -919,9 +960,11 @@ uint64_t SG_manifest_get_file_size( struct SG_manifest* manifest ) {
 
 
 // get a malloc'ed copy of a block's hash 
+// if block_hash is NULL, it will be alloced.  Otherwise, it will be used.
 // return 0 on success, and set *block_hash and *hash_len
 // return -ENOMEM on OOM 
 // return -ENOENT if not found
+// return -ERANGE if *block_hash is not NULL, but is not big enough to hold the block's hash (*hash_len will be set to the required length)
 int SG_manifest_get_block_hash( struct SG_manifest* manifest, uint64_t block_id, unsigned char** block_hash, size_t* hash_len ) {
    
    unsigned char* ret = NULL;
@@ -932,17 +975,27 @@ int SG_manifest_get_block_hash( struct SG_manifest* manifest, uint64_t block_id,
    SG_manifest_block_map_t::iterator itr = manifest->blocks->find( block_id );
    if( itr != manifest->blocks->end() ) {
       
-      ret = SG_CALLOC( unsigned char, itr->second.hash_len );
-      
-      if( ret != NULL ) {
-         
-         memcpy( ret, itr->second.hash, sizeof(unsigned char) * itr->second.hash_len );
-         
-         *block_hash = ret;
+      if( *block_hash != NULL && itr->second.hash_len >= *hash_len * sizeof(unsigned char) ) {
+         memcpy( *block_hash, itr->second.hash, itr->second.hash_len * sizeof(unsigned char) );
+      }
+      else if( *block_hash != NULL ) {
+
+         rc = -ERANGE;
          *hash_len = itr->second.hash_len;
       }
       else {
-         rc = -ENOMEM;
+          ret = SG_CALLOC( unsigned char, itr->second.hash_len );
+      
+          if( ret != NULL ) {
+         
+             memcpy( ret, itr->second.hash, sizeof(unsigned char) * itr->second.hash_len );
+         
+             *block_hash = ret;
+             *hash_len = itr->second.hash_len;
+          }
+          else {
+             rc = -ENOMEM;
+          }
       }
    }
    else {
@@ -1230,13 +1283,23 @@ int SG_manifest_serialize_blocks_to_request_protobuf( struct SG_manifest* manife
 // return 0 on success
 // return -ENOMEM on OOM 
 int SG_manifest_block_serialize_to_protobuf( struct SG_manifest_block* block, SG_messages::ManifestBlock* mblock ) {
-   
+  
+   // sanity check...
+   if( block->hash == NULL ) {
+     SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] hash is NULL\n", block->block_id, block->block_version);
+     exit(1);
+   }
+
    try {
       
       mblock->set_hash( string((char*)block->hash, block->hash_len) );
-      
+       
       mblock->set_block_id( block->block_id );
       mblock->set_block_version( block->block_version );
+
+      if( block->type != 0 ) {
+         mblock->set_chunk_type( block->type );
+      }
    }
    catch( bad_alloc& ba ) {
       
@@ -1259,13 +1322,24 @@ int SG_manifest_print( struct SG_manifest* manifest ) {
    for( SG_manifest_block_map_t::iterator itr = manifest->blocks->begin(); itr != manifest->blocks->end(); itr++ ) {
       
       char* hash_printable = NULL;
-      
+      char const* type_str = NULL;
+
       hash_printable = md_data_printable( itr->second.hash, itr->second.hash_len );
       if( hash_printable == NULL ) {
          return -ENOMEM;
       }
       
-      printf("  Block %" PRIu64 ".%" PRId64 " hash=%s\n", itr->first, itr->second.block_version, hash_printable );
+      if( itr->second.type == SG_MANIFEST_BLOCK_TYPE_MANIFEST ) {
+         type_str = "manifest";
+      }
+      else if( itr->second.type == SG_MANIFEST_BLOCK_TYPE_BLOCK ) {
+         type_str = "block";
+      }
+      else {
+         type_str = "UNKNOWN";
+      }
+
+      printf("  Block (type=%s) %" PRIu64 ".%" PRId64 " hash=%s\n", type_str, itr->first, itr->second.block_version, hash_printable );
       
       SG_safe_free( hash_printable );
    }

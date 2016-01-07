@@ -23,8 +23,12 @@
 // prototype 
 struct SG_chunk;
 
+#define SG_MANIFEST_BLOCK_TYPE_MANIFEST SG_messages::ManifestBlock::MANIFEST
+#define SG_MANIFEST_BLOCK_TYPE_BLOCK SG_messages::ManifestBlock::BLOCK
+
 struct SG_manifest_block {
-   
+  
+   int type;            // block represents an actual block, or a manifest? 
    uint64_t block_id;
    int64_t block_version;
    
@@ -75,7 +79,9 @@ int SG_manifest_block_init_from_chunk( struct SG_manifest_block* dest, uint64_t 
 int SG_manifest_block_dup( struct SG_manifest_block* dest, struct SG_manifest_block* src );
 int SG_manifest_block_load_from_protobuf( struct SG_manifest_block* dest, const SG_messages::ManifestBlock* mblock );
 int SG_manifest_block_set_dirty( struct SG_manifest_block* dest, bool dirty );
+int SG_manifest_block_set_type( struct SG_manifest_block* dest, int type );
 
+struct SG_manifest* SG_manifest_new();
 int SG_manifest_init( struct SG_manifest* manifest, uint64_t volume_id, uint64_t coordinator_id, uint64_t file_id, int64_t file_version );
 int SG_manifest_dup( struct SG_manifest* dest, struct SG_manifest* src );
 int SG_manifest_load_from_protobuf( struct SG_manifest* manifest, const SG_messages::Manifest* mmsg );
@@ -102,11 +108,13 @@ int SG_manifest_set_stale( struct SG_manifest* manifest, bool stale );
 int SG_manifest_clear( struct SG_manifest* manifest );
 int SG_manifest_clear_nofree( struct SG_manifest* manifest );
 
+int SG_manifest_block_set_version( struct SG_manifest_block* block, int64_t version );
 int SG_manifest_block_set_hash( struct SG_manifest_block* block, unsigned char* hash );
 
 // getters 
 uint64_t SG_manifest_block_id( struct SG_manifest_block* block );
 int64_t SG_manifest_block_version( struct SG_manifest_block* block );
+int SG_manifest_block_type( struct SG_manifest_block* block );
 bool SG_manifest_block_is_dirty( struct SG_manifest_block* block );
 unsigned char* SG_manifest_block_hash( struct SG_manifest_block* block );
 
