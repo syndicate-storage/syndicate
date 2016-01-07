@@ -112,6 +112,7 @@ class MSGatewayCertRequestHandler(webapp2.RequestHandler):
       gateway = Gateway.Read( gateway_name_or_id )
       if gateway is None:
          response_user_error( self, 404, "No such gateway" )
+         return
          
       response_end( self, 200, gateway.gateway_cert, "application/octet-stream")
       return
