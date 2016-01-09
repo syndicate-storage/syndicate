@@ -518,7 +518,8 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       UG_vacuum_context_free( vctx );
       return -ENOMEM;
    }
-   
+  
+   SG_debug("Remove all blocks beyond %" PRIu64 "\n", new_max_block ); 
    SG_manifest_truncate( &new_manifest, new_max_block );
    
    // advance manifest timestamp, size, nonce, version
