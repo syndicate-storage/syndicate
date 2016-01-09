@@ -1,17 +1,17 @@
 Syndicate
 =========
 
-Syndicate is an **Internet-scale software-defined storage system**.  Syndicate presents a programmable abstraction layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate volumes have programable storage semantics and access controls. This lets you apply Syndicate to meet arbitrarily-specific storage needs, without worrying about the underlying technologies.
+Syndicate is an **Internet-scale software-defined storage system**.  Syndicate implements a scalable, programmable wide-area storage layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate volumes have *programable storage semantics*. This lets you deploy Syndicate to meet arbitrarily-specific storage needs with a minimal amount of effort.
 
-Cloud applications that use Syndicate do not need to host user data.  Instead, users attach their volumes to the application, and the application reads and writes data to them instead.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
+Networked applications that use Syndicate do not need to host user data.  Instead, users attach their volumes to the application, and the application reads and writes data to them instead.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
 
-Syndicate competes with systems like [Tent](http://tent.io), [Freenet](https://freenetproject.org), [Unhosted](https://unhosted.org), and [Camlistore](https://camlistore.org).  The key differences are as follows:
+Here is an incomplete summary of features Syndicate offers:
 * **Syndicate volumes scale up** in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN capacity to increase storage and bandwidth.
 * Syndicate has a **fire-and-forget setup**.  Users do not need to provision and manage their own servers to get started.
 * Syndicate **seamlessly integrates existing data** by incorporating it into volumes in a zero-copy manner.
 * Syndicate leverages CDNs and Web caches whenever possible, providing **caching with guaranteed consistency** even when caches return stale data.
 * Syndicate works with more than just Web applications.  Syndicate volumes are **locally mountable as removable media**, so *any* application can use them.
-* Syndicate volumes have **user-programmable storage semantics**.  Reads and writes can have application-specific effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, etc.
+* Syndicate volumes have **programmable semantics**.  I/O operations have application-defined side-effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, and so on.  Moroever, the programming model (inspired by the UNIX pipeline) ensures that storage semantics are *composable*--if A(x) and B(x) are functions on I/O operation x, then A(B(x)) is as well.
 * Syndicate volumes have built-in access controls on a per-file, per-file-attribute, per-host, and per-user basis.  Users can extend them in a provider-agnostic way by changing how they are interpreted by add-on storage logic.
 
 What can I use Syndicate for?
@@ -19,57 +19,76 @@ What can I use Syndicate for?
 
 Here are a few examples of how we are currently using Syndicate:
 
+* Augmenting scientific storage systems (like [iRODS](https://irods.org)) and public datasets (like [GenBank](https://www.ncbi.nlm.nih.gov/genbank/)) with ingress Web caches in order to automatically stage large-scale datasets for compute resources. 
 * Creating a secure [DropBox](http://www.dropbox.com)-like "shared folder" system for [OpenCloud](http://www.opencloud.us) that augments VMs, external scientific datasets, and personal computers with a private CDN, allowing users to share large amounts of data with their VMs while minimizing redundant transfers.
-* Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can transparently cache scientific data in commodity CDNs without having to manually re-host data or receive stale copies.  See the [H-Syndicate](https://github.com/iychoi/H-Syndicate) project for details.
 * Scalably packaging up and deploying applications across the Internet.
 * Creating webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to user-chosen storage service(s), so webmail providers like [Gmail](https://mail.google.com) can't snoop.  See the [SyndicateMail](https://github.com/jcnelson/syndicatemail) project for details.
-* Implementing scalable secure VDI across the Internet, using both in-house and external storage and caches.
-* Implementing vendor-agnostic [cloud storage gateways](https://en.wikipedia.org/wiki/Cloud_storage_gateway) on top of commodity hardware.
 
 Where can I learn more?
 -----------------------
 
 Please see a look at our [whitepaper](https://www.cs.princeton.edu/~jcnelson/acm-bigsystem2014.pdf), published in the proceedings of the 1st International Workshop on Software-defined Ecosystems (colocated with HPDC 2014).
 
+Also, please see [our NSF grant](http://www.nsf.gov/awardsearch/showAward?AWD_ID=1541318&HistoricalAwards=false) for our ongoing work.
+
 Building
 --------
 
-Syndicate uses the [SCons](http://www.scons.org/) build system.  To build Syndicate on your local machine, you'll first need to install the packages listed in the [INSTALL](https://github.com/jcnelson/syndicate/blob/master/INSTALL) file.  Then, you'll need to build and install libsyndicate and the Syndicate Python library before building Syndicate.
+This process is a bit involved, and will be automated for the first release.  You should be familiar with GNU make.
 
-To build and install libsyndicate and its headers to /usr/local, issue the following commands:
+**NOTE 1:**  Our build system currently honors `PREFIX` but not `DESTDIR`.  Let us know if you need the `DESTDIR` convention, and we'll add it.  `PREFIX` defaults to `/usr/local/`.
 
-```
-$ scons libsyndicate
-$ sudo scons libsyndicate-install
-```
+**NOTE 2:**  At this time, there are no `install` targets for the executables (this will be added soon).  For now, executables are put into directories within `./build/out/bin`.
 
-To build and install the Syndicate Python library, issue the following commands:
+To build Syndicate, you will need the following tools, libraries, and header files:
+* [libcurl](http://curl.haxx.se/libcurl/)
+* [libmicrohttpd](https://www.gnu.org/software/libmicrohttpd/)
+* [Google Protocol Buffers](https://github.com/google/protobuf)
+* [OpenSSL](https://www.openssl.org/)
+* [libjson](https://github.com/json-c/json-c)
+* [fskit](https://github.com/jcnelson/fskit)
+* [libfuse](https://github.com/libfuse/)
+* [Python 2.x](https://www.python.org)
+* [Cython](https://github.com/cython/cython)
+* [boto](https://github.com/boto/boto)
 
-```
-$ scons libsyndicateUG
-$ sudo scons libsyndicateUG-install
-$ scons syndicate-python
-$ sudo scons syndicate-python-install
-```
-
-Finally, to build and install the various Syndicate components, issue the following commands:
-
-```
-$ scons UG RG AG
-$ sudo scons UG-install RG-install AG-install
-```
-
-By default, everything will be installed to /usr/local.  You can override this by passing DESTDIR=.  For example:
+Before doing anything else, you must first build and install Syndicate's protobuf definitions, followed by `libsyndicate` and its headers.  To do so, type:
 
 ```
-$ sudo scons DESTDIR=/usr UG-install
+    $ make -C protobufs
+    $ make -C libsyndicate
+    $ sudo make -C libsyndicate install 
 ```
 
-Advanced users can build individual Syndicate RPMs and debs with [fpm](https://github.com/jordansissel/fpm), using the build scripts [here](https://github.com/jcnelson/syndicate/tree/master/build/chroot).
+After this, you can build the Metadata Service.  First, edit the `./MS.mk` file and set the various fields to something other than the default values.  Then, you can build the MS with:
 
-Alternatively, you can get periodically-generated development snapshot from our [build server](http://www.cs.princeton.edu/~jcnelson/syndicate-nightly/).  They're compiled for Fedora 16 and Ubuntu 12.04.
+```
+    $ make -C ms
+```
+
+Then, you must build and install the user- and gateway-facing Syndicate library (`libsyndicate-ug`).  To do so, type:
+
+```
+    $ make -C libsyndicate-ug
+    $ sudo make -C libsyndicate-ug install
+```
+
+Finally, you can build the Syndicate gateways, tools, and Python package.  To do so, type:
+
+```
+   $ make -C gateways
+   $ make -C python
+   $ sudo make -C python install
+```
+
 
 Setting it up
 -------------
 
-Take a look at our [wiki](https://github.com/jcnelson/syndicate/wiki#getting-started) for how-tos and tutorials to get your personal Syndicate instance set up.
+The Metadata Service runs in Google AppEngine, or [AppScale](https://github.com/AppScale/appscale) if you prefer to run the MS on your own infrastructure.  You can run it locally with the [Python GAE development environment](https://cloud.google.com/appengine/downloads?hl=en).  Please see the relevant documentation for GAE, AppScale, and the development environment for deployment instructions.  You should be able to run the MS on the free tier in GAE.
+
+Once you have an MS running somewhere, you'll need to make a Syndicate config file.  There is an example one [here](https://github.com/jcnelson/syndicate/tree/master/example/syndicate.conf).  You should change the various absolute paths to refer to your own build environment.  Please also consider setting the `verify_peer` field to `True` if you intend to do anything beyond testing.  You should place the configuration file into `~/.syndicate/syndicate.conf`.
+
+The Syndicate administration tool (`/build/out/bin/syndicate`) allows you to manipulate users, volumes, and gateways.  Each method has built-in documentation that describes all required and optional positional and keyword arguments.  
+
+This section will be fleshed out in the coming weeks.
