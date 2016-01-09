@@ -390,7 +390,7 @@ static int UG_fs_stat( struct fskit_core* fs, struct fskit_route_metadata* route
 // return -ENOMEM on OOM 
 // return -EISDIR if the inode is a directory
 // return -errno on network error
-// NOTE: inode->entry must be write-locked (e.g. by fskit)
+// NOTE: inode->entry must be write-locked 
 // NOTE: this method will do nothing if it is on the creat(2) I/O path, since it doesn't make much sense for Syndicate to truncate immediately after creating.
 static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, off_t new_size ) {
    
@@ -399,6 +399,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct ms_client* ms = SG_gateway_ms( gateway );
    struct UG_vacuumer* vacuumer = UG_state_vacuumer( ug );
+   struct fskit_core* fs = UG_state_fs( ug );
    
    struct md_entry inode_data_out;
    memset( &inode_data_out, 0, sizeof(struct md_entry) );
@@ -409,14 +410,14 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    struct UG_replica_context* rctx = NULL;
    struct UG_vacuum_context* vctx = NULL;
    
-   struct timespec new_manifest_timestamp;
-   
-   int64_t new_manifest_timestamp_sec = 0;
-   int32_t new_manifest_timestamp_nsec = 0;
-   
+   struct timespec new_manifest_modtime;
+   struct timespec old_manifest_modtime;
    uint64_t volume_blocksize = ms_client_get_volume_blocksize( ms );
    uint64_t new_max_block = new_size / volume_blocksize;
    
+   unsigned char xattr_hash[SHA256_DIGEST_LENGTH];
+   memset( xattr_hash, 0, SHA256_DIGEST_LENGTH );
+
    if( new_size % volume_blocksize > 0 ) {
       new_max_block++;
    }
@@ -440,13 +441,22 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       
       return -EISDIR;
    }
-   
+  
+   // get inode data... 
    rc = UG_inode_export( &inode_data, inode, 0 );
    if( rc != 0 ) {
       
       return rc;
    }
    
+   // get xattr hash... 
+   rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), inode, xattr_hash );
+   if( rc != 0 ) {
+       
+      md_entry_free( &inode_data );
+      return rc;
+   }
+
    rc = SG_manifest_init( &removed, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( rc != 0 ) {
       
@@ -509,8 +519,13 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return -ENOMEM;
    }
    
-   // replicate truncated manifest...
    SG_manifest_truncate( &new_manifest, new_max_block );
+   
+   // advance manifest timestamp, size, nonce, version
+   clock_gettime( CLOCK_REALTIME, &new_manifest_modtime );
+   SG_manifest_set_modtime( &new_manifest, new_manifest_modtime.tv_sec, new_manifest_modtime.tv_nsec );
+   SG_manifest_set_size( &new_manifest, new_size );
+   SG_manifest_set_file_version( &new_manifest, inode_data.version + 1 );
    
    rc = UG_replica_context_init( rctx, ug, fs_path, inode, &new_manifest, NULL );
    if( rc != 0 ) {
@@ -523,36 +538,22 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       return rc;
    }
    
-   // preserve now-replicated manifest modtime
-   SG_manifest_get_modtime( &new_manifest, &new_manifest_timestamp_sec, &new_manifest_timestamp_nsec );
    SG_manifest_free( &new_manifest );
-   
-   // update on the MS
-   inode_data.size = new_size;
-   inode_data.version += 1;     // next version
-   inode_data.manifest_mtime_sec = new_manifest_timestamp_sec;          // preserve modtime of manifest we replicated
-   inode_data.manifest_mtime_nsec = new_manifest_timestamp_nsec;
-   
-   new_manifest_timestamp.tv_sec = new_manifest_timestamp_sec;
-   new_manifest_timestamp.tv_nsec = new_manifest_timestamp_nsec;
-   
-   // update size and version remotely
-   rc = ms_client_update( ms, &inode_data_out, &inode_data );
-   
-   md_entry_free( &inode_data );
    
    if( rc != 0 ) {
       
       UG_vacuum_context_free( vctx );
       UG_replica_context_free( rctx );
       SG_safe_free( rctx );
-      md_entry_free( &inode_data_out );
+      md_entry_free( &inode_data );
       
       SG_error("ms_client_update('%s', size=%jd) rc = %d\n", fs_path, new_size, rc );
       return rc;
    }
    
-   // replicate truncated manifest to all RGs
+   // replicate truncated manifest to all RGs, but don't tell the MS.  We'll do that ourselves
+   UG_replica_context_hint( rctx, UG_REPLICA_HINT_NO_MS_UPDATE );
+
    rc = UG_replicate( gateway, rctx );
    
    if( rc != 0 ) {
@@ -563,21 +564,35 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
       UG_vacuum_context_free( vctx );
       UG_replica_context_free( rctx );
       SG_safe_free( rctx );
-      md_entry_free( &inode_data_out );
+      md_entry_free( &inode_data );
       
       return rc;
    }
+
+   // update on the MS
+   inode_data.size = new_size;
+   inode_data.version += 1;     // next version
+   inode_data.write_nonce += 1;
+   inode_data.manifest_mtime_sec = new_manifest_modtime.tv_sec;          // preserve modtime of manifest we replicated
+   inode_data.manifest_mtime_nsec = new_manifest_modtime.tv_nsec;
+   inode_data.xattr_hash = xattr_hash;
    
-   // propagate write nonce and old manifest timestamp...
-   UG_inode_set_write_nonce( inode, inode_data_out.xattr_nonce );
-   UG_inode_set_old_manifest_modtime( inode, &new_manifest_timestamp );
+   // update size and version remotely
+   rc = ms_client_update( ms, &inode_data_out, &inode_data );
    
-   // truncate locally 
-   UG_inode_truncate( gateway, inode, new_size, inode_data.version );
+   inode_data.xattr_hash = NULL;
+   md_entry_free( &inode_data );
+
+   // TODO: give this back to the caller
+   md_entry_free( &inode_data_out );
    
-   // preserve the timestamp from the replicated manifest, so they match on the RG and locally
-   SG_manifest_set_modtime( UG_inode_manifest( inode ), new_manifest_timestamp_sec, new_manifest_timestamp_nsec );
-   
+   // truncate locally, and apply MS-hosted changes
+   UG_inode_preserve_old_manifest_modtime( inode ); 
+   UG_inode_truncate( gateway, inode, new_size, inode_data.version, inode_data.write_nonce, &new_manifest_modtime );
+   old_manifest_modtime = UG_inode_old_manifest_modtime( inode );
+  
+   UG_vacuum_context_set_manifest_modtime( vctx, old_manifest_modtime.tv_sec, old_manifest_modtime.tv_nsec );
+
    // garbate-collect 
    while( 1 ) {
       
@@ -594,6 +609,7 @@ static int UG_fs_trunc_local( struct SG_gateway* gateway, char const* fs_path, s
    UG_vacuum_context_free( vctx );
    UG_replica_context_free( rctx );
    SG_safe_free( rctx );
+   SG_safe_free( vctx );
    
    return rc;
 }
@@ -674,8 +690,9 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
       return reply.error_code();
    }
    
-   // truncate locally 
-   UG_inode_truncate( gateway, inode, new_size, 0 );
+   // truncate locally,
+   // TODO: have server fill in reply.ent_out, and plumb it through here
+   UG_inode_truncate( gateway, inode, new_size, 0, 0, NULL ); 
    
    // reload inode on next access
    UG_inode_set_read_stale( inode, true );
@@ -693,15 +710,15 @@ static int UG_fs_trunc_remote( struct SG_gateway* gateway, char const* fs_path, 
 static int UG_fs_trunc( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, off_t new_size, void* inode_cls ) {
    
    int rc = 0;
-   
-   struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
-   struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+  
    char* path = fskit_route_metadata_get_path( route_metadata );
-   
+   struct UG_inode* inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
+
+
    UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
                          UG_fs_trunc_local( gateway, path, inode, new_size ),
                          UG_fs_trunc_remote( gateway, path, inode, new_size ), &rc );
-   
    return rc;
 }
 
@@ -908,8 +925,11 @@ static int UG_fs_detach_and_destroy( struct fskit_core* fs, struct fskit_route_m
    fskit_entry_rlock( fent );
    
    int type = fskit_entry_get_type( fent );
+   uint64_t file_id = fskit_entry_get_file_id( fent );
    
    fskit_entry_unlock( fent );
+
+   SG_debug("Detach/destroy %" PRIX64 "\n", file_id );
    
    if( type == FSKIT_ENTRY_TYPE_FILE ) {
        
@@ -950,18 +970,23 @@ static int UG_fs_detach_and_destroy( struct fskit_core* fs, struct fskit_route_m
 static int UG_fs_destroy( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, void* inode_cls ) {
    
    struct UG_inode* inode = (struct UG_inode*)inode_cls;
+   uint64_t file_id = 0;
    
    if( inode != NULL ) {
+      
+      file_id = UG_inode_file_id( inode );
+      SG_debug("Destroy %" PRIX64 "\n", file_id );
+
       UG_inode_free( inode );
       SG_safe_free( inode );
       
       fskit_entry_set_user_data( fent, NULL );
-      
-      SG_debug("freed %p's inode %p\n", fent, inode_cls );
    }
    else {
       
-      SG_warn("entry %p inode already freed\n", fent);
+      fskit_entry_rlock( fent );
+      SG_warn("%" PRIX64 ": inode already freed\n", fskit_entry_get_file_id( fent) );
+      fskit_entry_unlock( fent );
    }
    
    return 0;
@@ -1229,15 +1254,6 @@ int UG_fs_install_methods( struct fskit_core* core ) {
       return rh;
    }
    
-   /*
-   rh = fskit_route_detach( core, FSKIT_ROUTE_ANY, UG_fs_detach, FSKIT_CONCURRENT );
-   if( rh < 0 ) {
-      
-      SG_error("fskit_route_detach(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
-      return rh;
-   }
-   */
-   
    rh = fskit_route_destroy( core, FSKIT_ROUTE_ANY, UG_fs_detach_and_destroy, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
@@ -1256,9 +1272,12 @@ int UG_fs_install_methods( struct fskit_core* core ) {
 }
 
 
-// remove all fskit methods, but install a detach method that simply frees the inode 
+// remove all fskit methods, but install a detach method that simply frees the inode
+// return 0 on success
+// return -errno on failure 
 int UG_fs_install_shutdown_methods( struct fskit_core* fs ) {
    
+   // stop all fs calls
    int rc = fskit_unroute_all( fs );
    if( rc != 0 ) {
       
@@ -1266,13 +1285,15 @@ int UG_fs_install_shutdown_methods( struct fskit_core* fs ) {
       return rc;
    }
    
+   // insert a memory-freeing call
    int rh = fskit_route_destroy( fs, FSKIT_ROUTE_ANY, UG_fs_destroy, FSKIT_CONCURRENT );
    if( rh < 0 ) {
       
-      SG_error("fskit_route_detach(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
+      SG_error("fskit_route_destroy(%s) rc = %d\n", FSKIT_ROUTE_ANY, rh );
       return rh;
    }
-   
+  
+   SG_debug("Destroy route inserted at %d\n", rh );
    return 0;
 }
 
