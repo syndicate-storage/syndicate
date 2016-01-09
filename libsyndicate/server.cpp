@@ -1310,6 +1310,7 @@ int SG_server_HTTP_IO_start( struct SG_gateway* gateway, int type, SG_server_IO_
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -errno on failure to generate a response
+// TODO: allow the I/O completion callback to populate reply_msg.ent_out
 int SG_server_HTTP_IO_finish( struct md_wreq* wreq, void* cls ) {
    
    struct SG_server_io* io = (struct SG_server_io*)cls;
