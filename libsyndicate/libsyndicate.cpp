@@ -4043,10 +4043,11 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    }
    
    MD_SYNDICATE_CONF_OPT( *conf, config_file_path, expanded_path, rc );
+   SG_safe_free( expanded_path );
    if( rc != 0 ) {
       return rc;
    }
-   
+
    // allocate certs...
    volume_cert = SG_safe_new( ms::ms_volume_metadata );
    if( volume_cert == NULL ) {
