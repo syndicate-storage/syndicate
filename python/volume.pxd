@@ -100,7 +100,7 @@ cdef extern from "libsyndicate/util.h":
       size_t len
 
 # ------------------------------------------   
-cdef extern from "syndicate-ug/core.h":
+cdef extern from "libsyndicate-ug/core.h":
    
    cdef struct UG_state:
       pass
@@ -112,13 +112,13 @@ cdef extern from "syndicate-ug/core.h":
    
 
 # ------------------------------------------   
-cdef extern from "syndicate-ug/inode.h":
+cdef extern from "libsyndicate-ug/inode.h":
 
    cdef struct UG_inode:
       pass
       
 # ------------------------------------------
-cdef extern from "syndicate-ug/client.h":
+cdef extern from "libsyndicate-ug/client.h":
    cdef struct _UG_handle:
       pass
 

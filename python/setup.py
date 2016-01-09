@@ -56,7 +56,7 @@ ext_modules=[
     Extension("syndicate",
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
-              library_dirs=[os.path.join(source_root, build_dir, "../lib/libsyndicate")],             # libsyndicate local build
+              library_dirs=[os.path.join(source_root, build_dir, "../lib")],             # libsyndicate local build
               include_dirs=[os.path.join(source_root, build_dir, "../include")],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
@@ -64,7 +64,7 @@ ext_modules=[
     Extension("volume",
               sources=["volume.pyx"],
               libraries=["syndicate", "syndicate-ug"],
-              library_dirs=[os.path.join(source_root, build_dir, "../lib/libsyndicate")],
+              library_dirs=[os.path.join(source_root, build_dir, "../lib")],
               include_dirs=[os.path.join(source_root, build_dir, "../include")],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),

@@ -27,7 +27,6 @@ import stat
 
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.msconfig as msconfig
-import syndicate.ms.api as api
 
 import syndicate.util.config as conf
 import syndicate.util.storage as storage
@@ -141,6 +140,8 @@ def verify_gateway_cert( pubkey_pem, gateway_cert ):
    Return True if so
    Return False if not
    """
+
+   import syndicate.ms.api as api
    
    sigb64 = gateway_cert.signature 
    sig = base64.b64decode( sigb64 )
@@ -382,6 +383,7 @@ def make_object_directories( config ):
    return True
 
 
+# -------------------
 def parse_argv( argv ):
    """
    Given argv, extract the options, method name, positional args, and keyword args.
@@ -489,6 +491,9 @@ def do_method_help( config, method_name ):
    Print a method's documentation and exit, given the  
    method parameters (including its name).
    """
+   
+   import syndicate.ms.api as api
+
    try:
       method_help = api.method_help_from_method_name( method_name )
    except Exception, e:
@@ -499,7 +504,7 @@ def do_method_help( config, method_name ):
    sys.exit(0)
 
 
-def do_setup( config, admin_privkey_path ):
+def do_setup( username, admin_privkey_path, MS_url ):
    """
    Do one-time initial setup:
    * create the ~/.syndicate directory 
@@ -513,18 +518,16 @@ def do_setup( config, admin_privkey_path ):
    # if the config file already exists, then bail
    if os.path.exists( conf.CONFIG_FILENAME ):
       raise Exception("Syndicate is already set up (in %s)" % conf.CONFIG_DIR)
-   
+
    # get admin private key 
-   admin_privkey_pem = storage.load_file( admin_privkey_path )
+   admin_privkey_pem = storage.read_file( admin_privkey_path )
    if admin_privkey_pem is None:
       raise Exception("Unable to load '%s'" % admin_privkey_path )
   
    try:
       admin_privkey = CryptoKey.importKey( admin_privkey_pem )
    except:
-      if config['debug']:
-          traceback.print_exc()
-      
+      traceback.print_exc()
       raise Exception("Unable to parse '%s'" % admin_privkey_path )
    
    if not admin_privkey.has_private():
@@ -536,43 +539,14 @@ def do_setup( config, admin_privkey_path ):
    write_config = {}
    for key_type, key_dirname in conf.OBJECT_DIR_NAMES.items():
       key_dirs[key_type] = key_dirname + "/"
-   
-   # generate URL if not given already
-   if not config.has_key('MS_url'):
-      config['MS_url'] = client.make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'] )
-   
-   write_config.update( key_dirs )
-   for attr in ['username', 'MS_url']:
-      write_config[attr] = config[attr]
-   
-   config_str = conf.make_config_str( write_config )
+    
+   write_config["MS_url"] = MS_url 
+   write_config["username"] = username
 
-   log.debug("Obtaining Syndicate public key...")
+   write_config.update( key_dirs )
    
-   # go get the public key for Syndicate
-   syndicate_public_key = fetch_syndicate_public_key( config )
-   if syndicate_public_key is None:
-      raise Exception("Failed to obtain Syndicate public key")
-   
-   if not config['trust_public_key']:
-      do_trust = prompt_trust_public_key( config['syndicate_host'], config['syndicate_port'], syndicate_public_key )
-      if not do_trust:
-         log.error("Refusing to trust key.")
-         sys.exit(0)
-   
-   # store the Syndicate public key
-   try:
-      config['syndicate_public_key'] = CryptoKey.importKey( syndicate_public_key )
-      config['syndicate_public_key_pem'] = syndicate_public_key
-   except Exception, e:
-      # shouldn't fail--fetch_syndicate_public_key validates
-      log.error("Invalid public key")
-      log.exception(e)
-      sys.exit(1)
-   
+   config_str = conf.serialize_config( write_config )
    log.debug("Storing config...")
-   
-   storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_public_key )
    
    # store config
    try:
@@ -583,8 +557,8 @@ def do_setup( config, admin_privkey_path ):
       sys.exit(1)
       
    # store first admin ID (always 0)
-   object_stub.store_id( config, "user", config["username"], 0 )
-   storage.store_private_key( config, "user", config["username"], admin_privkey )
+   object_stub.store_id( write_config, "user", write_config["username"], 0 )
+   storage.store_private_key( write_config, "user", write_config["username"], admin_privkey )
    
    sys.exit(0)
 
@@ -689,6 +663,14 @@ def main( argv ):
    # get opts, methodname, args 
    opts, method_name, args, kw = parse_argv( argv )
    
+   if method_name == "setup":
+       if len(argv) != 5:
+           print >> sys.stderr, "Usage: %s setup USERNAME /path/to/private/key MS_URL"
+           sys.exit(1)
+
+       do_setup( argv[2], argv[3], argv[4] )
+       sys.exit(0)
+
    CONFIG = init_config( opts, method_name )
    if CONFIG is None:
        return None
