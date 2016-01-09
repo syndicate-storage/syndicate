@@ -214,7 +214,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    memset( &now, 0, sizeof(struct timespec) );
    memset( &manifest_refresh_mtime, 0, sizeof(struct timespec) );
    
-   // ref...
+   // keep around...
    fent = fskit_entry_ref( fs, fs_path, &rc );
    if( rc != 0 ) {
       
@@ -355,6 +355,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    SG_manifest_set_stale( UG_inode_manifest( inode ), false );
 
    fskit_entry_unlock( fent );
+   fskit_entry_unref( fs, fs_path, fent );
    SG_manifest_free( &new_manifest );
    SG_request_data_free( &reqdat );
    
