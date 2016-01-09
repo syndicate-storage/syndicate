@@ -35,14 +35,6 @@ BUILD_MS_DIRS           := $(BUILD_MS)/common \
                            $(BUILD_MS)/google/protobuf \
                            $(BUILD_MS)/google/protobuf/internal \
                            $(BUILD_MS)/google/protobuf/compiler
-                           # $(BUILD_MS)/google/protobuf/compiler \
-                           # $(BUILD_MS)/openid \
-                           # $(BUILD_MS)/openid/server \
-                           # $(BUILD_MS)/openid/extensions \
-                           # $(BUILD_MS)/openid/extensions/draft \
-                           # $(BUILD_MS)/openid/store \
-                           # $(BUILD_MS)/openid/consumer \
-                           # $(BUILD_MS)/openid/yadis
 
 # libsyndicate
 BUILD_LIBSYNDICATE       := $(BUILD_LIBDIR)
@@ -53,25 +45,27 @@ BUILD_LIBSYNDICATE_DIRS  := $(BUILD_LIBSYNDICATE)/ms \
                             $(BUILD_LIBSYNDICATE_INCLUDEDIR)/ms \
                             $(BUILD_LIBSYNDICATE_INCLUDEDIR)/drivers
 
-# user gateway 
-BUILD_UG          := $(BUILD_BINDIR)/UG
-BUILD_UG_TOOLS    := $(BUILD_BINDIR)/UG
-BUILD_UG_GATEWAYS := $(BUILD_BINDIR)/UG
-BUILD_UG_LIBS     := $(BUILD_LIBDIR)/UG
-BUILD_UG_INCLUDEDIR := $(BUILD_INCLUDEDIR)/syndicate-ug
-BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) \
-                     $(BUILD_UG_GATEWAYS) \
-                     $(BUILD_UG_LIBS) \
-                     $(BUILD_UG_INCLUDEDIR) \
+# libsyndicate-ug
+BUILD_LIBSYNDICATE_UG          := $(BUILD_LIBDIR)
+BUILD_LIBSYNDICATE_UG_INCLUDEDIR := $(BUILD_INCLUDEDIR)/libsyndicate-ug
+BUILD_LIBSYNDICATE_UG_DIRS     := $(BUILD_LIBSYNDICATE_UG_INCLUDEDIR)
 
+# user gateway 
+BUILD_UG          := $(BUILD_BINDIR)
+BUILD_UG_TOOLS    := $(BUILD_BINDIR)
+BUILD_UG_GATEWAYS := $(BUILD_BINDIR)
+BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) \
+                     $(BUILD_UG_GATEWAYS)
 
 # replica gateway 
-BUILD_RG          := $(BUILD_BINDIR)/RG
+BUILD_RG          := $(BUILD_BINDIR)
 BUILD_RG_DIRS     := $(BUILD_RG)
 
 # python extension
 BUILD_PYTHON_SYNDICATE := $(BUILD)/python/
 BUILD_PYTHON_SYNDICATE_DIRS := $(BUILD_PYTHON_SYNDICATE)
+INSTALL_PYTHON_BIN := $(DESTDIR)$(PREFIX)/bin
+INSTALL_PYTHON_LIBEXEC := $(DESTDIR)$(PREFIX)/lib/syndicate
 
 # python tools 
 BUILD_PYTHON_BIN := $(BUILD_BINDIR)
@@ -82,7 +76,7 @@ CPPFLAGS := -std=c++11 -Wall -g -fPIC -fstack-protector -fstack-protector-all -p
 CPP      := c++ $(CPPFLAGS)
 INC      := -I. -I$(BUILD_INCLUDEDIR) -I$(ROOT_DIR)
 DEFS     := -D_THREAD_SAFE -D__STDC_FORMAT_MACROS -D_DISTRO_$(DISTRO)
-LIBINC   := -L$(BUILD_LIBSYNDICATE)
+LIBINC   := -L$(BUILD_LIBDIR)
 
 # build setup
 BUILD_DIRS   := $(sort $(BUILD_PROTOBUFS_DIRS) \
