@@ -14,11 +14,12 @@
    limitations under the License.
 */
 
-#ifndef _SYNDICATE_CAT_H_
-#define _SYNDICATE_CAT_H_
 
-#include <syndicate-ug/client.h>
-#include <syndicate-ug/core.h>
+#ifndef _SYNDICATE_TRUNC_H_
+#define _SYNDICATE_TRUNC_H_
+
+#include <libsyndicate-ug/client.h>
+#include <libsyndicate-ug/core.h>
 
 #include "common.h"
 

@@ -1,9 +1,11 @@
-include ../buildconf.mk
+include ../../buildconf.mk
 
 LIB   	:= -lpthread -lsyndicate -lprotobuf
 C_SRCS	:= $(wildcard *.c)
 CXSRCS	:= $(wildcard *.cpp)
-OBJ      := $(patsubst %.c,$(BUILD_RG)/%.o,$(C_SRCS)) $(patsubst %.cpp,$(BUILD_RG)/%.o,$(CXSRCS))
+OBJDIR  := obj/gateway/replica
+OBJ      := $(patsubst %.c,$(BUILD_RG)/$(OBJDIR)/%.o,$(C_SRCS)) \
+            $(patsubst %.cpp,$(BUILD_RG)/$(OBJDIR)/%.o,$(CXSRCS))
 
 INC		:= $(INC) -I$(BUILD_LIBSYNDICATE_INCLUDEDIR)
 
@@ -20,11 +22,11 @@ $(BUILD_LIBEXEC_DIR)/%: libexec/%
 	@mkdir -p "$(shell dirname "$@")"
 	cp -a "$<" "$@"
 
-$(BUILD_RG)/%.o : %.c 
+$(BUILD_RG)/$(OBJDIR)/%.o : %.c 
 	@mkdir -p "$(shell dirname "$@")"
 	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
-$(BUILD_RG)/%.o : %.cpp 
+$(BUILD_RG)/$(OBJDIR)/%.o : %.cpp 
 	@mkdir -p "$(shell dirname "$@")"
 	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 

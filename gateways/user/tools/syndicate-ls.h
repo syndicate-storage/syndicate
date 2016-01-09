@@ -14,13 +14,14 @@
    limitations under the License.
 */
 
+#ifndef _SYNDICATE_LS_H_
+#define _SYNDICATE_LS_H_
 
-#ifndef _SYNDICATE_RMDIR_H_
-#define _SYNDICATE_RMDIR_H_
-
-#include <syndicate-ug/client.h>
-#include <syndicate-ug/core.h>
+#include <libsyndicate-ug/client.h>
+#include <libsyndicate-ug/core.h>
 
 #include "common.h"
+
+#define LS_MAX_DIRENTS  65536
 
 #endif

@@ -14,11 +14,12 @@
    limitations under the License.
 */
 
-#ifndef _SYNDICATE_TOUCH_H_
-#define _SYNDICATE_TOUCH_H_
 
-#include <syndicate-ug/client.h>
-#include <syndicate-ug/core.h>
+#ifndef _SYNDICATE_RMDIR_H_
+#define _SYNDICATE_RMDIR_H_
+
+#include <libsyndicate-ug/client.h>
+#include <libsyndicate-ug/core.h>
 
 #include "common.h"
 
