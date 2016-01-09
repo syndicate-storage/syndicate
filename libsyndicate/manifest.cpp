@@ -202,27 +202,9 @@ int SG_manifest_init( struct SG_manifest* manifest, uint64_t volume_id, uint64_t
 int SG_manifest_dup( struct SG_manifest* dest, struct SG_manifest* src ) {
    
    int rc = 0;
-   pthread_rwlock_t lock;
-   
-   if( src == NULL ) {
-      return -EINVAL;
-   }
-   
-   if( src->blocks == NULL ) {
-      return -EINVAL;
-   }
-   
-   rc = pthread_rwlock_init( &lock, NULL );
+   rc = SG_manifest_init( dest, src->volume_id, src->coordinator_id, src->file_id, src->file_version );
    if( rc != 0 ) {
       return rc;
-   }
-   
-   // duplicate block map 
-   SG_manifest_block_map_t* blocks_dup = SG_safe_new( SG_manifest_block_map_t() );
-   if( blocks_dup == NULL ) {
-      
-      pthread_rwlock_destroy( &lock );
-      return -ENOMEM;
    }
    
    SG_manifest_rlock( src );
@@ -237,22 +219,18 @@ int SG_manifest_dup( struct SG_manifest* dest, struct SG_manifest* src ) {
          SG_manifest_unlock( src );
          
          // invalid or OOM 
-         SG_manifest_block_map_free( blocks_dup );
-         SG_safe_delete( blocks_dup );
+         SG_manifest_free( dest );
          
          return rc;
       }
       
       try {
-         (*blocks_dup)[ new_block.block_id ] = new_block;
+         (*dest->blocks)[ new_block.block_id ] = new_block;
       }
       catch( bad_alloc& ba ) {
          
          SG_manifest_unlock( src );
-         
-         // OOM 
-         SG_manifest_block_map_free( blocks_dup );
-         SG_safe_delete( blocks_dup );
+         SG_manifest_free( dest );
          
          return -ENOMEM;
       }
@@ -260,18 +238,10 @@ int SG_manifest_dup( struct SG_manifest* dest, struct SG_manifest* src ) {
    
    SG_manifest_unlock( src );
    
-   // duplicate the remaining fields 
-   dest->volume_id = src->volume_id;
-   dest->coordinator_id = src->coordinator_id;
-   dest->file_id = src->file_id;
-   dest->file_version = src->file_version;
-   
+   // duplicate the remaining fields
    dest->mtime_sec = src->mtime_sec;
    dest->mtime_nsec = src->mtime_nsec;
    dest->stale = src->stale;
-   
-   dest->blocks = blocks_dup;
-   dest->lock = lock;
    
    return 0;
 }
@@ -455,7 +425,7 @@ int SG_manifest_set_file_version( struct SG_manifest* manifest, int64_t version 
 }
 
 // add a block to the manifest.
-// duplicate the block if dup_block is true; otherwise the manifest takes ownership
+// duplicate the block if dup_block is true; otherwise the manifest takes ownership of all data within it (shallow-copied)
 // if replace is true, then this block will be allowed to overwrite an existing block (which will then be freed)
 // otherwise, this method will return with -EEXIST if the given block is already present.
 // return 0 on success
@@ -535,7 +505,7 @@ static int SG_manifest_put_block_ex( struct SG_manifest* manifest, struct SG_man
       
       try {
          
-         // put in place 
+         // put in place (shallow-copy) 
          (*manifest->blocks)[ to_put->block_id ] = *to_put;
       }
       catch( bad_alloc& ba ) {
@@ -597,6 +567,7 @@ int SG_manifest_delete_block( struct SG_manifest* manifest, uint64_t block_id ) 
    }
    else {
       
+      SG_manifest_block_free( &itr->second ); 
       manifest->blocks->erase( itr );
    }
    
