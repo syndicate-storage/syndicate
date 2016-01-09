@@ -218,7 +218,7 @@ int UG_read_aligned_setup( struct UG_inode* inode, char* buf, size_t buf_len, of
       uint64_t read_offset = aligned_offset + (block_id - start_block_id) * block_size;
       uint64_t read_len = 0;
 
-      if( block_id * block_size > UG_inode_size( inode ) ) {
+      if( block_id * block_size >= UG_inode_size( inode ) ) {
          // EOF 
          SG_debug("Skip block %" PRIu64 ", it is beyond EOF\n", block_id);
          continue;
@@ -305,7 +305,6 @@ int UG_read_download_gateway_list( struct SG_gateway* gateway, uint64_t coordina
 int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, struct SG_manifest* block_requests, UG_dirty_block_map_t* blocks ) {
    
    int rc = 0;
-   uint64_t gateway_id = SG_gateway_id( gateway );
    struct ms_client* ms = SG_gateway_ms( gateway );
    
    uint64_t* gateway_ids = NULL;
@@ -316,9 +315,19 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
    
    struct SG_request_data reqdat;
    
+   uint64_t block_id = 0;
    uint64_t next_block_id = 0;
+
    struct SG_chunk next_block;
+   struct SG_manifest_block* block_info = NULL;
+
+   UG_block_gateway_map_t block_gateway_idx;        // map block ID to the index into gateway_ids for the next gateway to try
+   int gateway_idx = 0;
+   SG_manifest_block_iterator itr;
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
+
+   set<uint64_t> blocks_in_flight;                  // set of blocks being downloaded right now (keyed by ID)
+   bool cycled_through = false;                     // set to true once the maximum number of in-flight blocks has been started
 
    memset( &next_block, 0, sizeof(struct SG_chunk) );
    
@@ -327,10 +336,6 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
    if( next_block.data == NULL ) {
       return -ENOMEM;
    }
-
-   UG_block_gateway_map_t block_downloads;
-   
-   SG_manifest_block_iterator itr = SG_manifest_block_iterator_begin( block_requests );
    
    // sanity check--every block in blocks must be RAM-mapped to the reader's buffer
    for( UG_dirty_block_map_t::iterator block_itr = blocks->begin(); block_itr != blocks->end(); block_itr++ ) {
@@ -361,11 +366,12 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
       return rc;
    }
    
-   // seed block downloads 
+   // seed block <--> gateway index
    for( SG_manifest_block_iterator seed_itr = SG_manifest_block_iterator_begin( block_requests ); seed_itr != SG_manifest_block_iterator_end( block_requests ); seed_itr++ ) {
-      
+     
       try {
-         block_downloads[ SG_manifest_block_iterator_id( seed_itr ) ] = 0;
+         block_id = SG_manifest_block_iterator_id( seed_itr );
+         block_gateway_idx[ block_id ] = 0;
       }
       catch( bad_alloc& ba ) {
          
@@ -383,7 +389,7 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
       return -ENOMEM;
    }
 
-   rc = md_download_loop_init( dlloop, SG_gateway_dl( gateway ), MIN( (unsigned)ms->max_connections, block_requests->blocks->size() ) );
+   rc = md_download_loop_init( dlloop, SG_gateway_dl( gateway ), MIN( (unsigned)ms->max_connections, SG_manifest_get_block_count( block_requests ) ) );
    if( rc != 0 ) {
       
       SG_error("md_download_loop_init rc = %d\n", rc );
@@ -394,24 +400,50 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
       return rc;
    }
    
+   itr = SG_manifest_block_iterator_begin( block_requests );
+
    // download each block 
    do {
       
       // start as many downloads as we can 
-      while( block_downloads.size() > 0 ) {
-         
+      while( block_gateway_idx.size() > 0 ) {
+        
+         // cycle through the manifest of blocks to fetch 
          if( itr == SG_manifest_block_iterator_end( block_requests ) ) {
             itr = SG_manifest_block_iterator_begin( block_requests );
+
+            if( cycled_through ) {
+               // all download slots are filled 
+               cycled_through = false;
+               break;
+            }
+
+            cycled_through = true;
          }
          
-         uint64_t block_id = SG_manifest_block_iterator_id( itr );
-         struct SG_manifest_block* block_info = SG_manifest_block_iterator_block( itr );
+         block_id = SG_manifest_block_iterator_id( itr );
+         block_info = SG_manifest_block_iterator_block( itr );
          
          // did we get this block already?
-         if( block_downloads.find( block_id ) == block_downloads.end() ) {
+         if( block_gateway_idx.find( block_id ) == block_gateway_idx.end() ) {
             
             itr++;
             continue;
+         }
+
+         // are we getting this block already?
+         if( blocks_in_flight.count( block_id ) > 0 ) {
+
+            itr++;
+            continue;
+         }
+
+         // have we tried each gateway?
+         if( (unsigned)(block_gateway_idx[ block_id ]) >= num_gateway_ids ) {
+
+            SG_error("Tried all RGs for block %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", SG_manifest_get_file_id( block_requests ), block_id, SG_manifest_block_version( block_info ) );
+            rc = -ENODATA;
+            break;
          }
          
          // next block download 
@@ -428,30 +460,50 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
          }
          
          // next gateway 
-         int gateway_idx = block_downloads[ block_id ];
+         gateway_idx = block_gateway_idx[ block_id ];
          
-         // next reqdat 
-         SG_request_data_init_block( gateway, fs_path, block_requests->file_id, block_requests->file_version, block_id, SG_manifest_block_version( block_info ), &reqdat );
-         
-         // start it 
+         // start this block
+         rc = SG_request_data_init_block( gateway, fs_path, block_requests->file_id, block_requests->file_version, block_id, SG_manifest_block_version( block_info ), &reqdat );
+         if( rc != 0 ) {
+            break;
+         }
+
          rc = SG_client_get_block_async( gateway, &reqdat, gateway_ids[ gateway_idx ], dlloop, dlctx );
+         SG_request_data_free( &reqdat );
+
          if( rc != 0 ) {
             
-            SG_error("SG_client_get_block_async( %" PRIu64 " ) rc = %d\n", gateway_id, rc );
+            if( rc == -EAGAIN ) {
+               // gateway ID is not found--we should reload the cert bundle 
+               SG_gateway_start_reload( gateway );
+            }
+
+            SG_error("SG_client_get_block_async( %" PRIu64 " ) rc = %d\n", gateway_ids[ gateway_idx ], rc );
             break;
          }
          
-         SG_request_data_free( &reqdat );
+         try {
          
-         // next gateway for this block
-         block_downloads[ block_id ]++;
+             // next block
+             itr++;
+
+             // next gateway for this block
+             block_gateway_idx[ block_id ]++;
          
-         // next block
-         itr++;
+             // in-flight!
+             blocks_in_flight.insert( block_id );
+         }
+         catch( bad_alloc& ba ) {
+             rc = -ENOMEM;
+             break;
+         }
 
          SG_debug("Will download %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", block_requests->file_id, block_id, SG_manifest_block_version( block_info ) );
+
+         // started at least one block; try to start more 
+         cycled_through = false;
       }
-      
+     
       if( rc != 0 ) {
          break;
       }
@@ -495,9 +547,16 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
          // NOTE: we do not emplace the data, since this method is used to directly copy
          // downloaded data into a client reader's read buffer
          SG_chunk_copy( &(*blocks)[ next_block_id ].buf, &next_block );
-         
-         // finished this block 
-         block_downloads.erase( next_block_id );
+        
+         try { 
+             // finished this block 
+             block_gateway_idx.erase( next_block_id );
+             blocks_in_flight.erase( next_block_id );
+         }
+         catch( bad_alloc& ba ) {
+             rc = -ENOMEM;
+             break;
+         }
 
          SG_debug("Downloaded block %" PRIu64 "\n", next_block_id );
       }
@@ -514,7 +573,8 @@ int UG_read_download_blocks( struct SG_gateway* gateway, char const* fs_path, st
       md_download_loop_abort( dlloop );
       rc = -EIO;
    }
-   
+    
+   SG_client_get_block_cleanup_loop( dlloop );
    SG_client_download_async_cleanup_loop( dlloop );
    md_download_loop_free( dlloop );
    SG_safe_free( dlloop );
@@ -601,6 +661,7 @@ int UG_read_cached_blocks( struct SG_gateway* gateway, char const* fs_path, stru
                break;
             }
 
+            memset( &absent_block_info, 0, sizeof(struct SG_manifest_block) );
             SG_debug("Block not cached: %" PRIu64 "\n", UG_dirty_block_id( dirty_block ) );
          }
       }
@@ -630,7 +691,7 @@ int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG
       if( UG_dirty_block_in_RAM( &itr->second ) && UG_inode_dirty_blocks( inode )->find( block_id ) != UG_inode_dirty_blocks( inode )->end() ) {
          
          // copy it over!
-         SG_debug("Read block %" PRIu64 " from dirty block cache\n", block_id );
+         SG_debug("Read block %" PRIu64 " from in-RAM dirty block cache\n", block_id );
          SG_chunk_copy( &(*blocks)[ block_id ].buf, &(*UG_inode_dirty_blocks( inode ))[ block_id ].buf );
       }
       
@@ -649,9 +710,14 @@ int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG
          rc = SG_manifest_put_block_nocopy( absent, &absent_block_info, true );
          if( rc != 0 ) {
             
-            // OOM 
+            // OOM
+            SG_error("SG_manifest_put_block_nocopy rc = %d\n", rc );
+            SG_manifest_block_free( &absent_block_info ); 
             break;
          }
+            
+         memset( &absent_block_info, 0, sizeof(struct SG_manifest_block) );
+         SG_debug("Block not dirty: %" PRIu64 "\n", block_id );
       }
    }
    
@@ -758,9 +824,8 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
       
       SG_error("UG_read_blocks_local( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
                UG_inode_file_id( inode ), UG_inode_file_version( inode ), min_block_id, max_block_id, rc );
-      
-      SG_manifest_free( &blocks_to_download );
-      return rc;
+     
+      goto UG_read_blocks_end; 
    }
    
    // anything left to fetch rmeotely?
@@ -772,11 +837,13 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
          
          SG_error("UG_read_blocks_remote( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
                   UG_inode_file_id( inode ), UG_inode_file_version( inode ), min_block_id, max_block_id, rc );
+   
+         goto UG_read_blocks_end;
       }
    }
-   
+  
+UG_read_blocks_end: 
    SG_manifest_free( &blocks_to_download );
-   
    return rc;
 }
 
@@ -806,6 +873,12 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    uint64_t first_block = 0;
    uint64_t last_block = 0;
    uint64_t file_size = 0;
+   uint64_t copy_len = 0;
+   uint64_t copy_at = 0;
+   uint64_t buf_len_eof = 0;
+   
+   struct SG_chunk* head_buf = NULL;
+   struct SG_chunk* tail_buf = NULL;
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
@@ -934,38 +1007,14 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
          
          SG_error("UG_read_blocks_remote( %" PRIX64 ".%" PRId64 "[%" PRIu64 " - %" PRIu64 "] ) rc = %d\n", 
                   file_id, file_version, (offset / block_size), ((offset + buf_len) / block_size), rc );
+
+         num_read = rc;
+         goto UG_read_impl_fail;
       }
    }
 
-   if( rc == 0 ) {
+   // success!
    
-      fskit_entry_wlock( fent );
-      
-      // optimization: cache last read block, but only if no writes occurred while we were fetching remote blocks
-      if( file_version == UG_inode_file_version( inode ) && write_nonce == UG_inode_write_nonce( inode ) ) {
-         
-         last_block_read_itr = read_blocks.find( last_block );
-         if( last_block_read_itr != read_blocks.end() ) {
-            
-            last_block_read = &last_block_read_itr->second;
-            
-            // remember to evict this block when we close 
-            UG_file_handle_evict_add_hint( fh, last_block, UG_dirty_block_version( last_block_read ) );
-            
-            // cache this block
-            rc = UG_inode_dirty_block_put( gateway, inode, last_block_read, false );
-            if( rc != 0 ) {
-               
-               // not fatal, but annoying...
-               SG_error("UG_inode_dirty_block_put( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
-               rc = 0;
-            }
-         }
-      }
-      
-      fskit_entry_unlock( fent );
-   }
-
    // copy unaligned blocks back into the buffer 
    if( have_unaligned_head ) {
 
@@ -975,20 +1024,20 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
          exit(1);
       }
 
-      uint64_t copy_len = head_len;
+      copy_len = head_len;
       if( buf_len < head_len ) {
          copy_len = buf_len;
       }
 
       SG_debug("Copy unaligned head %" PRIu64 " at %" PRIu64 " (%" PRIu64 " bytes)\n", first_block, (uint64_t)offset, copy_len );
 
-      struct SG_chunk* head_buf = UG_dirty_block_buf( &head_itr->second );
+      head_buf = UG_dirty_block_buf( &head_itr->second );
       memcpy( buf, head_buf->data + block_size - head_len, copy_len );
    }
 
    if( have_unaligned_tail ) {
 
-      uint64_t buf_len_eof = buf_len;
+      buf_len_eof = buf_len;
       if( offset + buf_len > file_size ) {
          buf_len_eof = file_size - offset;
       }
@@ -999,7 +1048,6 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
          exit(1);
       }
       
-      uint64_t copy_at = 0;
       if( tail_len < buf_len_eof ) {
          copy_at = buf_len_eof - tail_len;
       }
@@ -1009,9 +1057,39 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
 
       SG_debug("Copy unaligned tail %" PRIu64 " at %" PRIu64 " (%" PRIu64 " bytes); buf_len_eof = %" PRIu64 "\n", last_block, copy_at, tail_len, buf_len_eof );
 
-      struct SG_chunk* tail_buf = UG_dirty_block_buf( &tail_itr->second );
+      tail_buf = UG_dirty_block_buf( &tail_itr->second );
       memcpy( buf + copy_at, tail_buf->data, tail_len );
    }
+
+   // optimization: cache last read block, but only if no writes occurred while we were fetching remote blocks
+   fskit_entry_wlock( fent );
+   
+   if( file_version == UG_inode_file_version( inode ) && write_nonce == UG_inode_write_nonce( inode ) ) {
+      
+      last_block_read_itr = read_blocks.find( last_block );
+      if( last_block_read_itr != read_blocks.end() ) {
+         
+         last_block_read = &last_block_read_itr->second;
+         
+         // remember to evict this block when we close 
+         UG_file_handle_evict_add_hint( fh, last_block, UG_dirty_block_version( last_block_read ) );
+         
+         // cache this block
+         rc = UG_inode_dirty_block_put( gateway, inode, last_block_read, false );
+         if( rc != 0 ) {
+            
+            // not fatal, but annoying...
+            SG_error("UG_inode_dirty_block_put( %s, %zu, %jd ) rc = %d\n", fskit_route_metadata_get_path( route_metadata ), buf_len, offset, rc );
+            rc = 0;
+         }
+
+         read_blocks.erase( last_block_read_itr ); 
+      }
+   }
+   
+   fskit_entry_unlock( fent );
+
+UG_read_impl_fail:
 
    UG_dirty_block_map_free( &read_blocks );
    
