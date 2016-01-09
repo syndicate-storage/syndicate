@@ -112,6 +112,11 @@ int UG_state_reload_replica_gateway_ids( struct UG_state* state ) {
    
    state->replica_gateway_ids = replica_gateway_ids;
    state->num_replica_gateway_ids = num_replica_gateway_ids;
+
+   SG_debug("%s", "RG IDs are:\n");
+   for( size_t i = 0; i < num_replica_gateway_ids; i++ ) {
+      SG_debug("   %" PRIu64 "\n", replica_gateway_ids[i] );
+   }
    
    UG_state_unlock( state );
    
@@ -720,11 +725,12 @@ int UG_shutdown( struct UG_state* state ) {
       state->running_thread = false;
    }
    
-   SG_debug("%s", "Deactivating filesystem\n");
-   
    // stop taking requests
-   UG_fs_uninstall_methods( state->fs );
+   if( state->fs != NULL ) {
    
+      SG_debug("%s", "Deactivating filesystem\n");
+      UG_fs_uninstall_methods( state->fs );
+   }
    
    // stop the vacuumer
    if( state->vacuumer != NULL ) {
@@ -772,9 +778,6 @@ int UG_shutdown( struct UG_state* state ) {
        if( rc != 0 ) {
           SG_error( "fskit_detach_all('/') rc = %d\n", rc );
        }
-   
-       // blow away root 
-       // TODO
    
        SG_debug("%s", "Filesystem core shutdown\n");
    
