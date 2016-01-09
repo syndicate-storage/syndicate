@@ -24,8 +24,6 @@
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/util.h"
 
-#include "libsyndicate/scrypt/scryptenc.h"
-
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
@@ -43,11 +41,6 @@
 #define MD_THREAD_ID pthread_self( )
 
 #define MD_DEFAULT_CIPHER EVP_aes_256_cbc
-
-#define MD_SCRYPT_MAX_TIME 5.0
-#define MD_SCRYPT_MAX_MEM 1024000000
-
-
 
 extern "C" {
 

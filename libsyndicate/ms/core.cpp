@@ -19,7 +19,6 @@
 #include "libsyndicate/ms/cert.h"
 #include "libsyndicate/ms/file.h"
 #include "libsyndicate/ms/volume.h"
-#include "libsyndicate/ms/openid.h"
 #include "libsyndicate/ms/path.h"
 #include "libsyndicate/ms/getattr.h"
 #include "libsyndicate/ms/volume.h"

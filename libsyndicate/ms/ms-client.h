@@ -22,8 +22,6 @@
 #include "libsyndicate/ms/core.h"
 #include "libsyndicate/ms/file.h"
 #include "libsyndicate/ms/gateway.h"
-#include "libsyndicate/ms/openid.h"
-#include "libsyndicate/ms/register.h"
 #include "libsyndicate/ms/url.h"
 #include "libsyndicate/ms/volume.h"
 #include "libsyndicate/ms/xattr.h"

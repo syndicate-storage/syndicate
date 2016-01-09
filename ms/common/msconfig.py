@@ -46,25 +46,12 @@ MS_HOSTNAME = ""
 MS_PROTO = ""
 MS_URL = ""
 
-'''
-# OpenID
-OPENID_SESSION_SSL_ONLY = True
-OPENID_TRUST_ROOT_HOST = ""
-OPENID_HOST_URL = ""
-
-OPENID_POST_USERNAME = "openid_username"
-'''
 if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    
    # running locally in a development server
    MS_HOSTNAME = "localhost:%s" % str(os.environ.get("SERVER_PORT", 8080))
    MS_PROTO = "http://"
    
-   """
-   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
-   OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
-   OPENID_SESSION_SSL_ONLY = False
-   """
 else:
    # running publicly.
    try:
@@ -76,39 +63,7 @@ else:
       
    MS_PROTO = "https://"
    
-   """
-   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
-   OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
-   OPENID_SESSION_SSL_ONLY=True
-   OPENID_LOCAL = False
-   """
-
-'''
-if OPENID_LOCAL:
-   # OpenID debug on local server
-   OPENID_PROVIDER_NAME = "localhost"
-   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
-   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
-   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-   OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-else:
-   # use existing OpenID provider
-   OPENID_PROVIDER_NAME = "VICCI"
-   OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
-   OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
-   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-   OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-'''
-
 MS_URL = MS_PROTO + MS_HOSTNAME
-
-# log.info("OpenID provider: %s" % OPENID_PROVIDER_URL )
 
 # security
 OBJECT_KEY_SIZE = 4096

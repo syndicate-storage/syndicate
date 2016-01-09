@@ -16,8 +16,9 @@ HEADERS := $(wildcard *.h) \
 
 HEADERS_PRIVATE := $(wildcard private/*.h)
 
-LIBSYNDICATE_OBJ := $(patsubst %.c,$(BUILD_LIBSYNDICATE)/%.o,$(C_SRCS)) \
-                    $(patsubst %.cpp,$(BUILD_LIBSYNDICATE)/%.o,$(CXSRCS))
+OBJDIR := obj/libsyndicate
+LIBSYNDICATE_OBJ := $(patsubst %.c,$(BUILD_LIBSYNDICATE)/$(OBJDIR)/%.o,$(C_SRCS)) \
+                    $(patsubst %.cpp,$(BUILD_LIBSYNDICATE)/$(OBJDIR)/%.o,$(CXSRCS))
 
 OBJ := $(LIBSYNDICATE_OBJ) $(PROTOBUF_OBJ)
 
@@ -27,10 +28,10 @@ VERSION_MAJOR := 1
 VERSION_MINOR := 0
 VERSION_PATCH := 1
 
-LIBSYNDICATE 		:= $(BUILD_LIBSYNDICATE)/libsyndicate.so
+LIBSYNDICATE 		:= $(BUILD_LIBDIR)/libsyndicate.so
 LIBSYNDICATE_SONAME := libsyndicate.so.$(VERSION_MAJOR)
-LIBSYNDICATE_SO 	:= $(BUILD_LIBSYNDICATE)/$(LIBSYNDICATE_SONAME)
-LIBSYNDICATE_LIB 	:= $(BUILD_LIBSYNDICATE)/libsyndicate.so.$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
+LIBSYNDICATE_SO 	:= $(BUILD_LIBDIR)/$(LIBSYNDICATE_SONAME)
+LIBSYNDICATE_LIB 	:= $(BUILD_LIBDIR)/libsyndicate.so.$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 LIBSYNDICATE_HEADERS := $(patsubst %.h,$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(HEADERS))
 LIBSYNDICATE_HEADERS_PRIVATE := $(patsubst %.h,$(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h,$(HEADERS_PRIVATE))
@@ -61,11 +62,11 @@ $(BUILD_LIBSYNDICATE_INCLUDEDIR)/%.h: %.h
 	@mkdir -p "$(shell dirname "$@")"
 	@cat "$<" > "$@"
 
-$(BUILD_LIBSYNDICATE)/%.o : %.c $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
+$(BUILD_LIBSYNDICATE)/$(OBJDIR)/%.o : %.c $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
 	@mkdir -p "$(shell dirname "$@")"
 	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
-$(BUILD_LIBSYNDICATE)/%.o : %.cpp $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
+$(BUILD_LIBSYNDICATE)/$(OBJDIR)/%.o : %.cpp $(PROTOBUF_OBJ) $(LIBSYNDICATE_HEADERS)
 	@mkdir -p "$(shell dirname "$@")"
 	$(CPP) -o "$@" $(INC) -c "$<" $(DEFS)
 
