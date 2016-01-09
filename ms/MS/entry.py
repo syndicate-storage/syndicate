@@ -163,18 +163,17 @@ class MSEntryShard(storagetypes.Object):
       # NOTE: size can never decrease for a given version.
       # truncate() will re-version a file
       sz = None
-      latest_version = ent.version
       for shard in shards:
-         if sz == None:
-            sz = shard
-            continue
-
+         
          if shard == None:
             continue
 
-         if shard.msentry_version != latest_version:
+         if shard.msentry_version != ent.version:
             continue
 
+         if sz is None:
+             sz = shard
+         
          sz = MSEntryShard.size_max( sz, shard )
 
       return sz.size
@@ -1522,6 +1521,7 @@ class MSEntry( storagetypes.Object ):
       # it's okay if we aren't given the parent_id here...
       rc = MSEntry.check_mutate_attrs( ent_attrs, safe_to_ignore=['parent_id', 'xattr_hash'] )
       if rc != 0:
+         log.error("check_mutate_attrs rc = %s" % rc)
          return (rc, None)
       
       # Update an MSEntry.
@@ -1562,10 +1562,12 @@ class MSEntry( storagetypes.Object ):
       
       # can't have a lesser write-nonce for files
       if ent.ftype == MSENTRY_TYPE_FILE and ent_attrs['write_nonce'] <= ent.write_nonce:
+         log.error("File: Write nonce is %s, expected > %s" % (ent_attrs['write_nonce'], ent.write_nonce))
          return (-errno.EINVAL, None)
      
       # can't have an identical write-nonce for dirs 
       if ent.ftype == MSENTRY_TYPE_DIR and ent_attrs['write_nonce'] == ent.write_nonce:
+         log.error("Dir: Write nonce is %s, expected != %s" % (ent_attrs['write_nonce'], ent.write_nonce))
          return (-errno.EINVAL, None)
       
       # if we're going to change mode, then we must own the ent 
@@ -1578,6 +1580,7 @@ class MSEntry( storagetypes.Object ):
       
       # if we're going to decrease the size, then we must include a new version 
       if ent_attrs['size'] < ent.size and not ent_attrs.has_key('version'):
+         log.error("Size decreased but no version given")
          return (-errno.EINVAL, None)
      
       # write the update
@@ -2479,7 +2482,7 @@ class MSEntry( storagetypes.Object ):
       # get the values
       storagetypes.wait_futures( all_futs )
       ent = MSEntry.FromFuture( ent_fut )
-      
+
       # cache result
       storagetypes.memcache.set( ent_cache_key_name, ent )
       
