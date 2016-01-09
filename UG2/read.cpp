@@ -952,10 +952,10 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    }
 
    // head/tail unaligned?
-   if( read_blocks.find( first_block ) != read_blocks.end() ) {
+   if( head_len != 0 ) {
       have_unaligned_head = true;
    }
-   if( last_block != first_block && read_blocks.find( last_block ) != read_blocks.end() ) {
+   if( tail_len != 0 ) {
       have_unaligned_tail = true;
    }
    
