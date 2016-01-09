@@ -892,6 +892,14 @@ int UG_truncate( struct UG_state* state, char const* path, off_t newsize ) {
       SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", path, rc );
       return rc;
    }
+
+   // refresh manifest 
+   rc = UG_consistency_manifest_ensure_fresh( gateway, path );
+   if( rc != 0 ) {
+
+      SG_error( "UG_consistency_manifest_ensure_fresh('%s') rc = %d\n", path, rc );
+      return rc;
+   }
    
    return fskit_trunc( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), newsize );
 }
