@@ -377,8 +377,12 @@ int UG_inode_free( struct UG_inode* inode ) {
    
    SG_safe_free( inode->name );
    SG_safe_delete( inode->sync_queue );
-   UG_dirty_block_map_free( inode->dirty_blocks );
-   SG_safe_delete( inode->dirty_blocks );
+
+   if( inode->dirty_blocks != NULL ) {
+       UG_dirty_block_map_free( inode->dirty_blocks );
+       SG_safe_delete( inode->dirty_blocks );
+   }
+
    SG_manifest_free( &inode->manifest );
    SG_manifest_free( &inode->replaced_blocks );
    memset( inode, 0, sizeof(struct UG_inode) );
@@ -1358,11 +1362,11 @@ int UG_inode_truncate_find_removed( struct SG_gateway* gateway, struct UG_inode*
 // remove all blocks beyond a given size (if there are any), and set the inode to the new size
 // drop cached blocks, drop dirty blocks, remove blocks from the manifest
 // if removed is not NULL, populate it with removed blocks
-// return 0 on success
+// return 0 on success, and set new_version (if != 0), write_nonce (if != 0), and new_manifest_timestamp (if not NULL)
 // NOTE: inode->entry must be write-locked
 // NOTE: if this method fails with -ENOMEM, and *removed is not NULL, the caller should free up *removed
 // NOTE: if new_version is 0, the version will *not* be changed
-int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t new_size, int64_t new_version ) {
+int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t new_size, int64_t new_version, int64_t write_nonce, struct timespec* new_manifest_timestamp ) {
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
@@ -1408,13 +1412,21 @@ int UG_inode_truncate( struct SG_gateway* gateway, struct UG_inode* inode, off_t
       // reversion 
       md_cache_reversion_file( cache, UG_inode_file_id( inode ), old_version, new_version );
    }
-   
+  
    // drop extra manifest blocks 
    SG_manifest_truncate( UG_inode_manifest( inode ), (new_size / block_size) );
    
-   // set new size 
+   // set new size and modtime 
    SG_manifest_set_size( UG_inode_manifest( inode ), new_size );
+
+   if( new_manifest_timestamp != NULL ) {
+       SG_manifest_set_modtime( UG_inode_manifest( inode ), new_manifest_timestamp->tv_sec, new_manifest_timestamp->tv_nsec );
+   }
    
+   if( write_nonce != 0 ) {
+       UG_inode_set_write_nonce( inode, write_nonce );
+   }
+
    return 0;
 }
 
