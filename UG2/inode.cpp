@@ -1333,7 +1333,12 @@ int UG_inode_truncate_find_removed( struct SG_gateway* gateway, struct UG_inode*
    }
    
    uint64_t max_block_id = SG_manifest_get_block_range( UG_inode_manifest( inode ) );
-      
+
+   // do nothing if we're expanding 
+   if( UG_inode_size( inode ) <= (uint64_t)new_size ) {
+      return 0;
+   }
+
    // copy over blocks to removed
    for( uint64_t dead_block_id = drop_block_id; dead_block_id <= max_block_id; dead_block_id++ ) {
       
