@@ -201,20 +201,22 @@ static int UG_replica_make_write_delta( struct SG_manifest* whole_manifest, UG_d
       return rc;
    }
 
-   for( UG_dirty_block_map_t::iterator itr = flushed_blocks->begin(); itr != flushed_blocks->end(); itr++ ) {
+   if( flushed_blocks != NULL ) {
+      for( UG_dirty_block_map_t::iterator itr = flushed_blocks->begin(); itr != flushed_blocks->end(); itr++ ) {
 
-      struct SG_manifest_block* write_block_info = UG_dirty_block_info( &itr->second );
-      rc = SG_manifest_put_block( write_delta, write_block_info, true );
-      if( rc != 0 ) {
+         struct SG_manifest_block* write_block_info = UG_dirty_block_info( &itr->second );
+         rc = SG_manifest_put_block( write_delta, write_block_info, true );
+         if( rc != 0 ) {
 
-         // EINVAL indicats a bug
-         if( rc != -ENOMEM ) {
-            SG_error("BUG: SG_manifest_put_block rc = %d\n", rc );
-            exit(1);
+            // EINVAL indicats a bug
+            if( rc != -ENOMEM ) {
+               SG_error("BUG: SG_manifest_put_block rc = %d\n", rc );
+               exit(1);
+            }
+
+            SG_manifest_free( write_delta );
+            return rc;
          }
-
-         SG_manifest_free( write_delta );
-         return rc;
       }
    }
 
@@ -340,32 +342,39 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
       return -ENAMETOOLONG;
    }
 
-   // sanity check: request must be initialized 
-   if( (unsigned)request->blocks_size() != (unsigned)flushed_blocks->size() + 1 ) {
-      SG_error("%s", "BUG: control-plane request is not initialized\n");
-      exit(1);
-   }
-   
    // sanity check: all blocks must exist in flushed_blocks and be flushed to disk (i.e. we need a file descriptor)
    // however, the first block_info in the controlplane message refers to the *manifest* chunk, so we will not consider it here.
-   for( int i = 1; i < request->blocks_size(); i++ ) {
-
-      block_info = request->mutable_blocks(i);
-      struct UG_dirty_block* block = NULL;
-      UG_dirty_block_map_t::iterator itr = flushed_blocks->find( block_info->block_id() );
-
-      // must exist...
-      if( itr == flushed_blocks->end() ) {
-         SG_error("BUG: block %" PRIu64 " not present\n", block_info->block_id() );
+   if( flushed_blocks != NULL ) {
+   
+      // sanity check: request must be initialized 
+      if( (unsigned)request->blocks_size() != (unsigned)flushed_blocks->size() + 1 ) {
+         SG_error("%s", "BUG: control-plane request is not initialized\n");
          exit(1);
       }
 
-      block = &itr->second;
-      if( !UG_dirty_block_is_flushed( block ) ) {
+      for( int i = 1; i < request->blocks_size(); i++ ) {
 
-         SG_error("BUG: block %" PRIu64 " not flushed\n", block_info->block_id() );
-         exit(1);
+         block_info = request->mutable_blocks(i);
+         struct UG_dirty_block* block = NULL;
+         UG_dirty_block_map_t::iterator itr = flushed_blocks->find( block_info->block_id() );
+
+         // must exist...
+         if( itr == flushed_blocks->end() ) {
+            SG_error("BUG: block %" PRIu64 " not present\n", block_info->block_id() );
+            exit(1);
+         }
+
+         block = &itr->second;
+         if( !UG_dirty_block_is_flushed( block ) ) {
+
+            SG_error("BUG: block %" PRIu64 " not flushed\n", block_info->block_id() );
+            exit(1);
+         }
       }
+   }
+   else if( request->blocks_size() != 1 ) {
+      SG_error("%s", "BUG: request to replicate non-existent blocks\n");
+      exit(1);
    }
 
    // flush to disk
@@ -775,3 +784,25 @@ int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx ) 
    return rc;
 }
 
+
+// explicitly declare that we've made progress on replication.
+// this call is meant to allow other components to implement different aspects of replication 
+// (i.e. syncing to disk, talking to the MS, etc.), so the replication subsystem doesn't 
+// try to do so.
+int UG_replica_context_hint( struct UG_replica_context* rctx, uint64_t flags ) {
+
+   if( flags & UG_REPLICA_HINT_NO_MS_UPDATE ) {
+      // don't send update to the MS
+      rctx->sent_ms_update = true;
+   }
+   if( flags & UG_REPLICA_HINT_NO_MS_VACUUM ) {
+      // don't update the vacuum log 
+      rctx->sent_vacuum_log = true;
+   }
+   if( flags & UG_REPLICA_HINT_NO_RG_BLOCKS ) {
+      // don't send blocks to the RGs 
+      rctx->replicated_blocks = true;
+   }
+
+   return 0;
+}

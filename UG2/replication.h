@@ -29,6 +29,11 @@ struct UG_state;
 
 struct UG_replica_context;
 
+// replication hints
+#define UG_REPLICA_HINT_NO_MS_UPDATE      0x1
+#define UG_REPLICA_HINT_NO_RG_BLOCKS      0x2
+#define UG_REPLICA_HINT_NO_MS_VACUUM      0x4
+
 extern "C" {
    
 // context setup/teardown
@@ -39,6 +44,9 @@ int UG_replica_context_free( struct UG_replica_context* rctx );
 
 // send a manifest and a of dirty blocks to a given gateway
 int UG_replicate( struct SG_gateway* gateway, struct UG_replica_context* rctx );
+
+// control replication state 
+int UG_replica_context_hint( struct UG_replica_context* rctx, uint64_t flags );
 
 }
 
