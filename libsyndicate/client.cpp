@@ -720,6 +720,33 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
 }
 
 
+// clean up an aborted download loop used for getting blocks 
+// return 0 on success 
+int SG_client_get_block_cleanup_loop( struct md_download_loop* dlloop ) {
+
+   struct md_download_context* dlctx = NULL;
+   int i = 0;
+    
+   // free all request datas
+   for( dlctx = md_download_loop_next_initialized( dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( dlloop, &i ) ) {
+      
+      if( dlctx == NULL ) {
+         break;
+      }
+      
+      struct SG_request_data* reqdat = (struct SG_request_data*)md_download_context_get_cls( dlctx );
+      md_download_context_set_cls( dlctx, NULL );
+
+      if( reqdat != NULL ) { 
+         SG_request_data_free( reqdat );
+         SG_safe_free( reqdat );
+      }
+   }
+
+   return 0;
+}
+
+
 // get an xattr by name 
 // return 0 on success, and set *xattr_value and *xattr_value_len
 // return -ENOMEM on OOM 
