@@ -195,6 +195,7 @@ static int UG_update_propagate_local( struct UG_inode* inode, struct md_entry* i
 
 // ask the MS to update inode metadata
 // NULL data will be ignored.
+// the associated inode must be unlocked or read-locked
 // return 0 on success 
 // return -EINVAL if all data are NULL
 // return -ENOMEM on OOM
@@ -294,6 +295,7 @@ static int UG_update_local( struct UG_state* state, char const* path, struct SG_
 
 // ask a remote gateway to update inode metadata on the MS.
 // NULL data will be ignored 
+// the associated inode must be unlocked or read-locked
 // return 0 on success 
 // return -EINVAL if all data are NULL
 // return -ENOMEM on OOM 
@@ -368,7 +370,7 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, struct
 // return 0 on success
 // return -EINVAL if all data are NULL
 // return -ENOMEM on OOM 
-// NOTE: inode->entry must be write-locked!
+// NOTE: inode->entry must be unlocked!
 int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data ) {
    
    int rc = 0;
@@ -406,6 +408,7 @@ int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_
    
    return rc;
 }
+
 
 // stat(2)
 // forward to fskit, which will take care of refreshing the inode metadata
