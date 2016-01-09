@@ -1050,11 +1050,10 @@ int SG_driver_shutdown( struct SG_driver* driver ) {
 
    SG_chunk_free( &driver->driver_text );
 
-   memset( driver, 0, sizeof(struct SG_driver) );
- 
    SG_driver_unlock( driver );
    pthread_rwlock_destroy( &driver->reload_lock );
- 
+   
+   memset( driver, 0, sizeof(struct SG_driver) );
    return rc;
 }
 
