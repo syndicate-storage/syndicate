@@ -2150,7 +2150,8 @@ class Gateway( StubObject ):
       need_volume_cert_bundle = False
       
       if method_name in ["update_gateway"] and (cur_caps | caps) != cur_caps:
-         # we will need a cert bundle if we're expanding the gateway's capabilities 
+         # we will need a cert bundle if we're expanding the gateway's capabilities
+         # we don't need one otherwise (i.e. if we're changing the gateway's type, host:port, name, cert-expiry, or driver hash)
          need_volume_cert_bundle = True
          
       elif method_name in ["create_gateway", "delete_gateway"]:
