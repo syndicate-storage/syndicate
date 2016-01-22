@@ -841,7 +841,7 @@ int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_i
          goto UG_read_blocks_end;
       }
    }
-  
+
 UG_read_blocks_end: 
    SG_manifest_free( &blocks_to_download );
    return rc;
@@ -896,6 +896,13 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    SG_debug("Read %s offset %jd length %zu\n", fs_path, offset, buf_len );
    if( buf_len == 0 ) {
       return 0;
+   }
+
+   // make sure the inode is fresh
+   rc = UG_consistency_inode_ensure_fresh( gateway, fs_path, inode );
+   if( rc < 0 ) {
+     SG_error("UG_consistency_inode_ensure_fresh('%s') rc = %d\n", fs_path, rc );
+     return rc;
    }
 
    // make sure the manifest is fresh
