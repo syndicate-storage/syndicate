@@ -83,7 +83,9 @@ void SG_client_request_cls_free( struct SG_client_request_cls* cls ) {
 // return -ETIMEDOUT if the request timed out 
 // return -EREMOTEIO if the request failed with HTTP 500 or higher
 // return -ENOENT on HTTP 404
-// return -EACCES on HTTP 401
+// return -EPERM on HTTP 400
+// return -EACCES on HTTP 401 or 403
+// return -ESTALE on HTTP 410
 // return -EPROTO on any other HTTP 400-level error
 // return -errno on socket- and recv-related errors
 // NOTE: does *not* check if the manifest came from a different gateway than the one given here (remote_gateway_id)
@@ -115,8 +117,14 @@ static int SG_client_get_manifest_curl( struct SG_gateway* gateway, struct SG_re
       if( rc == -404 ) {
          rc = -ENOENT;
       }
-      else if( rc == -401 ) {
+      else if( rc == -400 ) {
+         rc = -EPERM;
+      }
+      else if( rc == -401 || rc == -403 ) {
          rc = -EACCES;
+      }
+      else if( rc == -410 ) {
+         rc = -ESTALE;
       }
       else if( rc >= -499 && rc <= -400 ) {
          rc = -EPROTO;
@@ -587,46 +595,274 @@ int SG_client_get_block_async( struct SG_gateway* gateway, struct SG_request_dat
 }
 
 
-// log a block hash mismatch 
+// log a hash mismatch
+// always succeeds
+static void SG_client_log_hash_mismatch( unsigned char* expected_block_hash, unsigned char* block_hash ) {
+
+   char* expected_block_hash_str = NULL;
+   char* actual_block_hash_str = NULL;
+   
+   bool logged = false;
+
+   expected_block_hash_str = md_data_printable( expected_block_hash, SG_BLOCK_HASH_LEN );
+   actual_block_hash_str = md_data_printable( block_hash, SG_BLOCK_HASH_LEN );
+   
+   if( expected_block_hash_str != NULL && actual_block_hash_str != NULL ) {
+      
+      SG_error("Hash mismatch: expected '%s', got '%s'\n", expected_block_hash_str, actual_block_hash_str );
+      
+      logged = true;
+   }
+   
+   SG_safe_free( expected_block_hash_str );
+   SG_safe_free( actual_block_hash_str );
+   
+   if( !logged ) {
+      SG_error("%s", "Hash mismatch: check failed\n" );
+   }
+}
+
+
+// log a block hash mismatch from a manifest 
 // always succeeds
 static void SG_client_get_block_log_hash_mismatch( struct SG_manifest* manifest, uint64_t block_id, unsigned char* block_hash ) {
 
    // log it (takes a bit of effort to convert the hashes to printable strings...)
    unsigned char* expected_block_hash = NULL;
    size_t expected_block_hash_len = 0;
-   
-   char* expected_block_hash_str = NULL;
-   char* actual_block_hash_str = NULL;
-   
-   bool logged = false;
    int rc = 0;
    
    rc = SG_manifest_get_block_hash( manifest, block_id, &expected_block_hash, &expected_block_hash_len );
    if( rc == 0 ) {
       
-      expected_block_hash_str = md_data_printable( expected_block_hash, expected_block_hash_len );
-      actual_block_hash_str = md_data_printable( block_hash, SG_BLOCK_HASH_LEN );
-      
+      SG_client_log_hash_mismatch( expected_block_hash, block_hash );
       SG_safe_free( expected_block_hash );
-      
-      if( expected_block_hash_str != NULL && actual_block_hash_str != NULL ) {
-         
-         SG_error("SG_manifest_block_hash_eq(%" PRIu64 "): expected '%s', got '%s'\n", block_id, expected_block_hash_str, actual_block_hash_str );
-         
-         logged = true;
-      }
-      
-      SG_safe_free( expected_block_hash_str );
-      SG_safe_free( actual_block_hash_str );
    }
-   
-   if( !logged ) {
+   else {
       SG_error("SG_manifest_block_hash_eq(%" PRIu64 "): check failed\n", block_id );
    }
    
    return;
 }
 
+
+// sign a serialized block: prepend a serialized signed block header 
+// return 0 on success, and set *signed_chunk
+// return -ENOMEM on OOM 
+// return -EINVAL if reqdat is not for a block
+// return -EPERM on signature failure
+int SG_client_block_sign( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block_data, struct SG_chunk* signed_block_data ) {
+
+   int rc = 0;
+   SG_messages::SignedBlockHeader blkhdr;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+   
+   unsigned char block_hash[SHA256_DIGEST_LENGTH];
+   char* hdr_buf = NULL;
+   size_t hdr_buf_len = 0;
+
+   char* full_block_data = NULL;
+   uint32_t header_len_nbo = 0;      // header length in network byte order
+
+   if( !SG_request_is_block( reqdat ) ) {
+      return -EINVAL;
+   }
+
+   sha256_hash_buf( block_data->data, block_data->len, block_hash );
+
+   try {
+      blkhdr.set_volume_id( volume_id );
+      blkhdr.set_file_id( reqdat->file_id );
+      blkhdr.set_file_version( reqdat->file_version );
+      blkhdr.set_block_id( reqdat->block_id );
+      blkhdr.set_block_version( reqdat->block_version );
+      blkhdr.set_block_hash( string((char const*)block_hash, SHA256_DIGEST_LENGTH) );
+      blkhdr.set_gateway_id( SG_gateway_id( gateway ) );
+   } catch( bad_alloc& ba ) {
+      return -ENOMEM;
+   }
+
+   rc = md_sign< SG_messages::SignedBlockHeader >( SG_gateway_private_key( gateway ), &blkhdr ); 
+   if( rc != 0 ) {
+      SG_error("md_sign rc = %d\n", rc );
+      return -EPERM;
+   }
+
+   // re-pack 
+   rc = md_serialize< SG_messages::SignedBlockHeader >( &blkhdr, &hdr_buf, &hdr_buf_len );
+   if( rc != 0 ) {
+      SG_error("md_serialize rc = %d\n", rc );
+      return rc;
+   }
+
+   full_block_data = SG_CALLOC( char, sizeof(uint32_t) + hdr_buf_len + block_data->len );
+   if( full_block_data == NULL ) {
+
+      SG_safe_free( hdr_buf );
+      return -ENOMEM;
+   }
+
+   // format: htonl( header_size ) || header || data
+   header_len_nbo = htonl( (uint32_t)hdr_buf_len );
+   memcpy( full_block_data, &header_len_nbo, sizeof(uint32_t) );
+   memcpy( full_block_data + sizeof(uint32_t), hdr_buf, hdr_buf_len );
+   memcpy( full_block_data + sizeof(uint32_t) + hdr_buf_len, block_data->data, block_data->len );
+
+   signed_block_data->data = full_block_data;
+   signed_block_data->len = sizeof(uint32_t) + hdr_buf_len + block_data->len;
+
+   SG_safe_free( hdr_buf );
+   return 0;
+}
+
+
+// verify the authenticity of a block that has a signed block header
+// return 0 on success, and set *ret_data_offset to refer to the offset the signed block's buffer where the block data begins
+// return -ENOMEM on OOM
+// return -EPERM on signature verification failure 
+// return -EBADMSG if the block doesn't have enough data
+// return -EAGAIN if the cert was not found
+int SG_client_block_verify( struct SG_gateway* gateway, struct SG_chunk* signed_block, uint64_t* ret_data_offset ) {
+
+   int rc = 0;
+   uint32_t hdr_len = 0;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   SG_messages::SignedBlockHeader blkhdr;
+   struct ms_gateway_cert* cert = NULL;
+   EVP_PKEY* pubkey = NULL;
+   unsigned char block_hash[SHA256_DIGEST_LENGTH];
+   uint64_t data_offset = 0;
+   uint64_t data_len = 0;
+
+   if( (unsigned)signed_block->len < sizeof(uint32_t) ) {
+      // can't even have the header length 
+      return -EBADMSG;
+   }
+
+   memcpy( &hdr_len, signed_block->data, sizeof(uint32_t) );
+   hdr_len = ntohl( hdr_len );
+
+   if( (unsigned)signed_block->len < sizeof(uint32_t) + hdr_len ) {
+      // can't have fit the header 
+      return -EBADMSG;
+   }
+
+   // load header
+   rc = md_parse< SG_messages::SignedBlockHeader >( &blkhdr, signed_block->data + sizeof(uint32_t), hdr_len );
+   if( rc != 0 ) {
+      // bad message 
+      return -EBADMSG;
+   }
+
+   // verify header 
+   ms_client_config_rlock( ms );
+
+   cert = ms_client_get_gateway_cert( ms, blkhdr.gateway_id() );
+   if( cert == NULL ) {
+
+      ms_client_config_unlock( ms );
+      SG_error("Cert not found for %" PRIu64 "\n", blkhdr.gateway_id() );
+      return -EAGAIN;
+   }
+
+   pubkey = ms_client_gateway_pubkey( cert );
+   if( pubkey == NULL ) {
+
+      // should never happen
+      ms_client_config_unlock( ms );
+      SG_error("BUG: no public key for cert of %" PRIu64 "\n", blkhdr.gateway_id() );
+      exit(1);
+   }
+
+   rc = md_verify< SG_messages::SignedBlockHeader >( pubkey, &blkhdr );
+   ms_client_config_unlock( ms );
+
+   if( rc != 0 ) {
+      SG_error("md_verify(from %" PRIu64 ") rc = %d\n", blkhdr.gateway_id(), rc );
+      return -EPERM;
+   }
+
+   // verify block 
+   data_offset = sizeof(uint32_t) + hdr_len;
+   data_len = signed_block->len - data_offset;
+   sha256_hash_buf( signed_block->data + data_offset, data_len, block_hash );
+
+   rc = memcmp( block_hash, (unsigned char*)blkhdr.block_hash().data(), SHA256_DIGEST_LENGTH );
+   if( rc != 0 ) {
+      // hash mismatch 
+      SG_client_log_hash_mismatch( (unsigned char*)blkhdr.block_hash().data(), block_hash );
+      return -EPERM;
+   }
+
+   // success!
+   *ret_data_offset = data_offset;
+   return 0;
+}
+
+// authenticate a block's content, in one of two ways:
+// * if the manifest has a hash for the block, then use the hash
+// * otherwise, if the block has a signed block header, use the signed block header
+// authentication fails if there is a hash mismatch, signature mismatch, or missing data.
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -EPERM if the data could not be authenticated (block not present, hash mismatch, etc.)
+static int SG_client_block_authenticate( struct SG_gateway* gateway, struct SG_manifest* manifest, uint64_t block_id, struct SG_chunk* block_data, uint64_t* block_data_offset ) {
+
+   int rc = 0;
+   unsigned char* block_hash = NULL;
+
+   
+   // block exists?
+   if( !SG_manifest_is_block_present( manifest, block_id ) ) {
+      return -EPERM;
+   }
+
+   // hash exists?
+   if( !SG_manifest_has_block_hash( manifest, block_id ) ) {
+
+      // expect signed block header in the block data stream
+      rc = SG_client_block_verify( gateway, block_data, block_data_offset );
+      if( rc != 0 ) {
+         SG_error("SG_client_block_verify(%" PRIu64 ") rc = %d\n", block_id, rc );
+         return rc;
+      }
+   }
+   else {
+
+      // have hash 
+      // get the hash 
+      block_hash = sha256_hash_data( block_data->data, block_data->len );
+      if( block_hash == NULL ) {
+         
+         // OOM 
+         return -ENOMEM;
+      }
+     
+      // compare to the hash in the manifest, verifying that it is actually present at the same time.
+      rc = SG_manifest_block_hash_eq( manifest, block_id, block_hash, SG_BLOCK_HASH_LEN );
+      if( rc < 0 ) {
+         
+         // error 
+         SG_error("SG_manifest_block_hash_eq( %" PRIu64 " ) rc = %d\n", block_id, rc );
+         
+         SG_safe_free( block_hash );
+         return rc;
+      }
+      else if( rc == 0 ) {
+         
+         // mismatch 
+         SG_client_get_block_log_hash_mismatch( manifest, block_id, block_hash );
+         SG_safe_free( block_hash );
+         
+         return -EPERM;
+      }
+   
+      *block_data_offset = 0;
+   }
+
+   return 0;
+} 
 
 // parse a block from a download context, and use the manifest to verify it's integrity 
 // if the block is still downloading, wait for it to finish (indefinitely). Otherwise, load right away.
@@ -641,11 +877,9 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
    int rc = 0;
    char* block_buf = NULL;
    off_t block_len = 0;
+   uint64_t block_data_offset = 0;
 
-   unsigned char* block_hash = NULL;
-   
    struct SG_request_data* reqdat = NULL;
-
    struct SG_chunk block_chunk;
    
    // get the data; recover the original reqdat
@@ -656,58 +890,37 @@ int SG_client_get_block_finish( struct SG_gateway* gateway, struct SG_manifest* 
       
       return rc;
    }
-   
-   // get the hash 
-   block_hash = sha256_hash_data( block_buf, block_len );
-   if( block_hash == NULL ) {
-      
-      // OOM 
-      SG_safe_free( block_buf );      
-      
-      SG_request_data_free( reqdat );
-      SG_safe_free( reqdat );
-      
-      return -ENOMEM;
-   }
-   
-   // compare to the hash in the manifest, verifying that it is actually present at the same time.
-   rc = SG_manifest_block_hash_eq( manifest, *block_id, block_hash, SG_BLOCK_HASH_LEN );
-   if( rc < 0 ) {
-      
-      // error 
-      SG_error("SG_manifest_block_hash_eq( %" PRIu64 " ) rc = %d\n", *block_id, rc );
-      
-      SG_safe_free( block_buf );
-      SG_safe_free( block_hash );
-      
-      SG_request_data_free( reqdat );
-      SG_safe_free( reqdat );
-      
-      return rc;
-   }
-   else if( rc == 0 ) {
-      
-      // mismatch 
-      SG_client_get_block_log_hash_mismatch( manifest, *block_id, block_hash );
-      
-      SG_safe_free( block_buf );
-      SG_safe_free( block_hash );
-      
-      SG_request_data_free( reqdat );
-      SG_safe_free( reqdat );
-      
-      return -EBADMSG;
-   }
-   
-   SG_safe_free( block_hash );
-
-   // deserialize... 
+  
    block_chunk.data = block_buf;
    block_chunk.len = block_len;
 
+   // authenticate the data 
+   rc = SG_client_block_authenticate( gateway, manifest, *block_id, &block_chunk, &block_data_offset );
+   if( rc < 0 ) {
+      if( rc == -EPERM ) {
+
+         SG_error("Failed to authenticate block %" PRIu64 "\n", *block_id );
+         rc = -EBADMSG;
+      }
+
+      SG_safe_free( block_buf );
+      memset( &block_chunk, 0, sizeof(struct SG_chunk) );
+
+      SG_request_data_free( reqdat );
+      SG_safe_free( reqdat );
+
+      return rc;
+   }
+
+   // does the actual block data start somewhere else?
+   block_chunk.data = block_chunk.data + block_data_offset;
+   block_chunk.len -= block_data_offset; 
+
+   // deserialize
    rc = SG_gateway_impl_deserialize( gateway, reqdat, &block_chunk, deserialized_block );
 
    SG_safe_free( block_buf );
+   memset( &block_chunk, 0, sizeof(struct SG_chunk) );
    SG_request_data_free( reqdat );
    SG_safe_free( reqdat );
 
@@ -755,7 +968,9 @@ int SG_client_get_block_cleanup_loop( struct md_download_loop* dlloop ) {
 // return -EAGAIN if we were signaled to retry the request, or if we don't know about gateway_id
 // return -EREMOTEIO if the HTTP error is >= 500 
 // return -ENOATTR on HTTP 404
-// return -EACCES on HTTP 401
+// return -EACCES on HTTP 401 or 403
+// return -EPERM on HTTP 400
+// return -ESTALE on HTTP 410
 // return -EPROTO for any other HTTP 400-level error
 int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, char const* xattr_name, uint64_t xattr_nonce, char** xattr_value, size_t* xattr_len ) {
     
@@ -809,9 +1024,16 @@ int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char co
         if( rc == -404 ) {
             rc = -ENOATTR;
         }
-        else if( rc == -401 ) {
+        else if( rc == -400 ) {
+            rc = -EPERM;
+        }
+        else if( rc == -401 || rc == -403 ) {
             rc = -EACCES;
         }
+        else if( rc == -410 ) {
+            rc = -ESTALE;
+        }
+
         else if( rc >= -499 && rc <= -400 ) {
             rc = -EPROTO;
         }
@@ -878,7 +1100,10 @@ int SG_client_getxattr( struct SG_gateway* gateway, uint64_t gateway_id, char co
 // return -ETIMEDOUT if the tranfser could not complete in time 
 // return -EAGAIN if we were signaled to retry the request 
 // return -EREMOTEIO if the HTTP error is >= 500
-// return -EACCES if the HTTP error is 404 
+// return -EPERM on HTTP 400
+// return -EACCES if the HTTP error is 401 or 403 
+// return _ENOATTR on HTTP 404
+// return -ESTALE on HTTP 410
 // return -EPROTO for any other HTTP 400-level error
 int SG_client_listxattrs( struct SG_gateway* gateway, uint64_t gateway_id, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t xattr_nonce, char** xattr_list, size_t* xattr_list_len ) {
     
@@ -930,8 +1155,17 @@ int SG_client_listxattrs( struct SG_gateway* gateway, uint64_t gateway_id, char 
         SG_error("md_download_run('%s') rc = %d\n", xattr_url, rc );
         SG_safe_free( xattr_url );
         
-        if( rc == -401 ) {
+        if( rc == -400 ) {
+            rc = -EPERM;
+        }
+        else if( rc == -404 ) {
+            rc = -ENOATTR;
+        }
+        else if( rc == -403 || rc == -401 ) {
             rc = -EACCES;
+        }
+        else if( rc == -410 ) {
+            rc = -ESTALE;
         }
         else if( rc >= -499 && rc <= -400 ) {
             rc = -EPROTO;
@@ -1844,8 +2078,11 @@ bool SG_client_request_is_remote_unavailable( int error ) {
 // return -EAGAIN if the request should be retried.  This could be because dest_gateway_id is not known to us, but could become known if we refreshed the volume config.
 // return -ETIMEDOUT on connection timeout 
 // return -EREMOTEIO if the HTTP status was >= 500 (indicates server-side I/O error)
-// return -EACCES if HTTP status was 401
-// return -EPROTO if HTTP status was between 400 or 499 (indicates a misconfiguration--they should never happen)
+// return -EACCES if HTTP status was 401 or 403
+// return -EPERM on HTTP 400
+// return -ESTALE on HTTP 410
+// return -ENOENT on HTTP 404
+// return -EPROTO if HTTP status was between 400 or 499, and not 401 or 403 (indicates a misconfiguration--they should never happen)
 // return -errno on socket- and recv-related errors
 int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id, SG_messages::Request* control_plane, struct SG_chunk* data_plane, SG_messages::Reply* reply ) {
    
@@ -1876,16 +2113,13 @@ int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id
    // set up curl handle 
    md_init_curl_handle( conf, curl, reqcls.url, conf->connect_timeout );
    
-   curl_easy_setopt( curl, CURLOPT_POST, 1L );
+   curl_easy_setopt( curl, CURLOPT_POSTREDIR, CURL_REDIR_POST_ALL );    // force POST on redirect
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, reqcls.form_begin );
    
    // run the transfer 
    rc = md_download_run( curl, SG_CLIENT_MAX_REPLY_LEN, &serialized_reply.data, &serialized_reply.len );
    
-   if( rc == -401 ) {
-      rc = -EACCES;
-   }
-   else if( rc >= -499 && rc <= -400 ) {
+   if( rc >= -499 && rc <= -400 ) {
       
       // 400-level HTTP error 
       SG_error("md_download_run('%s') HTTP status %d\n", reqcls.url, -rc );
@@ -1893,8 +2127,24 @@ int SG_client_request_send( struct SG_gateway* gateway, uint64_t dest_gateway_id
       curl_easy_cleanup( curl );
       
       SG_client_request_cls_free( &reqcls );
-      
-      return -EPROTO;
+
+      if( rc == -404 ) {
+         rc = -ENOENT;
+      }
+      else if( rc == -403 || rc == -400 ) {
+         rc = -EACCES;
+      }
+      else if( rc == -400 ) {
+         rc = -EPERM;
+      }
+      else if( rc == -410 ) {
+         rc = -ESTALE;
+      }
+      else {
+         rc = -EPROTO;
+      }
+
+      return rc;
    }
    
    if( rc != 0 ) {
@@ -1965,7 +2215,7 @@ int SG_client_request_send_async( struct SG_gateway* gateway, uint64_t dest_gate
    // set up curl handle 
    md_init_curl_handle( conf, curl, reqcls->url, conf->connect_timeout );
    
-   curl_easy_setopt( curl, CURLOPT_POST, 1L );
+   curl_easy_setopt( curl, CURLOPT_POSTREDIR, CURL_REDIR_POST_ALL );    // force POST on redirect
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, reqcls->form_begin );
    
    // set up the download handle 

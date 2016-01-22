@@ -77,6 +77,10 @@ int SG_client_download_async_wait( struct md_download_context* dlctx, char** chu
 void SG_client_download_async_cleanup( struct md_download_context* dlctx );
 void SG_client_download_async_cleanup_loop( struct md_download_loop* dlloop );
 
+// signed block authentication 
+int SG_client_block_sign( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* block_data, struct SG_chunk* signed_block_data );
+int SG_client_block_verify( struct SG_gateway* gateway, struct SG_chunk* signed_block, uint64_t* ret_data_offset );
+
 // errors
 bool SG_client_request_is_remote_unavailable( int error );
 
