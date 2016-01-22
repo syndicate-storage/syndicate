@@ -21,16 +21,19 @@
 #include <libsyndicate/client.h>
 #include <fskit/fskit.h>
 
+#include "core.h"
+
 extern "C" {
    
 // link the UG into fskit 
-int UG_fs_install_methods( struct fskit_core* fs );
+int UG_fs_install_methods( struct fskit_core* fs, struct UG_state* ug );
 
 // unlink the UG from fskit 
 int UG_fs_uninstall_methods( struct fskit_core* fs );
 
 // install methods for shutting down
 int UG_fs_install_shutdown_methods( struct fskit_core* fs );
+
 
 }
 
