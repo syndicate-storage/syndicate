@@ -61,6 +61,10 @@ BUILD_UG_DIRS     := $(BUILD_UG_TOOLS) \
 BUILD_RG          := $(BUILD_BINDIR)
 BUILD_RG_DIRS     := $(BUILD_RG)
 
+# acquisition gateway
+BUILD_AG          := $(BUILD_BINDIR)
+BUILD_AG_DIRS     := $(BUILD_AG)
+
 # python extension
 BUILD_PYTHON_SYNDICATE := $(BUILD)/python/
 BUILD_PYTHON_SYNDICATE_DIRS := $(BUILD_PYTHON_SYNDICATE)
