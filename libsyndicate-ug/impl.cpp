@@ -20,6 +20,7 @@
 #include "write.h"
 #include "client.h"
 #include "core.h"
+#include "consistency.h"
 
 
 // connect to the CDN
@@ -43,7 +44,7 @@ static int UG_impl_connect_cache( struct SG_gateway* gateway, CURL* curl, char c
 }
 
 
-// update a file's manifest 
+// update a file's manifest, in response to a remote call 
 // return 0 on success
 // return -ENOENT if not found
 // return -ESTALE if not local
@@ -52,6 +53,7 @@ static int UG_impl_connect_cache( struct SG_gateway* gateway, CURL* curl, char c
 static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_manifest* write_delta, void* cls ) {
    
    int rc = 0;
+   int ref_rc = 0;
    struct fskit_entry* fent = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    
@@ -60,6 +62,18 @@ static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t volume_id = ms_client_get_volume_id( ms );
+
+   rc = UG_consistency_path_ensure_fresh( gateway, reqdat->fs_path );
+   if( rc != 0 ) {
+      SG_error("UG_consistency_path_ensure_fresh('%s') rc = %d\n", reqdat->fs_path, rc );
+      return rc;
+   }
+
+   rc = UG_consistency_manifest_ensure_fresh( gateway, reqdat->fs_path );
+   if( rc != 0 ) {
+      SG_error("UG_consistency_manifest_ensure_fresh('%s') rc = %d\n", reqdat->fs_path, rc );
+      return rc;
+   }
    
    // look up 
    fent = fskit_entry_resolve_path( fs, reqdat->fs_path, reqdat->user_id, volume_id, true, &rc );
@@ -78,15 +92,21 @@ static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request
    }
    
    // update the manifest 
+   fskit_entry_ref_entry( fent );
    rc = UG_write_patch_manifest( gateway, reqdat, inode, write_delta );
    
    fskit_entry_unlock( fent );
+
+   ref_rc = fskit_entry_unref( fs, reqdat->fs_path, fent );
+   if( ref_rc != 0 ) {
+      SG_warn("fskit_entry_unref('%s') rc = %d\n", reqdat->fs_path, rc );
+   }
    
    return rc;
 }
 
 
-// stat a file 
+// stat a file--build a manifest request, and set its mode
 // return 0 on success 
 // return -ESTALE if the inode is not local 
 // return -ENOENT if we don't have it
@@ -96,60 +116,46 @@ static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* req
    
    int rc = 0;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   struct UG_inode* inode = NULL;
-   struct fskit_core* fs = UG_state_fs( ug );
+   struct md_entry ent_info;
    
-   struct ms_client* ms = SG_gateway_ms( gateway );
-   uint64_t volume_id = ms_client_get_volume_id( ms );
-   
-   struct stat sb;
-   
-   struct fskit_entry* fent;
-   
-   fent = fskit_entry_resolve_path( fs, reqdat->fs_path, reqdat->user_id, volume_id, false, &rc );
-   if( fent == NULL ) {
-      
-      return rc;
-   }
-   
-   rc = fskit_fstat( fs, reqdat->fs_path, fent, &sb );
-   
+   rc = UG_stat_raw( ug, reqdat->fs_path, &ent_info );
    if( rc != 0 ) {
       
-      fskit_entry_unlock( fent );
+      SG_error("UG_stat_raw('%s') rc = %d\n", reqdat->fs_path, rc );
       return rc;
    }
    
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
-      
-      fskit_entry_unlock( fent );
+   if( ent_info.coordinator != SG_gateway_id( gateway ) ) {
+     
+      // not ours 
+      SG_error("Not the coordinator of '%s' (it is now %" PRIu64 ")\n", reqdat->fs_path, ent_info.coordinator );
+      md_entry_free( &ent_info );
       return -ESTALE;
    }
-   
+  
    if( mode != NULL ) {
-      
-      *mode = sb.st_mode & 0777;
+      *mode = ent_info.mode;
    }
-   
+
    if( entity_info != NULL ) {
       
-      entity_info->fs_path = SG_strdup_or_null( reqdat->fs_path );
-      if( entity_info->fs_path == NULL ) {
-         
-         fskit_entry_unlock( fent );
+      rc = SG_request_data_init_manifest( gateway, reqdat->fs_path, ent_info.file_id, ent_info.version, ent_info.manifest_mtime_sec, ent_info.manifest_mtime_nsec, entity_info );
+      if( rc != 0 ) {
+
+         // OOM 
+         md_entry_free( &ent_info );
          return -ENOMEM;
       }
-      
-      entity_info->volume_id = volume_id;
-      entity_info->coordinator_id = UG_inode_coordinator_id( inode );
-      entity_info->file_id = sb.st_ino;
-      entity_info->file_version = UG_inode_file_version( inode );
-      entity_info->xattr_nonce = UG_inode_xattr_nonce( inode );
+
+      if( ent_info.type != MD_ENTRY_FILE ) {
+
+         // not a file 
+         md_entry_free( &ent_info );
+         return -ENOENT;
+      }
    }
-   
-   fskit_entry_unlock( fent );
+   md_entry_free( &ent_info );
+
    return 0;
 }
 
@@ -263,8 +269,6 @@ int UG_impl_install_methods( struct SG_gateway* gateway ) {
    SG_impl_rename( gateway, UG_impl_rename );
    SG_impl_detach( gateway, UG_impl_detach );
    
-   // SG_impl_get_block( gateway, UG_impl_block_get );
-   // SG_impl_get_manifest( gateway, UG_impl_manifest_get );
    SG_impl_patch_manifest( gateway, UG_impl_manifest_patch );
    SG_impl_config_change( gateway, UG_impl_config_change );
    SG_impl_serialize( gateway, UG_driver_chunk_serialize );
