@@ -47,7 +47,7 @@ struct SG_request_data {
    uint64_t user_id;                            // ID of the user running the requesting gateway
    uint64_t volume_id;                          // volume ID
    uint64_t file_id;                            // file ID (inode number)
-   uint64_t coordinator_id;                     // gateway coordinating writes
+   uint64_t coordinator_id;                     // gateway coordinating writes for this file 
    char* fs_path;                               // path to the file
    int64_t file_version;                        // file version 
    
@@ -73,6 +73,9 @@ struct SG_request_data {
    // internal hints to be given to the driver
    uint64_t io_thread_id;                        // I/O worker thread id handling this request
    struct SG_IO_hints io_hints;                  // I/O hints to be passed along to the driver
+
+   // ID of the requesting gateway (optional) 
+   uint64_t src_gateway_id;
 };
 
 // gateway chunk of data, with known length
