@@ -184,6 +184,7 @@ int UG_consistency_manifest_download( struct SG_gateway* gateway, struct SG_requ
 // return -ENOMEM on OOM 
 // return -ENODATA if we could not fetch a manifest, but needed to
 // NOTE: entry at the end of fs_path should *NOT* be locked
+// NOTE: the caller should refresh the inode first, since the manifest timestamp may have changed on the MS
 int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const* fs_path ) {
    
    int rc = 0;
@@ -223,7 +224,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
       return rc;
    }
    
-   fskit_entry_rlock( fent );
+   fskit_entry_wlock( fent );
    
    inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
    
@@ -233,7 +234,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    coordinator_id = UG_inode_coordinator_id( inode );
    max_read_freshness = UG_inode_max_read_freshness( inode );
   
-   // TODO: problem--we update manifest modtime between writes, and refresh manifest as well 
+   // TODO: test this-we update manifest modtime between writes, and refresh manifest as well 
    SG_manifest_get_modtime( UG_inode_manifest( inode ), &manifest_mtime_sec, &manifest_mtime_nsec );
    
    // are we the coordinator?
@@ -324,10 +325,19 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
    rc = UG_inode_manifest_merge_blocks( gateway, inode, &new_manifest );
    if( rc == 0 ) {
       
-      // restore modtime, version, coordinator (we already have the latest size)
+      // restore modtime, version, coordinator, size
       SG_manifest_set_modtime( UG_inode_manifest( inode ), SG_manifest_get_modtime_sec( &new_manifest ), SG_manifest_get_modtime_nsec( &new_manifest ) );
-      SG_manifest_set_file_version( UG_inode_manifest( inode ), SG_manifest_get_file_version( &new_manifest ) );
       SG_manifest_set_coordinator_id( UG_inode_manifest( inode ), SG_manifest_get_coordinator( &new_manifest ) );
+
+      if( SG_manifest_get_file_version( UG_inode_manifest( inode ) ) < SG_manifest_get_file_version( &new_manifest ) ) {
+         // version advanced.  take remote's size
+         UG_inode_set_size( inode, SG_manifest_get_file_size( &new_manifest ) );
+      }
+      else {
+         UG_inode_set_size( inode, MAX( SG_manifest_get_file_size( &new_manifest ), UG_inode_size( inode ) ) );
+      }
+         
+      SG_manifest_set_file_version( UG_inode_manifest( inode ), SG_manifest_get_file_version( &new_manifest ) );
 
       // update refresh time 
       rc = clock_gettime( CLOCK_REALTIME, &now );
@@ -342,7 +352,7 @@ int UG_consistency_manifest_ensure_fresh( struct SG_gateway* gateway, char const
       else {
          
          // advance refresh time
-         UG_inode_set_manifest_refresh_time( inode, &now );
+         UG_inode_set_manifest_refresh_time_now( inode );
       }
    }
    else {
@@ -455,8 +465,6 @@ int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t block_size = ms_client_get_volume_blocksize( ms );
-   
-   struct timespec refresh_time;
    
    // types don't match?
    if( !UG_inode_export_match_type( inode, inode_data ) ) {
@@ -614,9 +622,7 @@ int UG_consistency_inode_reload( struct SG_gateway* gateway, char const* fs_path
       // reloaded!
       // no longer stale
       UG_inode_set_read_stale( inode, false );
-      
-      clock_gettime( CLOCK_REALTIME, &refresh_time );
-      UG_inode_set_refresh_time( inode, &refresh_time );
+      UG_inode_set_refresh_time_now( inode );
       
       // only update the manifest refresh time if we're NOT the coordinator
       if( fskit_entry_get_type( fent ) == FSKIT_ENTRY_TYPE_FILE && UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) { 
@@ -749,6 +755,7 @@ static int UG_consistency_fskit_path_graft_build( struct SG_gateway* gateway, ms
       
       // metadata is fresh 
       UG_inode_set_read_stale( inode, false );
+      UG_inode_set_refresh_time_now( inode );
       
       // transfer xattrs 
       xattrs = (fskit_xattr_set*)ms_client_path_ent_get_cls( &remote_path->at(i) );
@@ -1089,6 +1096,7 @@ static int UG_consistency_path_stale_reload( struct SG_gateway* gateway, char co
          
          // mark fresh
          UG_inode_set_read_stale( inode, false );
+         UG_inode_set_refresh_time_now( inode );
          
          /////////////////////////////////////
          SG_debug("nochange: '%s' (%" PRIX64 ")\n", cur_name, file_id );
@@ -1934,10 +1942,7 @@ int UG_consistency_dir_ensure_fresh( struct SG_gateway* gateway, char const* fs_
    if( rc == 0 ) {
       
       // set refresh time 
-      clock_gettime( CLOCK_REALTIME, &now );
-      inode = (struct UG_inode*)fskit_entry_get_user_data( dent );
-      
-      UG_inode_set_children_refresh_time( inode, &now );
+      UG_inode_set_children_refresh_time_now( inode );
    }
    
    fskit_entry_unlock( dent );
