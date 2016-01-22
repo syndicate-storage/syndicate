@@ -155,8 +155,11 @@ bool UG_inode_creating( struct UG_inode* inode );
 void UG_inode_set_file_version( struct UG_inode* inode, int64_t version );
 void UG_inode_set_write_nonce( struct UG_inode* inode, int64_t wn );
 void UG_inode_set_refresh_time( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_refresh_time_now( struct UG_inode* inode );
 void UG_inode_set_manifest_refresh_time( struct UG_inode* inode, struct timespec* ts );
-void UG_inode_set_children_refresh_time( struct UG_inode* inode, struct timespec* ts ) ;
+void UG_inode_set_manifest_refresh_time_now( struct UG_inode* inode );
+void UG_inode_set_children_refresh_time( struct UG_inode* inode, struct timespec* ts );
+void UG_inode_set_children_refresh_time_now( struct UG_inode* inode );
 void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts );
 void UG_inode_set_max_read_freshness( struct UG_inode* inode, uint32_t rf );
 void UG_inode_set_max_write_freshness( struct UG_inode* inode, uint32_t wf );
@@ -165,9 +168,12 @@ void UG_inode_set_deleting( struct UG_inode* inode, bool val );
 void UG_inode_set_dirty( struct UG_inode* inode, bool val );
 void UG_inode_set_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent );
 void UG_inode_set_creating( struct UG_inode* inode, bool creating );
-
+void UG_inode_set_size( struct UG_inode* inode, uint64_t size );
 void UG_inode_bind_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent );
 void UG_inode_preserve_old_manifest_modtime( struct UG_inode* inode );
+
+// publish 
+int UG_inode_publish( struct SG_gateway* gateway, struct fskit_entry* fent, struct md_entry* ent_data, struct UG_inode** ret_inode_data );
 
 }
 

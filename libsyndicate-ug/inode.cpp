@@ -854,6 +854,88 @@ int UG_inode_import( struct UG_inode* dest, struct md_entry* src ) {
 }
 
 
+// create or mkdir--publish metadata, set up an fskit entry, and allocate its inode
+// return 0 on success
+// return -errno on failure (i.e. it exists, we don't have permission, we get a network error, etc.)
+// NOTE: fent will be write-locked by fskit
+// NOTE: for files, this will disable truncate (so the subsequent trunc(2) that follows a creat(2) does not incur an extra round-trip)
+int UG_inode_publish( struct SG_gateway* gateway, struct fskit_entry* fent, struct md_entry* ent_data, struct UG_inode** ret_inode_data ) {
+   
+   int rc = 0;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   
+   char const* method_name = NULL;
+   bool is_mkdir = (ent_data->type == MD_ENTRY_DIR);
+   
+   // inode data 
+   struct UG_inode* inode = NULL;
+   struct md_entry inode_data_out;
+   
+   memset( &inode_data_out, 0, sizeof(struct md_entry) );
+   
+   // make the request
+   if( is_mkdir ) {
+      
+      method_name = "ms_client_mkdir";
+      rc = ms_client_mkdir( ms, &inode_data_out, ent_data );   
+   }
+   else {
+      
+      method_name = "ms_client_create";
+      rc = ms_client_create( ms, &inode_data_out, ent_data );
+   }
+   
+   if( rc != 0 ) {
+      
+      SG_error("%s rc = %d\n", method_name, rc );
+      
+      md_entry_free( &inode_data_out );
+      return rc;
+   }
+   
+   // update the child with the new inode number 
+   fskit_entry_set_file_id( fent, inode_data_out.file_id );
+   fskit_entry_set_mode( fent, inode_data_out.mode );
+   fskit_entry_set_owner( fent, inode_data_out.owner );
+   
+   // success!  create the inode data 
+   inode = UG_inode_alloc( 1 );
+   if( inode == NULL ) {
+      
+      return -ENOMEM;
+   }
+   
+   rc = UG_inode_init( inode, ent_data->name, fent, ms_client_get_volume_id( ms ), SG_gateway_id( gateway ), inode_data_out.version );
+   if( rc != 0 ) {
+      
+      SG_error("UG_inode_init rc = %d\n", rc );
+      
+      SG_safe_free( inode );
+      md_entry_free( &inode_data_out );
+      return rc;
+   }
+   
+   UG_inode_set_write_nonce( inode, inode_data_out.write_nonce );
+   UG_inode_set_max_read_freshness( inode, inode_data_out.max_read_freshness );
+   UG_inode_set_max_write_freshness( inode, inode_data_out.max_write_freshness );
+   SG_manifest_set_coordinator_id( UG_inode_manifest( inode ), inode_data_out.coordinator );
+
+   // NOTE: should be equal to file's modtime
+   SG_manifest_set_modtime( UG_inode_manifest( inode ), ent_data->manifest_mtime_sec, ent_data->manifest_mtime_nsec );
+   
+   // success!
+   *ret_inode_data = inode;
+   md_entry_free( &inode_data_out );
+   
+   UG_inode_bind_fskit_entry( inode, fent );
+
+   // mark as creating, so the following trunc(2) call will avoid an extra network round-trip
+   UG_inode_set_creating( inode, true );
+   
+   return 0;
+}
+
+
 // does an inode's manifest have a more recent modtime than the given one?
 // return true if so; false if not 
 bool UG_inode_manifest_is_newer_than( struct SG_manifest* manifest, int64_t mtime_sec, int32_t mtime_nsec ) {
@@ -867,7 +949,7 @@ bool UG_inode_manifest_is_newer_than( struct SG_manifest* manifest, int64_t mtim
    old_manifest_ts.tv_sec = SG_manifest_get_modtime_sec( manifest );
    old_manifest_ts.tv_nsec = SG_manifest_get_modtime_nsec( manifest );
    
-   bool newer = (md_timespec_diff_ms( &new_manifest_ts, &old_manifest_ts ) > 0);
+   bool newer = (md_timespec_diff( &new_manifest_ts, &old_manifest_ts ) > 0);
    
    return newer;
 }
@@ -929,8 +1011,16 @@ int UG_inode_manifest_merge_blocks( struct SG_gateway* gateway, struct UG_inode*
       // that is, only overwrite a block if the block is not dirty, and if the new_manifest has a newer modification time (this in turn is guaranteed
       // to be monotonically increasing since there is at most one coordinator).
       rc = SG_manifest_put_block( UG_inode_manifest( inode ), new_block, replace );
-      if( rc != 0 ) {
-         
+      if( !replace && rc == -EEXIST ) {
+         SG_debug("WARN: not replacing %" PRIu64 " (%" PRId64 " with %" PRId64 ")\n",
+               SG_manifest_block_id( existing_block ), SG_manifest_block_version( existing_block ), SG_manifest_block_version( existing_block ));
+
+         rc = 0;
+         continue;
+      }
+
+      if( rc != 0 && rc != -EEXIST ) {
+          
          break;
       }
       
@@ -1097,6 +1187,16 @@ static int UG_inode_preserve_old_manifest_timestamp( struct UG_inode* inode ) {
       manifest_mtime_nsec = SG_manifest_get_modtime_nsec( &inode->manifest );
 
       SG_manifest_set_modtime( &inode->replaced_blocks, manifest_mtime_sec, manifest_mtime_nsec );
+   
+      SG_debug("SET old manifest timestamp for %" PRIX64 " is %" PRId64 ".%d\n", UG_inode_file_id( inode ), 
+         SG_manifest_get_modtime_sec( &inode->replaced_blocks ), SG_manifest_get_modtime_nsec( &inode->replaced_blocks ) );
+
+   }
+   else {
+     
+      SG_debug("old manifest timestamp for %" PRIX64 " is %" PRId64 ".%d\n", UG_inode_file_id( inode ), 
+         SG_manifest_get_modtime_sec( &inode->replaced_blocks ), SG_manifest_get_modtime_nsec( &inode->replaced_blocks ) );
+
    }
 
    return 0;
@@ -1116,7 +1216,9 @@ int UG_inode_dirty_block_update_manifest( struct SG_gateway* gateway, struct UG_
    
    int rc = 0;
    
-   SG_debug("update manifest for %" PRIX64 "[%" PRIu64 ".%" PRId64 "] (%p)\n", UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), dirty_block );
+   SG_debug("update manifest %" PRId64 ".%d for %" PRIX64 "[%" PRIu64 ".%" PRId64 "] (%p)\n",
+            SG_manifest_get_modtime_sec( UG_inode_manifest( inode ) ), SG_manifest_get_modtime_nsec( UG_inode_manifest( inode ) ),
+            UG_inode_file_id( inode ), UG_dirty_block_id( dirty_block ), UG_dirty_block_version( dirty_block ), dirty_block );
 
    // sanity check: must be flushed to disk 
    if( !UG_dirty_block_is_flushed( dirty_block ) ) {
@@ -1683,12 +1785,36 @@ void UG_inode_set_refresh_time( struct UG_inode* inode, struct timespec* ts ) {
    inode->refresh_time = *ts;
 }
 
+void UG_inode_set_refresh_time_now( struct UG_inode* inode ) {
+
+   struct timespec now;
+   clock_gettime( CLOCK_REALTIME, &now );
+   UG_inode_set_refresh_time( inode, &now );
+}
+
+
 void UG_inode_set_manifest_refresh_time( struct UG_inode* inode, struct timespec* ts ) {
    inode->manifest_refresh_time = *ts;
 }
 
+void UG_inode_set_manifest_refresh_time_now( struct UG_inode* inode ) {
+   
+   struct timespec now;
+   clock_gettime( CLOCK_REALTIME, &now );
+   UG_inode_set_manifest_refresh_time( inode, &now );
+}
+
+
+
 void UG_inode_set_children_refresh_time( struct UG_inode* inode, struct timespec* ts ) {
    inode->children_refresh_time = *ts;
+}
+
+void UG_inode_set_children_refresh_time_now( struct UG_inode* inode ) {
+   
+   struct timespec now;
+   clock_gettime( CLOCK_REALTIME, &now );
+   UG_inode_set_children_refresh_time( inode, &now );
 }
 
 void UG_inode_set_old_manifest_modtime( struct UG_inode* inode, struct timespec* ts ) {
@@ -1721,6 +1847,12 @@ void UG_inode_set_dirty( struct UG_inode* inode, bool val ) {
 
 void UG_inode_set_fskit_entry( struct UG_inode* inode, struct fskit_entry* ent ) {
    inode->entry = ent;
+}
+
+// NOTE: requires inode->entry to be write-locked
+void UG_inode_set_size( struct UG_inode* inode, uint64_t new_size ) {
+   fskit_entry_set_size( inode->entry, new_size );
+   SG_manifest_set_size( &inode->manifest, new_size );
 }
 
 // attach an fskit_entry to an inode, and the inode to the fskit_entry 
