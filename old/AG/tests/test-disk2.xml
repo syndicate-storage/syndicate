@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<Map>
+  <Config>
+     <dataset_root>/tmp/test-disk-dataset2</dataset_root>
+   </Config>
+   <Pair reval="10s 5m">
+      <File perm="440">/hello_world2</File>
+      <Query type="disk">/hello_world</Query>
+   </Pair>
+   <Pair reval="10s 5m">
+      <File perm="444">/goodbye_world2</File>
+      <Query type="disk">/goodbye_world</Query>
+   </Pair>
+   <Pair reval="10s 5m">
+      <Dir perm="555">/testdir2/</Dir>
+      <Query type="disk">/testdir/</Query>
+   </Pair>
+   <Pair reval="10s 5m">
+      <File perm="444">/testdir2/foo2</File>
+      <Query type="disk">/testdir/foo</Query>
+   </Pair>
+   <Pair reval="5m">
+      <Dir perm="555">/testdir2/dir22</Dir>
+      <Query type="disk">/testdir/dir2</Query>
+   </Pair>
+   <Pair reval="1d">
+      <Dir perm="555">/</Dir>
+      <Query type="disk">/</Query>
+   </Pair>
+</Map>
+

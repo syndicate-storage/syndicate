@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<Map>
+  <Config>
+     <dataset_root>/tmp/test-disk-dataset</dataset_root>
+   </Config>
+   <Pair reval="15s">
+      <Dir perm="555">/</Dir>
+      <Query type="disk">/</Query>
+   </Pair>
+</Map>
+

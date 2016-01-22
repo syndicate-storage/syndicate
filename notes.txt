@@ -6,10 +6,6 @@ Performance comparison to Shark:
 -- can't really compare, since performance is very circumstantial (i.e. did you pick a good peer or cache?  are you close to good peers or caches?)
 -- moreover, shark uses shark caches; we use any cache (including shark, if desired)
 
-TODO:
-* client should ask metadata server for maximum metadata post size and time BEFORE it begins sending data; metadata server should respond (i.e. have an "about this server" URL nonce)
-* client should honor maximum post size
-
 Get required dependencies on planetlab:
 
 #!/bin/sh
