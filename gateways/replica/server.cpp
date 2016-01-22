@@ -361,11 +361,12 @@ RG_server_block_put_finish:
 // return -ENOMEM on OOM 
 // return -EIO if we get invalid data from the driver (i.e. driver error)
 // return -ENODATA if we couldn't send data to the driver (i.e. gateway error)
+// return -ESTALE if the sender was not the coordinator (suggests that the sender does yet know that it is not the coordinator)
 static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_chunk* manifest_chunk, uint64_t hints, void* cls ) {
    
    int rc = 0;
 
-   // sanity check
+   // sanity check: must be a manifest
    SG_messages::Manifest mmsg;
    rc = md_parse< SG_messages::Manifest >( &mmsg, manifest_chunk->data, manifest_chunk->len );
    if( rc != 0 ) {
@@ -373,7 +374,14 @@ static int RG_server_manifest_put( struct SG_gateway* gateway, struct SG_request
       SG_error("not a manifest: %s\n", reqdat->fs_path );
       return -EINVAL;
    }
-   
+
+   // sanity check: sender must be the coordinator 
+   if( mmsg.coordinator_id() != reqdat->src_gateway_id ) {
+
+      SG_error("Not the coordinator of %" PRIX64 ": %" PRIu64 " (expected %" PRIu64 ")\n", reqdat->file_id, reqdat->src_gateway_id, mmsg.coordinator_id() );
+      return -ESTALE;
+   }
+
    // send it off, as a block 
    rc = RG_server_block_put( gateway, reqdat, manifest_chunk, hints, cls );
    
