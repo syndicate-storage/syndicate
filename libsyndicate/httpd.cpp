@@ -1110,6 +1110,12 @@ static int md_HTTP_connection_setup( struct md_HTTP* http_ctx, struct md_HTTP_co
       
       return -ENOMEM;
    }
+
+   SG_debug("%s", "Begin Headers:\n");
+   for( int i = 0; headers[i] != NULL; i++ ) {
+      SG_debug("%s: %s\n", headers[i]->header, headers[i]->value);
+   }
+   SG_debug("%s", "End Headers\n");
    
    // uploading?
    if( mode == MD_HTTP_POST || mode == MD_HTTP_PUT ) {
@@ -1527,12 +1533,12 @@ int md_HTTP_start( struct md_HTTP* http, int portnum ) {
    int num_http_threads = sysconf( _SC_NPROCESSORS_CONF );
 
    if( (http->server_type & MHD_USE_THREAD_PER_CONNECTION) != 0 ) {
-      http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+      http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_DEBUG, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
                                              MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                              MHD_OPTION_END );
    }
    else {
-      http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SUSPEND_RESUME | MHD_USE_PIPE_FOR_SHUTDOWN, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
+      http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SUSPEND_RESUME | MHD_USE_PIPE_FOR_SHUTDOWN | MHD_USE_DEBUG, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
                                              MHD_OPTION_THREAD_POOL_SIZE, num_http_threads,
                                              MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                              MHD_OPTION_END );
