@@ -891,15 +891,15 @@ int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_m
    // update timestamps
    clock_gettime( CLOCK_REALTIME, &ts );
    UG_write_timestamp_update( inode, &ts );
+   UG_inode_preserve_old_manifest_modtime( inode );
 
    if( coordinator_id == gateway_id ) {
       
       // we're the coordinator--advance the manifest's modtime and write nonce
-      UG_inode_preserve_old_manifest_modtime( inode );
       SG_manifest_set_modtime( UG_inode_manifest( inode ), ts.tv_sec, ts.tv_nsec );
       UG_write_nonce_update( inode );
    }
-
+      
    // advance size 
    SG_debug("%" PRIX64 ": offset + buflen = %" PRIu64 ", fent size = %" PRIu64 "\n", UG_inode_file_id(inode), (uint64_t)(offset + buf_len), fskit_entry_get_size( fent ) );
 
@@ -926,14 +926,16 @@ int UG_write_impl( struct fskit_core* core, struct fskit_route_metadata* route_m
 // return 0 on success 
 // return -ENOMEM on OOM 
 // return -EPERM if we're not the coordinator
-// NOTE: inode->entry must be write-locked
+// NOTE: inode->entry must be write-locked and ref'ed; it will be unlocked intermittently
 int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct UG_inode* inode, struct SG_manifest* write_delta ) {
    
    int rc = 0;
-   struct md_syndicate_cache* cache = SG_gateway_cache( gateway );
    struct UG_replica_context* rctx = NULL;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
-   
+   uint64_t file_id = UG_inode_file_id( inode );
+   int64_t file_version = UG_inode_file_version( inode );
+   struct timespec ts;
+
    // basic sanity check: we must be the coordinator 
    if( SG_manifest_get_coordinator( write_delta ) != SG_gateway_id( gateway ) ) {
        return -EPERM;
@@ -953,13 +955,23 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
    if( rc != 0 ) {
       
       if( rc != -ENOMEM ) {
-         SG_error("SG_manifest_patch( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
+         SG_error("SG_manifest_patch( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
       }
       
       SG_manifest_free( &new_manifest );
       return rc;
    }
-   
+
+   // advance inode timestamp 
+   clock_gettime( CLOCK_REALTIME, &ts );
+   UG_write_timestamp_update( inode, &ts );
+   UG_inode_preserve_old_manifest_modtime( inode );
+
+   // we're the coordinator--advance the manifest's modtime and write nonce
+   SG_manifest_set_modtime( UG_inode_manifest( inode ), ts.tv_sec, ts.tv_nsec );
+   SG_manifest_set_modtime( &new_manifest, ts.tv_sec, ts.tv_nsec );
+   UG_write_nonce_update( inode );
+
    // prepare to replicate the patched manifest 
    rctx = UG_replica_context_new();
    if( rctx == NULL ) {
@@ -974,7 +986,7 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
       
       // failed!
       if( rc != -ENOMEM ) {
-         SG_error("UG_replica_context_init( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
+         SG_error("UG_replica_context_init( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
       }
       
       SG_manifest_free( &new_manifest );
@@ -982,12 +994,15 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
       return rc;
    }
    
+   fskit_entry_unlock( UG_inode_fskit_entry( inode ) );
+   
    // do the replication 
    rc = UG_replicate( gateway, rctx );
+
    if( rc != 0 ) {
       
       // failed!
-      SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
+      SG_error("UG_replicate( %" PRIX64 ".%" PRId64 " ) rc = %d\n", file_id, file_version, rc );
       
       UG_replica_context_free( rctx );
       SG_safe_free( rctx );
@@ -998,43 +1013,17 @@ int UG_write_patch_manifest( struct SG_gateway* gateway, struct SG_request_data*
    // success!
    UG_replica_context_free( rctx );
    SG_safe_free( rctx );
-   
-   // replace the manifest locally 
-   UG_inode_manifest_replace( inode, &new_manifest );
-   
-   // clear out overwritten dirty blocks, and replaced block listings
-   for( SG_manifest_block_iterator itr = SG_manifest_block_iterator_begin( write_delta ); itr != SG_manifest_block_iterator_end( write_delta ); itr++ ) {
-      
-      UG_dirty_block_map_t::iterator dirty_block_itr;
-      struct UG_dirty_block* dirty_block = NULL;
-      struct SG_manifest_block* replaced_block = NULL;
-      uint64_t block_id = SG_manifest_block_iterator_id( itr );
-      
-      // did this patch touch a cached block?
-      dirty_block_itr = UG_inode_dirty_blocks( inode )->find( block_id );
-      if( dirty_block_itr != UG_inode_dirty_blocks( inode )->end() ) {
-         
-         dirty_block = &dirty_block_itr->second;
-         
-         // did this dirty block displace a replicated block?
-         replaced_block = SG_manifest_block_lookup( UG_inode_replaced_blocks( inode ), block_id );
-         if( replaced_block != NULL ) {
-            
-            if( SG_manifest_block_version( replaced_block ) == UG_dirty_block_version( dirty_block ) ) {
-               
-               // this dirty block displaced a replicated block, but now this dirty block has been remotely overwritten.
-               // blow it away.
-               SG_manifest_delete_block( UG_inode_replaced_blocks( inode ), block_id );
-            }
-         }
-         
-         // blow away this dirty block 
-         UG_dirty_block_evict_and_free( cache, inode, dirty_block );
-         
-         UG_inode_dirty_blocks( inode )->erase( dirty_block_itr );
-      }
+  
+   // NOTE: safe, since inode->entry is ref'ed by the caller
+   fskit_entry_wlock( UG_inode_fskit_entry( inode ) ); 
+
+   rc = UG_inode_manifest_merge_blocks( gateway, inode, &new_manifest );
+   SG_manifest_free( &new_manifest );
+
+   if( rc != 0 ) {
+
+      SG_error("UG_inode_manifest_merge_blocks(%" PRIX64 ".%" PRId64 ") rc = %d\n", file_id, file_version, rc );
    }
    
-   return 0;
+   return rc;
 }
-
