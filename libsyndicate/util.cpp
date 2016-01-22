@@ -108,20 +108,41 @@ int64_t md_current_time_millis() {
 // difference in time, in milliseconds
 // find t1 - t2
 int64_t md_timespec_diff_ms( struct timespec* t1, struct timespec* t2 ) {
-   
-   struct timespec dest = *t1;
-   
-   if( t2->tv_nsec > dest.tv_nsec ) {
+  
+   int64_t sec = t1->tv_sec;
+   int64_t nsec = t1->tv_nsec;
+
+   if( t2->tv_nsec > nsec ) {
       
-      dest.tv_sec--;
-      dest.tv_nsec += 1000000000L;
+      sec--;
+      nsec += 1000000000L;
    }
    
-   dest.tv_sec -= t2->tv_sec;
-   dest.tv_nsec -= t2->tv_nsec;
+   sec -= t2->tv_sec;
+   nsec -= t2->tv_nsec;
    
-   return (dest.tv_sec * 1000) + (dest.tv_nsec / 1000000);
+   return (sec * 1000) + (nsec / 1000000);
 }
+
+// difference in time
+// find t1 - t2
+int64_t md_timespec_diff( struct timespec* t1, struct timespec* t2 ) {
+   
+   int64_t sec = t1->tv_sec;
+   int64_t nsec = t1->tv_nsec;
+
+   if( t2->tv_nsec > nsec ) {
+      
+      sec--;
+      nsec += 1000000000L;
+   }
+   
+   sec -= t2->tv_sec;
+   nsec -= t2->tv_nsec;
+   
+   return (sec * 1000000000L) + (nsec);
+}
+
 
 /*
  * Get the user's umask

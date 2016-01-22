@@ -138,6 +138,7 @@ int md_transfer( int in_fd, int out_fd, size_t len );
 int64_t md_current_time_seconds();
 int64_t md_current_time_millis();
 int64_t md_timespec_diff_ms( struct timespec* t1, struct timespec* t2 );
+int64_t md_timespec_diff( struct timespec* t1, struct timespec* t2 );
 
 int md_sleep_uninterrupted( struct timespec* ts );
 
