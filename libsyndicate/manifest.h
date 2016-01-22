@@ -125,6 +125,7 @@ uint64_t SG_manifest_get_block_range( struct SG_manifest* manifest );
 uint64_t SG_manifest_get_block_count( struct SG_manifest* manifest );
 uint64_t SG_manifest_get_file_size( struct SG_manifest* manifest );
 int SG_manifest_get_block_hash( struct SG_manifest* manifest, uint64_t block_id, unsigned char** block_hash, size_t* hash_len );
+bool SG_manifest_has_block_hash( struct SG_manifest* manifest, uint64_t block_id );
 int SG_manifest_get_block_version( struct SG_manifest* manifest, uint64_t block_id, int64_t* block_version );
 uint64_t SG_manifest_get_coordinator( struct SG_manifest* manifest );
 bool SG_manifest_is_block_present( struct SG_manifest* manifest, uint64_t block_id );

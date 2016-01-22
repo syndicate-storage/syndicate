@@ -100,7 +100,6 @@ int SG_manifest_block_load_from_protobuf( struct SG_manifest_block* dest, const 
       
       hash = (unsigned char*)mblock->hash().data();
       hash_len = mblock->hash().size();
-
    }
    
    
@@ -936,6 +935,7 @@ uint64_t SG_manifest_get_file_size( struct SG_manifest* manifest ) {
 // return -ENOMEM on OOM 
 // return -ENOENT if not found
 // return -ERANGE if *block_hash is not NULL, but is not big enough to hold the block's hash (*hash_len will be set to the required length)
+// return -ENODATA if there is no hash for this (existant) block 
 int SG_manifest_get_block_hash( struct SG_manifest* manifest, uint64_t block_id, unsigned char** block_hash, size_t* hash_len ) {
    
    unsigned char* ret = NULL;
@@ -945,32 +945,64 @@ int SG_manifest_get_block_hash( struct SG_manifest* manifest, uint64_t block_id,
    
    SG_manifest_block_map_t::iterator itr = manifest->blocks->find( block_id );
    if( itr != manifest->blocks->end() ) {
-      
-      if( *block_hash != NULL && itr->second.hash_len >= *hash_len * sizeof(unsigned char) ) {
-         memcpy( *block_hash, itr->second.hash, itr->second.hash_len * sizeof(unsigned char) );
-      }
-      else if( *block_hash != NULL ) {
-
-         rc = -ERANGE;
-         *hash_len = itr->second.hash_len;
+     
+      if( itr->second.hash_len == 0 || itr->second.hash == NULL ) {
+         // no hash 
+         rc = -ENODATA;
       }
       else {
-          ret = SG_CALLOC( unsigned char, itr->second.hash_len );
-      
-          if( ret != NULL ) {
+         if( *block_hash != NULL && itr->second.hash_len >= *hash_len * sizeof(unsigned char) ) {
+            memcpy( *block_hash, itr->second.hash, itr->second.hash_len * sizeof(unsigned char) );
+         }
+         else if( *block_hash != NULL ) {
+
+            rc = -ERANGE;
+            *hash_len = itr->second.hash_len;
+         }
+         else {
+             ret = SG_CALLOC( unsigned char, itr->second.hash_len );
          
-             memcpy( ret, itr->second.hash, sizeof(unsigned char) * itr->second.hash_len );
-         
-             *block_hash = ret;
-             *hash_len = itr->second.hash_len;
-          }
-          else {
-             rc = -ENOMEM;
-          }
+             if( ret != NULL ) {
+            
+                memcpy( ret, itr->second.hash, sizeof(unsigned char) * itr->second.hash_len );
+            
+                *block_hash = ret;
+                *hash_len = itr->second.hash_len;
+             }
+             else {
+                rc = -ENOMEM;
+             }
+         }
       }
    }
    else {
       rc = -ENOENT;
+   }
+   
+   SG_manifest_unlock( manifest );
+   return rc;
+}
+
+
+// does a block have a hash?
+// return true if so
+// return false if not (including if it doesn't exist)
+bool SG_manifest_has_block_hash( struct SG_manifest* manifest, uint64_t block_id ) {
+
+   bool rc = true;
+   
+   SG_manifest_rlock( manifest );
+   
+   SG_manifest_block_map_t::iterator itr = manifest->blocks->find( block_id );
+   if( itr != manifest->blocks->end() ) {
+     
+      if( itr->second.hash_len == 0 || itr->second.hash == NULL ) {
+         // no hash 
+         rc = -false;
+      }
+   }
+   else {
+      rc = false;
    }
    
    SG_manifest_unlock( manifest );
