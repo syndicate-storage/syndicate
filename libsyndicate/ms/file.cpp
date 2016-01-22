@@ -518,7 +518,8 @@ int ms_client_single_rpc( struct ms_client* client, struct ms_client_request* re
                              
    ms_client_init_curl_handle( client, curl, url, auth_header );
    
-   curl_easy_setopt( curl, CURLOPT_POST, 1L);
+   curl_easy_setopt( curl, CURLOPT_POST, 1L );
+   curl_easy_setopt( curl, CURLOPT_POSTREDIR, CURL_REDIR_POST_ALL );    // force POST on redirect
    curl_easy_setopt( curl, CURLOPT_HTTPPOST, post );
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_timing_header_func );
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &timing );
