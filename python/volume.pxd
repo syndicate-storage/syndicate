@@ -134,6 +134,8 @@ cdef extern from "libsyndicate-ug/client.h":
    int UG_chcoord( UG_state* state, const char* path, uint64_t* new_coordinator_response )
    int UG_truncate( UG_state* state, const char* path, off_t newsize )
    int UG_access( UG_state* state, const char* path, int mask )
+   int UG_invalidate( UG_state* state, const char* path )
+   int UG_refresh( UG_state* state, const char* path )
 
    UG_handle_t* UG_create( UG_state* state, const char* path, mode_t mode, int* rc )
    UG_handle_t* UG_open( UG_state* state, const char* path, int flags, int* rc )
@@ -188,3 +190,6 @@ cdef class Volume:
    cpdef getxattr( self, path, name, size )
    cpdef listxattr( self, path, size )
    cpdef removexattr( self, path, name )
+   cpdef refresh( self, path )
+   cpdef invalidate( self, path )
+   cpdef chcoord( self, path )

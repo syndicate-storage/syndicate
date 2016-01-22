@@ -390,4 +390,36 @@ cdef class Volume:
       return rc
       
       
+   # ------------------------------------------
+   cpdef refresh( self, path ):
+      cdef rc = 0 
+      cdef char* c_path = path 
+      rc = UG_refresh( self.state_inst, c_path )
+      if rc < 0:
+          raise VolumeException("UG_refresh rc = %s" % rc)
+
+      return rc
+
+
+   # ------------------------------------------
+   cpdef invalidate( self, path ):
+      cdef rc = 0
+      cdef char* c_path = path 
+      rc = UG_invalidate( self.state_inst, c_path )
+      if rc < 0:
+          raise VolumeException("UG_refresh rc = %s" % rc)
+
+      return rc
+  
+   # ------------------------------------------
+   cpdef chcoord( self, path ):
+      cdef rc = 0 
+      cdef char* c_path = path
+      cdef uint64_t new_coordinator = 0
+      rc = UG_chcoord( self.state_inst, c_path, &new_coordinator )
+      if rc < 0:
+          raise VolumeException("UG_chcoord rc = %s" % rc)
+
+      return new_coordinator
+
    
