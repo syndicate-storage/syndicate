@@ -16,11 +16,6 @@
 
 // top-level application-facing Syndicate User Gateway API
 
-/* 
- * Notes:
- * * rename() must hold the rename lock(s)
- * * creat() must set the inode's parent
- */
 #ifndef _UG_CLIENT_H_
 #define _UG_CLIENT_H_
 
@@ -134,12 +129,15 @@ int UG_utime( struct UG_state* state, char const* path, struct utimbuf *ubuf );
 int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordinator_response );
 int UG_truncate( struct UG_state* state, char const* path, off_t newsize );
 int UG_access( struct UG_state* state, char const* path, int mask );
+int UG_invalidate( struct UG_state* state, char const* path );
+int UG_refresh( struct UG_state* state, char const* path );
 
 // low-level metadata API
 int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data );
 
 // high-level file data API
 UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, int* rc  );
+UG_handle_t* UG_publish( struct UG_state* state, char const* path, struct md_entry* ent_data, int* ret_rc );
 UG_handle_t* UG_open( struct UG_state* state, char const* path, int flags, int* rc );
 int UG_read( struct UG_state* state, char *buf, size_t size, UG_handle_t* fi );
 int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t *fi );

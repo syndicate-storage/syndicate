@@ -144,7 +144,7 @@ int UG_send_WRITE( struct UG_state* state, char const* fs_path, struct SG_client
       inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
       
       // reload, if we haven't written in the mean time
-      if( write_nonce == UG_inode_write_nonce( inode ) ) {
+      if( file_version == UG_inode_file_version( inode ) && write_nonce == UG_inode_write_nonce( inode ) ) {
          rc = UG_inode_import( inode, inode_out );
       }
       else {
@@ -307,9 +307,6 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, struct
    int rc = 0;
    struct md_entry inode_out;
    struct fskit_core* fs = UG_state_fs( state );
-   struct UG_inode* inode = NULL;
-   int64_t write_nonce = 0;
-   uint64_t file_id = 0;
    
    struct fskit_entry* fent = fskit_entry_ref( fs, fs_path, &rc );
    if( fent == NULL ) {
@@ -317,47 +314,13 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, struct
       return rc;
    }
    
-   fskit_entry_rlock( fent );
-   
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-
-   // who are we sending to?
-   file_id = UG_inode_file_id( inode );
-   write_nonce = UG_inode_write_nonce( inode );
-   
-   fskit_entry_unlock( fent );
-   
-   // send the write off
+   // send the write off, and sync the inode
    rc = UG_send_WRITE( state, fs_path, write_data, &inode_out );
    if( rc != 0 ) {
        
-       SG_error("UG_send_write('%s') rc = %d\n", fs_path, rc );
+       SG_error("UG_send_WRITE('%s') rc = %d\n", fs_path, rc );
        fskit_entry_unref( fs, fs_path, fent );
        return rc;
-   }
-   
-   // sync with inode 
-   fskit_entry_wlock( fent );
-
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-    
-   // reload, if we haven't written in the mean time
-   if( write_nonce == UG_inode_write_nonce( inode ) ) {
-       rc = UG_inode_import( inode, &inode_out );
-   }
-   else {
-       rc = 0;
-   }
-    
-   fskit_entry_unlock( fent );
-    
-   if( rc != 0 ) {
-        
-       // will need to refresh
-       SG_error("UG_inode_import(%" PRIX64 " (%s)) rc = %d\n", file_id, fs_path, rc );
-       UG_inode_set_read_stale( inode, true );
-        
-       rc = 0;
    }
    
    fskit_entry_unref( fs, fs_path, fent );
@@ -374,6 +337,7 @@ static int UG_update_remote( struct UG_state* state, char const* fs_path, struct
 int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_data* write_data ) {
    
    int rc = 0;
+   int ref_rc = 0;
    struct SG_gateway* gateway = UG_state_gateway( state );
    struct fskit_core* fs = UG_state_fs( state );
    struct fskit_entry* fent = NULL;
@@ -404,7 +368,10 @@ int UG_update( struct UG_state* state, char const* path, struct SG_client_WRITE_
    
    UG_try_or_coordinate( gateway, path, coordinator_id, UG_update_local( state, path, write_data ), UG_update_remote( state, path, write_data ), &rc );
    
-   fskit_entry_unref( fs, path, fent );
+   ref_rc = fskit_entry_unref( fs, path, fent );
+   if( ref_rc != 0 ) {
+      SG_warn("fskit_entry_unref('%s') rc = %d\n", path, ref_rc );
+   }
    
    return rc;
 }
@@ -791,11 +758,50 @@ int UG_chcoord( struct UG_state* state, char const* path, uint64_t* new_coordina
 }
 
 
+// invalidate a cached metadata entry 
+// return 0 on success
+// return -ENOMEM on OOM
+// return -ENOENT if there is no such entry 
+int UG_invalidate( struct UG_state* state, char const* path ) {
+
+   int rc = 0;
+   struct fskit_core* fs = UG_state_fs( state );
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+
+   fent = fskit_entry_resolve_path( fs, path, 0, 0, true, &rc );
+   if( fent == NULL ) {
+      return rc;
+   }
+
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   UG_inode_set_read_stale( inode, true ); 
+
+   fskit_entry_unlock( fent );
+   return 0;
+}
+
+
+// refresh a cached metadata entry
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -ENOENT if the entry does not exist 
+// return -EREMOTEIO on failure to talk to the MS 
+int UG_refresh( struct UG_state* state, char const* path ) {
+
+   int rc = 0;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+
+   rc = UG_consistency_path_ensure_fresh( gateway, path );
+   return rc;
+}
+
+
 // start vacuuming a file inode's old data (used to recover after an unclean shutdown)
 // set up and return *vctx to be a waitable vacuum context 
 // return 0 on success
 // return -ENOMEM on OOM
-// return -ENONENT if there so such path
+// return -ENOENT if there so such path
 // return -EACCES if we can't write to the file 
 // return -EISDIR if the path refers to a directory
 // return -ENOTCONN if we're quiescing requests
@@ -1269,13 +1275,20 @@ int UG_access( struct UG_state* state, char const* path, int mask ) {
    return fskit_access( fs, path, UG_state_owner_id( state ), UG_state_volume_id( state ), mask );
 }
 
-// creat(2)
+
+// publish a file with the given metadata.
 // forward to fskit
-UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, int* ret_rc ) {
+UG_handle_t* UG_publish( struct UG_state* state, char const* path, struct md_entry* ent_data, int* ret_rc ) {
    
    UG_handle_t* sh = NULL;
    struct fskit_file_handle* fh = NULL;
    
+   // sanity check 
+   if( ent_data->type != MD_ENTRY_FILE ) {
+      *ret_rc = -EINVAL;
+      return NULL;
+   }
+
    sh = SG_CALLOC( UG_handle_t, 1 );
    if( sh == NULL ) {
       
@@ -1283,7 +1296,7 @@ UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, i
       return NULL;
    }
   
-   fh = fskit_create( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), mode, ret_rc );
+   fh = fskit_create_ex( UG_state_fs( state ), path, UG_state_owner_id( state ), UG_state_volume_id( state ), ent_data->mode, (void*)ent_data, ret_rc );
    
    if( fh == NULL ) {
       
@@ -1296,6 +1309,51 @@ UG_handle_t* UG_create( struct UG_state* state, char const* path, mode_t mode, i
    
    return sh;
 }
+
+
+// POSIX-y creat(2):  make an empty file
+// forward to fskit 
+UG_handle_t* UG_create( struct UG_state* state, char const* fs_path, mode_t mode, int* ret_rc ) {
+
+   struct md_entry ent_data;
+   struct timespec ts;
+   UG_handle_t* sh = NULL;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   char* name = NULL;
+
+   memset( &ent_data, 0, sizeof(struct md_entry) );
+
+   name = md_basename( fs_path, NULL );
+   if( name == NULL ) {
+      *ret_rc = -ENOMEM;
+      return NULL;
+   }
+
+   clock_gettime( CLOCK_REALTIME, &ts );
+
+   // NOTE: file_id, write_nonce, xattr_nonce, num_children, capacity, and generation are all set 
+   // by libsyndicate internally, on ms_client_create()
+   ent_data.type = MD_ENTRY_FILE;
+   ent_data.name = name;
+   ent_data.volume = ms_client_get_volume_id( ms );
+   ent_data.owner = SG_gateway_user_id( gateway );
+   ent_data.coordinator = SG_gateway_id( gateway );
+   ent_data.size = 0;
+   ent_data.mode = mode;
+   ent_data.mtime_sec = ts.tv_sec;
+   ent_data.mtime_nsec = ts.tv_nsec;
+   ent_data.manifest_mtime_sec = ts.tv_sec;
+   ent_data.manifest_mtime_nsec = ts.tv_nsec;
+   ent_data.ctime_sec = ts.tv_sec;
+   ent_data.ctime_nsec = ts.tv_nsec;
+   
+   sh = UG_publish( state, fs_path, &ent_data, ret_rc );
+   md_entry_free( &ent_data );
+
+   return sh;
+}
+
 
 // ftruncate(2)
 // forward to fskit
