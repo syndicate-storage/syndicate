@@ -40,17 +40,30 @@ struct UG_state {
    struct UG_vacuumer* vacuumer;        // vacuumer instance 
    
    pthread_rwlock_t lock;               // lock governing access to this structure
-   
-   int detach_rh;                       // route handle to the unlink()/rmdir() route
+  
+   // fskit route handles
+   int stat_rh;
+   int creat_rh;
+   int mkdir_rh;
+   int open_rh;
+   int read_rh;
+   int write_rh;
+   int trunc_rh;
+   int close_rh;
+   int sync_rh;
+   int detach_rh;
+   int rename_rh;
    
    bool running_thread;                 // if true, we've set up and started a thread to run the main loop ourselves 
    pthread_t thread;                    // the main loop thread
    
    struct md_wq* wq;                    // workqueue for deferred operations (like blowing away dead inodes)
+
+   void* cls;                           // extra UG-implementation state
 };
 
 
-// RG context 
+// RG request context 
 struct UG_RG_context {
 
    uint64_t* rg_ids;
@@ -372,11 +385,35 @@ int UG_state_unlock( struct UG_state* state ) {
 }
 
 
-// set up the UG 
+// easy way to set up the UG 
 // "client" means "anonymous read-only"
-// return a client on success
+// return a UG on success
 // return NULL on error
 struct UG_state* UG_init( int argc, char** argv, bool client ) {
+   
+   struct UG_state* state = NULL;
+   struct md_opts* overrides = md_opts_new( 1 );
+   if( overrides == NULL ) {
+      return NULL;
+   }
+
+   md_opts_default( overrides );
+   md_opts_set_client( overrides, client );
+   md_opts_set_gateway_type( overrides, SYNDICATE_UG );
+   md_opts_set_driver_config( overrides, UG_DEFAULT_DRIVER_EXEC_STR, UG_DRIVER_ROLES, UG_DRIVER_NUM_ROLES );
+   
+   state = UG_init_ex( argc, argv, overrides, NULL );
+
+   md_opts_free( overrides );
+   SG_safe_free( overrides );
+   return state;
+}
+
+
+// set up the UG, but with a set of behavior and type overrides 
+// return a UG on success
+// return NULL on error
+struct UG_state* UG_init_ex( int argc, char** argv, struct md_opts* overrides, void* cls ) {
    
    int rc = 0;
    struct md_entry root_inode_data;
@@ -384,32 +421,30 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    struct UG_inode* root_inode = NULL;
    struct UG_vacuumer* vacuumer = NULL;
    struct md_wq* wq = NULL;
-   struct md_opts* overrides = md_opts_new( 1 );
    struct md_syndicate_conf* conf = NULL;
    struct SG_gateway* gateway = NULL;
-   
-   if( overrides == NULL ) {
-      return NULL;
-   }
-   
-   md_opts_default( overrides );
-   md_opts_set_client( overrides, client );
-   md_opts_set_gateway_type( overrides, SYNDICATE_UG );
-   md_opts_set_driver_config( overrides, UG_DEFAULT_DRIVER_EXEC_STR, UG_DRIVER_ROLES, UG_DRIVER_NUM_ROLES );
    
    struct UG_state* state = SG_CALLOC( struct UG_state, 1 );
    if( state == NULL ) {
       
-      md_opts_free( overrides );
-      SG_safe_free( overrides );
       return NULL;
    }
+
+   state->stat_rh = -1;
+   state->creat_rh = -1;
+   state->mkdir_rh = -1;
+   state->open_rh = -1;
+   state->read_rh = -1;
+   state->write_rh = -1;
+   state->trunc_rh = -1;
+   state->close_rh = -1;
+   state->sync_rh = -1;
+   state->detach_rh = -1;
+   state->rename_rh = -1;
    
    gateway = SG_gateway_new();
    if( gateway == NULL ) {
       
-      md_opts_free( overrides );
-      SG_safe_free( overrides );
       SG_safe_free( state );
       return NULL;
    }
@@ -425,8 +460,6 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       fskit_error( "fskit_library_init rc = %d\n", rc );
       SG_safe_free( state );
       SG_safe_free( gateway );
-      md_opts_free( overrides );
-      SG_safe_free( overrides );
       return NULL;
    }
    
@@ -436,19 +469,13 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       fskit_library_shutdown();
       SG_safe_free( state );
       SG_safe_free( gateway );
-      md_opts_free( overrides );
-      SG_safe_free( overrides );
       return NULL;
    }
    
    SG_debug("%s", "Setting up gateway core\n");
    
    // set up gateway...
-   rc = SG_gateway_init( state->gateway, SYNDICATE_UG, argc, argv, overrides );
-   
-   md_opts_free( overrides );
-   SG_safe_free( overrides );
-   
+   rc = SG_gateway_init( state->gateway, md_opts_get_gateway_type( overrides ), argc, argv, overrides );
    if( rc < 0 ) {
       
       SG_error("SG_gateway_init rc = %d\n", rc );
@@ -596,7 +623,7 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
    
    // install methods 
    UG_impl_install_methods( state->gateway );
-   UG_fs_install_methods( state->fs );
+   UG_fs_install_methods( state->fs, state );
    
    // load replica gateways 
    rc = UG_state_reload_replica_gateway_ids( state );
@@ -636,7 +663,6 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       return NULL;
    }
    
-   // start threads
    rc = UG_vacuumer_start( state->vacuumer );
    if( rc != 0 ) {
    
@@ -652,6 +678,8 @@ struct UG_state* UG_init( int argc, char** argv, bool client ) {
       UG_shutdown( state );
       return NULL;
    }
+
+   state->cls = cls;
 
    return state;
 }
@@ -670,6 +698,7 @@ void* UG_main_pthread( void* arg ) {
    
    return NULL;
 }
+
 
 // run the UG in a separate thread.
 // returns as soon as we start the new thread.
@@ -694,6 +723,7 @@ int UG_start( struct UG_state* state ) {
    state->running_thread = true;
    return 0;
 }
+
 
 // run the gateway in this thread.  return when the gateway shuts down.
 // return 0 on success
@@ -788,7 +818,7 @@ int UG_shutdown( struct UG_state* state ) {
        }
        
        SG_safe_free( state->fs );
-    }
+   }
    
    SG_safe_free( state->replica_gateway_ids );
    
@@ -840,4 +870,134 @@ struct SG_driver* UG_state_driver( struct UG_state* state ) {
    return SG_gateway_driver( state->gateway );
 }
 
+// get UG implementation state 
+void* UG_state_cls( struct UG_state* state ) {
+   return state->cls;
+}
+
+// get stat route handle 
+int UG_state_stat_rh( struct UG_state* state ) {
+   return state->stat_rh;
+}
+
+// get creat route handle
+int UG_state_creat_rh( struct UG_state* state ) {
+   return state->creat_rh;
+}
+
+// get mkdir route handle
+int UG_state_mkdir_rh( struct UG_state* state ) {
+   return state->mkdir_rh;
+}
+
+// get open route handle
+int UG_state_open_rh( struct UG_state* state ) {
+   return state->open_rh;
+}
+
+// get read route handle
+int UG_state_read_rh( struct UG_state* state ) {
+   return state->read_rh;
+}
+
+// get write route handle
+int UG_state_write_rh( struct UG_state* state ) {
+   return state->write_rh;
+}
+
+// get trunc route handle 
+int UG_state_trunc_rh( struct UG_state* state ) {
+   return state->trunc_rh;
+}
+
+// get close route handle 
+int UG_state_close_rh( struct UG_state* state ) {
+   return state->close_rh;
+}
+
+// get sync route handle
+int UG_state_sync_rh( struct UG_state* state ) {
+   return state->sync_rh;
+}
+
+// get detach route handle
+int UG_state_detach_rh( struct UG_state* state ) {
+   return state->detach_rh;
+}
+
+// get rename route handle
+int UG_state_rename_rh( struct UG_state* state ) {
+   return state->rename_rh;
+}
+
+// set UG implementation state (UG_state must be write-locked!)
+void UG_state_set_cls( struct UG_state* state, void* cls ) {
+   state->cls = cls;
+}
+
+// set stat route handle
+int UG_state_set_stat_rh( struct UG_state* state, int rh ) {
+   state->stat_rh = rh;
+   return 0;
+}
+
+// set creat route handle 
+int UG_state_set_creat_rh( struct UG_state* state, int rh ) {
+   state->creat_rh = rh;
+   return 0;
+}
+
+// set mkdir route handle
+int UG_state_set_mkdir_rh( struct UG_state* state, int rh ) {
+   state->mkdir_rh = rh;
+   return 0;
+}
+
+// set open route handle
+int UG_state_set_open_rh( struct UG_state* state, int rh ) {
+   state->open_rh = rh;
+   return 0;
+}
+
+// set read route handle
+int UG_state_set_read_rh( struct UG_state* state, int rh ) {
+   state->read_rh = rh;
+   return 0;
+}
+
+// set write route handle
+int UG_state_set_write_rh( struct UG_state* state, int rh ) {
+   state->write_rh = rh;
+   return 0;
+}
+
+// set trunc route handle 
+int UG_state_set_trunc_rh( struct UG_state* state, int rh ) {
+   state->trunc_rh = rh;
+   return 0;
+}
+
+// set close route handle 
+int UG_state_set_close_rh( struct UG_state* state, int rh ) {
+   state->close_rh = rh;
+   return 0;
+}
+
+// set sync route handle
+int UG_state_set_sync_rh( struct UG_state* state, int rh ) {
+   state->sync_rh = rh;
+   return 0;
+}
+
+// set detach route handle
+int UG_state_set_detach_rh( struct UG_state* state, int rh ) {
+   state->detach_rh = rh;
+   return 0;
+}
+
+// set rename route handle
+int UG_state_set_rename_rh( struct UG_state* state, int rh ) {
+   state->rename_rh = rh;
+   return 0;
+}
 

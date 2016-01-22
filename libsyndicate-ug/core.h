@@ -61,6 +61,7 @@ int UG_state_unlock( struct UG_state* state );
 
 // core init and shutdown 
 struct UG_state* UG_init( int argc, char** argv, bool client );
+struct UG_state* UG_init_ex( int argc, char** argv, struct md_opts* overrides, void* cls );
 int UG_start( struct UG_state* state );
 int UG_main( struct UG_state* state );
 int UG_shutdown( struct UG_state* state );
@@ -73,6 +74,33 @@ uint64_t UG_state_owner_id( struct UG_state* state );
 uint64_t UG_state_volume_id( struct UG_state* state );
 struct md_wq* UG_state_wq( struct UG_state* state );
 struct SG_driver* UG_state_driver( struct UG_state* state );
+void* UG_state_cls( struct UG_state* state );
+int UG_state_stat_rh( struct UG_state* state );
+int UG_state_creat_rh( struct UG_state* state );
+int UG_state_mkdir_rh( struct UG_state* state );
+int UG_state_open_rh( struct UG_state* state );
+int UG_state_read_rh( struct UG_state* state );
+int UG_state_write_rh( struct UG_state* state );
+int UG_state_trunc_rh( struct UG_state* state );
+int UG_state_close_rh( struct UG_state* state );
+int UG_state_sync_rh( struct UG_state* state );
+int UG_state_detach_rh( struct UG_state* state );
+int UG_state_rename_rh( struct UG_state* state );
+
+// setters 
+void UG_state_set_cls( struct UG_state* state, void* cls );
+int UG_state_set_stat_rh( struct UG_state* state, int rh );
+int UG_state_set_creat_rh( struct UG_state* state, int rh );
+int UG_state_set_mkdir_rh( struct UG_state* state, int rh );
+int UG_state_set_open_rh( struct UG_state* state, int rh );
+int UG_state_set_read_rh( struct UG_state* state, int rh );
+int UG_state_set_write_rh( struct UG_state* state, int rh );
+int UG_state_set_trunc_rh( struct UG_state* state, int rh );
+int UG_state_set_close_rh( struct UG_state* state, int rh );
+int UG_state_set_sync_rh( struct UG_state* state, int rh );
+int UG_state_set_detach_rh( struct UG_state* state, int rh );
+int UG_state_set_rename_rh( struct UG_state* state, int rh );
+
 
 }
 
