@@ -83,7 +83,7 @@ int main( int argc, char** argv ) {
    }
     
    // try to create
-   fh = UG_create( ug, path, um & 0777, &rc );
+   fh = UG_create( ug, path, 0540, &rc );
    if( rc != 0 ) {
         
       if( rc != -EEXIST ) { 
