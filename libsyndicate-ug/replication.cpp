@@ -224,7 +224,7 @@ static int UG_replica_make_write_delta( struct SG_manifest* whole_manifest, UG_d
 }
 
 
-// create the replica control-plane message
+// create the replica control-plane message out of the blocks and (if we're the coordinator) the manifest
 // all blocks in flushed_blocks need to be dirty. 
 // return 0 on success, and populate *request and *serialized_manifest.  Does *NOT* calculate size and offset fields in the request
 // return -ENOMEM on OOM 
@@ -238,6 +238,7 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
    size_t chunks_capacity = 0;
    struct SG_manifest_block* chunk_info = NULL;
    struct SG_chunk manifest_chunk;
+   bool we_are_coordinator = (UG_inode_coordinator_id( inode ) == SG_gateway_id( gateway ));
 
    memset( &manifest_chunk, 0, sizeof(struct SG_chunk) );
 
@@ -248,7 +249,11 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
    }
 
    // make chunk info 
-   chunks_capacity = 1;
+   // we will only replicate the manifest if we're the coordinator
+   if( we_are_coordinator ) {
+       chunks_capacity = 1;   // include the manifest 
+   }
+   
    if( flushed_blocks != NULL ) {
       chunks_capacity += flushed_blocks->size();
    }
@@ -259,23 +264,28 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
       goto UG_replica_context_make_controlplane_message_fail;
    }
 
-   // manifest chunk 
-   rc = UG_replica_sign_serialize_manifest_to_chunk( gateway, fs_path, manifest, &manifest_chunk );
-   if( rc != 0 ) {
+   // manifest chunk, if we're the coordinator 
+   if( we_are_coordinator ) {
+       
+       SG_debug("We coordinate %" PRIX64 ", so replicate manifest\n", UG_inode_file_id( inode ) );
 
-      SG_error("UG_replica_sign_serialize_manifest_to_chunk rc = %d\n", rc );
-      goto UG_replica_context_make_controlplane_message_fail;
+       rc = UG_replica_sign_serialize_manifest_to_chunk( gateway, fs_path, manifest, &manifest_chunk );
+       if( rc != 0 ) {
+
+          SG_error("UG_replica_sign_serialize_manifest_to_chunk rc = %d\n", rc );
+          goto UG_replica_context_make_controlplane_message_fail;
+       }
+
+       // manifest chunk info 
+       rc = UG_replica_make_manifest_chunk_info( &manifest_chunk, SG_manifest_get_modtime_sec( manifest ), SG_manifest_get_modtime_nsec( manifest ), &chunk_info[0] );
+       if( rc != 0 ) {
+
+          SG_error("UG_replica_make_manifest_chunk_info(%s) rc = %d\n", fs_path, rc );
+          goto UG_replica_context_make_controlplane_message_fail;
+       }
+   
+       num_chunks++;
    }
-
-   // manifest chunk info 
-   rc = UG_replica_make_manifest_chunk_info( &manifest_chunk, SG_manifest_get_modtime_sec( manifest ), SG_manifest_get_modtime_nsec( manifest ), &chunk_info[0] );
-   if( rc != 0 ) {
-
-      SG_error("UG_replica_make_manifest_chunk_info(%s) rc = %d\n", fs_path, rc );
-      goto UG_replica_context_make_controlplane_message_fail;
-   }
-
-   num_chunks++;
 
    if( flushed_blocks != NULL ) {
       
@@ -300,9 +310,14 @@ static int UG_replica_context_make_controlplane_message( struct UG_state* ug, ch
       goto UG_replica_context_make_controlplane_message_fail;
    }
 
-   // transfer manifest
-   *serialized_manifest = manifest_chunk;
-   memset( &manifest_chunk, 0, sizeof(struct SG_chunk) );
+   if( we_are_coordinator ) {
+       // transfer manifest 
+       *serialized_manifest = manifest_chunk;
+       memset( &manifest_chunk, 0, sizeof(struct SG_chunk) );
+   }
+   else {
+       memset( serialized_manifest, 0, sizeof(struct SG_chunk) );
+   }
 
 UG_replica_context_make_controlplane_message_fail:
 
@@ -329,6 +344,7 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
 
    int rc = 0;
    int fd = -1;
+   int manifest_count = 0;
    uint64_t off = 0;
    struct SG_gateway* gateway = UG_state_gateway( ug );
    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
@@ -336,6 +352,10 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
    char tmppath[PATH_MAX];
    struct stat sb;
    SG_messages::ManifestBlock* block_info = NULL;
+
+   if( manifest_chunk != NULL && manifest_chunk->data != NULL ) {
+      manifest_count = 1;
+   }
 
    rc = snprintf( tmppath, PATH_MAX-1, "%s/.replica-XXXXXX", data_root );
    if( rc >= PATH_MAX-1 ) {
@@ -347,7 +367,7 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
    if( flushed_blocks != NULL ) {
    
       // sanity check: request must be initialized 
-      if( (unsigned)request->blocks_size() != (unsigned)flushed_blocks->size() + 1 ) {
+      if( (unsigned)request->blocks_size() != (unsigned)flushed_blocks->size() + manifest_count ) {
          SG_error("%s", "BUG: control-plane request is not initialized\n");
          exit(1);
       }
@@ -394,27 +414,37 @@ static int UG_replica_context_make_dataplane_message( struct UG_state* ug, SG_me
       goto UG_replica_context_make_dataplane_message_fail;
    }
 
-   // flush manifest 
-   rc = md_write_uninterrupted( fd, manifest_chunk->data, manifest_chunk->len );
-   if( rc < 0 ) {
+   // flush manifest, if we're the coordinator  
+   if( manifest_count == 1 ) {
 
-      SG_error("md_write_uninterrupted rc = %d\n", rc );
-      goto UG_replica_context_make_dataplane_message_fail;
+       // sanity check.... 
+       if( request->coordinator_id() != SG_gateway_id( gateway )) {
+          SG_error("BUG: manifest given, but we do not coordinate %" PRIX64 "\n", request->file_id() );
+          exit(1);
+       }
+
+       rc = md_write_uninterrupted( fd, manifest_chunk->data, manifest_chunk->len );
+       if( rc < 0 ) {
+
+          SG_error("md_write_uninterrupted rc = %d\n", rc );
+          goto UG_replica_context_make_dataplane_message_fail;
+       }
+       else {
+          rc = 0;
+       }
+   
+       // put manifest chunk data 
+       block_info = request->mutable_blocks(0);
+       block_info->set_offset( 0 );
+       block_info->set_size( manifest_chunk->len );
+
+       off += manifest_chunk->len;
    }
-   else {
-      rc = 0;
-   }
-
-   // put manifest chunk data 
-   block_info = request->mutable_blocks(0);
-   block_info->set_offset( 0 );
-   block_info->set_size( manifest_chunk->len );
-
-   off += manifest_chunk->len;
 
    // flush each block
-   // NOTE: blocks[0] should be the manifest info; blocks[1..n] are the block info
-   for( int i = 1; i < request->blocks_size(); i++ ) {
+   // NOTE: if we're the coordinator, blocks[0] should be the manifest info; blocks[1..n] are the block info
+   // otherwise, blocks[0...n] are all blocks
+   for( int i = (manifest_count); i < request->blocks_size(); i++ ) {
     
       block_info = request->mutable_blocks(i);
       struct UG_dirty_block* block = &(*flushed_blocks)[ block_info->block_id() ];
