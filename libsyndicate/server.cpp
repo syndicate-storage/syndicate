@@ -99,6 +99,7 @@ static int SG_server_stat_request( struct SG_gateway* gateway, struct md_HTTP_re
    if( (entity_mode & mode) == 0 ) {
       
       // denied 
+      SG_debug("%" PRIu64 ": 0%o & 0%o == 0\n", reqdat->file_id, entity_mode, mode );
       return md_HTTP_create_response_builtin( resp, 403 );
    }
    
@@ -125,6 +126,8 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
+
+   memset( &entity_info, 0, sizeof(struct SG_request_data) );
    
    char* url = NULL;
 
@@ -373,6 +376,7 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
          SG_safe_free( url );
          SG_request_data_free( &entity_info );
          
+         SG_debug("%" PRIu64 ": 0%o & 0%o == 0\n", reqdat->file_id, entity_mode, mode );
          return md_HTTP_create_response_builtin( resp, 403 );
       }
       
@@ -1069,6 +1073,8 @@ static int SG_request_data_from_message( struct SG_request_data* reqdat, SG_mess
    reqdat->file_id = request_msg->file_id();
    reqdat->file_version = request_msg->file_version();
    reqdat->user_id = request_msg->user_id();
+   reqdat->src_gateway_id = request_msg->src_gateway_id();
+   reqdat->coordinator_id = request_msg->coordinator_id();
    
    if( request_msg->request_type() == SG_messages::Request::SETXATTR ) {
       if( request_msg->has_xattr_name() && request_msg->has_xattr_value() ) {
@@ -2045,7 +2051,7 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       else if( rc == -EPERM ) {
          
          // invalid caller 
-         return md_HTTP_create_response_builtin( resp, 403 );
+         return md_HTTP_create_response_builtin( resp, 401 );
       }
       else {
          
@@ -2121,22 +2127,49 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
    switch( request_msg->request_type() ) {
       
       case SG_messages::Request::WRITE: {
-         
-         // redirect? expect world-writeable or volume-writeable
-         rc = SG_server_redirect_request( gateway, resp, reqdat, 0055 );
-         if( rc <= 0 ) {
-            
-            if( rc < 0 ) {
-               SG_error("SG_server_redirect_request rc = %d\n", rc );
-            }
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
          }
-         else {
+
+         // requires reqdat to be a manifest 
+         if( !SG_request_is_manifest( reqdat ) ) {
             
-            // start write 
-            rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_WRITE, reqdat, request_msg, con_data, resp );
-            if( rc != 0 ) {
+            SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a manifest request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
+            rc = -EINVAL;
+         }
+
+         if( gateway->impl_stat == NULL ) {
+      
+            SG_error("%s", "BUG: gateway->impl_stat is not defined\n");
+            SG_safe_delete( request_msg );
+            SG_request_data_free( reqdat );
+            SG_safe_free( reqdat );
+            return md_HTTP_create_response_builtin( resp, 501 );
+         }
+         
+         else {
+            // accessible? expect world-writeable or volume-writeable
+            rc = SG_server_stat_request( gateway, resp, reqdat, 0055 );
+            if( rc <= 0 ) {
                
-               SG_error("SG_server_HTTP_IO_start( WRITE(%" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               if( rc < 0 ) {
+                  SG_error("SG_server_stat_request rc = %d\n", rc );
+               }
+            }
+            else {
+               
+               // start write 
+               rc = SG_server_HTTP_IO_start( gateway, SG_SERVER_IO_WRITE, SG_server_HTTP_POST_WRITE, reqdat, request_msg, con_data, resp );
+               if( rc != 0 ) {
+                  
+                  SG_error("SG_server_HTTP_IO_start( WRITE(%" PRIX64 ".%" PRId64 " (%s)) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+               }
             }
          }
          
@@ -2145,6 +2178,16 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::TRUNCATE: {
          
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
+         }
+
          // requires reqdat to be a manifest 
          if( !SG_request_is_manifest( reqdat ) ) {
             
@@ -2183,6 +2226,16 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       
       case SG_messages::Request::RENAME: {
          
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
+         }
+
          // requires reqdat to be a manifest 
          if( !SG_request_is_manifest( reqdat ) ) {
             
@@ -2221,7 +2274,17 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       }
       
       case SG_messages::Request::DETACH: {
-         
+          
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
+         }
+
          // requires reqdat to be a manifest 
          if( !SG_request_is_manifest( reqdat ) ) {
             
@@ -2285,7 +2348,17 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       }
       
       case SG_messages::Request::SETXATTR: {
-         
+          
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
+         }
+
          if( reqdat->xattr_name == NULL || !request_msg->has_xattr_value() ) {
             
             SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
@@ -2304,7 +2377,17 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
       }
       
       case SG_messages::Request::REMOVEXATTR: {
-         
+          
+         // are we the coordinator?
+         if( SG_gateway_id( gateway ) != reqdat->coordinator_id ) {
+             // redirect 
+             SG_error("Not the coordinator of %" PRIX64 "\n", reqdat->file_id );
+             SG_safe_delete( request_msg );
+             SG_request_data_free( reqdat );
+             SG_safe_free( reqdat );
+             return md_HTTP_create_response_builtin( resp, 410 );
+         }
+
          if( reqdat->xattr_name == NULL ) {
             
             SG_error("Request on '%s' (/%" PRIX64 "/%" PRId64 ") is not a block request\n", reqdat->fs_path, reqdat->file_id, reqdat->file_version );
