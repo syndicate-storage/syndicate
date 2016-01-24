@@ -597,6 +597,7 @@ class MSEntry( storagetypes.Object ):
    deleted = storagetypes.Boolean( default=False, indexed=False ) # whether or not this directory is considered to be deleted
    version = storagetypes.Integer( default=0, indexed=False ) 
    capacity = storagetypes.Integer( default=16, indexed=False )         # for directories, the smallest 2^i after its number of children.  Used for choosing directory indexes
+   generation = storagetypes.Integer( default=0, indexed=False )
    
    # stuff the MS can ignore
    name = storagetypes.String( default="", indexed=False )
@@ -604,7 +605,6 @@ class MSEntry( storagetypes.Object ):
    ctime_nsec = storagetypes.Integer( default=0, indexed=False )
    max_read_freshness = storagetypes.Integer( default=0, indexed=False )
    max_write_freshness = storagetypes.Integer( default=0, indexed=False )
-   generation = storagetypes.Integer( default=0, indexed=False )
    
    # filled in from a shard 
    mtime_sec = None
@@ -1356,7 +1356,7 @@ class MSEntry( storagetypes.Object ):
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
-         log.error("/%s/%s, parent_id=%s, name=%s exists (nameholder: /%s/%s, parent_id=%s, name=%s)" % \
+         logingg.error("/%s/%s, parent_id=%s, name=%s exists (nameholder: /%s/%s, parent_id=%s, name=%s)" % \
              (volume_id, child_id, parent_id, ent_attrs['name'], nameholder.volume_id, nameholder.file_id, nameholder.parent_id, nameholder.name))
          
          return (-errno.EEXIST, None)
@@ -1521,7 +1521,7 @@ class MSEntry( storagetypes.Object ):
       # it's okay if we aren't given the parent_id here...
       rc = MSEntry.check_mutate_attrs( ent_attrs, safe_to_ignore=['parent_id', 'xattr_hash'] )
       if rc != 0:
-         log.error("check_mutate_attrs rc = %s" % rc)
+         logging.error("check_mutate_attrs rc = %s" % rc)
          return (rc, None)
       
       # Update an MSEntry.
@@ -1562,12 +1562,12 @@ class MSEntry( storagetypes.Object ):
       
       # can't have a lesser write-nonce for files
       if ent.ftype == MSENTRY_TYPE_FILE and ent_attrs['write_nonce'] <= ent.write_nonce:
-         log.error("File: Write nonce is %s, expected > %s" % (ent_attrs['write_nonce'], ent.write_nonce))
+         logging.error("File: Write nonce is %s, expected > %s" % (ent_attrs['write_nonce'], ent.write_nonce))
          return (-errno.EINVAL, None)
      
       # can't have an identical write-nonce for dirs 
       if ent.ftype == MSENTRY_TYPE_DIR and ent_attrs['write_nonce'] == ent.write_nonce:
-         log.error("Dir: Write nonce is %s, expected != %s" % (ent_attrs['write_nonce'], ent.write_nonce))
+         logging.error("Dir: Write nonce is %s, expected != %s" % (ent_attrs['write_nonce'], ent.write_nonce))
          return (-errno.EINVAL, None)
       
       # if we're going to change mode, then we must own the ent 
@@ -1580,7 +1580,7 @@ class MSEntry( storagetypes.Object ):
       
       # if we're going to decrease the size, then we must include a new version 
       if ent_attrs['size'] < ent.size and not ent_attrs.has_key('version'):
-         log.error("Size decreased but no version given")
+         logging.error("Size decreased but no version given")
          return (-errno.EINVAL, None)
      
       # write the update
@@ -1685,12 +1685,14 @@ class MSEntry( storagetypes.Object ):
       while True:
          if ent.file_id == absent_file_id:
             # absent_file_id occurs in the path
+            logging.error("loop: %s" % ent.file_id)
             storagetypes.concurrent_return( -errno.EINVAL )
          
          parent_id_int = MSEntry.serialize_id( ent.parent_id )
          if parent_id_int == 0:
             # at root; done!
             if ent.parent_id == absent_file_id:
+               logging.error("loop: %s" % ent.parent_id)
                storagetypes.concurrent_return( -errno.EINVAL )
             
             else:
@@ -1753,44 +1755,60 @@ class MSEntry( storagetypes.Object ):
       Rename an MSEntry.
       src_attrs describes the file/directory to be renamed (src)
       dest_attrs describes the file/directory that will be overwritten (dest)
-      If dest is not known to exist on the client, then dest_attrs['file_id'] should be 0
+
+      dest will be put into the filesystem, and src will be deleted.
+      The old dest will be returned, if overwritten.
       
       Only src's coordinator can rename it.
       """
       
       rc = MSEntry.check_mutate_attrs( src_attrs )
       if rc != 0:
-         return rc
+         logging.error("Invalid src mutate attrs")
+         return (rc, None)
       
       rc = MSEntry.check_mutate_attrs( dest_attrs )
       if rc != 0:
-         return rc
+         logging.error("Invalid dest mutate attrs")
+         return (rc, None)
       
       src_name = src_attrs['name']
       src_file_id = src_attrs['file_id']
       src_parent_id = src_attrs['parent_id']
       
-      dest_file_id = dest_attrs['file_id']
+      dest_file_id = 0
       dest_parent_id = dest_attrs['parent_id']
       dest_name = dest_attrs['name']
+
+      delete_dest = False
       
       # file IDs are strings, so convert them to ints
       src_file_id_int = MSEntry.serialize_id( src_file_id )
-      dest_file_id_int = MSEntry.serialize_id( dest_file_id )
       
       if src_file_id_int == 0:
          # not allowed to rename root
-         return -errno.EINVAL
+         logging.error("Cannot rename root")
+         return (-errno.EINVAL, None)
       
       if len(dest_name) == 0:
          # invalid name
-         return -errno.EINVAL
+         logging.error("Missing dest_name")
+         return (-errno.EINVAL, None)
       
       volume_id = volume.volume_id
-      
       futs = []
       ents = {}
       
+      # find dest 
+      dest_nameholder = MSEntryNameHolder.Read( volume.volume_id, dest_parent_id, dest_name )
+      if dest_nameholder is not None:
+          dest_file_id = dest_nameholder.file_id 
+          if dest_file_id == 0:
+              # can't rename over root
+              logging.error("Cannot rename over root")
+              return (-errno.EINVAL, None)
+
+
       ents_to_get = [src_file_id, src_parent_id, dest_parent_id]
       if dest_file_id != 0:
          ents_to_get.append( dest_file_id )
@@ -1808,10 +1826,6 @@ class MSEntry( storagetypes.Object ):
             ents[fid] = ent
       
       
-      if dest_file_id_int == 0:
-         # not known or not given; just look it up 
-         dest = cls.ReadByParent( volume, dest_parent_id, dest_name )
-      
       if len(futs) > 0:
          storagetypes.wait_futures( futs )
          
@@ -1821,72 +1835,109 @@ class MSEntry( storagetypes.Object ):
                ents[ ent.file_id ] = ent
                
       src = ents.get( src_file_id, None )
+      dest = ents.get( dest_file_id, None )
       src_parent = ents.get( src_parent_id, None )
-      
-      if dest_file_id_int != 0:
-         # will have loaded dest via ents_to_get
-         dest = ents.get( dest_file_id, None )
-         
       dest_parent = ents.get( dest_parent_id, None )
       
       # does src exist?
       if src is None:
-         return -errno.ENOENT
+         return (-errno.ENOENT, None)
       
       # file rename request originated from src's coordinator
       if src.ftype == MSENTRY_TYPE_FILE and src.coordinator_id != gateway.g_id:
          # not the coordinator--refresh
-         return -errno.EAGAIN
-      
+         return (-errno.EAGAIN, None)
+
+      # src and dest must match on most fields... 
+      if len(src_attrs.keys()) != len(dest_attrs.keys()):
+          logging.error("Src/Dest mismatch: different field sets")
+          return (-errno.EINVAL, None)
+
+      missing_src = []
+      missing_dest = []
+      for field in src_attrs.keys():
+          if field not in dest_attrs:
+              missing_dest.append(field)
+
+      for field in dest_attrs.keys():
+          if field not in src_attrs:
+              missing_src.append(fied)
+
+      if len(missing_src) != 0 or len(missing_dest) != 0:
+          logging.error("Src/Dest mismatch: missing in src=%s, missing in dest=%s" % (",".join(missing_src), ",".join(missing_dest)))
+          return (-errno.EINVAL, None)
+
+     
+      # must be fresh 
+      if src.version > src_attrs['version']:
+          # stale 
+          return (-errno.EAGAIN, None )
+
+      if src.write_nonce > src_attrs['write_nonce']:
+          # stale 
+          return (-errno.EAGAIN, None )
+
+      if src.xattr_nonce > src_attrs['xattr_nonce']:
+          # stale 
+          return (-errno.EAGAIN, None )
+
       # does dest parent exist?
       if dest_parent is None:
-         return -errno.ENOENT
+         return (-errno.ENOENT, None)
       
       # does src parent exist?
       if src_parent is None:
-         return -errno.ENOENT 
-      
+         return (-errno.ENOENT, None)
+     
+      # src vs src from db... 
+      if src_file_id != src.file_id:
+         logging.error("Mismatch src file ID")
+         return (-errno.EINVAL, None)
+
+      # src parent vs src parent from db... 
+      if src_parent.file_id != src_parent_id:
+         logging.error("Mismatch src parent ID")
+         return (-errno.EINVAL, None)
+
       # src parent matches src?
-      if src.file_id != src_parent_id:
-         return -errno.EINVAL
+      if src_parent.file_id != src_parent_id:
+         logging.error("Mismatch src parent ID")
+         return (-errno.EINVAL, None)
       
       # dest parent matches dest, if dest exists?
       if dest is not None and dest.parent_id != dest_parent.file_id:
-         return -errno.EINVAL 
+         logging.error("Mismatch dest parent ID")
+         return (-errno.EINVAL, None)
       
       # src read permssion check
       if not is_readable( user_owner_id, volume.owner_id, src.owner_id, src.mode ):
-         return -errno.EACCES
-      
+         return (-errno.EACCES, None)
+
       # src parent write permission check
       if not is_writable( user_owner_id, volume.owner_id, src_parent.owner_id, src_parent.mode ):
-         return -errno.EACCES
+         return (-errno.EACCES, None)
       
       # dest parent write permission check
       if not is_writable( user_owner_id, volume.owner_id, dest_parent.owner_id, dest_parent.mode ):
-         return -errno.EACCES
+         return (-errno.EACCES, None)
       
       # if dest exists, it must be writable
       if dest is not None and not is_writable( user_owner_id, volume.owner_id, dest.owner_id, dest.mode ):
-         return -errno.EACCES
-      
-      if src_file_id == dest_file_id:
-         # no op
-         return 0
-      
+         return (-errno.EACCES, None)
+     
       if dest is not None and src.ftype != dest.ftype:
          # types must match 
          if src.ftype == MSENTRY_TYPE_DIR:
-            return -errno.ENOTDIR
+            return (-errno.ENOTDIR, None)
          else:
-            return -errno.EISDIR
-      
+            return (-errno.EISDIR, None)
       
       dest_delete_fut = None
       src_verify_absent = None
       
-      # if dest exists, proceed to delete it.
-      if dest is not None:
+      # if dest exists and is distinct from src, proceed to delete it.
+      if dest is not None and dest.file_id != src.file_id:
+         delete_dest = True
          dest_delete_fut = MSEntry.__delete_begin_async( volume, dest )
       
       # while we're at it, make sure we're not moving src to a subdirectory of itself
@@ -1908,34 +1959,27 @@ class MSEntry( storagetypes.Object ):
       
       if dest_empty_rc != 0:
          # dest is not empty, but we were about to rename over it
-         if dest is not None:
+         if delete_dest:
             MSEntry.__delete_undo( dest )
-            
-         return dest_empty_rc
+           
+         logging.error("dest is not empty")
+         return (dest_empty_rc, None)
       
       if src_absent_rc != 0:
          # src is its own parent
-         if dest is not None:
+         if delete_dest:
             MSEntry.__delete_undo( dest )
          
-         return src_absent_rc
+         logging.error("src is its own parent")
+         return (src_absent_rc, None)
       
       # put a new nameholder for src
       new_nameholder_fut = MSEntryNameHolder.create_async( volume_id, dest_parent_id, src_file_id, dest_name )
       
-      # we're good to go
-      src_write_attrs = {
-         "name": dest_name,
-         "parent_id": dest_parent_id,
-         "mtime_sec": src_attrs['mtime_sec'],
-         "mtime_nsec": src_attrs['mtime_nsec'],
-         "write_nonce": src_attrs['write_nonce'] + 1
-      }
-      
       if dest is not None:
          dest_delete_fut = MSEntry.__delete_finish_async( volume, dest_parent, dest )
       
-      src_write_fut = MSEntry.__write_msentry_async( src, volume.num_shards, write_base=True, **src_write_attrs )
+      src_write_fut = MSEntry.__write_msentry_async( src, volume.num_shards, write_base=True, **dest_attrs )
       
       futs = [src_write_fut, new_nameholder_fut]
       
@@ -1954,13 +1998,14 @@ class MSEntry( storagetypes.Object ):
          MSEntry.make_key_name( volume_id, src_parent_id ),
          MSEntry.make_key_name( volume_id, dest_parent_id ),
          MSEntry.make_key_name( volume_id, src_file_id ),
-         MSEntry.make_key_name( volume_id, dest_file_id )
+         MSEntry.make_key_name( volume_id, dest_file_id ),
+         MSEntryNameHolder.make_key_name( volume_id, src_file_id, src_attrs['name'] ),
+         MSEntryNameHolder.make_key_name( volume_id, dest_file_id, dest_attrs['name'] )
       ]
       
       storagetypes.memcache.delete_multi( cache_delete )
-      
-      return 0
-      
+     
+      return (0, dest)
       
    
    @classmethod
