@@ -404,7 +404,7 @@ def file_create( reply, gateway, volume, update, async=False ):
          replypb = ms_pb2.ms_reply()
          replypb.ParseFromString( reply )
          reply = replypb
-         
+
       attrs = MSEntry.unprotobuf_dict( update.entry )
       
       logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
@@ -441,6 +441,7 @@ def file_create( reply, gateway, volume, update, async=False ):
          traceback.print_exc()
          raise e
 
+
 # ----------------------------------
 def file_create_async( reply, gateway, volume, update ):
    """
@@ -475,7 +476,7 @@ def file_update( reply, gateway, volume, update, async=False ):
          replypb = ms_pb2.ms_reply()
          replypb.ParseFromString( reply )
          reply = replypb
-         
+
       attrs = MSEntry.unprotobuf_dict( update.entry )
       
       logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
@@ -544,7 +545,7 @@ def file_delete( reply, gateway, volume, update, async=False ):
          replypb = ms_pb2.ms_reply()
          replypb.ParseFromString( reply )
          reply = replypb
-         
+
       attrs = MSEntry.unprotobuf_dict( update.entry )
    
       logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
@@ -585,23 +586,30 @@ def file_delete_async( reply, gateway, volume, update ):
    storagetypes.deferred.defer( file_delete, reply.SerializeToString(), gateway, volume, update.SerializeToString(), async=True )
    return 0
 
+
 # ----------------------------------
 def file_rename( reply, gateway, volume, update ):
    """
    Rename a file or directory, using the fields of the given ms_update structure.
    This is part of the File Metadata API.
    """
+   
    src_attrs = MSEntry.unprotobuf_dict( update.entry )
    dest_attrs = MSEntry.unprotobuf_dict( update.dest )
    
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s)" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id']) )
    
-   rc = MSEntry.Rename( gateway.owner_id, gateway, volume, src_attrs, dest_attrs )
+   rc, ent = MSEntry.Rename( gateway.owner_id, gateway, volume, src_attrs, dest_attrs )
    
    logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s) rc = %s" % 
                   (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id'], rc) )
-   
+
+   # have an entry 
+   if ent is not None:
+      ent_pb = reply.listing.entries.add()
+      MSEntry.protobuf( ent, ent_pb )
+     
    return rc
 
 
@@ -616,11 +624,11 @@ def file_chcoord( reply, gateway, volume, update ):
    if gateway is None:
      # coordinators can't be anonymous 
      return -errno.EACCES
-  
+ 
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    logging.info("chcoord /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
-   
+  
    rc, ent = MSEntry.Chcoord( gateway.owner_id, gateway, volume, **attrs )
    
    logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
@@ -629,7 +637,7 @@ def file_chcoord( reply, gateway, volume, update ):
    if ent is not None:
       ent_pb = reply.listing.entries.add()
       MSEntry.protobuf( ent, ent_pb )
-   
+
    return rc
 
 
@@ -773,7 +781,7 @@ def file_xattr_putxattr( reply, gateway, volume, update, caller_is_admin=False )
    
    Only the coordinator can do this.
    """
-   
+
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
    logging.info("putxattr /%s/%s (name=%s, parent=%s) %s = %s" % 
