@@ -10,7 +10,8 @@ OBJ		:= $(patsubst %.c,$(BUILD_UG_TOOLS)/%.o,$(C_SRCS)) \
 
 TOOL_NAMES := syndicate-ls syndicate-mkdir syndicate-rmdir syndicate-touch \
   			  syndicate-put syndicate-cat syndicate-vacuum syndicate-unlink \
-			  syndicate-trunc syndicate-write syndicate-read syndicate-coord
+			  syndicate-trunc syndicate-write syndicate-read syndicate-coord \
+			  syndicate-rename
 
 TOOLS := $(patsubst %,$(BUILD_UG_TOOLS)/%,$(TOOL_NAMES))
 COMMON_SRC := common.cpp
