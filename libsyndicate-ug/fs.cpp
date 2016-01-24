@@ -958,6 +958,7 @@ static int UG_fs_destroy( struct fskit_core* fs, struct fskit_route_metadata* ro
    return 0;
 }
 
+
 // ask the MS to rename an inode for us.
 // old_parent and new_parent must be at least read-locked
 // we must be the coordinator of old_inode
@@ -978,14 +979,22 @@ static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_pa
    uint64_t new_parent_id = fskit_entry_get_file_id( new_parent );
    
    unsigned char* old_xattr_hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
+   unsigned char* new_xattr_hash = SG_CALLOC( unsigned char, SHA256_DIGEST_LENGTH );
    
-   struct md_entry fent_out;
-   memset( &fent_out, 0, sizeof(struct md_entry) );
+   struct md_entry old_dest_out;
+   memset( &old_dest_out, 0, sizeof(struct md_entry) );
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    
    if( old_xattr_hash == NULL ) {
       
+      SG_safe_free( new_xattr_hash );
+      return -ENOMEM;
+   }
+
+   if( new_xattr_hash == NULL ) {
+
+      SG_safe_free( old_xattr_hash );
       return -ENOMEM;
    }
    
@@ -993,14 +1002,20 @@ static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_pa
    if( rc != 0 ) {
       
       SG_safe_free( old_xattr_hash );
+      SG_safe_free( new_xattr_hash );
+
+      SG_error("UG_inode_export(%s) rc = %d\n", old_path, rc );
       return rc;
    }
-   // int UG_inode_export_xattr_hash( struct fskit_core* fs, uint64_t gateway_id, struct UG_inode* inode, unsigned char* xattr_hash );
+   
    rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), old_inode, old_xattr_hash );
    if( rc != 0 ) {
       
       SG_safe_free( old_xattr_hash );
+      SG_safe_free( new_xattr_hash );
       md_entry_free( &old_fent_metadata );
+      
+      SG_error("UG_inode_export_xattr_hash(%s) rc = %d\n", old_path, rc );
       return rc;
    }
    
@@ -1010,6 +1025,19 @@ static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_pa
       if( rc != 0 ) {
          
          md_entry_free( &old_fent_metadata );
+         SG_safe_free( old_xattr_hash );
+         SG_safe_free( new_xattr_hash );
+         SG_error("UG_inode_export(%s) rc = %d\n", new_path, rc );
+         return rc;
+      }
+
+      rc = UG_inode_export_xattr_hash( fs, SG_gateway_id( gateway ), new_inode, new_xattr_hash );
+      if( rc != 0 ) {
+
+         md_entry_free( &old_fent_metadata );
+         SG_safe_free( old_xattr_hash );
+         SG_safe_free( new_xattr_hash );
+         SG_error("UG_inode_export(%s) rc = %d\n", new_path, rc );
          return rc;
       }
    }
@@ -1020,17 +1048,45 @@ static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_pa
       if( rc != 0 ) {
          
          md_entry_free( &old_fent_metadata );
+         SG_safe_free( old_xattr_hash );
+         SG_safe_free( new_xattr_hash );
+         SG_error("md_entry_dup2 rc = %d\n", rc );
          return rc;
       }
-      
-      // indicates we don't know the new inode's IDs
-      new_fent_metadata.file_id = 0;
+     
+      // switch name
+      SG_safe_free( new_fent_metadata.name );
+      new_fent_metadata.name = md_basename( new_path, NULL );
+      if( new_fent_metadata.name == NULL ) {
+         
+         md_entry_free( &old_fent_metadata );
+         md_entry_free( &new_fent_metadata );
+         SG_safe_free( old_xattr_hash );
+         SG_safe_free( new_xattr_hash );
+         return -ENOMEM;
+      }
+
+      // switch parent 
+      new_fent_metadata.parent_id = new_parent_id;
+
+      // generate xattr hash 
+      rc = ms_client_xattr_hash( new_xattr_hash, ms_client_get_volume_id( ms ), new_fent_metadata.file_id, new_fent_metadata.xattr_nonce, NULL, NULL, NULL );
+      if( rc != 0 ) {
+         
+         SG_error("ms_client_xattr_hash(%s) rc = %d\n", new_path, rc );
+         md_entry_free( &old_fent_metadata );
+         md_entry_free( &new_fent_metadata );
+         SG_safe_free( old_xattr_hash );
+         SG_safe_free( new_xattr_hash );
+         return -EPERM;
+      }
    }
    
    old_fent_metadata.xattr_hash = old_xattr_hash;
-   
+   new_fent_metadata.xattr_hash = new_xattr_hash;
+  
    // do the rename on the MS
-   rc = ms_client_rename( ms, &fent_out, &old_fent_metadata, &new_fent_metadata );
+   rc = ms_client_rename( ms, &old_dest_out, &old_fent_metadata, &new_fent_metadata );
    
    md_entry_free( &old_fent_metadata );
    md_entry_free( &new_fent_metadata );
@@ -1042,7 +1098,8 @@ static int UG_fs_rename_local( struct fskit_core* fs, struct fskit_entry* old_pa
       return rc;
    }
    
-   // TODO: propagate fent_out
+   // TODO do something with old dest out?
+   md_entry_free( &old_dest_out );
    
    return rc;
 }
@@ -1143,8 +1200,8 @@ static int UG_fs_rename( struct fskit_core* fs, struct fskit_route_metadata* rou
    }
    
    UG_try_or_coordinate( gateway, path, UG_inode_coordinator_id( inode ),
-                         UG_fs_rename_remote( fs, fskit_route_metadata_get_parent( route_metadata ), path, inode, fskit_route_metadata_get_new_parent( route_metadata ), new_path, new_inode ),
                          UG_fs_rename_local( fs, fskit_route_metadata_get_parent( route_metadata ), path, inode, fskit_route_metadata_get_new_parent( route_metadata ), new_path, new_inode ),
+                         UG_fs_rename_remote( fs, fskit_route_metadata_get_parent( route_metadata ), path, inode, fskit_route_metadata_get_new_parent( route_metadata ), new_path, new_inode ),
                          &rc );
    
    return rc;
