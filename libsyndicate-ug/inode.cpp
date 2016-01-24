@@ -566,12 +566,16 @@ int UG_inode_export_xattr_hash( struct fskit_core* fs, uint64_t gateway_id, stru
    size_t* xattr_lengths = NULL;
    
    if( gateway_id != SG_manifest_get_coordinator( &inode->manifest ) ) {
+
+       SG_error("BUG: %" PRIu64 " != %" PRIu64 "\n", gateway_id, SG_manifest_get_coordinator( &inode->manifest ) );
+       exit(1);
        return -EINVAL;
    }
    
    rc = UG_inode_export_xattrs( fs, inode, &xattr_names, &xattr_values, &xattr_lengths );
    if( rc != 0 ) {
-      
+     
+      SG_error("UG_inode_export_xattrs(%" PRIX64 ") rc = %d\n", UG_inode_file_id( inode ), rc ); 
       return rc;
    }
 
