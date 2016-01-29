@@ -39,8 +39,8 @@ struct SG_IO_hints {
 #define SG_IO_NONE  SG_messages::DriverRequest::NONE
 #define SG_IO_READ  SG_messages::DriverRequest::READ
 #define SG_IO_WRITE SG_messages::DriverRequest::WRITE
-#define SG_IO_TRUNC SG_messages::DriverRequest::TRUNC
 #define SG_IO_SYNC  SG_messages::DriverRequest::SYNC
+#define SG_IO_DELETE SG_messages::DriverRequest::DELETE
 
 // gateway request structure, for a block or a manifest or xattr info
 struct SG_request_data {
