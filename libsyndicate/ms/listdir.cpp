@@ -130,7 +130,7 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
       SG_error("md_download_loop_watch rc = %d\n", rc );
       
       md_download_context_free( dlctx, NULL );
-      
+     
       SG_safe_free( dlstate );
       SG_safe_free( url );
       SG_safe_free( auth_header );
@@ -147,6 +147,8 @@ static int ms_client_get_dir_metadata_begin( struct ms_client* client, uint64_t 
       
       md_download_context_free( dlctx, NULL );
       ms_client_get_dir_download_state_free( dlstate );
+      dlstate = NULL;
+
       curl_easy_cleanup( curl );
       
       return rc;
@@ -190,6 +192,7 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
       }
 
       ms_client_get_dir_download_state_free( dlstate );
+      dlstate = NULL;
       
       return rc;
    }
@@ -205,6 +208,7 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
    }
 
    ms_client_get_dir_download_state_free( dlstate );
+   dlstate = NULL;
    
    // did we get valid data?
    if( rc != 0 ) {
@@ -414,19 +418,19 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
             break;
          }
          
+         num_children_downloaded += num_children_fetched;
+         max_known_generation = MAX( max_generation_fetched, max_known_generation );
+
          // are we out of children to fetch?
          if( num_children_fetched == 0 ) {
            
             if( (unsigned)num_children_downloaded >= (unsigned)num_children ) { 
-                SG_error("Out of children (%" PRIu64 " fetched total)\n", num_children_downloaded );
+                SG_debug("Out of children (%" PRIu64 " fetched total)\n", num_children_downloaded );
             
                 rc = MD_DOWNLOAD_FINISH;
                 break;
             }
          }
-         
-         num_children_downloaded += num_children_fetched;
-         max_known_generation = MAX( max_generation_fetched, max_known_generation );
          
          // do we need to switch over to LISTDIR?
          if( batch_queue.size() == 0 && num_children_downloaded < (unsigned)num_children ) {
@@ -444,8 +448,9 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       
    } while( (batch_queue.size() > 0 || md_download_loop_running( dlloop )) && num_children_downloaded < (unsigned)num_children );
    
-   if( rc != 0 && rc != MD_DOWNLOAD_FINISH ) {
+   if( rc != 0 ) {
       
+      // download stopped prematurely
       md_download_loop_abort( dlloop );
       
       int i = 0;
@@ -462,6 +467,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
         
          if( dlstate != NULL ) { 
              ms_client_get_dir_download_state_free( dlstate );
+             dlstate = NULL;
          }
       }
    }
