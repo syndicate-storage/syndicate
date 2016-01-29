@@ -32,9 +32,8 @@ def get_or_make_storage_dir( config, chunk_path ):
    
    STORAGE_DIR = str(config.get('STORAGE_DIR', ""))
    if len(STORAGE_DIR) == 0:
-      
-      print >> sys.stderr, "No STORAGE_DIR configured"
-      sys.stderr.flush()
+     
+      gateway.log_error("No STORAGE_DIR configured")
       return (-errno.EINVAL, None )
    
    storage_path = os.path.join( STORAGE_DIR, chunk_path )
@@ -54,7 +53,7 @@ def read_chunk( chunk_request, outfile, config, secrets ):
       return rc
 
    if not os.path.exists( storage_path ):
-      print >> sys.stderr, "WARN: '%s' does not exist" % storage_path
+      gateway.log_error("WARN: '%s' does not exist" % storage_path)
       return -errno.ENOENT 
 
    try:
@@ -62,8 +61,8 @@ def read_chunk( chunk_request, outfile, config, secrets ):
           outfile.write( fd.read() )
 
    except Exception, e:
-      
-      print >> sys.stderr, traceback.format_exc()
+     
+      gateway.log_error(traceback.format_exc())
       sys.stderr.flush()
       return -errno.EIO
    
@@ -75,7 +74,7 @@ def write_chunk( chunk_request, chunk_buf, config, secrets ):
    chunk_path = gateway.request_to_storage_path( chunk_request )
    rc, storage_path = get_or_make_storage_dir( config, chunk_path )
    if rc != 0:
-       print >> sys.stderr, "WARN: could not make or load storage directory for '%s'" % chunk_path
+       gateway.log_error("WARN: could not make or load storage directory for '%s'" % chunk_path)
        return rc
    
    try:
@@ -83,9 +82,8 @@ def write_chunk( chunk_request, chunk_buf, config, secrets ):
            fd.write( chunk_buf )
 
    except Exception, e:
-      
-      print >> sys.stderr, traceback.format_exc()
-      sys.stderr.flush()
+     
+      gateway.log_error(traceback.format_exc())
       return -errno.EIO
    
    return 0
@@ -96,11 +94,11 @@ def delete_chunk( chunk_request, config, secrets ):
    chunk_path = gateway.request_to_storage_path( chunk_request )
    rc, storage_path = get_or_make_storage_dir( config, chunk_path )
    if rc != 0:
-       print >> sys.stderr, "WARN: could not make or load storage directory for '%s'" % chunk_path
+       gateway.log_error("WARN: could not make or load storage directory for '%s'" % chunk_path )
        return rc
   
    if not os.path.exists( storage_path ):
-       print >> sys.stderr, "WARN: '%s' does not exist" % storage_path
+       gateway.log_error("WARN: '%s' does not exist" % storage_path)
        return 0
 
    try:
@@ -108,8 +106,7 @@ def delete_chunk( chunk_request, config, secrets ):
    
    except Exception, e:
       
-      print >> sys.stderr, traceback.format_exc()
-      sys.stderr.flush()
+      gateway.log_error(traceback.format_exc())
       return -errno.EIO
    
    return 0
