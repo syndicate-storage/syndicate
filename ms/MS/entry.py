@@ -1246,7 +1246,6 @@ class MSEntry( storagetypes.Object ):
       # coerce fields
       ent_attrs['volume_id'] = volume.volume_id
       ent_attrs['capacity'] = cls.get_default('capacity', ent_attrs)
-      ent_attrs['size'] = 0
 
       # only mutate fields allowed
       rc = MSEntry.check_mutate_attrs( ent_attrs )
@@ -1356,7 +1355,7 @@ class MSEntry( storagetypes.Object ):
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
-         logingg.error("/%s/%s, parent_id=%s, name=%s exists (nameholder: /%s/%s, parent_id=%s, name=%s)" % \
+         logging.error("/%s/%s, parent_id=%s, name=%s exists (nameholder: /%s/%s, parent_id=%s, name=%s)" % \
              (volume_id, child_id, parent_id, ent_attrs['name'], nameholder.volume_id, nameholder.file_id, nameholder.parent_id, nameholder.name))
          
          return (-errno.EEXIST, None)
