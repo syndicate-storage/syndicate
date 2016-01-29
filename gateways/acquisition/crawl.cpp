@@ -43,6 +43,7 @@
 #define AG_CRAWL_CMD_CREATE  'C'
 #define AG_CRAWL_CMD_UPDATE  'U'
 #define AG_CRAWL_CMD_DELETE  'D'
+#define AG_CRAWL_CMD_FINISH  'F'        // indicates that there are no more datasets to crawl
 
 // indexes into a single stanza
 #define AG_CRAWL_STANZA_CMD 0
@@ -55,7 +56,7 @@
 // return 0 on success
 // return -EINVAL on bad input
 // return -ENOMEM on OOM 
-static int AG_crawl_parse_metadata( char const* md_linebuf, char const* path_linebuf, struct md_entry* data ) {
+static int AG_crawl_parse_metadata( char const* md_linebuf, char* path_linebuf, struct md_entry* data ) {
 
    int rc = 0;
 
@@ -63,8 +64,8 @@ static int AG_crawl_parse_metadata( char const* md_linebuf, char const* path_lin
    mode_t mode = 0;
    uint64_t size = 0;
 
-   rc = sscanf( md_linebuf, "%c %o %" PRIu64 "\n", &type, &mode, &size );
-   if( rc != 2 ) {
+   rc = sscanf( md_linebuf, "%c 0%o %" PRIu64 "\n", &type, &mode, &size );
+   if( rc != 3 ) {
       SG_error("Invalid mode string '%s'\n", md_linebuf );
       return -EINVAL;
    }
@@ -73,7 +74,14 @@ static int AG_crawl_parse_metadata( char const* md_linebuf, char const* path_lin
       SG_error("Invalid mode string type '%c'\n", type );
       return -EINVAL;
    }
-   
+
+   // strip trailing '\n' 
+   if( path_linebuf[strlen(path_linebuf)-1] != '\n' ) {
+      return -EINVAL;
+   }
+
+   path_linebuf[strlen(path_linebuf)-1] = '\0';
+
    data->type = (type == 'D' ? MD_ENTRY_DIR : MD_ENTRY_FILE);
    data->mode = mode & 0666;    // force read-only for now
    data->size = size;
@@ -82,6 +90,8 @@ static int AG_crawl_parse_metadata( char const* md_linebuf, char const* path_lin
    if( data->name == NULL ) {
       return -ENOMEM;
    }
+
+   SG_debug("Parsed (%c, %s, 0%o, %" PRIu64 ")\n", type, data->name, data->mode, data->size );
 
    return 0;
 }
@@ -101,7 +111,7 @@ static int AG_crawl_parse_command( char const* cmd_linebuf, int* cmd ) {
       return -EINVAL;
    }
 
-   if( cmd_type != AG_CRAWL_CMD_CREATE && cmd_type != AG_CRAWL_CMD_UPDATE && cmd_type != AG_CRAWL_CMD_DELETE ) {
+   if( cmd_type != AG_CRAWL_CMD_CREATE && cmd_type != AG_CRAWL_CMD_UPDATE && cmd_type != AG_CRAWL_CMD_DELETE && cmd_type != AG_CRAWL_CMD_FINISH ) {
       SG_error("Invalid command '%c'\n", cmd_type );
       return -EINVAL;
    }
@@ -141,9 +151,10 @@ static int AG_crawl_read_stanza( FILE* input, char** lines ) {
       }
 
       // is this a premature terminator line?
-      if( nr == 2 && linebuf[0] == '\0' ) {
+      else if( nr == 2 && linebuf[0] == '\0' ) {
          SG_error("early terminator at stanza line %d\n", i );
          rc = -EINVAL;
+         SG_safe_free( linebuf );
          break;
       }
 
@@ -159,8 +170,7 @@ static int AG_crawl_read_stanza( FILE* input, char** lines ) {
       rc = -errno;
       SG_error("getline rc = %d\n", rc );
    }
-
-   if( nr != 2 || (nr >= 1 && linebuf[0] != '\0' )) {
+   else if( nr != 2 || (nr >= 1 && linebuf[0] != '\0' )) {
 
       // not a terminator 
       SG_error("Missing terminator at end of stanza (got '%s')\n", linebuf);
@@ -183,6 +193,11 @@ static int AG_crawl_read_stanza( FILE* input, char** lines ) {
          SG_safe_free( linebuf );
          cnt++;
       }
+   }
+   else {
+      
+      // got terminator 
+      SG_safe_free( linebuf );
    }
 
    if( rc != 0 ) {
@@ -219,7 +234,7 @@ static int AG_crawl_parse_stanza( char** lines, int* cmd, char** path, struct md
        return -ENOMEM;
     }
 
-    rc = AG_crawl_parse_metadata( lines[AG_CRAWL_STANZA_MD], lines[AG_CRAWL_STANZA_PATH], entry );
+    rc = AG_crawl_parse_metadata( lines[AG_CRAWL_STANZA_MD], *path, entry );
     if( rc != 0 ) {
        SG_error("Failed to parse metadata line, rc = %d\n", rc);
        SG_safe_free( *path );
@@ -233,6 +248,7 @@ static int AG_crawl_parse_stanza( char** lines, int* cmd, char** path, struct md
 
 // handle one crawl command
 // return 0 on success
+// return 1 if there are no more commands to be had
 // return -ENOMEM on OOM
 // return -ENOENT if we requested an update or delete on a non-existant entry
 // return -EEXIST if we tried to create an entry that already existed
@@ -273,7 +289,7 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
              h = UG_publish( ug, path, ent, &rc );
              if( h == NULL ) {
 
-                SG_error("UG_publish_file(%s) rc = %d\n", path, rc );
+                SG_error("UG_publish(%s) rc = %d\n", path, rc );
                 if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST ) {
                     rc = -EREMOTEIO;
                 }
@@ -369,6 +385,11 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
          break;
       }
 
+      case AG_CRAWL_CMD_FINISH: {
+         rc = 1;
+         break;
+      }
+
       default: {
          SG_error("Unknown command type '%c'\n", cmd );
          rc = -EINVAL;
@@ -383,9 +404,9 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
 // get the next metadata entry and command from the crawler, process it, and reply the result
 // return 0 on success, and fill in *block
 // return -ENOMEM on OOM 
-// return -ENOENT if the block does not exist
 // return -EIO if the driver did not fulfill the request (driver error)
 // return -ENODATA if we couldn't request the data, for whatever reason (no processes free)
+// return -ENOTCONN if there is no driver
 int AG_crawl_next_entry( struct AG_state* core ) {
  
    int rc = 0;
@@ -396,6 +417,7 @@ int AG_crawl_next_entry( struct AG_state* core ) {
    int cmd = 0;
    char* path = NULL;
    struct md_entry ent;
+   int64_t result = 0;
    SG_messages::DriverRequest driver_req;
    char* lines[4] = {
       NULL,
@@ -432,6 +454,13 @@ int AG_crawl_next_entry( struct AG_state* core ) {
 
       // parse stanza
       rc = AG_crawl_parse_stanza( lines, &cmd, &path, &ent );
+
+      for( int i = 0; i < 4; i++ ) {
+         if( lines[i] != NULL ) {
+            SG_safe_free( lines[i] );
+         }
+      }
+
       if( rc < 0 ) {
          SG_error("AG_crawl_parse_stanza rc = %d\n", rc );
          rc = -EIO;
@@ -440,15 +469,29 @@ int AG_crawl_next_entry( struct AG_state* core ) {
 
       // consume the stanza 
       rc = AG_crawl_process( core, cmd, path, &ent );
+      result = rc;
       if( rc < 0 ) {
          SG_error("AG_crawl_process(%s) rc = %d\n", path, rc );
+         rc = 0;
+      }
+
+      if( rc > 0 ) {
+         // indicates that we're done crawling
+         rc = 1;
+         goto AG_crawl_next_entry_finish;
+      }
+
+      // send back the result 
+      rc = SG_proc_write_int64( SG_proc_stdin( proc ), result );
+      if( rc < 0 ) {
+         SG_error("SG_proc_write_int64(%d) rc = %d\n", SG_proc_stdin(proc), rc );
          goto AG_crawl_next_entry_finish;
       }
    }
    else {
       
       // no way to do work--no process group 
-      rc = -ENODATA;
+      rc = -ENOTCONN;
    }
    
 AG_crawl_next_entry_finish:
