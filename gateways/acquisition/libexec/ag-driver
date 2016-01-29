@@ -23,8 +23,10 @@ import cStringIO
 import traceback
 import signal
 import json
+import time
 
 import syndicate.util.gateway as gateway
+
 
 if __name__ == "__main__":
   
@@ -34,8 +36,8 @@ if __name__ == "__main__":
       'deserialize': None
    }
 
-   usage, driver_mod = gateway.driver_setup( ['read', 'write', 'delete', 'serialize', 'deserialize'], \
-                                             ['read_chunk', 'write_chunk', 'delete_chunk', 'serialize', 'deserialize'],
+   usage, driver_mod = gateway.driver_setup( ['read', 'crawl', 'serialize', 'deserialize'], \
+                                             ['read', 'next_dataset', 'serialize', 'deserialize'],
                                              default_callbacks=default_callbacks )
   
    # ready to go!
@@ -43,49 +45,14 @@ if __name__ == "__main__":
    print "0"
    sys.stdout.flush()
 
-   if usage == "write":
-      
-      while True:
-         
-         # read path and metadata from stdin; output blocks to stdout 
-         request = gateway.read_request( sys.stdin )
-         if request is None:
-            sys.exit(3)
-         
-         # read size fom stdin
-         size = gateway.read_int( sys.stdin )
-         if size is None:
-            sys.exit(3)
-         
-         # remainer of stdin should be the chunk
-         chunk = gateway.read_data( sys.stdin, size )
-         if chunk is None:
-            sys.exit(3)
-            
-         print >> sys.stderr, "write %s" % gateway.request_to_storage_path(request)
-
-         # write it 
-         try:
-            rc = driver_mod.write_chunk( request, chunk, driver_mod.CONFIG, driver_mod.SECRETS )
-         except Exception, e:
-            print >> sys.stderr, "write_chunk failed"
-            print >> sys.stderr, traceback.format_exc()
-            sys.exit(4)
-            
-         # send back the status
-         print >> sys.stderr, "write status: %s (%s bytes)" % (rc, len(chunk))
-         gateway.write_int( sys.stdout, rc )
-         sys.stdout.flush()
-         sys.stderr.flush()
-         
-         
-   elif usage == "read":
+   if usage == "read":
       
       while True:
         
          # read the path and metadata from stdin, write the chunk size and chunk to stdout
          request = gateway.read_request( sys.stdin )
          if request is None:
+            print >> sys.stderr, "No more requests"
             sys.exit(3)
          
          chunk_fd = cStringIO.StringIO()
@@ -95,9 +62,9 @@ if __name__ == "__main__":
 
          # get it 
          try:
-            rc = driver_mod.read_chunk( request, chunk_fd, driver_mod.CONFIG, driver_mod.SECRETS )
+            rc = driver_mod.read( request, chunk_fd, driver_mod.CONFIG, driver_mod.SECRETS )
          except Exception, e:
-            print >> sys.stderr, "read_chunk failed"
+            print >> sys.stderr, "read failed"
             print >> sys.stderr, traceback.format_exc()
             sys.exit(4)
          
@@ -108,12 +75,40 @@ if __name__ == "__main__":
          gateway.write_int( sys.stdout, rc )
 
          if rc == 0:
-             print >> sys.stderr, "read chunk of %s bytes" % len(chunk)
+             print >> sys.stderr, "read %s bytes" % len(chunk)
              gateway.write_chunk( sys.stdout, chunk )
 
          sys.stdout.flush()
          sys.stderr.flush()
-         
+
+   elif usage == "crawl":
+
+       have_more = True
+       finished = False
+       while True:
+
+           # feed the next dataset
+           if have_more:
+               try:
+                   have_more = driver_mod.next_dataset( driver_mod.CONFIG, driver_mod.SECRETS )
+               except Exception, e:
+                   print >> sys.stderr, "next_dataset failed"
+                   print >> sys.stderr, traceback.format_exc()
+                   sys.stderr.flush()
+                   sys.exit(4)
+
+           if not have_more:
+               if not finished:
+                   # send back a "finished" stanza 
+                   cmd = gateway.make_metadata_command( "finish", "directory", 0555, None, "/")
+                   gateway.write_metadata_command( sys.stdout, cmd )
+                   sys.stdout.flush()
+
+                   finished = True
+               else:
+                   # wait to die 
+                   time.sleep(1)
+
    else:
       
       while True:
