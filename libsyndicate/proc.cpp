@@ -1067,11 +1067,13 @@ int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk ) {
 // return 0 on success, and populate all required fields of *dreq, and any optional fields specific to the type
 // return -ENOMEM on OOM
 // return -EINVAL if fs_path is not set
-int SG_proc_request_init( SG_messages::DriverRequest* dreq, struct SG_request_data* reqdat ) {
+int SG_proc_request_init( struct ms_client* ms, struct SG_request_data* reqdat, SG_messages::DriverRequest* dreq ) {
 
    if( reqdat->fs_path == NULL ) {
       return -EINVAL;
    }
+
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
 
    try {
 
@@ -1081,6 +1083,7 @@ int SG_proc_request_init( SG_messages::DriverRequest* dreq, struct SG_request_da
       dreq->set_coordinator_id( reqdat->coordinator_id );
       dreq->set_user_id( reqdat->user_id );
       dreq->set_path( string(reqdat->fs_path) );
+      dreq->set_block_size( block_size );
       
       if( SG_request_is_manifest( reqdat ) ) {
           dreq->set_manifest_mtime_sec( reqdat->manifest_timestamp.tv_sec );

@@ -77,7 +77,7 @@ int SG_proc_read_int64( FILE* f, int64_t* result );
 int SG_proc_read_chunk( FILE* f, struct SG_chunk* chunk );
 int SG_proc_write_int64( int fd, int64_t value );
 int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk );
-int SG_proc_request_init( SG_messages::DriverRequest* dreq, struct SG_request_data* reqdat );
+int SG_proc_request_init( struct ms_client* ms, struct SG_request_data* reqdat, SG_messages::DriverRequest* dreq );
 int SG_proc_write_request( int fd, SG_messages::DriverRequest* dreq );
 
 // one-off subprocess in a subshell with bound output 
