@@ -676,6 +676,9 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
    struct SG_chunk block;
    struct SG_chunk block_dup;
    struct md_cache_block_future* block_fut = NULL;
+   struct SG_IO_hints io_hints;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
    
    memset( &block, 0, sizeof( struct SG_chunk ) );
    
@@ -706,6 +709,9 @@ int SG_server_HTTP_GET_block( struct SG_gateway* gateway, struct SG_request_data
    SG_debug("CACHE MISS %" PRIX64 ".%" PRId64 "[block %" PRIu64 ".%" PRId64 "]\n", reqdat->file_id, reqdat->file_version, reqdat->block_id, reqdat->block_version );
    
    // get raw block from the implementation, but don't deserialize
+   SG_IO_hints_init( &io_hints, SG_IO_READ, reqdat->block_id * block_size, block_size );
+   SG_request_data_set_IO_hints( reqdat, &io_hints );
+
    rc = SG_gateway_impl_block_get( gateway, reqdat, &block, 0 );
    if( rc < 0 ) {
       
@@ -781,6 +787,8 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    struct md_cache_block_future* manifest_fut = NULL;
    
    EVP_PKEY* gateway_private_key = SG_gateway_private_key( gateway );
+
+   SG_IO_hints io_hints;
    
    // sanity check 
    if( gateway->impl_get_manifest == NULL ) {
@@ -812,7 +820,10 @@ int SG_server_HTTP_GET_manifest( struct SG_gateway* gateway, struct SG_request_d
    // get from the implementation 
    memset( &manifest, 0, sizeof(struct SG_manifest) );
    
-   // get the manifest
+   // get the manifest 
+   SG_IO_hints_init( &io_hints, SG_IO_READ, 0, 0 );
+   SG_request_data_set_IO_hints( reqdat, &io_hints );
+
    rc = SG_gateway_impl_manifest_get( gateway, reqdat, &manifest, 0 );
    if( rc != 0 ) {
      
@@ -1613,6 +1624,10 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
    int rc = 0;
    int chunk_type = 0; 
    struct SG_manifest_block chunk_info;
+   struct SG_IO_hints io_hints;
+   int64_t io_context = md_random64();
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
 
    // sanity check 
    if( gateway->impl_delete_block == NULL || gateway->impl_delete_manifest == NULL ) {
@@ -1656,6 +1671,10 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
          reqdat->manifest_timestamp.tv_nsec = chunk_info.block_version;
          reqdat->block_id = SG_INVALID_BLOCK_ID;
          reqdat->block_version = 0;
+         
+         SG_IO_hints_init( &io_hints, SG_IO_DELETE, 0, 0 );
+         io_hints.io_context = io_context;
+         SG_request_data_set_IO_hints( reqdat, &io_hints );
 
          rc = SG_gateway_impl_manifest_delete( gateway, reqdat );
          SG_manifest_block_free( &chunk_info );
@@ -1675,6 +1694,10 @@ static int SG_server_HTTP_POST_DELETECHUNKS( struct SG_gateway* gateway, struct 
          reqdat->manifest_timestamp.tv_nsec = -1;
          reqdat->block_id = request_msg->blocks(i).block_id();
          reqdat->block_version = request_msg->blocks(i).block_version();
+    
+         SG_IO_hints_init( &io_hints, SG_IO_DELETE, block_size * reqdat->block_id, block_size );
+         io_hints.io_context = io_context;
+         SG_request_data_set_IO_hints( reqdat, &io_hints );
 
          rc = SG_gateway_impl_block_delete( gateway, reqdat );
          SG_manifest_block_free( &chunk_info );
@@ -1716,6 +1739,10 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
    uint64_t offset = 0;
    uint64_t size = 0;
    struct SG_chunk deserialized_chunk;
+   struct SG_IO_hints io_hints;
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t blocksize = ms_client_get_volume_blocksize( ms );
+   int64_t io_context = md_random64();
    
    // sanity check 
    if( gateway->impl_put_block == NULL || gateway->impl_put_manifest == NULL ) {
@@ -1868,6 +1895,10 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
          reqdat->block_id = request_msg->blocks(i).block_id();
          reqdat->block_version = request_msg->blocks(i).block_version();
 
+         SG_IO_hints_init( &io_hints, SG_IO_WRITE, reqdat->block_id * blocksize, blocksize );
+         io_hints.io_context = io_context;
+         SG_request_data_set_IO_hints( reqdat, &io_hints );
+
          // pass along
          rc = SG_gateway_impl_block_put( gateway, reqdat, &deserialized_chunk, 0 );
          SG_chunk_free( &deserialized_chunk );
@@ -1887,6 +1918,10 @@ static int SG_server_HTTP_POST_PUTCHUNKS( struct SG_gateway* gateway, struct SG_
          reqdat->manifest_timestamp.tv_nsec = request_msg->blocks(i).block_version();
          reqdat->block_id = SG_INVALID_BLOCK_ID;
          reqdat->block_version = 0;
+         
+         SG_IO_hints_init( &io_hints, SG_IO_WRITE, 0, 0 );
+         io_hints.io_context = io_context;
+         SG_request_data_set_IO_hints( reqdat, &io_hints );
 
          // put into the gateway 
          rc = SG_gateway_impl_manifest_put( gateway, reqdat, &deserialized_chunk, 0 );
