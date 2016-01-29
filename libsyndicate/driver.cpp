@@ -811,6 +811,7 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
 
              if( rc == -ENOSYS ) {
                 SG_warn("Driver does not implement '%s'\n", driver->roles[i] );
+                SG_proc_free( initial_procs[proc_idx] );
                 initial_procs[proc_idx] = NULL;
                 rc = 0;
                 continue;
@@ -862,6 +863,8 @@ SG_driver_procs_start_finish:
          }
          
          SG_proc_group_free( groups[i] );
+         SG_safe_free( groups[i] );
+         groups[i] = NULL;
       }
 
       SG_safe_free( groups );
