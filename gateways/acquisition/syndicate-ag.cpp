@@ -31,18 +31,34 @@ void AG_set_running( bool running ) {
 static void* AG_crawl_loop( void* cls ) {
 
    int rc = 0;
+   bool have_more = true;
    struct AG_state* ag = (struct AG_state*)cls;
 
-   while( g_running ) {
+   while( g_running && have_more ) {
 
       // poll on the crawler
-      rc = AG_crawl_next_entry( ag );
-      if( rc < 0 ) {
-         SG_error("AG_crawl_next_entry rc = %d\n", rc );
-         sleep(1);
+      if( have_more ) {
+         rc = AG_crawl_next_entry( ag );
+         if( rc < 0 ) {
+            if( rc != -ENOTCONN ) {
+               SG_error("AG_crawl_next_entry rc = %d\n", rc );
+               sleep(1);
+            }
+            else {
+
+               SG_warn("%s", "Crawler process is no longer running\n");
+               have_more = false;
+            }
+         }
+      }
+
+      if( rc > 0 ) {
+         // done crawling 
+         have_more = false;
       }
    }
 
+   SG_debug("%s", "Crawler thread exit\n");
    return NULL;
 }
 
