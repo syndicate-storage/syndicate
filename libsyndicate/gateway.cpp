@@ -38,7 +38,7 @@ int SG_IO_hints_init( struct SG_IO_hints* io_hints, int io_type, uint64_t offset
 
    memset( io_hints, 0, sizeof(struct SG_IO_hints));
    
-   io_type = io_type;
+   io_hints->io_type = io_type;
    io_hints->io_context = md_random64();
    io_hints->offset = offset;
    io_hints->len = len;
@@ -60,7 +60,8 @@ int SG_request_data_init( struct SG_request_data* reqdat ) {
    reqdat->manifest_timestamp.tv_nsec = -1;
    
    reqdat->user_id = SG_INVALID_USER_ID;
-   
+   reqdat->io_hints.io_type = SG_IO_NONE;
+
    return 0;
 }
 
