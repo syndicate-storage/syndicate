@@ -202,6 +202,147 @@ def write_chunk( f, data ):
    f.write( "%s\n%s\n" % (len(data), data))
 
 
+def request_byte_offset( request ):
+   """
+   Calculate a DriverRequest's byte offset.
+   Use the byte offset from the I/O hints if given;
+   otherwise assume it's on a block boundary.
+   Return None if the request is not for a block
+   """
+   
+   if hasattr(request, "io_type") and hasattr(request, "offset") and request.io_type in [DriverRequest.READ, DriverRequest.WRITE]:
+       # gateway-given offset hint
+       return request.offset
+
+   return None
+
+
+def request_byte_len( request ):
+   """
+   Calculate a DriverRequest's byte offset.
+   Use the byte offset from the I/O hints if given;
+   otherwise assume it's on a block boundary.
+   Return None if the request is not for a block
+   """
+   
+   if hasattr(request, "io_type") and hasattr(request, "len") and request.io_type in [DriverRequest.READ, DriverRequest.WRITE]:
+       # gateway-given offset hint
+       return request.len
+
+   return None
+
+
+def make_metadata_command( cmd, ftype, mode, size, path ):
+   """
+   Generate a metadata command structure (useful for crawling datasets).
+   @cmd must be any of 'create', 'update', or 'delete'
+   @ftype must be either 'file' or 'directory'
+   @path cannot have any newlines
+   @size will be ignored for directories
+
+   Returns a command structure on success.
+   Returns None if any of the above conditions are not met.
+   """
+
+   if ftype != 'file':
+       size = 4096
+
+   cmd_table = {
+      "create": "C",
+      "update": "U",
+      "delete": "D",
+      "finish": "F",
+   }
+
+   ftype_table = {
+      "file": "F",
+      "directory": "D"
+   }
+
+   ret = {
+      "cmd": cmd_table.get(cmd),
+      "ftype": ftype_table.get(ftype),
+      "mode": mode,
+      "size": size,
+      "path": path 
+   }
+
+   if not check_metadata_command( ret ):
+       return None 
+
+   return ret
+
+
+def check_metadata_command( cmd_dict ):
+   """
+   Given a metadata command structure, verify that it is well-formed.
+   Return True if so
+   Return False if not
+   """
+
+   if type(cmd_dict) != dict:
+       return False 
+
+   for key in ["cmd", "ftype", "mode", "size", "path"]:
+       if not cmd_dict.has_key(key):
+           return False 
+
+   if cmd_dict['cmd'] not in ['C', 'U', 'D', 'F']:
+       return False 
+
+   if cmd_dict['ftype'] not in ['F', 'D']:
+       return False 
+
+   if '\n' in cmd_dict['path']:
+       return False
+
+   return True
+
+
+def write_metadata_command( f, cmd_dict ):
+   """
+   Send back a metadata command for the gateway to send to the MS.
+   Valid values for @cmd are "create", "update", or "delete"
+   Valid values for @ftype are "file", "directory"
+   @mode is the permission bits
+   @size is the size of the file (ignored for directories)
+   @path is the absolute path to the file or directory
+
+   Raises an exception on invalid input.
+   """
+
+   if not check_metadata_command( cmd_dict ):
+       raise Exception("Malformed command: %s" % cmd_dict)
+
+   # see the AG documentation for the description of this stanza 
+   f.write("%s\n%s 0%o %s\n%s\n\0\n" % (cmd_dict['cmd'], cmd_dict['ftype'], cmd_dict['mode'], cmd_dict['size'], cmd_dict['path']) )
+
+
+def crawl( cmd_dict ):
+   """
+   Rendezvous with the gateway: send it a metadata command,
+   and get back the result code of the gateway's attempt
+   at processing it.
+
+   Returns the integer code, or raises an exception if 
+   the command dict is malformed.
+   """
+
+   write_metadata_command( sys.stdout, cmd_dict )
+   sys.stdout.flush()
+
+   rc = read_int( sys.stdin )
+   return rc
+
+
+def log_error( msg ):
+    """
+    Synchronously log an error message
+    """
+    print >> sys.stderr, "[Driver %s] %s" % (os.getpid(), msg)
+    sys.stderr.flush()
+
+
 driver_shutdown = None
 driver_shutdown_lock = threading.Semaphore(1)
 
@@ -311,9 +452,9 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
        CONFIG = json.loads(config_str)
    except Exception, e:
       
-      print >> sys.stderr, "Failed to load config"
-      print >> sys.stderr, "'%s'" % config_str
-      print >> sys.stderr, traceback.format_exc()
+      log_error("Failed to load config")
+      log_error("'%s'" % config_str )
+      log_error( traceback.format_exc() )
       
       # tell the parent that we failed
       print "1"
@@ -324,8 +465,8 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
       SECRETS = json.loads(secrets_str)
    except Exception, e:
       
-      print >> sys.stderr, "Failed to load secrets"
-      print >> sys.stderr, traceback.format_exc()
+      log_error("Failed to load secrets")
+      log_error( traceback.format_exc() )
       
       # tell the parent that we failed 
       print "1"
@@ -337,8 +478,8 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
       exec driver_str in driver_mod.__dict__
    except Exception, e:
             
-      print >> sys.stderr, "Failed to load driver"
-      print >> sys.stderr, traceback.format_exc()
+      log_error("Failed to load driver")
+      log_error(traceback.format_exc())
       
       # tell the parent that we failed 
       print "1"
@@ -348,17 +489,17 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
    fail = False
    if not has_method( driver_mod, method_name ):
        if not default_callbacks.has_key( method_name ):
-           fail = True 
-           print >> sys.stderr, "No method '%s' defined" % method_name
+           fail = True
+           log_error("No method '%s' defined" % method_name)
 
        elif default_callbacks[method_name] is None:
            # no method implementation; fall back to the gateway
-           print >> sys.stderr, "No implementation for '%s'" % method_name
+           log_error("No implementation for '%s'" % method_name)
            print "2"
            sys.exit(0)
 
        else:
-           print >> sys.stderr, "Using default implementation for '%s'" % method_name
+           log_error("Using default implementation for '%s'" % method_name );
            setattr( driver_mod, usage, default_callbacks[method_name] )
 
 
@@ -371,10 +512,10 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
    if not fail and has_method( driver_mod, "driver_init" ):
 
        try:
-           fail = driver_mod.driver_init( CONFIG, SECRETS )
+           fail = not driver_mod.driver_init( CONFIG, SECRETS )
        except:
-           print >> sys.stderr, "driver_init raised an exception"
-           print >> sys.stderr, traceback.format_exc()
+           log_error("driver_init raised an exception")
+           log_error(traceback.format_exc())
            fail = True 
 
        if fail not in [True, False]:
@@ -384,6 +525,7 @@ def driver_setup( operation_modes, expected_callback_names, default_callbacks={}
 
    if fail:
       print "1"
+      sys.stderr.flush()
       sys.stdout.flush()
       sys.exit(2)
  
