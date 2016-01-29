@@ -158,10 +158,8 @@ message DriverRequest {
       NONE = 0;
       READ = 1;
       WRITE = 2;
-      TRUNC = 3;
-      SYNC = 4;
-      REPLICATE = 5;
-      DELETE= 6;
+      SYNC = 3;
+      DELETE= 4;
    }
     
    required uint64 volume_id = 1;
@@ -180,8 +178,9 @@ message DriverRequest {
    optional uint64 offset = 12;          // logical read/write offset in the file 
    optional uint64 len = 13;             // logical read/write length in the file
    optional uint64 io_context = 14;      // opaque identifier that uniquely identifies a sequence of related requests
-   optional int32 io_type = 15;          // none, read, write, or truncate (IOType)
+   optional int32 io_type = 15;          // IOType
    repeated bool cached_blocks = 16;     // vector of true|false where cached_blocks[i] is true if it's locally present in the cache
    optional Manifest manifest = 17;      // for whole-file operations
+   optional uint64 block_size = 18;      // block size for this volume
 }
 
