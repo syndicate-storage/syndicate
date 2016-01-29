@@ -1,0 +1,195 @@
+#!/usr/bin/python
+
+"""
+   Copyright 2016 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+"""
+Extremely simple disk driver.
+Serves static files in a directory.
+Does not try to republish if they are modified.
+"""
+
+import traceback
+import os
+import sys
+import errno
+import time
+import stat
+import syndicate.util.gateway as gateway
+
+import threading
+
+path_queue = None
+
+def search_datasets( dataset_dir ):
+    """
+    Walk the dataset directory in breadth-first order.
+    Return the listing of files and directories.
+
+    TODO: for each directory, set up inotify handles
+    so we can watch for changes
+    """
+
+    frontier = ['']
+    ret = []
+
+    while len(frontier) > 0:
+        next_dir = frontier[0]
+        fp_next_dir = os.path.join( dataset_dir, next_dir )
+        frontier.pop(0)
+
+        names = os.listdir(fp_next_dir)
+
+        for name in names:
+
+            path = os.path.join( next_dir, name )
+            fullpath = os.path.join( fp_next_dir, name )
+            if os.path.isdir( fullpath ):
+                # scan subsequent directories
+                frontier.append( path )
+
+            ret.append( path )
+
+    return ret
+
+
+def driver_init( driver_config, driver_secrets ):
+    """
+    Do the one-time driver setup.
+    """
+
+    global path_queue
+
+    if not driver_config.has_key('DATASET_DIR'):
+        gateway.log_error("No DATASET_DIR defined")
+        return False
+
+    dataset_dir = driver_config['DATASET_DIR']
+    if not os.path.exists( dataset_dir ):
+        gateway.log_error("No such file or directory: %s" % dataset_dir )
+        return False 
+
+    if not os.path.isdir( dataset_dir ):
+        gateway.log_error("Not a directory: %s" % dataset_dir )
+        return False
+
+    path_queue = search_datasets( dataset_dir )
+    return True
+
+
+def driver_shutdown():
+    """
+    Do the one-time driver shutdown
+    """
+    pass
+    
+
+def next_dataset( driver_config, driver_secrets ):
+    """
+    Return the next dataset command for the AG to process.
+    Should block until there's data.
+
+    Must call gateway.crawl() to feed the data into the AG.
+    Return True if there are more datasets to process.
+    Return False if not.
+    """
+
+    global path_queue
+
+    next_path = None
+    dataset_dir = driver_config['DATASET_DIR']
+
+    # find the next file or directory 
+    while True:
+
+        next_path = None
+        if len(path_queue) > 0:
+            next_path = path_queue[0]
+            path_queue.pop(0)
+
+        if next_path is None:
+            # no more data
+            # stop calling this method
+            return False
+
+        full_path = os.path.join( dataset_dir, next_path )
+        sb = os.stat( full_path )
+        next_path = '/' + next_path     # do this here since os.path.join won't work with absolute paths
+
+        cmd = None
+
+        if stat.S_ISDIR( sb.st_mode ):
+            # directory 
+            cmd = gateway.make_metadata_command( "create", "directory", 0555, None, next_path )
+
+        elif stat.S_ISREG( sb.st_mode ):
+            # file 
+            cmd = gateway.make_metadata_command( "create", "file", 0555, sb.st_size, next_path )
+
+        if cmd is not None:
+            # have a command!
+            break
+
+        else:
+            # try next path 
+            continue
+
+    # send the command to the AG and get back the result
+    rc = gateway.crawl( cmd )
+    if rc != 0:
+        gateway.log_error( "Failed to crawl %s" % cmd['path'] )
+
+    # have more data
+    return True
+
+
+def read( request, chunk_fd, driver_config, driver_secrets ):
+    """
+    Read a chunk of data.
+    @request is a DriverRequest
+    @chunk_fd is a file descriptor to which to write the data.
+    @driver_config is a dict containing the driver's config
+    @driver_secrets is a dict containing the driver's unencrypted secrets
+    """
+ 
+    dataset_dir = driver_config['DATASET_DIR']
+    file_path = os.path.join( dataset_dir, request.path )
+    byte_offset = gateway.request_byte_offset( request )
+    byte_len = gateway.request_byte_len( request )
+    buf = None
+
+    if byte_offset is None:
+        # this is a bug
+        gateway.log_error("BUG: byte offset of request on %s is not defined" % request.path )
+        sys.exit(1)
+
+    if byte_len is None:
+        # this is a bug
+        gateway.log_error("BUG: byte len of request on %s is not defined" % request.path )
+        sys.exit(1)
+
+    try:
+        with open( file_path, "r" ) as f:
+            f.seek(byte_offset)
+            buf = f.read( byte_len )
+
+    except Exception, e:
+        gateway.log_error("Failed to read %s: %s" % (file_path, e))
+        sys.exit(1)
+
+    # send it off
+    chunk_fd.write( buf )
+    return 0 
