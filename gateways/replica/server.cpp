@@ -32,6 +32,7 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
    struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
 
    RG_core_rlock( core );
@@ -50,7 +51,7 @@ static int RG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
       }
       
       // ask for the block 
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -135,6 +136,7 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
    struct SG_proc* proc = NULL;
    struct SG_chunk chunk;
    size_t manifest_len = 0;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
    SG_messages::Manifest manifest_message;
    
@@ -157,7 +159,7 @@ static int RG_server_manifest_get( struct SG_gateway* gateway, struct SG_request
       }
 
       // ask for the serialized manifest 
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -268,6 +270,7 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
    struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req; 
    
    RG_core_rlock( core );
@@ -288,7 +291,7 @@ static int RG_server_block_put( struct SG_gateway* gateway, struct SG_request_da
       }
       
       // send request 
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -405,6 +408,7 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
    int64_t worker_rc = 0;
    struct SG_proc* proc = NULL;
    struct SG_proc_group* group = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
 
    // find a worker...
@@ -421,7 +425,7 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
       }
       
       // send the worker the request 
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -501,6 +505,7 @@ int RG_server_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    struct RG_core* core = (struct RG_core*)SG_gateway_cls( gateway );
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
    struct SG_driver* driver = NULL;
   
@@ -521,7 +526,7 @@ int RG_server_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
       }
       
       // feed in the metadata for this block
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -612,6 +617,7 @@ int RG_server_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
    struct SG_driver* driver = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
    
    RG_core_rlock( core );
@@ -633,7 +639,7 @@ int RG_server_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
       }
 
       // feed in the metadata for this block
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
