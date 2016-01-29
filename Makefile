@@ -1,29 +1,39 @@
 include buildconf.mk
 
-# BROKEN; do not use 
+all: syndicate
 
-all:
-	$(MAKE) -C protobufs 
+syndicate: protobufs libsyndicate libsyndicate-ug gateways ms syndicate-python
 
-protobufs: build_setup
+.PHONY: protobufs
+protobufs:
 	$(MAKE) -C protobufs
 
-libsyndicate: build_setup
+.PHONY: libsyndicate
+libsyndicate: protobufs
 	$(MAKE) -C libsyndicate
 
-.PHONY: libsyndicate-install
-libsyndicate-install: libsyndicate
-	$(MAKE) -C libsyndicate install
+.PHONY: libsyndicate-ug
+libsyndicate-ug: libsyndicate
+	$(MAKE) -C libsyndicate-ug
 
-UG: build_setup
-	$(MAKE) -C UG2
+.PHONY: gateways
+gateways: libsyndicate libsyndicate-ug
+	$(MAKE) -C gateways
 
-RG: build_setup
-	$(MAKE) -C RG2
+.PHONY: ms
+ms: protobufs
+	$(MAKE) -C ms
 
-MS: build_setup
-	$(MAKE) -C ms 
+.PHONY: syndicate-python
+syndicate-python: protobufs ms libsyndicate-ug
+	$(MAKE) -C python
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILD)
+	$(MAKE) -C libsyndicate clean
+	$(MAKE) -C protobufs clean
+	$(MAKE) -C libsyndicate-ug clean
+	$(MAKE) -C gateways clean
+	$(MAKE) -C ms clean
+	$(MAKE) -C python clean
+
