@@ -111,6 +111,7 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    struct SG_proc* proc = NULL;
    SG_messages::DriverRequest driver_req;
    struct SG_driver* driver = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    bool out_chunk_alloced = (out_chunk->data == NULL);  // will allocate
   
    UG_state_rlock( core );
@@ -130,7 +131,7 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
       }
       
       // feed in the metadata for this block
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
@@ -219,6 +220,7 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
    struct SG_proc_group* group = NULL;
    struct SG_proc* proc = NULL;
    struct SG_driver* driver = NULL;
+   struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
    
    UG_state_rlock( core );
@@ -240,7 +242,7 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
       }
 
       // feed in the metadata for this block
-      rc = SG_proc_request_init( &driver_req, reqdat );
+      rc = SG_proc_request_init( ms, reqdat, &driver_req );
       if( rc != 0 ) {
 
          SG_error("SG_proc_request_init rc = %d\n", rc );
