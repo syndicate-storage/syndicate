@@ -450,6 +450,7 @@ struct UG_state* UG_init_ex( int argc, char** argv, struct md_opts* overrides, v
    }
 
    state->gateway = gateway;
+   SG_gateway_set_cls( gateway, (void*)state );
 
    SG_debug("%s", "Activating filesystem\n");
    
@@ -542,9 +543,6 @@ struct UG_state* UG_init_ex( int argc, char** argv, struct md_opts* overrides, v
       SG_safe_free( state );
       return NULL;
    }
-   
-   // propagate UG to gateway 
-   SG_gateway_set_cls( state->gateway, state );
    
    SG_debug("%s", "Looking up volume root\n");
    
@@ -797,6 +795,7 @@ int UG_shutdown( struct UG_state* state ) {
        }
 
        SG_safe_free( state->gateway );
+       state->gateway = NULL;
    }
    
    if( state->fs != NULL ) {
