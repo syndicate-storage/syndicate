@@ -38,6 +38,33 @@ int SG_server_HTTP_connect( struct md_HTTP_connection_data* con_data, void** cls
 }
 
 
+// translate a stat error into an HTTP response 
+// return the result of md_HTTP_create_response_builtin 
+static int SG_server_stat_fail_response( int rc, struct md_HTTP_response* resp ) {
+
+   // not found or permission error?
+   if( rc == -ENOENT || rc == -EACCES ) {
+      
+      return md_HTTP_create_response_builtin( resp, 404 );
+   }
+   
+   // not permitted? invalid?
+   else if( rc == -EPERM || rc == -EINVAL ) {
+      
+      return md_HTTP_create_response_builtin( resp, 400 );
+   }
+   
+   // not defined?
+   else if( rc == -ENOSYS ) {
+      
+      return md_HTTP_create_response_builtin( resp, 501 );
+   }
+   
+   // some other error 
+   return md_HTTP_create_response_builtin( resp, 500 );
+}
+
+
 // stat a file given its request info, and set up an HTTP response with the appropriate failure code if it fails 
 // return 0 if we handled the failure 
 // return 1 if there was no failure to handle
@@ -49,32 +76,34 @@ static int SG_gateway_impl_stat_or_fail( struct SG_gateway* gateway, struct md_H
    // do the stat
    rc = SG_gateway_impl_stat( gateway, reqdat, entity_info, mode );
    if( rc != 0 ) {
-     
+      
       SG_error("SG_gateway_impl_stat rc = %d\n", rc ); 
-      // not found or permission error?
-      if( rc == -ENOENT || rc == -EACCES ) {
-         
-         return md_HTTP_create_response_builtin( resp, 404 );
-      }
-      
-      // not permitted? invalid?
-      else if( rc == -EPERM || rc == -EINVAL ) {
-         
-         return md_HTTP_create_response_builtin( resp, 400 );
-      }
-      
-      // not defined?
-      else if( rc == -ENOSYS ) {
-         
-         return md_HTTP_create_response_builtin( resp, 501 );
-      }
-      
-      // some other error 
-      return md_HTTP_create_response_builtin( resp, 500 );
+      return SG_server_stat_fail_response( rc, resp );
+
+   } 
+   return 1;
+}
+
+
+// stat a file's block given its request info, and set up an HTTP response with the appropriate failure code if it fails 
+// return 0 if we handled the failure 
+// return 1 if there was no failure to handle
+// return negative on error 
+static int SG_gateway_impl_stat_block_or_fail( struct SG_gateway* gateway, struct md_HTTP_response* resp, struct SG_request_data* reqdat, struct SG_request_data* entity_info, mode_t* mode ) {
+   
+   int rc = 0;
+   
+   // do the stat
+   rc = SG_gateway_impl_stat_block( gateway, reqdat, entity_info, mode );
+   if( rc != 0 ) {
+     
+      SG_error("SG_gateway_impl_stat_block rc = %d\n", rc ); 
+      return SG_server_stat_fail_response( rc, resp );
    }
    
    return 1;
 }
+
 
 
 // stat the requested entity, and verify that it has an appropriate mode.
@@ -120,14 +149,18 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
    
    int rc = 0;
    struct SG_request_data entity_info;
+   struct SG_request_data block_info;
    uint64_t gateway_id = SG_gateway_id( gateway );
    mode_t entity_mode = 0;
+   mode_t block_mode = 0;
+   bool set_block_mode = false;
    
    struct ms_client* ms = SG_gateway_ms( gateway );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    struct md_syndicate_conf* conf = SG_gateway_conf( gateway );
 
    memset( &entity_info, 0, sizeof(struct SG_request_data) );
+   memset( &block_info, 0, sizeof(struct SG_request_data) );
    
    char* url = NULL;
 
@@ -184,25 +217,39 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
             rc = -ENOMEM;
          }
       }
-      
-      else if( reqdat->block_version != entity_info.block_version ) {
-         
-         rc = 0;
-         
-         SG_debug("REDIRECT: Block/version mismatch: expected version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 ", got version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 "\n",
-                  entity_info.file_version, entity_info.block_id, entity_info.block_version,
-                  reqdat->file_version, reqdat->block_id, reqdat->block_version );
-                  
-         // redirect block request to newer local version 
-         url = md_url_public_block_url( conf->content_url, volume_id, entity_info.fs_path, entity_info.file_id, entity_info.file_version, entity_info.block_id, entity_info.block_version );
-         
-         if( url == NULL ) {
+
+      if( gateway->impl_stat_block != NULL ) {
+
+         rc = SG_gateway_impl_stat_block_or_fail( gateway, resp, reqdat, &block_info, &block_mode );
+         if( rc <= 0 ) {
             
-            // OOM
-            rc = -ENOMEM;
+            // handled or error 
+            return rc;
          }
+
+         set_block_mode = true;
+         rc = 1;
+         if( reqdat->block_version != block_info.block_version ) {
+
+            rc = 0;
+            SG_debug("REDIRECT: Block/version mismatch: expected version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 ", got version=%" PRId64 ", block=%" PRIu64 ".%" PRId64 "\n",
+                     block_info.file_version, block_info.block_id, block_info.block_version,
+                     reqdat->file_version, reqdat->block_id, reqdat->block_version );
+                     
+            // redirect block request to newer local version 
+            url = md_url_public_block_url( conf->content_url, volume_id, block_info.fs_path, block_info.file_id, block_info.file_version, block_info.block_id, block_info.block_version );
+            
+            if( url == NULL ) {
+               
+               // OOM
+               rc = -ENOMEM;
+            }
+         }
+
+         SG_request_data_free( &block_info );
       }
    }
+
    else if( SG_request_is_manifest( reqdat ) ) {
       
       // manifest request 
@@ -377,6 +424,16 @@ static int SG_server_redirect_request( struct SG_gateway* gateway, struct md_HTT
          SG_request_data_free( &entity_info );
          
          SG_debug("%" PRIu64 ": 0%o & 0%o == 0\n", reqdat->file_id, entity_mode, mode );
+         return md_HTTP_create_response_builtin( resp, 403 );
+      }
+
+      if( set_block_mode && (block_mode & mode) == 0 ) {
+
+         // denied 
+         SG_safe_free( url );
+         SG_request_data_free( &entity_info );
+
+         SG_debug("%" PRIu64 "(block): 0%o & 0%o == 0\n", reqdat->file_id, block_mode, mode );
          return md_HTTP_create_response_builtin( resp, 403 );
       }
       
@@ -936,7 +993,7 @@ int SG_server_HTTP_GET_handler( struct md_HTTP_connection_data* con_data, struct
    
    struct SG_request_data* reqdat = NULL;
    struct SG_gateway* gateway = sgcon->gateway;
-   
+    
    int rc = 0;
 
    reqdat = SG_CALLOC( struct SG_request_data, 1 );
@@ -2034,7 +2091,6 @@ int SG_server_HTTP_POST_finish( struct md_HTTP_connection_data* con_data, struct
    struct SG_request_data* reqdat = NULL;
    struct SG_gateway* gateway = sgcon->gateway;
    struct ms_client* ms = SG_gateway_ms( gateway );
-   
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
    // request data
