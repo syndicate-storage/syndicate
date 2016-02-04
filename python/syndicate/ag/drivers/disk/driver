@@ -166,20 +166,25 @@ def read( request, chunk_fd, driver_config, driver_secrets ):
     """
  
     dataset_dir = driver_config['DATASET_DIR']
-    file_path = os.path.join( dataset_dir, request.path )
+    path = gateway.request_path( request )
+    file_path = gateway.path_join( dataset_dir, path )
     byte_offset = gateway.request_byte_offset( request )
     byte_len = gateway.request_byte_len( request )
     buf = None
 
     if byte_offset is None:
         # this is a bug
-        gateway.log_error("BUG: byte offset of request on %s is not defined" % request.path )
+        gateway.log_error("BUG: byte offset of request on %s is not defined" % file_path )
         sys.exit(1)
 
     if byte_len is None:
         # this is a bug
-        gateway.log_error("BUG: byte len of request on %s is not defined" % request.path )
+        gateway.log_error("BUG: byte len of request on %s is not defined" % file_path )
         sys.exit(1)
+
+    if not os.path.exists( file_path ):
+        gateway.log_error("No such file or directory: '%s'" % file_path)
+        return -errno.ENOENT
 
     try:
         with open( file_path, "r" ) as f:
