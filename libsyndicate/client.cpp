@@ -679,7 +679,8 @@ int SG_client_block_sign( struct SG_gateway* gateway, struct SG_request_data* re
       blkhdr.set_block_version( reqdat->block_version );
       blkhdr.set_block_hash( string((char const*)block_hash, SHA256_DIGEST_LENGTH) );
       blkhdr.set_gateway_id( SG_gateway_id( gateway ) );
-   } catch( bad_alloc& ba ) {
+   }
+   catch( bad_alloc& ba ) {
       return -ENOMEM;
    }
 
@@ -711,6 +712,8 @@ int SG_client_block_sign( struct SG_gateway* gateway, struct SG_request_data* re
 
    signed_block_data->data = full_block_data;
    signed_block_data->len = sizeof(uint32_t) + hdr_buf_len + block_data->len;
+
+   SG_debug("Signed block: header = %zu bytes, payload = %zu bytes, total = %zu bytes, sig = %s\n", hdr_buf_len, block_data->len, signed_block_data->len, blkhdr.signature().c_str() );
 
    SG_safe_free( hdr_buf );
    return 0;
@@ -745,6 +748,7 @@ int SG_client_block_verify( struct SG_gateway* gateway, struct SG_chunk* signed_
 
    if( (unsigned)signed_block->len < sizeof(uint32_t) + hdr_len ) {
       // can't have fit the header 
+      SG_debug("Invalid header length %zu + %u\n", sizeof(uint32_t), hdr_len);
       return -EBADMSG;
    }
 
@@ -752,6 +756,7 @@ int SG_client_block_verify( struct SG_gateway* gateway, struct SG_chunk* signed_
    rc = md_parse< SG_messages::SignedBlockHeader >( &blkhdr, signed_block->data + sizeof(uint32_t), hdr_len );
    if( rc != 0 ) {
       // bad message 
+      SG_debug("Unparseable data (offset %zu, length %u)\n", sizeof(uint32_t), hdr_len );
       return -EBADMSG;
    }
 
