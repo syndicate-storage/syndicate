@@ -417,7 +417,8 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
 
    // find a worker...
    group = SG_driver_get_proc_group( SG_gateway_driver(gateway), "delete" );
-   if( group != NULL ) {
+
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {   
       
       // get a free worker 
       proc = SG_proc_group_acquire( group );
@@ -518,7 +519,8 @@ int RG_server_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    // find a free deserializer
    driver = SG_gateway_driver( gateway );
    group = SG_driver_get_proc_group( driver, "deserialize" );
-   if( group != NULL ) {
+   
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {   
 
       // get a free process
       proc = SG_proc_group_acquire( group );
@@ -629,7 +631,8 @@ int RG_server_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
    // find a worker 
    driver = SG_gateway_driver( gateway );
    group = SG_driver_get_proc_group( driver, "serialize" );
-   if( group != NULL ) {
+   
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {   
       
       // get a free worker 
       proc = SG_proc_group_acquire( group );
