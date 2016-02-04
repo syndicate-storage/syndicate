@@ -232,13 +232,28 @@ def request_byte_len( request ):
    return None
 
 
+def request_path( request ):
+    """
+    Get the path of the request
+    """
+    return str(request.path)
+
+
+def path_join( a, *b ):
+    """
+    Join two or more paths, even if any of them are absolute.
+    """
+    parts = [ p.strip("/") for p in b ]
+    return os.path.join( a, *parts )
+
+
 def make_metadata_command( cmd, ftype, mode, size, path ):
    """
    Generate a metadata command structure (useful for crawling datasets).
-   @cmd must be any of 'create', 'update', or 'delete'
+   @cmd must be any of 'create', 'update', 'delete', or 'finish'
    @ftype must be either 'file' or 'directory'
    @path cannot have any newlines
-   @size will be ignored for directories
+   @size will be ignored for directories, and will only be processed on 'create' or 'update'
 
    Returns a command structure on success.
    Returns None if any of the above conditions are not met.
