@@ -18,6 +18,7 @@
 #include "block.h"
 #include "inode.h"
 #include "consistency.h"
+#include "client.h"
 
 // track which gateway to download a given block from
 typedef map< uint64_t, int > UG_block_gateway_map_t;
@@ -280,19 +281,47 @@ int UG_read_aligned_setup( struct UG_inode* inode, char* buf, size_t buf_len, of
 // get the list of gateways to download from 
 // return 0 on success, and set *gateway_ids and *num_gateway_ids
 // return -ENOMEM on OOM
-int UG_read_download_gateway_list( struct SG_gateway* gateway, uint64_t coordinator_id, uint64_t** gateway_ids, size_t* num_gateway_ids ) {
+int UG_read_download_gateway_list( struct SG_gateway* gateway, uint64_t coordinator_id, uint64_t** ret_gateway_ids, size_t* ret_num_gateway_ids ) {
    
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+   struct ms_client* ms = SG_gateway_ms( gateway );
    int rc = 0;
+   uint64_t coordinator_type = 0;
+
+   uint64_t* gateway_ids = NULL;
+   size_t num_gateway_ids = 0;
+
+   coordinator_type = ms_client_get_gateway_type( ms, coordinator_id );
    
    // what are the RGs?
-   rc = UG_state_list_replica_gateway_ids( ug, gateway_ids, num_gateway_ids );
+   rc = UG_state_list_replica_gateway_ids( ug, &gateway_ids, &num_gateway_ids );
    if( rc != 0 ) {
       
       // OOM
       return rc;
    }
    
+   // if the coordinator is an AG, then try it first
+   if( coordinator_type == SYNDICATE_AG ) {
+
+      SG_debug("Gateway %" PRIu64 " is an AG\n", coordinator_id );
+      
+      uint64_t* tmp = SG_CALLOC( uint64_t, num_gateway_ids + 1 );
+      if( tmp == NULL ) {
+         return -ENOMEM;
+      }
+
+      tmp[0] = coordinator_id;
+      memcpy( &tmp[1], gateway_ids, num_gateway_ids * sizeof(uint64_t) );
+
+      SG_safe_free( gateway_ids );
+      gateway_ids = tmp;
+      num_gateway_ids = num_gateway_ids + 1;
+   }
+
+   *ret_gateway_ids = gateway_ids;
+   *ret_num_gateway_ids = num_gateway_ids;
+
    return 0;
 }
 
@@ -806,7 +835,7 @@ int UG_read_blocks_remote( struct SG_gateway* gateway, char const* fs_path, stru
 int UG_read_blocks( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, UG_dirty_block_map_t* blocks, uint64_t offset, uint64_t len ) {
    
    int rc = 0;
-   struct SG_manifest blocks_to_download;
+   struct SG_manifest blocks_to_download;   // coordinator set to inode's listed coordinator
    uint64_t max_block_id = 0;
    uint64_t min_block_id = (uint64_t)(-1);
    
