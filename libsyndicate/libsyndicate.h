@@ -426,7 +426,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 // system UID
 #define SG_SYS_USER 0
 
-#define SG_INVALID_BLOCK_ID (uint64_t)(-1)
+#define SG_INVALID_BLOCK_ID (uint64_t)(0xffffffffffffffff)
 #define SG_INVALID_GATEWAY_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_VOLUME_ID SG_INVALID_BLOCK_ID
 #define SG_INVALID_FILE_ID SG_INVALID_BLOCK_ID
