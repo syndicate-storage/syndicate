@@ -1288,14 +1288,15 @@ int SG_manifest_serialize_blocks_to_request_protobuf( struct SG_manifest* manife
 int SG_manifest_block_serialize_to_protobuf( struct SG_manifest_block* block, SG_messages::ManifestBlock* mblock ) {
   
    // sanity check...
-   if( block->hash == NULL ) {
+   if( block->hash == NULL && block->hash_len != 0 ) {
      SG_error("BUG: block [%" PRIu64 ".%" PRId64 "] hash is NULL\n", block->block_id, block->block_version);
      exit(1);
    }
-
    try {
-      
-      mblock->set_hash( string((char*)block->hash, block->hash_len) );
+     
+      if( block->hash != NULL ) { 
+          mblock->set_hash( string((char*)block->hash, block->hash_len) );
+      }
        
       mblock->set_block_id( block->block_id );
       mblock->set_block_version( block->block_version );
