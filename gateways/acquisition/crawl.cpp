@@ -263,6 +263,8 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
    struct UG_state* ug = AG_state_ug( core );
    struct timespec now;
    struct SG_client_WRITE_data* update = NULL;
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
+   uint64_t num_blocks = 0;
    UG_handle_t* h = NULL;
 
    // enforce these...
@@ -290,10 +292,21 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
              if( h == NULL ) {
 
                 SG_error("UG_publish(%s) rc = %d\n", path, rc );
-                if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST ) {
+                if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST && rc != -ENOENT ) {
                     rc = -EREMOTEIO;
                 }
                 break;
+             }
+
+             // fill in manifest block info: block id, block version (but not hash)
+             num_blocks = (ent->size / block_size) + 1;
+             for( uint64_t i = 0; i < num_blocks; i++ ) {
+
+                rc = UG_putblockinfo( ug, i, 1, NULL, h );
+                if( rc != 0 ) {
+                   SG_error("UG_putblockinfo(%s[%" PRId64 "]) rc = %d\n", path, i, rc );
+                   break;
+                }
              }
 
              rc = UG_close( ug, h );
