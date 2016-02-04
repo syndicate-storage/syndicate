@@ -410,6 +410,10 @@ static int RG_server_block_delete( struct SG_gateway* gateway, struct SG_request
    struct SG_proc_group* group = NULL;
    struct ms_client* ms = SG_gateway_ms( gateway );
    SG_messages::DriverRequest driver_req;
+   struct SG_IO_hints io_hints;
+   uint64_t block_size = ms_client_get_volume_blocksize(ms);
+
+   SG_IO_hints_init( &io_hints, SG_IO_DELETE, block_size * reqdat->block_id, block_size );
 
    // find a worker...
    group = SG_driver_get_proc_group( SG_gateway_driver(gateway), "delete" );
