@@ -113,11 +113,11 @@ static int UG_impl_manifest_patch( struct SG_gateway* gateway, struct SG_request
 // return -ENOMEM on OOM
 // return -errno on error 
 static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_request_data* entity_info, mode_t* mode, void* cls ) {
-   
+  
    int rc = 0;
    struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
    struct md_entry ent_info;
-   
+
    rc = UG_stat_raw( ug, reqdat->fs_path, &ent_info );
    if( rc != 0 ) {
       
@@ -157,6 +157,100 @@ static int UG_impl_stat( struct SG_gateway* gateway, struct SG_request_data* req
    md_entry_free( &ent_info );
 
    return 0;
+}
+
+
+// stat a file's block--build a manifest request, and set its mode
+// return 0 on success 
+// return -ESTALE if the inode is not local 
+// return -ENOENT if we don't have it
+// return -ENOMEM on OOM
+// return -errno on error 
+static int UG_impl_stat_block( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_request_data* entity_info, mode_t* mode, void* cls ) {
+  
+   int rc = 0;
+   struct UG_state* ug = (struct UG_state*)SG_gateway_cls( gateway );
+   int64_t block_version = 0;
+   UG_handle_t* fi = NULL;
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+   uint64_t file_id = 0;
+   int64_t file_version = 0;
+   int close_rc = 0;
+
+   fi = UG_open( ug, reqdat->fs_path, O_RDONLY, &rc );
+   if( fi == NULL ) {
+
+      SG_error("UG_open('%s') rc = %d\n", reqdat->fs_path, rc );
+      return rc;
+   }
+
+   fskit_file_handle_rlock( fi->fh );
+   
+   fent = fskit_file_handle_get_entry( fi->fh );
+   if( fent == NULL ) {
+      SG_error("BUG: no entry for handle %p\n", fi->fh );
+      exit(1);
+   }
+
+   fskit_entry_rlock( fent );
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   if( inode == NULL ) {
+      SG_error("BUG: no inode for entry %p\n", fent );
+      exit(1);
+   }
+
+   if( UG_inode_coordinator_id( inode ) != SG_gateway_id( gateway ) ) {
+
+      // not ours 
+      SG_error("Not the coordinator of '%s' (it is now %" PRIu64 ")\n", reqdat->fs_path, UG_inode_coordinator_id( inode ) );
+      fskit_entry_unlock( fent );
+      fskit_file_handle_unlock( fi->fh );
+
+      rc = UG_close( ug, fi );
+      if( rc != 0 ) {
+
+         SG_error("UG_close('%s') rc = %d\n", reqdat->fs_path, rc );
+      }
+      return rc;
+   }
+
+   file_id = UG_inode_file_id( inode );
+   file_version = UG_inode_file_version( inode );
+
+   if( mode != NULL ) {
+      *mode = fskit_entry_get_mode( fent );
+   }
+   if( entity_info != NULL ) {
+      rc = UG_getblockinfo( ug, reqdat->block_id, &block_version, NULL, fi );
+   }
+
+   fskit_entry_unlock( fent );
+   fskit_file_handle_unlock( fi->fh );
+   inode = NULL;
+
+   if( rc != 0 ) {
+
+      SG_error("UG_getblockinfo(%s[%" PRIu64 "]) rc = %d\n", reqdat->fs_path, reqdat->block_id, rc);
+      goto UG_impl_stat_block_out;
+   }
+
+   rc = SG_request_data_init_block( gateway, reqdat->fs_path, file_id, file_version, reqdat->block_id, block_version, entity_info );
+   if( rc != 0 ) {
+
+      SG_error("SG_request_data_init_block rc = %d\n", rc );
+      goto UG_impl_stat_block_out;
+   }
+
+UG_impl_stat_block_out:
+
+   close_rc = UG_close( ug, fi );
+   if( close_rc != 0 ) {
+
+      SG_error("UG_close('%s') rc = %d\n", reqdat->fs_path, close_rc );
+   }
+
+   return rc;
 }
 
 
@@ -265,6 +359,7 @@ int UG_impl_install_methods( struct SG_gateway* gateway ) {
    
    SG_impl_connect_cache( gateway, UG_impl_connect_cache );
    SG_impl_stat( gateway, UG_impl_stat );
+   SG_impl_stat_block( gateway, UG_impl_stat_block );
    SG_impl_truncate( gateway, UG_impl_truncate );
    SG_impl_rename( gateway, UG_impl_rename );
    SG_impl_detach( gateway, UG_impl_detach );
