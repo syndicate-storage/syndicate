@@ -27,7 +27,7 @@
 
 extern "C" {
 
-int AG_server_install_methods( struct SG_gateway* gateway, struct AG_state* core );
+int AG_server_install_methods( struct SG_gateway* gateway );
 
 }
 
