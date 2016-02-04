@@ -1687,8 +1687,6 @@ int UG_consistency_inode_ensure_fresh( struct SG_gateway* gateway, char const* f
       return -ENOENT;
    } 
 
-   fskit_entry_wlock( fent );
-
    rc = UG_consistency_inode_reload( gateway, fs_path, dent, fent, fent_name, &entry );
 
    fskit_entry_unlock( fent );
