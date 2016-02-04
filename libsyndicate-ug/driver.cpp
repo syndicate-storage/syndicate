@@ -42,7 +42,8 @@ int UG_driver_cdn_url( struct UG_state* core, char const* in_url, char** out_url
    // find a free cdn-url worker 
    driver = UG_state_driver( core );
    group = SG_driver_get_proc_group( driver, "cdn_url" );
-   if( group != NULL ) {
+
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
 
       // get a free process 
       proc = SG_proc_group_acquire( group );
@@ -119,7 +120,8 @@ int UG_driver_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    // find a free deserializer
    driver = UG_state_driver( core );
    group = SG_driver_get_proc_group( driver, "deserialize" );
-   if( group != NULL ) {
+   
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
 
       // get a free process
       proc = SG_proc_group_acquire( group );
@@ -228,7 +230,8 @@ int UG_driver_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
    // find a worker 
    driver = UG_state_driver( core );
    group = SG_driver_get_proc_group( driver, "serialize" );
-   if( group != NULL ) {
+   
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
       
       // get a free worker 
       proc = SG_proc_group_acquire( group );
