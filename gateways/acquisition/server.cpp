@@ -90,7 +90,7 @@ static int AG_server_block_get( struct SG_gateway* gateway, struct SG_request_da
    
    // find a reader 
    group = SG_driver_get_proc_group( SG_gateway_driver(gateway), "read" );
-   if( group != NULL ) {
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
       
       // get a free process
       proc = SG_proc_group_acquire( group );
@@ -208,7 +208,7 @@ int AG_server_chunk_deserialize( struct SG_gateway* gateway, struct SG_request_d
    // find a free deserializer
    driver = SG_gateway_driver( gateway );
    group = SG_driver_get_proc_group( driver, "deserialize" );
-   if( group != NULL ) {
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
 
       // get a free process
       proc = SG_proc_group_acquire( group );
@@ -325,15 +325,13 @@ int AG_server_chunk_serialize( struct SG_gateway* gateway, struct SG_request_dat
    // find a worker 
    driver = SG_gateway_driver( gateway );
    group = SG_driver_get_proc_group( driver, "serialize" );
-   if( group != NULL ) {
+   if( group != NULL && SG_proc_group_size( group ) > 0 ) {
       
       // get a free worker 
       proc = SG_proc_group_acquire( group );
       if( proc == NULL ) {
          
          // no free workers
-         SG_error("%s", "No free 'write' workers\n" );
-
          rc = -EAGAIN;
          goto AG_server_chunk_serialize_finish;
       }
@@ -413,7 +411,7 @@ AG_server_chunk_serialize_finish:
 
 // set up the gateway's method implementation 
 // always succeeds
-int AG_server_install_methods( struct SG_gateway* gateway, struct AG_state* core ) {
+int AG_server_install_methods( struct SG_gateway* gateway ) {
   
    // disable UG implementations 
    SG_impl_connect_cache( gateway, NULL );
@@ -428,8 +426,6 @@ int AG_server_install_methods( struct SG_gateway* gateway, struct AG_state* core
    
    SG_impl_serialize( gateway, AG_server_chunk_serialize );
    SG_impl_deserialize( gateway, AG_server_chunk_deserialize );
-
-   SG_gateway_set_cls( gateway, core );
 
    return 0;
 } 
