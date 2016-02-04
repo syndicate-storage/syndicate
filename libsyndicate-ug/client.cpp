@@ -999,6 +999,198 @@ int UG_write( struct UG_state* state, char const* buf, size_t size, UG_handle_t 
 }
 
 
+// getblockinfo 
+// get a block's metadata directly from the manifest.
+// useful for redirecting remote requests on blocks.
+// if non-null, hash must have SG_BLOCK_HASH_LEN bytes.
+// return 0 on success.
+// return -ENOMEM on OOM
+// return -EBADF if fi is NULL or refers to a directory 
+int UG_getblockinfo( struct UG_state* state, uint64_t block_id, int64_t* ret_block_version, unsigned char* ret_hash, UG_handle_t* fi ) {
+
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+   struct SG_manifest* manifest = NULL;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   int rc = 0;
+   uint64_t file_id = 0;
+   int64_t block_version = 0;
+   unsigned char* hash = NULL;
+   size_t hash_len = 0;
+
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   if( fi->type != UG_TYPE_FILE ) {
+      return -EBADF;
+   }
+ 
+   fskit_file_handle_rlock( fi->fh );
+
+   fent = fskit_file_handle_get_entry( fi->fh );
+   if( fent == NULL ) {
+      SG_error("BUG: file handle %p's entry is NULL\n", fi->fh);
+      exit(1);
+   }
+
+   fskit_entry_rlock( fent );
+
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   if( inode == NULL ) {
+      SG_error("BUG: inode for entry %p (handle %p) is NULL\n", fent, fi );
+      exit(1);
+   }
+
+   file_id = UG_inode_file_id( inode );
+
+   fskit_entry_unlock( fent );
+
+   // ensure fresh 
+   rc = UG_consistency_inode_ensure_fresh( gateway, fskit_file_handle_get_path( fi->fh ), inode );
+   if( rc != 0 ) {
+      SG_error("UG_consistency_inode_ensure_fresh('%s' (%" PRIX64 ")) rc = %d\n", fskit_file_handle_get_path( fi->fh ), file_id, rc );
+      fskit_file_handle_unlock( fi->fh );
+      goto UG_getblock_out;
+   }
+
+   // query block
+   fskit_entry_rlock( fent );
+
+   manifest = UG_inode_manifest( inode );
+   if( manifest == NULL ) {
+      SG_error("BUG: Manifest for %" PRIX64 " (%s) not set\n", file_id, fskit_file_handle_get_path( fi->fh ) );
+      exit(1);
+   }
+
+   rc = SG_manifest_get_block_version( manifest, block_id, &block_version );
+   if( rc != 0 ) {
+
+      // not found, or write hole 
+      SG_error("SG_manifest_get_block_version(%" PRIX64 "[%" PRIu64 "]) rc = %d\n", file_id, block_id, rc );
+      fskit_entry_unlock( fent );
+      fskit_file_handle_unlock( fi->fh );
+      return rc;
+   }
+
+   if( ret_hash != NULL ) {
+
+       rc = SG_manifest_get_block_hash( manifest, block_id, &hash, &hash_len );
+       if( rc != 0 ) {
+          
+          SG_error("SG_manifest_get_block_hash(%" PRIX64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", file_id, block_id, block_version, rc );
+          fskit_entry_unlock( fent );
+          fskit_file_handle_unlock( fi->fh );
+          return rc;
+       }
+
+       memcpy( ret_hash, hash, hash_len );
+       SG_safe_free( hash );
+   }
+
+   if( ret_block_version != NULL ) {
+      *ret_block_version = block_version;
+   }
+
+   fskit_entry_unlock( fent );
+   fskit_file_handle_unlock( fi->fh );
+
+UG_getblock_out:
+
+   return rc;
+}
+
+
+// putblockinfo
+// put a block's metadata directly into the manifest.
+// useful for when the driver knows how to serve data directly.
+// hash must be a SHA256 (or must have SG_BLOCK_HASH_LEN bytes), or NULL.
+// return 0 on success
+// return -ENOMEM on OOM 
+// return -EBADF if fi is NULL or refers to a directory
+int UG_putblockinfo( struct UG_state* state, uint64_t block_id, int64_t block_version, unsigned char* hash, UG_handle_t* fi ) {
+
+   struct fskit_entry* fent = NULL;
+   struct UG_inode* inode = NULL;
+   struct SG_manifest* manifest = NULL;
+   struct SG_gateway* gateway = UG_state_gateway( state );
+   int rc = 0;
+   uint64_t file_id = 0;
+   struct SG_manifest_block binfo;
+   int hash_len = SG_BLOCK_HASH_LEN;
+   
+   if( fi == NULL ) {
+      return -EBADF;
+   }
+
+   if( fi->type != UG_TYPE_FILE ) {
+      return -EBADF;
+   }
+ 
+   if( hash == NULL ) {
+      hash_len = 0;
+   }
+
+   fskit_file_handle_rlock( fi->fh );
+
+   fent = fskit_file_handle_get_entry( fi->fh );
+   if( fent == NULL ) {
+      SG_error("BUG: file handle %p's entry is NULL\n", fi->fh);
+      exit(1);
+   }
+
+   fskit_entry_rlock( fent );
+
+   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+   if( inode == NULL ) {
+      SG_error("BUG: inode for entry %p (handle %p) is NULL\n", fent, fi );
+      exit(1);
+   }
+
+   file_id = UG_inode_file_id( inode );
+
+   fskit_entry_unlock( fent );
+
+   // ensure fresh 
+   rc = UG_consistency_inode_ensure_fresh( gateway, fskit_file_handle_get_path( fi->fh ), inode );
+   if( rc != 0 ) {
+      SG_error("UG_consistency_inode_ensure_fresh('%s' (%" PRIX64 ")) rc = %d\n", fskit_file_handle_get_path( fi->fh ), file_id, rc );
+      fskit_file_handle_unlock( fi->fh );
+      goto UG_putblock_out;
+   }
+
+   // set up block 
+   rc = SG_manifest_block_init( &binfo, block_id, block_version, hash, hash_len );
+   if( rc != 0 ) {
+      fskit_file_handle_unlock( fi->fh );
+      goto UG_putblock_out;
+   }
+
+   fskit_entry_wlock( fent );
+
+   manifest = UG_inode_manifest( inode );
+   if( manifest == NULL ) {
+      SG_error("BUG: Manifest for %" PRIX64 " (%s) not set\n", file_id, fskit_file_handle_get_path( fi->fh ) );
+      exit(1);
+   }
+
+   rc = SG_manifest_put_block( manifest, &binfo, true );
+   if( rc != 0 ) {
+      SG_error("SG_manifest_put_block(%" PRIX64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", file_id, block_id, block_version, fskit_file_handle_get_path(fi->fh), rc );
+      fskit_entry_unlock( fent );
+      fskit_file_handle_unlock( fi->fh );
+      return rc;
+   }
+
+   fskit_entry_unlock( fent );
+   fskit_file_handle_unlock( fi->fh );
+
+UG_putblock_out:
+
+   return rc;
+}
+
+
 // lseek(2)
 off_t UG_seek( UG_handle_t* fi, off_t pos, int whence ) {
    
