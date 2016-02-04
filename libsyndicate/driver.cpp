@@ -717,6 +717,7 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
    int rc = 0;
    struct SG_proc_group** groups = NULL;
    struct SG_proc** initial_procs = NULL;
+   int wait_rc = 0;
 
    // do we even have a driver?
    if( driver->driver_text.data == NULL ) {
@@ -809,10 +810,17 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
           rc = SG_proc_start( initial_procs[proc_idx], driver->exec_str, driver->roles[i], driver->conf->helper_env, &config, &secrets, &driver->driver_text );
           if( rc != 0 ) {
 
+             SG_debug("Wait for instance '%s' (%d) to die\n", driver->roles[i], SG_proc_pid( initial_procs[proc_idx] ) );
+             wait_rc = SG_proc_stop( initial_procs[proc_idx], 0 );
+             if( wait_rc != 0 ) {
+                SG_error("SG_proc_wait('%s' %d) rc = %d\n", driver->roles[i], SG_proc_pid( initial_procs[proc_idx] ), wait_rc );
+             }
+            
+             SG_proc_free( initial_procs[proc_idx] );
+             initial_procs[proc_idx] = NULL;
+
              if( rc == -ENOSYS ) {
                 SG_warn("Driver does not implement '%s'\n", driver->roles[i] );
-                SG_proc_free( initial_procs[proc_idx] );
-                initial_procs[proc_idx] = NULL;
                 rc = 0;
                 continue;
              }
@@ -822,12 +830,13 @@ int SG_driver_procs_start( struct SG_driver* driver ) {
                  goto SG_driver_procs_start_finish;
              }
           }
-   
-          rc = SG_proc_group_add( groups[i], initial_procs[proc_idx] );
-          if( rc != 0 ) {
+          else { 
+              rc = SG_proc_group_add( groups[i], initial_procs[proc_idx] );
+              if( rc != 0 ) {
          
-             SG_error("SG_proc_group_insert(%zu, %d) rc = %d\n", i, SG_proc_pid( initial_procs[proc_idx] ), rc );
-             goto SG_driver_procs_start_finish;
+                 SG_error("SG_proc_group_insert(%zu, %d) rc = %d\n", i, SG_proc_pid( initial_procs[proc_idx] ), rc );
+                 goto SG_driver_procs_start_finish;
+              }
           }
       }
    }
