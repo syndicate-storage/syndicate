@@ -314,7 +314,8 @@ int SG_proc_group_tryjoin( struct SG_proc_group* group ) {
    SG_proc_group_wlock( group );
 
    SG_debug("join group %p\n", group);
-   
+
+   group->active = false;
    num_procs = group->num_procs;
    
    for( int i = 0; i < group->capacity; i++ ) {
@@ -544,6 +545,9 @@ int SG_proc_stop( struct SG_proc* proc, int timeout ) {
       if( rc < 0 ) {
          return rc;
       }
+       
+      SG_proc_tryjoin( proc, NULL );
+      rc = 0;
    }
    else {
       
@@ -748,6 +752,17 @@ int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc ) {
 }
 
 
+// how many processes does a group have? 
+int SG_proc_group_size( struct SG_proc_group* group ) {
+
+   SG_proc_group_rlock( group );
+   int sz = group->num_procs;
+   SG_proc_group_unlock( group );
+
+   return sz;
+}
+
+
 // test to see if a process is dead
 // return 0 on success 
 int SG_proc_test_dead( struct SG_proc* proc ) {
@@ -829,12 +844,6 @@ static int SG_proc_group_remove_if_dead_unlocked( struct SG_proc_group* group, s
    }
 
    return rc;
-}
-
-
-// how big is a group?
-int SG_proc_group_size( struct SG_proc_group* g ) {
-   return g->num_procs;
 }
 
 
@@ -1149,6 +1158,7 @@ int SG_proc_write_request( int fd, SG_messages::DriverRequest* dreq ) {
 // return -ENFILE if the host is out of fds
 // return -ECHILD if the child failed to start
 // return -ENOSYS if the driver does not implement the requested operation mode
+// the caller should try to join with the proc if this method fails
 int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec_arg, char** exec_env, struct SG_chunk* config, struct SG_chunk* secrets, struct SG_chunk* driver ) {
    
    int rc = 0;
@@ -1158,10 +1168,12 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
    char ready_buf[10];
    FILE* fout = NULL;
    size_t env_len = 0;
-
+   
    struct SG_chunk empty_json;
    empty_json.data = (char*)"{}";
    empty_json.len = 2;
+
+   proc->pid = 0;   // in case we return, don't do anything on join
 
    // sanity check...
    if( driver == NULL ) {
@@ -1205,9 +1217,6 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          return -ENOMEM;
       }
    }
-   
-   // not running yet 
-   proc->pid = 0;
    
    memset( ready_buf, 0, 10 );
    
@@ -1338,6 +1347,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          
          SG_error("SG_proc_write_chunk('CONFIG') rc = %d\n", rc );
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
          
          return rc;
       }
@@ -1348,6 +1358,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          
          SG_error("SG_proc_write_chunk('SECRETS') rc = %d\n", rc );
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
 
          return rc;
       }
@@ -1358,6 +1369,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          
          SG_error("SG_proc_write_chunk('DRIVER') rc = %d\n", rc );
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
 
          return rc;
       }
@@ -1369,6 +1381,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          rc = -errno;
          SG_error("read(%d) rc = %d\n", child_output[0], rc );
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
 
          return rc;
       }
@@ -1383,6 +1396,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          rc = -ECHILD;
 
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
          return rc;
       }
       
@@ -1392,6 +1406,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
             // fall back to built-in 
             SG_error("Falling back to default gateway implementation for '%s'\n", exec_arg );
             SG_proc_free_data( proc );
+            proc->pid = pid;       // so the caller can join
             return -ENOSYS;
          }
          
@@ -1399,6 +1414,7 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
          rc = -ECHILD;
 
          SG_proc_free_data( proc );
+         proc->pid = pid;       // so the caller can join
          return rc;
       }
    }
@@ -1436,6 +1452,7 @@ int SG_proc_kill( struct SG_proc* proc, int signal ) {
 
 
 // Try to join with a child.  Does not block
+// proc->pid must be >= 2
 // send it SIGINT and wait on it
 // return 0 on success, and store the exit status to *child_success.  This masks ECHILD if the child is already dead
 // return -EINVAL for invalid PID 
@@ -1572,15 +1589,20 @@ int SG_proc_group_reload( struct SG_proc_group* group, char const* new_exec_str,
 
 // get a free process, and prevent it from receiving I/O from anyone else (i.e. take it off the free list)
 // return the non-NULL proc on success
-// blocks if there are no free processes 
+// return NULL if there are no free processess
 // NOTE: group must NOT be locked
 // NOTE; this call blocks if there are available processes
 struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
    
    int rc = 0;
-   while( group->active ) {
+   bool active = true;
+   while( active ) {
       
       SG_proc_group_wlock( group );
+      active = group->active;
+      if( !active ) {
+         break;
+      }
       
       struct SG_proc* proc = SG_proc_list_pop( &group->free );
       if( proc == NULL ) {
@@ -1589,22 +1611,11 @@ struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group ) {
          if( group->free == NULL ) {
             
             // ...because there are none in the first place
-            SG_warn("No free process in group %p; sleeping...\n", group );
-
-            SG_proc_group_unlock( group );
-
-            sem_wait( &group->num_free );
-            continue;
+            SG_warn("No free process in group %p\n", group );
          }
-
+         
          SG_proc_group_unlock( group );
-         
-         // NOTE this is considered safe here, since the semaphore won't disappear on us
-         // (i.e. we ensure that any worker who could call this method will be dead before 
-         // we free up the process group).
-         sem_wait( &group->num_free );
-         
-         continue;
+         return NULL;
       }
       
       else {

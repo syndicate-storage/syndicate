@@ -38,7 +38,6 @@ void SG_proc_group_free( struct SG_proc_group* group );
 // getters 
 pid_t SG_proc_pid( struct SG_proc* p );
 char const* SG_proc_exec_arg( struct SG_proc* p );
-int SG_proc_group_size( struct SG_proc_group* g );
 struct SG_proc** SG_proc_group_freelist( struct SG_proc_group* group );
 
 int SG_proc_stdin( struct SG_proc* p );
@@ -62,6 +61,7 @@ int SG_proc_group_stop( struct SG_proc_group* group, int timeout );
 // grouping
 int SG_proc_group_add( struct SG_proc_group* group, struct SG_proc* proc );
 int SG_proc_group_remove( struct SG_proc_group* group, struct SG_proc* proc );
+int SG_proc_group_size( struct SG_proc_group* group );
 
 // acquisition/release
 struct SG_proc* SG_proc_group_acquire( struct SG_proc_group* group );
