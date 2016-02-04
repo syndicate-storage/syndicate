@@ -484,7 +484,7 @@ int SG_request_data_dup( struct SG_request_data* dest, struct SG_request_data* s
 // return true if so
 // return false if not 
 bool SG_request_is_block( struct SG_request_data* reqdat ) {
-   
+  
    return (reqdat->block_id != SG_INVALID_BLOCK_ID);
 }
 
@@ -759,6 +759,7 @@ int SG_gateway_driver_get_driver_text( struct SG_gateway* gateway, struct SG_chu
    
    return rc;
 }
+
 
 // initialize and start the gateway, using a parsed options structure 
 // return 0 on success
@@ -1565,6 +1566,11 @@ void SG_impl_stat( struct SG_gateway* gateway, int (*impl_stat)( struct SG_gatew
    gateway->impl_stat = impl_stat;
 }
 
+// set the gateway implementation stat-block routine 
+void SG_impl_stat_block( struct SG_gateway* gateway, int (*impl_stat_block)( struct SG_gateway*, struct SG_request_data*, struct SG_request_data*, mode_t*, void* ) ) {
+   gateway->impl_stat_block = impl_stat_block;
+}
+
 // set the gateway implementation truncate routine 
 void SG_impl_truncate( struct SG_gateway* gateway, int (*impl_truncate)( struct SG_gateway*, struct SG_request_data*, uint64_t, void* ) ) {
    gateway->impl_truncate = impl_truncate;
@@ -2042,6 +2048,33 @@ int SG_gateway_impl_stat( struct SG_gateway* gateway, struct SG_request_data* re
       if( rc != 0 ) {
          
          SG_error("gateway->impl_stat( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
+      }
+      
+      return rc;
+   }
+   else {
+      
+      return -ENOSYS;
+   }
+}
+
+
+// stat a file's block, filling in what we know into the out_reqdat structure 
+// return 0 on success, populating *out_reqdat 
+// return -ENOSYS if not defined
+// return non-zero on implementation error 
+int SG_gateway_impl_stat_block( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_request_data* out_reqdat, mode_t* out_mode ) {
+   
+   int rc = 0;
+   
+   if( gateway->impl_stat_block != NULL ) {
+      
+      reqdat->io_thread_id = SG_gateway_io_thread_id( gateway );
+      rc = (*gateway->impl_stat_block)( gateway, reqdat, out_reqdat, out_mode, gateway->cls );
+      
+      if( rc != 0 ) {
+         
+         SG_error("gateway->impl_stat_block( %" PRIX64 ".%" PRId64 " (%s) ) rc = %d\n", reqdat->file_id, reqdat->file_version, reqdat->fs_path, rc );
       }
       
       return rc;

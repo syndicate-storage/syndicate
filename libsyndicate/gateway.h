@@ -116,6 +116,9 @@ struct SG_gateway {
    // stat an inode (for the server to know whether or not it can serve a file)
    int (*impl_stat)( struct SG_gateway*, struct SG_request_data*, struct SG_request_data*, mode_t*, void* );
    
+   // stat a block inode (for the server to know whether or not it can serve a file)
+   int (*impl_stat_block)( struct SG_gateway*, struct SG_request_data*, struct SG_request_data*, mode_t*, void* );
+
    // truncate file to a new size
    int (*impl_truncate)( struct SG_gateway*, struct SG_request_data*, uint64_t, void* );
    
@@ -185,6 +188,7 @@ void SG_impl_setup( struct SG_gateway* gateway, int (*impl_setup)( struct SG_gat
 void SG_impl_shutdown( struct SG_gateway* gateway, void (*impl_shutdown)( struct SG_gateway*, void* ) );
 void SG_impl_connect_cache( struct SG_gateway* gateway, int (*impl_connect_cache)( struct SG_gateway*, CURL*, char const*, void* ) );
 void SG_impl_stat( struct SG_gateway* gateway, int (*impl_stat)( struct SG_gateway*, struct SG_request_data*, struct SG_request_data*, mode_t*, void* ) );
+void SG_impl_stat_block( struct SG_gateway* gateway, int (*impl_stat_block)( struct SG_gateway*, struct SG_request_data*, struct SG_request_data*, mode_t*, void* ) );
 void SG_impl_truncate( struct SG_gateway* gateway, int (*impl_truncate)( struct SG_gateway*, struct SG_request_data*, uint64_t, void* ) );
 void SG_impl_rename( struct SG_gateway* gateway, int (*impl_rename)( struct SG_gateway*, struct SG_request_data*, char const*, void* ) );
 void SG_impl_serialize( struct SG_gateway* gateway, int (*impl_serialize)( struct SG_gateway*, struct SG_request_data*, struct SG_chunk*, struct SG_chunk*, void* ) );
@@ -273,6 +277,7 @@ int SG_gateway_io_start( struct SG_gateway* gateway, struct md_wreq* wreq );
 // implementation 
 int SG_gateway_impl_connect_cache( struct SG_gateway* gateway, CURL* curl, char const* url );
 int SG_gateway_impl_stat( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_request_data* out_reqdat, mode_t* mode );
+int SG_gateway_impl_stat_block( struct SG_gateway* gateway, struct SG_request_data* reqdat, struct SG_request_data* out_reqdat, mode_t* mode );
 int SG_gateway_impl_truncate( struct SG_gateway* gateway, struct SG_request_data* reqdat, uint64_t new_size );
 int SG_gateway_impl_rename( struct SG_gateway* gateway, struct SG_request_data* reqdat, char const* new_path );
 int SG_gateway_impl_detach( struct SG_gateway* gateway, struct SG_request_data* reqdat );
