@@ -410,7 +410,11 @@ class Volume( storagetypes.Object ):
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-      
+     
+      # sanity check 
+      if len(kwargs['name']) == 0:
+         raise Exception("Empty volume name")
+
       volume_id = kwargs['volume_id']
       
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
@@ -526,7 +530,7 @@ class Volume( storagetypes.Object ):
             return vol
          
       # no dice 
-      vol = Volume.ListAll( {"Volume.name ==": volume_name}, async=async )
+      vol = Volume.ListAll( {"Volume.name ==": volume_name, "Volume.deleted ==": False}, async=async )
       
       if async:
          # this will be a Future 
@@ -556,8 +560,7 @@ class Volume( storagetypes.Object ):
          
       return vol
             
-      
-
+   '''
    @classmethod
    def ReadAll( cls, volume_ids, async=False, use_memcache=True ):
       """
@@ -604,8 +607,7 @@ class Volume( storagetypes.Object ):
                ret[i] = storagetypes.FutureWrapper( volume )
 
       return ret
-            
-
+   '''
 
    @classmethod
    def __update_shard_count( cls, volume_key, num_shards ):
@@ -668,7 +670,6 @@ class Volume( storagetypes.Object ):
       invalid = Volume.validate_fields( fields )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-      
       
       # are we changing the name? acquire the new name if so
       rename = False
@@ -773,10 +774,6 @@ class Volume( storagetypes.Object ):
       # delete volume nameholder
       volume_nameholder_key = storagetypes.make_key( VolumeNameHolder, VolumeNameHolder.make_key_name( volume_name ) )
       futs.append( volume_nameholder_key.delete_async() )
-      
-      # delete volume access requests 
-      #volume_access_requests_fut = VolumeAccessRequest.DeleteAccessRequestsByVolume( volume_id, async=True )
-      #futs.append( volume_access_requests_fut )
       
       storagetypes.wait_futures( futs )
       
