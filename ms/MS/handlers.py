@@ -126,16 +126,30 @@ class MSCertBundleRequestHandler( webapp2.RequestHandler ):
    Redirect requests to the version of the signed cert bundle (so the only time a GET succeeds is with the latest-version URL)
    """
    
-   def get( self, volume_id_str, volume_cert_version_str ):
+   def get( self, volume_name_or_id_str, volume_cert_version_str ):
       
       volume_id = None
+      volume_name = None
       volume_cert_version = None
       try:
-         volume_id = int( volume_id_str )
+         volume_id = int( volume_name_or_id_str )
+      except:
+         volume_name = volume_name_or_id_str
+
+      try:
          volume_cert_version = int( volume_cert_version_str )
       except:
          response_end( self, 400, "Invalid Request", "text/plain" )
          return
+
+      if volume_id is None:
+         # look up volume 
+         volume = Volume.Read( volume_name )
+         if volume is None or volume.deleted:
+             response_end( self, 404, "Not found", "text/plain" )
+             return 
+
+         volume_id = volume.volume_id
       
       volume_cert_bundle = VolumeCertBundle.Get( volume_id )
       if volume_cert_bundle is None:
@@ -148,7 +162,7 @@ class MSCertBundleRequestHandler( webapp2.RequestHandler ):
       if cert_bundle.mtime_sec != volume_cert_version:
          
          # send gateway the URL to the latest cert bundle
-         hdr = "%s/CERTBUNDLE/%s/%s" % (MS_URL, volume_id_str, cert_bundle.mtime_sec)
+         hdr = "%s/CERTBUNDLE/%s/%s" % (MS_URL, volume_name_or_id_str, cert_bundle.mtime_sec)
          
          self.response.headers['Location'] = hdr
          response_end( self, 302, "Location: %s" % hdr, "text/plain" )
@@ -562,11 +576,8 @@ class MSJSONRPCHandler(webapp2.RequestHandler):
             return 
       
       # NOTE: This writes the response
-      result, mutable = server.handle( json_text, response=self.response, username=username )
-      
-      # prevent mutable replays: save caller UUIDs
-      if mutable:
-         generaluuid.put_uuids( caller_uuids, "jsonrpc" )
+      result = server.handle( json_text, response=self.response, username=username )
+      generaluuid.put_uuids( caller_uuids, "jsonrpc" )
          
       return
       
