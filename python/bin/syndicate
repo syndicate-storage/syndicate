@@ -24,6 +24,7 @@ import sys
 import tempfile
 import base64
 import stat
+import copy
 
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.msconfig as msconfig
@@ -31,7 +32,8 @@ import syndicate.ms.msconfig as msconfig
 import syndicate.util.config as conf
 import syndicate.util.storage as storage
 import syndicate.util.objects as object_stub
-import syndicate.util.client as client 
+import syndicate.util.client as client
+import syndicate.util.certs as certs
 
 import syndicate.protobufs.ms_pb2 as ms_pb2
 
@@ -399,7 +401,7 @@ def parse_argv( argv ):
    if hasattr( opts, "config" ) and opts.config != None:
       config_file_path = opts.config[0]
    else:
-      config_file_path = conf.CONFIG_FILENAME
+      config_file_path = conf.default_config_path()
    
    config_str = storage.read_file( config_file_path )
    
@@ -411,6 +413,37 @@ def parse_argv( argv ):
 
 
 # -------------------
+def install_syndicate_public_key( config ):
+   """
+   Obtain the syndicate public key and store it.
+   Unless told otherwise, prompt the user to trust it.
+
+   Returns the public key on success
+   Returns None on error
+   """
+
+   # go get it 
+   syndicate_pubkey_pem = fetch_syndicate_public_key( config )
+   
+   try:
+       syndicate_pubkey = CryptoKey.importKey( syndicate_pubkey_pem )
+   except Exception, e:
+       log.error("Failed to parse downloaded public key")
+       return None 
+  
+   if not config.get('trust_public_key', False):
+       trust = prompt_trust_public_key( config["syndicate_host"], config["syndicate_port"], syndicate_pubkey_pem )
+       if not trust:
+           log.error("Will NOT trust public key")
+           return None
+   
+   # store it 
+   storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_pubkey )
+       
+   return syndicate_pubkey
+
+
+# -------------------
 def init_config( opts, method_name ):
    """
    Given parsed options, load the config.
@@ -418,16 +451,22 @@ def init_config( opts, method_name ):
    Return None on error
    """
 
+   config = {}
+
    config_str = storage.read_file( opts.config_file_path )
    if config_str is None:
        log.error("Failed to read '%s'" % opts.config_file_path)
        return None 
   
+   conf.fill_defaults( config )
+
    # get syndicate options...
-   config = conf.load_config( opts.config_file_path, config_str, opts, "syndicate", conf.CONFIG_OPTIONS )
+   syndicate_config = conf.load_config( opts.config_file_path, config_str, opts, "syndicate", conf.CONFIG_OPTIONS )
    if config is None:
        log.error("Failed to parse configuration section 'syndicate' from '%s'" % opts.config_file_path)
        return None
+
+   config.update( syndicate_config )
 
    # helpers..
    helper_config = conf.load_config( opts.config_file_path, config_str, opts, "helpers", conf.HELPER_OPTIONS )
@@ -435,11 +474,8 @@ def init_config( opts, method_name ):
        log.error("Failed to parse configuration section 'helpers' from '%s'" % opts.config_file_path )
        return None
 
-   config['helpers'] = helper_config
+   config['helpers'].update( helper_config )
    config['params'] = getattr( opts, 'params', [] )
-   
-   # set up the directories
-   make_object_directories( config )
    
    # generate syndicate_host and syndicate_port from URL, if needed
    if config.get('MS_url', None) is not None:
@@ -457,32 +493,25 @@ def init_config( opts, method_name ):
    if config['user_pkey'] is None:
       log.error("Failed to load user private key for '%s'" % config['username'])
       return None 
-    
+   
+   # trust public key?
+   if opts.trust_public_key:
+       config['trust_public_key'] = True 
+   else:
+       config['trust_public_key'] = False
+
    # obtain syndicate public key 
    syndicate_pubkey = storage.load_public_key( config, "syndicate", syndicate_object_name( config ) )
    if syndicate_pubkey is None:
-       
+      
        # go get it 
-       syndicate_pubkey_pem = fetch_syndicate_public_key( config )
-       
-       try:
-           syndicate_pubkey = CryptoKey.importKey( syndicate_pubkey_pem )
-       except Exception, e:
-           log.error("Failed to parse downloaded public key")
+       syndicate_pubkey = install_syndicate_public_key( config )
+       if syndicate_pubkey is None:
            return None 
-       
-       trust = prompt_trust_public_key( config["syndicate_host"], config["syndicate_port"], syndicate_pubkey_pem )
-       if not trust:
-           log.error("Will NOT trust public key")
-           return None
-       
-       else:
-           # store it 
-           storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_pubkey_pem )
        
    config['syndicate_public_key'] = syndicate_pubkey
    config['syndicate_public_key_pem'] = syndicate_pubkey.exportKey()
-   
+
    return config
 
 
@@ -501,23 +530,59 @@ def do_method_help( config, method_name ):
       method_help = "FIXME: General HELP goes here..."
       
    print "Help for '%s':\n%s" % (method_name, method_help)
-   sys.exit(0)
 
 
-def do_setup( username, admin_privkey_path, MS_url ):
+def make_admin_cert( username, admin_privkey ):
+    """
+    Make a cert for the admin
+    """
+   
+    public_key = admin_privkey.publickey()
+    public_key_pem = public_key.exportKey()
+
+    admin_cert = ms_pb2.ms_user_cert()
+    admin_cert.user_id = 0
+    admin_cert.email = username
+    admin_cert.public_key = public_key_pem
+    admin_cert.admin_id = 0
+    admin_cert.max_volumes = 0
+    admin_cert.max_gateways = 0
+    admin_cert.is_admin = True
+    admin_cert.signature = ""
+
+    admin_cert_str = admin_cert.SerializeToString()
+    admin_cert_sig = object_stub.sign_data( admin_privkey, admin_cert_str )
+
+    admin_cert.signature = base64.b64encode( admin_cert_sig )
+
+    return admin_cert
+
+
+
+def do_setup( opts, username, admin_privkey_path, MS_url ):
    """
    Do one-time initial setup:
-   * create the ~/.syndicate directory 
-   * fill in ~/.syndicate/ with object directories.
-   * generate a config file in ~/.syndicate
+   * create the config directory 
+   * fill in the configdirectory  with object directories.
+   * generate a config file in config directory
    * grab the MS's public key and ask to trust it, if it isn't here already.
    * activate the admin's account on the MS.
    * store the admin's ID
-   """
+   * fill in a default types.conf
+   """ 
    
+   config_path = None 
+   if hasattr(opts, "config") and opts.config is not None:
+       config_path = opts.config[0]
+   else:
+       config_path = conf.default_config_path() 
+
    # if the config file already exists, then bail
-   if os.path.exists( conf.CONFIG_FILENAME ):
-      raise Exception("Syndicate is already set up (in %s)" % conf.CONFIG_DIR)
+   if os.path.exists( config_path ):
+       if os.path.isfile( config_path ):
+          raise Exception("Syndicate is already set up (in %s)" % config_path)
+       else:
+          raise Exception("%s: is a directory" % config_path )
 
    # get admin private key 
    admin_privkey_pem = storage.read_file( admin_privkey_path )
@@ -526,6 +591,7 @@ def do_setup( username, admin_privkey_path, MS_url ):
   
    try:
       admin_privkey = CryptoKey.importKey( admin_privkey_pem )
+      admin_pubkey = admin_privkey.publickey()
    except:
       traceback.print_exc()
       raise Exception("Unable to parse '%s'" % admin_privkey_path )
@@ -536,30 +602,72 @@ def do_setup( username, admin_privkey_path, MS_url ):
    key_dirs = {}
    
    # generate a default config...
-   write_config = {}
+   config = {}
    for key_type, key_dirname in conf.OBJECT_DIR_NAMES.items():
-      key_dirs[key_type] = key_dirname + "/"
-    
-   write_config["MS_url"] = MS_url 
-   write_config["username"] = username
-
-   write_config.update( key_dirs )
+      key_dirs[key_dirname] = key_dirname + "/"
    
+   conf.extend_key_paths( key_dirs, os.path.dirname(config_path) )
+   
+   conf.fill_defaults( config )
+   config["MS_url"] = MS_url 
+   config["username"] = username
+
+   host, port, no_tls = client.parse_url( MS_url )
+  
+   config['syndicate_host'] = host 
+   config['syndicate_port'] = port
+   config['no_tls'] = no_tls
+ 
+   # trust public key?
+   if opts.trust_public_key:
+       config['trust_public_key'] = True 
+   else:
+       config['trust_public_key'] = False
+
+   config.update( key_dirs )
+   
+   for k in conf.CONFIG_SYNDICATE_KEYS:
+       if k not in config.keys():
+           config[k] = os.path.join( conf.default_config_dir(), k )
+  
+   # store only "syndicate" config values 
+   write_config = copy.deepcopy( config )
+   for k in write_config.keys():
+       if k not in conf.CONFIG_SYNDICATE_KEYS:
+           del write_config[k]
+          
+   # set up the directories
+   make_object_directories( config )
+
    config_str = conf.serialize_config( write_config )
    log.debug("Storing config...")
    
    # store config
    try:
-      storage.write_file( conf.CONFIG_FILENAME, config_str )
+      storage.write_file( config_path, config_str )
    except Exception, e:
       log.exception(e)
       print >> sys.stderr, "Failed to write configuration"
       sys.exit(1)
       
    # store first admin ID (always 0)
-   object_stub.store_id( write_config, "user", write_config["username"], 0 )
-   storage.store_private_key( write_config, "user", write_config["username"], admin_privkey )
-   
+   admin_cert = make_admin_cert( config['username'], admin_privkey )
+   object_stub.store_user_cert( config, admin_cert )
+   storage.store_private_key( config, "user", config['username'], admin_privkey ) 
+
+   # get syndicate public key  
+   syndicate_pubkey = install_syndicate_public_key( config )
+   if syndicate_pubkey is None:
+       log.error("Failed to obtain syndicate public key")
+       sys.exit(1)
+
+   # install type aliases for create_gateway 
+   type_aliases = "UG=1\nRG=2\nAG=3\n"
+   types_path = conf.object_file_path( config, "gateway", "types.conf" )
+   with open(types_path, "w") as f:
+      f.write( type_aliases )
+      f.flush()
+
    sys.exit(0)
 
 
@@ -662,13 +770,15 @@ def main( argv ):
    
    # get opts, methodname, args 
    opts, method_name, args, kw = parse_argv( argv )
-   
+   if opts.debug:
+       log.setLevel(logging.DEBUG)
+
    if method_name == "setup":
-       if len(argv) != 5:
-           print >> sys.stderr, "Usage: %s setup USERNAME /path/to/private/key MS_URL"
+       if len(args) != 3:
+           print >> sys.stderr, "Usage: %s setup USERNAME /path/to/private/key MS_URL" % sys.argv[0]
            sys.exit(1)
 
-       do_setup( argv[2], argv[3], argv[4] )
+       do_setup( opts, args[0], args[1], args[2] )
        sys.exit(0)
 
    CONFIG = init_config( opts, method_name )
@@ -677,7 +787,7 @@ def main( argv ):
 
    # called from main 
    CONFIG["__from_main__"] = True
-  
+ 
    # special cases
    if method_name == "setup":
        do_setup( CONFIG, argv[2] )
@@ -692,7 +802,34 @@ def main( argv ):
            do_method_help( CONFIG, args[0] )
            sys.exit(0)
    
-   # read the config
+   if method_name == "reload_certs":
+       if len(args) != 3:
+           print >> sys.stderr, "Usage: %s reload_certs USER_NAME_OR_ID VOLUME_NAME_OR_ID GATEWAY_NAME_OR_ID" % sys.argv[0]
+           sys.exit(1)
+       
+       try:
+           certs.certs_reload( CONFIG, args[0], args[1], args[2] )
+           sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, 'Failed to reload certs'
+           sys.exit(1)
+
+
+   elif method_name == "reload_driver":
+       if len(args) != 2:
+           print >> sys.stderr, "Usage: %s reload_driver VOLUME_NAME GATEWAY_NAME" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           certs.driver_reload( CONFIG, args[0], args[1] )
+           sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to reload driver"
+           sys.exit(1)
+
+
    # debug
    for opt in CONFIG.keys():
       log.debug( "%s = %s" % (opt, CONFIG[opt] ) )

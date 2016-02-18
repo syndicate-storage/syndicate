@@ -153,30 +153,92 @@ struct ms_gateway_cert* md_gateway_cert_find( ms_cert_bundle* gateway_certs, uin
    }
 }
 
-// get the syndicate pubkey--if not locally, then via the subprocess helper.
-// return 0 on success, and set up *key.
+// load a cert bundle, given the name of the gateway and volume
+// return 0 on success, and populate gateway_certs
+// return -ENOMEM on OOM
+// return -ENOENT on missing certificate 
+// sets conf->cert_bundle_version
+static int md_gateway_certs_load( struct md_syndicate_conf* conf, ms_cert_bundle* gateway_certs ) {
+
+   int rc = 0;
+   SG_messages::Manifest cert_bundle;
+
+   rc = md_cert_bundle_load( conf->certs_path, conf->volume_name, &cert_bundle );
+   if( rc != 0 ) {
+      SG_error("md_cert_bundle_load('%s', '%s') rc = %d\n", conf->certs_path, conf->volume_name, rc );
+      return rc;
+   }
+
+   // store config information 
+   conf->cert_bundle_version = cert_bundle.mtime_sec();
+
+   // each gateway
+   for( int i = 1; i < cert_bundle.blocks_size(); i++ ) {
+
+      uint64_t gateway_id = cert_bundle.blocks(i).block_id();
+      char gateway_id_buf[100];
+      ms::ms_gateway_cert* gateway_cert = NULL;
+      struct ms_gateway_cert* loaded_cert = NULL;
+
+      sprintf( gateway_id_buf, "%" PRIu64, gateway_id );
+
+      gateway_cert = SG_safe_new( ms::ms_gateway_cert() );
+      if( gateway_cert == NULL ) {
+         rc = -ENOMEM;
+         goto md_gateway_certs_load_out;
+      }
+      
+      rc = md_gateway_cert_load( conf->certs_path, gateway_id_buf, gateway_cert );
+      if( rc != 0 ) {
+         SG_error("md_gateway_cert_load('%s', %s) rc = %d\n", conf->certs_path, gateway_id_buf, rc );
+         goto md_gateway_certs_load_out;
+      }
+
+      loaded_cert = SG_CALLOC( struct ms_gateway_cert, 1 );
+      if( loaded_cert == NULL ) {
+         rc = -ENOMEM;
+         goto md_gateway_certs_load_out;
+         return -ENOMEM;
+      }
+
+      rc = ms_client_gateway_cert_init( loaded_cert, conf->gateway, gateway_cert );
+      if( rc != 0 ) {
+         SG_error("ms_gateway_cert_init('%s') rc = %d\n", gateway_cert->name().c_str(), rc );
+         goto md_gateway_certs_load_out;
+      }
+
+      rc = ms_client_cert_bundle_put( gateway_certs, loaded_cert );
+      if( rc != 0 ) {
+         SG_error("ms_client_cert_bundle_put('%s') rc = %d\n", gateway_cert->name().c_str(), rc );
+         goto md_gateway_certs_load_out;
+      }
+   } 
+
+md_gateway_certs_load_out:
+   if( rc != 0 ) {
+      ms_client_cert_bundle_free( gateway_certs );
+   }
+
+   return rc;
+}
+
+
+// get the name of our syndicate instance 
+// return 0 on success, and set *ret_syndicate_name 
 // return -ENOMEM on OOM 
-// return -EINVAL on unparseable MS url
-// return negative on error 
-static int md_get_syndicate_pubkey( struct md_syndicate_conf* conf, EVP_PKEY** key ) {
-    
+// return -EINVAL on invalid syndicate host
+static int md_syndicate_name( struct md_syndicate_conf* conf, char** ret_syndicate_name ) {
+ 
     int rc = 0;
-    char* syndicate_name = NULL;
-    char* syndicate_pubkey_pem = NULL;
-    size_t syndicate_pubkey_pem_len = 0;
-    char* output = NULL;
-    size_t output_len = 0;
-    int exit_status = 0;
-    
     char* ms_host = NULL;
     int ms_port = -1;
+    char* syndicate_name = NULL;
    
     rc = md_parse_hostname_portnum( conf->metadata_url, &ms_host, &ms_port );
     if( rc != 0 ) {
-       
        return rc;
     }
-    
+
     // name of syndicate instance 
     syndicate_name = SG_CALLOC( char, strlen(ms_host) + 10 );
     if( syndicate_name == NULL ) {
@@ -200,1263 +262,12 @@ static int md_get_syndicate_pubkey( struct md_syndicate_conf* conf, EVP_PKEY** k
             return -EINVAL;
         }
     }
-    
+   
     sprintf( syndicate_name, "%s:%d", ms_host, ms_port );    
     SG_safe_free( ms_host );
     
-    // get the key from local disk 
-    rc = md_syndicate_pubkey_load( conf->syndicate_path, syndicate_name, &syndicate_pubkey_pem, &syndicate_pubkey_pem_len );
-    if( rc == 0 ) {
-        
-        // load it!
-        rc = md_load_pubkey( key, syndicate_pubkey_pem, syndicate_pubkey_pem_len );
-        if( rc != 0 ) {
-         
-            SG_warn("Failed to parse public key for '%s'\n", syndicate_name);
-            SG_safe_free( syndicate_pubkey_pem );
-            rc = -ENOENT;
-        }
-        else {
-            
-            SG_safe_free( syndicate_name );
-            SG_safe_free( syndicate_pubkey_pem );
-            return 0;
-        }
-    }
-    
-    if( rc == -ENOENT ) {
-        
-        // not local; fetch remotely
-        SG_debug("Syndicate public key for '%s' is not local; fetch with '%s %s'\n", syndicate_name, conf->fetch_syndicate_pubkey, conf->metadata_url );
-        
-        char* fetch_pubkey_args[] = {
-            conf->fetch_syndicate_pubkey,
-            conf->metadata_url,
-            (char*)NULL
-        };
-        
-        // go fetch 
-        rc = SG_proc_subprocess( conf->fetch_syndicate_pubkey, fetch_pubkey_args, conf->helper_env, NULL, 0, &output, &output_len, SG_MAX_CERT_LEN, &exit_status );
-        if( rc != 0 ) {
-            
-            SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_syndicate_pubkey, rc );
-            SG_safe_free( syndicate_name );
-            return rc;
-        }
-        
-        if( exit_status != 0 ) {
-            
-            SG_error("Subprocess '%s' exit code %d\n", conf->fetch_syndicate_pubkey, exit_status );
-            SG_safe_free( syndicate_name );
-            SG_safe_free( output );
-            return -EPERM;
-        }
-        
-        // import 
-        rc = md_load_pubkey( key, output, output_len );
-        if( rc != 0 ) {
-            
-            SG_error("Failed to parse Syndicate public key for '%s'\n", syndicate_name );
-            rc = -EPERM;
-        }
-        else {
-            
-            // cache 
-            rc = md_syndicate_pubkey_store( conf->syndicate_path, syndicate_name, output, output_len );
-            if( rc != 0 ) {
-                
-                SG_error("md_syndicate_pubkey_store('%s') rc = %d\n", conf->syndicate_path, rc );
-            }   
-        }
-        
-        SG_safe_free( output );
-    }
-    else {
-        
-        SG_error("md_syndicate_pubkey_load('%s') rc = %d\n", syndicate_name, rc );
-    }
-    
-    SG_safe_free( syndicate_name );
-    return rc;
-}
-
-// get a user cert--if not locally, then via the subprocess helper.
-// return 0 on success, and populate user_cert 
-// return negative on error 
-static int md_get_user_cert( struct md_syndicate_conf* conf, char const* username_or_owner_id, ms::ms_user_cert* user_cert ) {
-
-   int rc = 0;
-   char cert_path[PATH_MAX+1];
-   
-   char* output = NULL;
-   size_t output_len = 0;
-   
-   int exit_status = 0;
-   
-   // get this user's cert
-   rc = md_user_cert_load( conf->users_path, username_or_owner_id, user_cert );
-   if( rc == 0 ) {
-      // done!
-      return rc;
-   }
-   
-   else if( rc == -ENOENT ) {
-      
-      // not cached locally 
-      SG_debug("Cert for user '%s' is not local; fetch with '%s %s %s'\n", username_or_owner_id, conf->fetch_user_cert, conf->metadata_url, username_or_owner_id );
-      
-      md_object_cert_path( conf->users_path, username_or_owner_id, cert_path, PATH_MAX );
-      
-      char* fetch_user_cert_args[] = {
-         conf->fetch_user_cert,
-         conf->metadata_url,
-         (char*)username_or_owner_id,
-         (char*)NULL
-      };
-         
-      // go fetch
-      rc = SG_proc_subprocess( conf->fetch_user_cert, fetch_user_cert_args, conf->helper_env, NULL, 0, &output, &output_len, SG_MAX_CERT_LEN, &exit_status );
-      if( rc != 0 ) {
-       
-         SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_user_cert, rc );
-         return rc;
-      }
-      
-      if( exit_status != 0 ) {
-         
-         SG_error("Subprocess '%s' exit code %d\n", conf->fetch_user_cert, exit_status );
-         return -EPERM;
-      }
-      
-      // import 
-      rc = md_parse< ms::ms_user_cert >( user_cert, output, output_len );
-      SG_safe_free( output );
-      
-      if( rc != 0 ) {
-         
-         SG_error("Failed to parse '%s', rc = %d\n", username_or_owner_id, rc );
-         rc = -EPERM;
-      }
-      
-      return rc;
-   }
-   
-   else {
-      
-      SG_error("md_user_cert_load('%s') rc = %d\n", username_or_owner_id, rc );
-      return rc;
-   }
-}
-
-
-// Validate a user certificate, by using a helper subprocess.
-// return 0 on success
-// return -EPERM if invalid 
-// return -ENOMEM if OOM
-// return other negative if the subprocess failed
-static int md_validate_user_cert( struct md_syndicate_conf* conf, char const* name_or_id, ms::ms_user_cert* user_cert ) {
-   
-   int rc = 0;
-   int exit_status = 0;
-   uint64_t user_id = 0;
-   char* certbuf = NULL;
-   char* tmp = NULL;
-   size_t certbuf_len = 0;
-   
-   char* validate_user_cert_args[] = {
-      conf->validate_user_cert,
-      NULL
-   };
-   
-   rc = md_serialize< ms::ms_user_cert >( user_cert, &certbuf, &certbuf_len );
-   if( rc < 0 ) {
-      
-      SG_error("md_serialize rc = %d\n", rc );
-      return rc;
-   }
-   
-   // use our subprocess helper to verify a cert's validity 
-   rc = SG_proc_subprocess( conf->validate_user_cert, validate_user_cert_args, conf->helper_env, certbuf, certbuf_len, NULL, NULL, 0, &exit_status );
-   
-   SG_safe_free( certbuf );
-   
-   if( rc != 0 ) {
-      
-      SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->validate_user_cert, rc );
-      return rc;
-   }
-   
-   if( exit_status != 0 ) {
-      
-      SG_error("SG_proc_subprocess('%s') exit status = %d\n", conf->validate_user_cert, exit_status );
-      return -EPERM;
-   }
-   
-   user_id = strtoull( name_or_id, &tmp, 10 );
-   
-   // name or ID?
-   if( *tmp == '\0' ) {
-      
-      // success!
-      if( user_id != user_cert->user_id() ) {
-         
-         SG_error("User ID mismatch: %" PRIu64 " != %" PRIu64 "\n", user_id, user_cert->user_id() );
-         return -EPERM;
-      }
-   }
-   else {
-      
-      // name 
-      if( strcmp( name_or_id, user_cert->email().c_str() ) != 0 ) {
-         
-         SG_error("User cert name mismatch: %s != %s\n", name_or_id, user_cert->email().c_str() );
-         return -EPERM;
-      }
-   }
-   
-   return 0;
-}
-
-
-// get a volume cert--if not locally, then via the subprocess helper.
-// return 0 on success, and populate volume_cert 
-// return negative on error 
-static int md_get_volume_cert( struct md_syndicate_conf* conf, char const* volume_name_or_id, ms::ms_volume_metadata* volume_cert ) {
-   
-   int rc = 0;
-   char cert_path[PATH_MAX+1];
-   
-   int exit_status = 0;
-   
-   char* output = NULL;
-   size_t output_len = 0;
-   
-   // get this volume's cert
-   rc = md_volume_cert_load( conf->volumes_path, volume_name_or_id, volume_cert );
-   if( rc == 0 ) {
-      // done!
-      return rc;
-   }
-   
-   else if( rc == -ENOENT ) {
-      
-      // not cached locally 
-      SG_debug("Cert for volume '%s' is not local; fetch with '%s'\n", volume_name_or_id, conf->fetch_volume_cert );
-      
-      md_object_cert_path( conf->volumes_path, volume_name_or_id, cert_path, PATH_MAX );
-      
-      char* fetch_volume_cert_args[] = {
-         conf->fetch_volume_cert,
-         conf->metadata_url,
-         (char*)volume_name_or_id,
-         NULL
-      };
-      
-      // go fetch
-      rc = SG_proc_subprocess( conf->fetch_volume_cert, fetch_volume_cert_args, conf->helper_env, NULL, 0, &output, &output_len, 0, &exit_status );
-      if( rc != 0 ) {
-       
-         SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_volume_cert, rc );
-         return rc;
-      }
-      
-      if( exit_status != 0 ) {
-         
-         SG_error("Subprocess '%s' exit code %d\n", conf->fetch_volume_cert, exit_status );
-         return -EPERM;
-      }
-      
-      // import 
-      rc = md_parse< ms::ms_volume_metadata >( volume_cert, output, output_len );
-      SG_safe_free( output );
-      
-      if( rc != 0 ) {
-         
-         SG_error("md_parse<ms::ms_volume_metadata> rc = %d\n", rc );
-         rc = -EPERM;
-      }
-      
-      // sanity check 
-      else if( strcmp( volume_name_or_id, volume_cert->name().c_str() ) != 0 ) {
-         
-         SG_error("Volume cert name mismatch: %s != %s\n", volume_name_or_id, volume_cert->name().c_str() );
-         rc = -EINVAL;
-      }
-      
-      return rc;
-   }
-   
-   else {
-      
-      SG_error("md_volume_cert_load('%s') rc = %d\n", volume_name_or_id, rc );
-      return rc;
-   }
-}
-
-
-// get a gateway cert cert--if not locally, then via the subprocess helper 
-// gateway_name_or_id can be the gateway name or the ID; the cert will be stored under the name, not the ID.
-// if store is true, cache to disk.  Only do so if the fetched cert's name or ID matches gateway_name_or_id, and there is no cert on file under the name.
-// return 0 on success, and populate gateway_cert 
-// return negative on error 
-static int md_get_gateway_cert( struct md_syndicate_conf* conf, char const* gateway_name_or_id, ms::ms_gateway_cert* gateway_cert ) {
-   
-   int rc = 0;
-   char cert_path[PATH_MAX+1];
-   
-   char* output = NULL;
-   size_t output_len = SG_MAX_CERT_LEN;
-   int exit_status = 0;
-   
-   ms::ms_gateway_cert cert;
-   
-   // get this gateway's cert
-   rc = md_gateway_cert_load( conf->gateways_path, gateway_name_or_id, gateway_cert );
-   if( rc == 0 ) {
-      // done!
-      return rc;
-   }
-   
-   else if( rc == -ENOENT ) {
-      
-      // not cached locally 
-      SG_debug("Cert for gateway '%s' is not local; fetch with '%s'\n", gateway_name_or_id, conf->fetch_gateway_cert );
-      
-      md_object_cert_path( conf->gateways_path, gateway_name_or_id, cert_path, PATH_MAX );
-      
-      char* fetch_gateway_cert_args[] = {
-         conf->fetch_gateway_cert,
-         conf->metadata_url,
-         (char*)gateway_name_or_id,
-         NULL
-      };
-      
-      // go fetch
-      rc = SG_proc_subprocess( conf->fetch_gateway_cert, fetch_gateway_cert_args, conf->helper_env, NULL, 0, &output, &output_len, SG_MAX_CERT_LEN, &exit_status );
-      if( rc != 0 ) {
-       
-         SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_gateway_cert, rc );
-         return rc;
-      }
-      
-      if( exit_status != 0 ) {
-         
-         SG_error("Subprocess '%s' exit code %d\n", conf->fetch_gateway_cert, exit_status );
-         return -EPERM;
-      }
-      
-      // import 
-      rc = md_parse< ms::ms_gateway_cert >( gateway_cert, output, output_len );
-      SG_safe_free( output );
-      
-      if( rc != 0 ) {
-         
-         SG_error("md_parse<ms::ms_gateway_cert>('%s') rc = %d\n", gateway_name_or_id, rc );
-         SG_safe_free( output );
-         return -EPERM;
-      }
-      
-      return rc;
-   }
-   
-   else {
-      
-      SG_error("md_gateway_cert_load('%s') rc = %d\n", gateway_name_or_id, rc );
-      return rc;
-   }
-}
-
-
-// get a cert bundle via our subprocess helper 
-// return 0 on success, and populate *cert_bundle 
-// return negative on error 
-static int md_get_cert_bundle( struct md_syndicate_conf* conf, uint64_t volume_id, uint64_t cert_bundle_version, SG_messages::Manifest* cert_bundle ) {
-   
-   int rc = 0;
-   int exit_status = 0;
-   char volume_id_buf[50];
-   char cert_bundle_version_buf[50];
-   string output_str;
-   
-   char* output = NULL;
-   size_t output_len = SG_MAX_CERT_LEN;
-   
-   sprintf( volume_id_buf, "%" PRIu64, volume_id );
-   sprintf( cert_bundle_version_buf, "%" PRIu64, cert_bundle_version );
-   
-   char* fetch_cert_bundle_args[] = {
-      conf->fetch_cert_bundle,
-      conf->metadata_url,
-      volume_id_buf,
-      cert_bundle_version_buf,
-      NULL
-   };
-
-   // go fetch 
-   rc = SG_proc_subprocess( conf->fetch_cert_bundle, fetch_cert_bundle_args, conf->helper_env, NULL, 0, &output, &output_len, SG_MAX_CERT_LEN, &exit_status );
-   if( rc != 0 ) {
-      
-      SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_cert_bundle, rc );
-      return rc;
-   }
-   
-   if( exit_status != 0 ) {
-      
-      SG_error("Subprocess '%s' exit code %d\n", conf->fetch_cert_bundle, exit_status );
-      return -EPERM;
-   }
-   
-   if( output == NULL ) {
-      
-      SG_error("No output from subprocess '%s'\n", conf->fetch_cert_bundle );
-      return -EPERM;
-   }
-   
-   // import from output 
-   rc = md_parse< SG_messages::Manifest >( cert_bundle, output, output_len );
-   
-   SG_safe_free( output );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_parse<SG_messages::Manifest>(cert bundle /%" PRIu64 "/%" PRIu64 ") rc = %d\n", volume_id, cert_bundle_version, rc );
-      return rc;
-   }
-   
-   return rc;
-}
-
-// verify that a user signed a volume's cert, given the user's cert and the volume's cert.
-// return 0 on success
-// return -EPERM on failure
-// return -ENOMEM on OOM 
-static int md_verify_volume_cert( ms::ms_user_cert* volume_owner_cert, uint64_t volume_id, ms::ms_volume_metadata* volume_cert ) {
-   
-   int rc = 0;
-   char const* public_key_pem = NULL;
-   EVP_PKEY* public_key = NULL;
-   
-   public_key_pem = volume_owner_cert->public_key().c_str();
-   
-   rc = md_load_pubkey( &public_key, public_key_pem, volume_owner_cert->public_key().size() );
-   if( rc != 0 ) {
-      
-      SG_error("md_load_pubkey('%s') rc = %d\n", volume_owner_cert->email().c_str(), rc );
-      return rc;
-   }
-   
-   rc = md_verify< ms::ms_volume_metadata >( public_key, volume_cert );
-   EVP_PKEY_free( public_key );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_verify<ms::ms_volume_metadata>('%s') from user '%s' rc = %d\n", volume_cert->name().c_str(), volume_owner_cert->email().c_str(), rc );
-      return rc;
-   }
-   
-   if( volume_cert->owner_id() != volume_owner_cert->user_id() ) {
-      
-      SG_error("volume owner mismatch: %" PRIu64 " != %" PRIu64 "\n", volume_cert->owner_id(), volume_owner_cert->user_id() );
-      return -EPERM;
-   }
-   
-   if( volume_cert->volume_id() != volume_id ) {
-       
-      SG_error("volume ID mismatch: %" PRIu64 " != %" PRIu64 "\n", volume_cert->volume_id(), volume_id );
-      return -EPERM;
-   }
-   
-   return rc;
-}
-
-
-// verify that a volume's cert matches the information in the cert bundle.
-// The "root" field should have been removed from the volume_cert.
-// return 0 on success 
-// return -EPERM on failure 
-// return -ENOMEM on OOM 
-static int md_verify_volume_cert_in_bundle( SG_messages::Manifest* cert_bundle, ms::ms_volume_metadata* volume_cert ) {
-   
-   int rc = 0;
-   char* volume_cert_bin = NULL;
-   size_t volume_cert_len = 0;
-   unsigned char volume_cert_hash[ SHA256_DIGEST_LENGTH ];
-   memset( volume_cert_hash, 0, SHA256_DIGEST_LENGTH );
-   
-   if( cert_bundle->blocks_size() == 0 ) {
-      // invalid 
-      return -EPERM;
-   }
-   
-   if( volume_cert->has_root() ) {
-      return -EINVAL;
-   }
-   
-   rc = md_serialize< ms::ms_volume_metadata >( volume_cert, &volume_cert_bin, &volume_cert_len );
-   if( rc != 0 ) {
-      
-      SG_error("md_serialize< ms::ms_volume_metadata >('%s') rc = %d\n", volume_cert->name().c_str(), rc );
-      return rc;
-   }
-   
-   sha256_hash_buf( volume_cert_bin, volume_cert_len, volume_cert_hash );
-   SG_safe_free( volume_cert_bin );
-   
-   // cert's hash matches the hash in the bundle?
-   if( sha256_cmp( volume_cert_hash, (unsigned char*)cert_bundle->blocks(0).hash().data() ) != 0 ) {
-      
-      char volume_cert_hash_printable[ 2*SHA256_DIGEST_LENGTH + 1 ];
-      char cert_bundle_hash_printable[ 2*SHA256_DIGEST_LENGTH + 1 ];
-      
-      memset( volume_cert_hash_printable, 0, 2*SHA256_DIGEST_LENGTH + 1 );
-      memset( cert_bundle_hash_printable, 0, 2*SHA256_DIGEST_LENGTH + 1 );
-      
-      sha256_printable_buf( volume_cert_hash, volume_cert_hash_printable );
-      sha256_printable_buf( (unsigned char const*)cert_bundle->blocks(0).hash().data(), cert_bundle_hash_printable );
-      
-      // mismatch
-      SG_error("Cert bundle hash mismatch on volume: %s != %s\n", volume_cert_hash_printable, cert_bundle_hash_printable );
-      rc = -EPERM;
-   }
-   
-   return rc;
-}
-
-
-// verify that the user signed a gateway's cert, given the user's cert and the gateway's cert.
-// does NOT verify that it is part of a cert bundle;
-// return 0 on success
-// return -EPERM on failure
-// return -ENOMEM on OOM 
-static int md_verify_gateway_cert( ms::ms_user_cert* gateway_owner_cert, char const* gateway_name, ms::ms_gateway_cert* gateway_cert ) {
-   
-   int rc = 0;
-   char const* public_key_pem = gateway_owner_cert->public_key().c_str();
-   EVP_PKEY* public_key = NULL;
-   
-   rc = md_load_pubkey( &public_key, public_key_pem, gateway_owner_cert->public_key().size() );
-   if( rc != 0 ) {
-      
-      SG_error("md_load_pubkey('%s') rc = %d\n", gateway_owner_cert->email().c_str(), rc );
-      return rc;
-   }
-   
-   rc = md_verify< ms::ms_gateway_cert >( public_key, gateway_cert );
-   EVP_PKEY_free( public_key );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_verify<ms::ms_gateway_cert>('%s') from user '%s' rc = %d\n", gateway_cert->name().c_str(), gateway_owner_cert->email().c_str(), rc );
-      return rc;
-   }
-   
-   if( gateway_cert->owner_id() != gateway_owner_cert->user_id() ) {
-      
-      SG_error("volume owner mismatch: %" PRIu64 " != %" PRIu64 "\n", gateway_cert->owner_id(), gateway_owner_cert->user_id() );
-      return -EPERM;
-   }
-   
-   if( strcmp( gateway_cert->name().c_str(), gateway_name ) != 0 ) {
-      
-      SG_error("gateway name mismatch: '%s' != '%s'\n", gateway_cert->name().c_str(), gateway_name );
-      return -EPERM;
-   }
-   
-   return rc;
-}
-
-
-// verify that a gateway cert is represented in a (trusted) cert bundle.
-// proves that the gateway cert (1) is the latest version, and (2) the volume owner approves
-// return 0 on success 
-// return -EPERM on failure 
-// return -ENOMEM on OOM 
-static int md_verify_gateway_cert_in_bundle( SG_messages::Manifest* cert_bundle, ms::ms_gateway_cert* gateway_cert ) {
-   
-   int rc = 0;
-   int cert_idx = -1;
-   
-   if( gateway_cert->volume_id() != cert_bundle->volume_id() ) {
-      // not in volume 
-      SG_error("Gateway '%s' is not in Volume %" PRIu64 "\n", gateway_cert->name().c_str(), cert_bundle->volume_id() );
-      return -EPERM;
-   }
-   
-   // gateway cert needs to be in the cert bundle 
-   for( int i = 0; i < cert_bundle->blocks_size(); i++ ) {
-      
-      const SG_messages::ManifestBlock& block = cert_bundle->blocks(i);
-      
-      if( block.block_id() == gateway_cert->gateway_id() ) {
-         
-         // check owner...
-         if( gateway_cert->owner_id() != block.owner_id() ) {
-             
-             SG_error("Gateway %" PRIu64 " not owned by user %" PRIu64 "\n", gateway_cert->owner_id(), block.owner_id() );
-             rc = -EPERM;
-             break;
-         }
-         
-         // check capabilities...
-         if( (gateway_cert->caps() | block.caps()) != block.caps() ) {
-             
-             SG_error("Gateway %" PRIu64 " exceeds capabilities %X (%X)\n", gateway_cert->gateway_id(), gateway_cert->caps(), block.caps() );
-             rc = -EPERM;
-             break;
-         }
-         
-         cert_idx = i;
-         break;
-      }
-   }
-   
-   if( rc < 0 || cert_idx < 0 ) {
-      
-      // not found 
-      SG_error("Gateway cert for '%s' is not in cert bundle\n", gateway_cert->name().c_str() );
-      return -EPERM;
-   }
-   
-   return rc;
-}
-
-
-// verify that a user signed a cert bundle, given the user's cert and the cert bundle
-// return 0 on success
-// return -EPERM on failure
-// return -ENOMEM on OOM 
-static int md_verify_cert_bundle( ms::ms_user_cert* volume_owner_cert, SG_messages::Manifest* cert_bundle ) {
-   
-   int rc = 0;
-   char const* public_key_pem = volume_owner_cert->public_key().c_str();
-   
-   EVP_PKEY* public_key = NULL;
-   
-   rc = md_load_pubkey( &public_key, public_key_pem, volume_owner_cert->public_key().size() );
-   if( rc != 0 ) {
-      
-      SG_error("md_load_pubkey('%s') rc = %d\n", volume_owner_cert->email().c_str(), rc );
-      return rc;
-   }
-   
-   rc = md_verify< SG_messages::Manifest >( public_key, cert_bundle );
-   EVP_PKEY_free( public_key );
-   
-   if( rc != 0 ) {
-      
-      SG_error("md_verify<SG_messages::Manifest>(%" PRIu64 ") from user '%s' rc = %d\n", cert_bundle->file_id(), volume_owner_cert->email().c_str(), rc );
-   }
-   
-   return rc;
-}
-
-
-// load all locally-cached gateway certificates
-// return 0 on success, and populate local_certs 
-// return -ENOMEM on OOM 
-// return negative on other filesystem-related error
-static int md_gateway_certs_load( struct md_syndicate_conf* conf, ms_cert_bundle* local_certs ) {
-   
-   struct dirent** dirents = NULL;
-   int num_entries = 0;
-   int rc = 0;
-   char* cert_data = NULL;
-   off_t cert_data_len = 0;
-   char cert_path[ PATH_MAX+1 ];
-   
-   num_entries = scandir( conf->gateways_path, &dirents, NULL, NULL );
-   if( num_entries < 0 ) {
-      
-      rc = -errno;
-      SG_error("scandir('%s') rc = %d\n", conf->gateways_path, rc );
-      return rc;
-   }
-   
-   for( int i = 0; i < num_entries; i++ ) {
-      
-      ms::ms_gateway_cert* certpb = NULL;
-      struct ms_gateway_cert* cert = NULL;
-      
-      size_t d_name_len = strlen( dirents[i]->d_name );
-      
-      // must be a cert 
-      if( d_name_len < strlen(".cert") ) {
-          continue;
-      }
-      
-      if( strcmp( &dirents[i]->d_name[ d_name_len - strlen(".cert") ], ".cert" ) != 0 ) {
-          continue;
-      }
-      
-      // load it
-      certpb = SG_safe_new( ms::ms_gateway_cert );
-      if( certpb == NULL ) {
-         
-         // OOM
-         rc = -ENOMEM;
-         break;
-      }
-      
-      md_fullpath( conf->gateways_path, dirents[i]->d_name, cert_path );
-      cert_data = md_load_file( cert_path, &cert_data_len );
-      
-      if( cert_data == NULL ) {
-          SG_error("md_load_file('%s') rc = %d\n", cert_path, (int)cert_data_len );
-          continue;
-      }
-      
-      rc = md_parse< ms::ms_gateway_cert >( certpb, cert_data, cert_data_len );
-      SG_safe_free( cert_data );
-      if( rc != 0 ) {
-         
-         SG_safe_delete( certpb );
-         
-         // failed to load 
-         SG_error("md_parse< ms::ms_gateway_cert >('%s') rc = %d\n", cert_path, rc );
-         continue;
-      }
-      
-      // skip if it's not in this volume 
-      if( certpb->volume_id() != conf->volume ) {
-          
-         SG_safe_delete( certpb );
-         continue;
-      }
-      
-      // extract information from it...
-      cert = SG_CALLOC( struct ms_gateway_cert, 1 );
-      if( cert == NULL ) {
-         
-         // OOM 
-         rc = -ENOMEM;
-         SG_safe_delete( certpb );
-         break;
-      }
-      
-      rc = ms_client_gateway_cert_init( cert, certpb->gateway_id(), certpb );
-      if( rc != 0 ) {
-         
-         // OOM?
-         ms_client_gateway_cert_free( cert );
-         SG_safe_free( cert );
-         
-         if( rc == -ENOMEM ) {
-            
-            break;
-         }
-         else {
-            SG_error("ms_client_gateway_cert_init rc = %d\n", rc );
-            continue;
-         }
-      }
-      
-      // trust it.
-      rc = ms_client_cert_bundle_put( local_certs, cert );
-      if( rc != 0 ) {
-         
-         // OOM 
-         ms_client_gateway_cert_free( cert );
-         SG_safe_free( cert );
-         break;
-      }
-   }
-   
-   for( int i = 0; i < num_entries; i++ ) {
-      SG_safe_free( dirents[i] );
-   }
-   SG_safe_free( dirents );
-   
-   return rc;
-}
-
-
-// given a set of locally-cached certs and a cert bundle, go find the ones that are invalid.
-// return 0 on success, and populate invalid_certs with invalid certificates from local certs.  This clears them from local_certs
-// return -ENOMEM on OOM 
-int md_gateway_certs_find_invalid( struct md_syndicate_conf* conf, ms_cert_bundle* local_certs, SG_messages::Manifest* cert_bundle, ms_cert_bundle* invalid_certs ) {
-   
-   int rc = 0;
-   struct ms_gateway_cert* gateway_cert = NULL;
-   ms_cert_bundle::iterator old_itr;
-   
-   for( ms_cert_bundle::iterator itr = local_certs->begin(); itr != local_certs->end(); ) {
-      
-      // local cert.
-      gateway_cert = itr->second;
-      
-      // matches the cert bundle?
-      rc = md_verify_gateway_cert_in_bundle( cert_bundle, gateway_cert->pb );
-      if( rc != 0 ) {
-         
-         // not in the cert bundle!  revoke
-         rc = ms_client_cert_bundle_put( invalid_certs, gateway_cert );
-         if( rc != 0 ) {
-            
-            // OOM 
-            return rc;
-         }
-         
-         // clear it out 
-         old_itr = itr;
-         itr++;
-         
-         local_certs->erase( old_itr );
-         continue;
-      }
-      else {
-         
-         itr++;
-      }
-   }
-   
-   return 0;
-}
-
-
-// given a set of locally-cached certs and a cert bundle, go fetch the ones that are missing.
-// NOTE: the caller should have verified that the local certs that *are* given are consistent with the cert bundle.
-// return 0 on success, and add the missing certs to local_certs 
-// return -ENOMEM on OOM 
-// return -EAGAIN if we partially-succeeded
-// return -EPERM if we get a cert that is invalid
-int md_gateway_certs_get_missing( struct md_syndicate_conf* conf, ms_cert_bundle* local_certs, SG_messages::Manifest* cert_bundle ) {
-   
-   int rc = 0;
-   struct ms_gateway_cert* gateway_cert = NULL;
-   ms::ms_gateway_cert* gateway_cert_pb = NULL;
-   uint64_t gateway_id = 0;
-   char gateway_id_buf[50];
-   
-   // NOTE: block 0 is the volume cert's block
-   for( int i = 1; i < cert_bundle->blocks_size(); i++ ) {
-      
-      const SG_messages::ManifestBlock& block = cert_bundle->blocks(i);
-      
-      gateway_id = block.block_id();
-      
-      // present locally?
-      if( local_certs->find( gateway_id ) != local_certs->end() ) {
-         
-         // yup 
-         continue;
-      }
-      
-      // not present--go download 
-      gateway_cert_pb = SG_safe_new( ms::ms_gateway_cert );
-      if( gateway_cert_pb == NULL ) {
-         
-         rc = -ENOMEM;
-         break;
-      }
-      
-      sprintf( gateway_id_buf, "%" PRIu64, gateway_id );
-      
-      rc = md_get_gateway_cert( conf, gateway_id_buf, gateway_cert_pb );
-      if( rc != 0 ) {
-         
-         SG_error("md_get_gateway_cert('%s') rc = %d\n", gateway_id_buf, rc );
-         SG_safe_delete( gateway_cert_pb );
-         rc = -EAGAIN;
-         break;
-      }
-      
-      // verify that the volume owner signed it, and it's the right version
-      rc = md_verify_gateway_cert_in_bundle( cert_bundle, gateway_cert_pb );
-      if( rc != 0 ) {
-         
-         SG_error("md_verify_gateway_cert_in_bundle('%s') rc = %d\n", gateway_id_buf, rc );
-         SG_safe_delete( gateway_cert_pb );
-         rc = -EPERM;
-         break;
-      }
-      
-      // verify that 
-      
-      // store!
-      gateway_cert = SG_CALLOC( struct ms_gateway_cert, 1 );
-      if( gateway_cert == NULL ) {
-         
-         SG_safe_delete( gateway_cert_pb );
-         rc = -ENOMEM;
-         break;
-      }
-      
-      rc = ms_client_gateway_cert_init( gateway_cert, gateway_id, gateway_cert_pb );
-      if( rc != 0 ) {
-         
-         SG_safe_delete( gateway_cert_pb );
-         SG_safe_free( gateway_cert );
-         break;
-      }
-      
-      rc = ms_client_cert_bundle_put( local_certs, gateway_cert );
-      if( rc != 0 ) {
-         
-         ms_client_gateway_cert_free( gateway_cert );
-         break;
-      }
-   }
-   
-   return rc;
-}
-
-
-// given a set of gateway certs, go fetch the user certs and verify that the users they represent exist and have signed their gateway certs.
-// a user can be present multiple times; each gateway cert will have its own private copy of the user cert
-// return 0 on success, and put each user cert into its corresponding gateway cert in gateway_certs
-// return -EPERM on failure 
-// return -ENOMEM on OOM
-// return -EAGAIN if we should try again 
-static int md_gateway_certs_get_users( struct md_syndicate_conf* conf, ms_cert_bundle* gateway_certs, ms::ms_user_cert* volume_owner_cert, ms::ms_user_cert* gateway_owner_cert ) {
-   
-   int rc = 0;
-   uint64_t owner_id = 0;
-   char owner_id_buf[50];
-   
-   ms::ms_gateway_cert* cert = NULL;
-   ms::ms_user_cert* user_cert = NULL;
-   
-   // map user ID to user cert
-   map< uint64_t, ms::ms_user_cert* > fetched_user_certs;
-   
-   // pre-seed with user certs we might already know 
-   ms::ms_user_cert* known_certs[] = {
-       volume_owner_cert,
-       gateway_owner_cert
-   };
-   
-   for( int i = 0; i < 2; i++ ) {
-       
-       if( known_certs[i] != NULL ) {
-           try {
-               fetched_user_certs[ known_certs[i]->user_id() ] = known_certs[i];
-           }
-           catch( bad_alloc& ba ) {
-               return -ENOMEM;
-           }
-       }
-   }
-   
-   for( ms_cert_bundle::iterator itr = gateway_certs->begin(); itr != gateway_certs->end(); itr++ ) {
-      
-      cert = ms_client_gateway_cert_gateway( itr->second );
-      
-      // have a user?
-      if( ms_client_gateway_cert_user( itr->second ) != NULL ) {
-         continue;
-      }
-      
-      // already fetched?
-      map< uint64_t, ms::ms_user_cert* >::iterator fetched_user_certs_itr = fetched_user_certs.find( cert->owner_id() );
-      if( fetched_user_certs_itr != fetched_user_certs.end() ) {
-         
-         // yup! just duplicate 
-         user_cert = SG_safe_new( ms::ms_user_cert );
-         if( user_cert == NULL ) {
-             rc = -ENOMEM;
-             break;
-         }
-         
-         try {
-            user_cert->CopyFrom( *(fetched_user_certs_itr->second) );
-         }
-         catch( bad_alloc& ba ) {
-            rc = -ENOMEM;
-            break;
-         }
-         
-         // bind user cert go gateway cert
-         ms_client_gateway_cert_set_user( itr->second, user_cert );
-         continue;
-      }
-      
-      // check the claimed user
-      owner_id = cert->owner_id();
-      sprintf( owner_id_buf, "%" PRIu64, owner_id );
-      
-      user_cert = SG_safe_new( ms::ms_user_cert );
-      if( user_cert == NULL ) {
-         
-         rc = -ENOMEM;
-         break;
-      }
-      
-      // get the user cert 
-      rc = md_get_user_cert( conf, owner_id_buf, user_cert );
-      if( rc != 0 ) {
-         
-         SG_error("md_get_user_cert('%s') rc = %d\n", owner_id_buf, rc );
-         rc = -EAGAIN;
-         break;
-      }
-      
-      // verify this user cert is valid, or uncache it if not
-      rc = md_validate_user_cert( conf, owner_id_buf, user_cert );
-      if( rc != 0 ) {
-         
-         SG_error("md_validate_user_cert('%s') rc = %d\n", owner_id_buf, rc );
-         rc = -EPERM;
-         break;
-      }
-      
-      // verify that the user signed the gateway cert 
-      // NOTE: can't check the gateway name, since we by definition do not know if the cert is valid yet.
-      rc = md_verify_gateway_cert( user_cert, cert->name().c_str(), cert );
-      if( rc != 0 ) {
-         
-         SG_error("md_verify_gateway_cert(%" PRIu64 ") rc = %d\n", cert->gateway_id(), rc );
-         SG_safe_delete( user_cert );
-         rc = -EPERM;
-         break;
-      }
-      
-      // hold onto it...
-      ms_client_gateway_cert_set_user( itr->second, user_cert );
-      
-      // cache it... 
-      try {
-         fetched_user_certs[ cert->owner_id() ] = user_cert;
-      }
-      catch( bad_alloc& ba ) {
-         rc = -ENOMEM;
-         break;
-      }
-   }
-   
-   return rc;
-}
-
-
-// Given an authentic cert bundle, go revalidate the set of gateway certs:
-// * load all locally-cached ones 
-// * find the local ones that are invalid
-// * go fetch new copies of all invalidated certs
-// a gateway cert is "invalid" if the gateway it identifies is not present in the cert bundle.
-// return 0 on success 
-// return -errno on error
-int md_gateway_certs_revalidate( struct md_syndicate_conf* conf, SG_messages::Manifest* cert_bundle, ms_cert_bundle* gateway_certs ) {
-   
-   int rc = 0;
-   ms_cert_bundle invalid_certs;
-   
-   // revalidate cached gateway certs
-   rc = md_gateway_certs_load( conf, gateway_certs );
-   if( rc != 0 ) {
-      
-      SG_error("md_gateway_certs_load rc = %d\n", rc );
-      
-      ms_client_cert_bundle_free( gateway_certs );
-      return rc;
-   }
-   
-   // find the invalid/missing gateway certs 
-   rc = md_gateway_certs_find_invalid( conf, gateway_certs, cert_bundle, &invalid_certs );
-   if( rc != 0 ) {
-      
-      SG_error("md_gateway_certs_find_invalid rc = %d\n", rc );
-      
-      ms_client_cert_bundle_free( gateway_certs );
-      ms_client_cert_bundle_free( &invalid_certs );
-      return rc;
-   }
-   
-   ms_client_cert_bundle_free( &invalid_certs );
-   
-   // go download all missing certs 
-   rc = md_gateway_certs_get_missing( conf, gateway_certs, cert_bundle );
-   if( rc != 0 ) {
-      
-      SG_error("md_gateway_certs_get_missing rc = %d\n", rc );
-      ms_client_cert_bundle_free( gateway_certs );
-      return rc;
-   }
-   
-   return rc;
-}
-
-
-// cache the set of gateway certs and their associated user certs,
-// but only if the gateway cert has a valid user cert (it won't have a 
-// cert at all if the user's cert could not be validated).
-// always succeeds; or crashes
-static int md_gateway_certs_cache_all( struct md_syndicate_conf* conf, ms_cert_bundle* gateway_certs ) {
-   
-   int rc = 0;
-   
-   // cache gateway and user certs, but only if we have valid user certs.
-   for( ms_cert_bundle::iterator itr = gateway_certs->begin(); itr != gateway_certs->end(); itr++ ) {
-      
-      ms::ms_user_cert* user_cert = ms_client_gateway_cert_user( itr->second );
-      ms::ms_gateway_cert* gateway_cert = ms_client_gateway_cert_gateway( itr->second );
-      
-      // have gateway 
-      if( gateway_cert == NULL ) {
-         
-         SG_warn("BUG: no signed gateway cert for %" PRIu64 "\n", itr->first );
-         return -EINVAL;
-      }
-      
-      char const* gateway_name =  ms_client_gateway_cert_name( itr->second );
-      
-      // have user?
-      if( user_cert == NULL ) {
-         
-         SG_warn("Will NOT trust gateway '%s', since it does not have a valid user certificate\n", gateway_name );
-         continue;
-      }
-      
-      char const* user_name = user_cert->email().c_str();
-      
-      // remove old 
-      rc = md_gateway_cert_remove( conf->gateways_path, gateway_name );
-      if( rc != 0 ) {
-          
-         SG_warn("md_gateway_cert_remove('%s') rc = %d\n", gateway_name, rc );
-      }
-      
-      rc = md_user_cert_remove( conf->users_path, user_name );
-      if( rc != 0 ) {
-          
-         SG_warn("md_user_cert_remove('%s') rc = %d\n", user_name, rc );
-      }
-      
-      // cache both 
-      rc = md_gateway_cert_store( conf->gateways_path, gateway_name, gateway_cert );
-      if( rc != 0 ) {
-         
-         SG_error("FATAL: md_gateway_cert_store('%s') rc = %d\n", gateway_name, rc );
-         exit(1);
-      }
-      
-      rc = md_user_cert_store( conf->users_path, user_name, user_cert );
-      if( rc != 0 ) {
-         
-         SG_error("FATAL: md_user_cert_store('%s') rc = %d\n", user_name, rc );
-         exit(1);
-      }
-      
-      rc = 0;
-   }
-   
-   return rc;
-}
-
-
-// get a gateway's driver, given the hash.
-// load it locally, or download it from the MS.
-// verify its integrity and authenticity via the gateway owner's key.
-// use a subprocess helper to do so.
-// return 0 on success, and set *driver_text and *driver_text_len 
-// return -EPERM on validation error 
-// return -ENOENT if there is no driver
-// return -ENOMEM on OOM 
-// return -errno on network or storage error 
-static int md_get_gateway_driver( struct md_syndicate_conf* conf, struct ms_gateway_cert* gateway_cert, char** driver_text, size_t* driver_text_len ) {
-   
-   // get the driver text
-   int rc = 0;
-   char driver_hash_str[ 2*SHA256_DIGEST_LENGTH + 1 ];
-   unsigned char downloaded_hash[ SHA256_DIGEST_LENGTH ];
-   char driver_path[PATH_MAX+1];
-   off_t driver_file_len = 0;
-   int exit_status = 0;
-   
-   // get the hash 
-   sha256_printable_buf( gateway_cert->driver_hash, driver_hash_str );
-  
-   snprintf( driver_path, PATH_MAX, "%s/%s.json", conf->drivers_path, driver_hash_str );
-   
-   // get this gateway's driver
-   *driver_text = md_load_file( driver_path, &driver_file_len );
-   if( *driver_text != NULL ) {
-      
-      // done!
-      *driver_text_len = driver_file_len;
-      return 0;
-   }
-   else {
-       
-      rc = (int)driver_file_len;
-   }
-   
-   if( rc == -ENOENT ) {
-      
-      // not cached locally 
-      SG_debug("Driver for gateway '%s' is not local; fetch with '%s'\n", gateway_cert->name, conf->fetch_driver );
-      
-      char* fetch_driver_args[] = {
-         conf->fetch_driver,
-         conf->metadata_url,
-         driver_hash_str,
-         NULL
-      };
-      
-      // go fetch
-      rc = SG_proc_subprocess( conf->fetch_driver, fetch_driver_args, conf->helper_env, NULL, 0, driver_text, driver_text_len, SG_MAX_DRIVER_LEN, &exit_status );
-      if( rc != 0 ) {
-       
-         SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->fetch_driver, rc );
-         return rc;
-      }
-      
-      if( exit_status != 0 ) {
-         
-         if( exit_status == 2 ) {
-             
-             // indicates 'not found'
-             SG_safe_free( *driver_text );
-             *driver_text_len = 0;
-             return -ENOENT;
-         }
-         else {
-             
-            SG_error("Subprocess '%s' exit code %d\n", conf->fetch_driver, exit_status );
-            
-            // some other error
-            SG_safe_free( *driver_text );
-            *driver_text_len = 0;
-            return -EPERM;
-         }
-      }
-      
-      // verify integrity 
-      sha256_hash_buf( *driver_text, *driver_text_len, downloaded_hash );
-      if( sha256_cmp( downloaded_hash, gateway_cert->driver_hash ) != 0 ) {
-         
-         char downloaded_hash_printable[ 2*SHA256_DIGEST_LENGTH + 1 ];
-         memset( downloaded_hash_printable, 0, 2*SHA256_DIGEST_LENGTH + 1 );
-         
-         sha256_printable_buf( downloaded_hash, downloaded_hash_printable );
-         
-         // mismatch
-         SG_error("Driver hash mismatch: %s != %s\n", downloaded_hash_printable, driver_hash_str );
-         rc = -EPERM;
-         
-         SG_safe_free( *driver_text );
-         *driver_text_len = 0;
-      }
-      
-      else {
-         
-         // cache 
-         rc = md_write_file( driver_path, *driver_text, *driver_text_len, 0600 );
-         if( rc < 0 ) {
-         
-            SG_error("md_write_file('%s') rc = %d\n", driver_path, rc );
-         }
-      }
-      
-      return rc;
-   }
-   
-   else {
-      
-      if( rc != 0 ) {
-         SG_error("md_gateway_cert_load('%s') rc = %d\n", gateway_cert->name, rc );
-      }
-      
-      return rc;
-   }
+    *ret_syndicate_name = syndicate_name;
+    return 0; 
 }
 
 
@@ -1468,303 +279,122 @@ static int md_get_gateway_driver( struct md_syndicate_conf* conf, struct ms_gate
 // return -EPERM on validation error 
 // return -ENOMEM on OOM
 int md_certs_reload( struct md_syndicate_conf* conf, EVP_PKEY** syndicate_pubkey, ms::ms_user_cert* user_cert, ms::ms_user_cert* volume_owner_cert, ms::ms_volume_metadata* volume_cert, ms_cert_bundle* gateway_certs ) {
-   
+
    int rc = 0;
-   
-   SG_messages::Manifest cert_bundle;
-   ms::ms_gateway_cert gateway_cert;            // our cert
-   
-   uint64_t cert_bundle_version = 0;
-   char volume_id_buf[100];
-   
-   // get syndicate public key 
-   SG_debug("Get Syndicate public key for '%s'\n", conf->metadata_url );
-   rc = md_get_syndicate_pubkey( conf, syndicate_pubkey );
+   int exit_status = 0;
+   char* syndicate_name = NULL;
+   char* syndicate_pubkey_pem = NULL;
+   size_t syndicate_pubkey_pem_len = 0;
+   ms::ms_gateway_cert gateway_cert;
+
+   // use our certificate helper to go refresh the cached certificates 
+   char* certs_reload_args[] = {
+      conf->certs_reload_helper,
+      conf->config_file_path,
+      conf->ms_username,
+      conf->volume_name,
+      conf->gateway_name,
+      (char*)NULL
+   };
+
+   // go fetch 
+   rc = SG_proc_subprocess( conf->certs_reload_helper, certs_reload_args, conf->helper_env, NULL, 0, NULL, 0, 0, &exit_status );
    if( rc != 0 ) {
-       
-      SG_error("md_get_syndicate_pubkey('%s:%d') rc = %d\n", conf->hostname, conf->portnum, rc );
+
+      SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->certs_reload_helper, rc );
       return rc;
-   }
-   
-   // get our user's cert
-   SG_debug("Get cert for '%s'\n", conf->ms_username);
-   rc = md_get_user_cert( conf, conf->ms_username, user_cert );
-   if( rc != 0 ) {
-      
-      SG_error("md_get_user_cert('%s') rc = %d\n", conf->ms_username, rc );
-      
-      if( !conf->is_client ) {
-         return rc;
-      }
-   }
-   
-   // validate the user's cert, if we got it (otherwise we're anonymous)
-   if( rc == 0 ) {
-       
-      SG_debug("Validate cert for '%s'\n", conf->ms_username);
-      rc = md_validate_user_cert( conf, conf->ms_username, user_cert );
-      if( rc != 0 && !conf->is_client ) {
-            
-         SG_error("md_validate_user_cert('%s') rc = %d\n", conf->ms_username, rc );
-         return rc;
-      }
-      
-      // user ID can't change (otherwise we need to re-start)
-      if( conf->owner > 0 && conf->owner != user_cert->user_id() ) {
-        
-         SG_error("Invalid user ID: we are %" PRIu64 ", but cert says %" PRIu64 "\n", conf->owner, user_cert->user_id() );
-         return -EPERM;
-      }    
-      
-      conf->owner = user_cert->user_id();
-   }
-   else {
-      rc = 0;
-      conf->owner = SG_USER_ANON;
-   }
-    
-   SG_debug("Get gateway cert for '%s'\n", conf->gateway_name);
-   
-   // get our gateway's cert
-   rc = md_get_gateway_cert( conf, conf->gateway_name, &gateway_cert );
-   if( rc != 0 ) {
-      
-      SG_error("md_get_gateway_cert('%s') rc = %d\n", conf->gateway_name, rc );
-      return rc;
-   }
-   
-   // verify that it's *our* gateway cert
-   if( conf->owner != SG_USER_ANON ) {
-       
-      SG_debug("Verify gateway cert for '%s', using public key for '%s'\n", conf->gateway_name, conf->ms_username);
-      rc = md_verify_gateway_cert( user_cert, conf->gateway_name, &gateway_cert );
-      if( rc != 0 ) {
-         
-         SG_error("md_verify_gateway_cert('%s') rc = %d\n", conf->gateway_name, rc );
-         return rc;
-      }
-   }
-   
-   // ID can't change (illegal)
-   if( conf->gateway != 0 && conf->gateway != gateway_cert.gateway_id() ) {
-      SG_error("Invalid gateway ID: we are %" PRIu64 ", but cert says %" PRIu64 "\n", conf->gateway, gateway_cert.gateway_id() );
-      return -EPERM;
-   }
-   
-   // gateway version can't decrease (illegal)
-   if( conf->gateway_version >= 0 && (unsigned)conf->gateway_version > gateway_cert.version() ) {
-      SG_error("Invalid gateway version: expected >= %" PRId64 ", got %" PRId64 "\n", conf->gateway_version, gateway_cert.version() );
-      return -EPERM;
-   }
-   
-   // remember our ID and type and version
-   conf->gateway = gateway_cert.gateway_id();
-   conf->gateway_type = gateway_cert.gateway_type();
-   conf->gateway_version = gateway_cert.version();
-   conf->portnum = gateway_cert.port();
-   
-   memset( volume_id_buf, 0, 100 );
-   snprintf( volume_id_buf, 99, "%" PRIu64, gateway_cert.volume_id() );
-   
-   SG_debug("Get volume cert for %s\n", volume_id_buf );
-   
-   // get the volume cert 
-   rc = md_get_volume_cert( conf, volume_id_buf, volume_cert );
-   if( rc != 0 ) {
-      
-      SG_error("md_get_volume_cert('%s') rc = %d\n", volume_id_buf, rc );
-      return rc;
-   }
-   
-   // wipe the root inode--we won't need it 
-   if( volume_cert->has_root() ) {
-      volume_cert->clear_root();
-   }
-   
-   SG_debug("Get volume owner cert for %" PRIu64 " ('%s') (user cert for '%s')\n", volume_cert->volume_id(), volume_cert->name().c_str(), volume_cert->owner_email().c_str() );
-   
-   // get the volume owner's cert, if different from the user cert 
-   if( volume_cert->owner_id() != user_cert->user_id() ) {
-      rc = md_get_user_cert( conf, volume_cert->owner_email().c_str(), volume_owner_cert );
-      if( rc != 0 ) {
-        
-         SG_error("md_get_user_cert('%s' (volume owner)) rc = %d\n", volume_cert->owner_email().c_str(), rc );
-         return rc;
-      }
-   }
-   else {
-      
-      // already trusted
-      volume_owner_cert->CopyFrom( *user_cert );
-   }
-   
-   // if this is an anonymous, read-only, non-publicly-routable peer (a "client"), then verify that the volume owner allows clients
-   if( conf->is_client ) {
-      
-      SG_debug("Verify gateway cert for '%s' was signed by '%s'\n", conf->gateway_name, volume_owner_cert->email().c_str() );
-      
-      // verify that it's the volume owner's gateway cert
-      rc = md_verify_gateway_cert( volume_owner_cert, conf->gateway_name, &gateway_cert );
-      if( rc != 0 ) {
-         
-         SG_error("md_verify_gateway_cert('%s', client=True) rc = %d\n", conf->gateway_name, rc );
-         return rc;
-      }
-   }
-   
-   SG_debug( "Verify volume cert for %" PRIu64 " was signed by volume owner '%s'\n", volume_cert->volume_id(), volume_owner_cert->email().c_str() );
-   
-   // verify that the volume cert came from the volume owner
-   rc = md_verify_volume_cert( volume_owner_cert, gateway_cert.volume_id(), volume_cert );
-   if( rc != 0 ) {
-      
-      SG_error("md_verify_volume_cert('%s', %" PRIu64 ") rc = %d\n", volume_owner_cert->email().c_str(), volume_cert->volume_id(), rc );
-      return rc;
-   }
-   
-   // verify the blocksize didn't change (illegal)
-   if( conf->blocksize > 0 && volume_cert->blocksize() != conf->blocksize ) {
-   
-      SG_error("Volume blocksize mismatch: %" PRIu64 " != %" PRIu64 "\n", conf->blocksize, volume_cert->blocksize() );
-      return -EPERM;
-   }
-   
-   // verify the volume didn't change (illegal)
-   if( conf->volume > 0 && volume_cert->volume_id() != conf->volume ) {
-      
-      SG_error("Volume ID mismatch: %" PRIu64 " != %" PRIu64 "\n", conf->volume, volume_cert->volume_id() );
-      return -EPERM;
-   }
-   
-   // volume cert can't go back in time 
-   if( conf->volume_version > 0 && (unsigned)conf->volume_version > volume_cert->volume_version() ) {
-      
-      SG_error("Volume version mismatch: %" PRIu64 " <= %" PRIu64 "\n", conf->volume_version, volume_cert->volume_version() );
-      return -EPERM;
-   }
-   
-   // verify volume name didn't change, if given 
-   if( conf->volume_name != NULL && strcmp( conf->volume_name, volume_cert->name().c_str() ) != 0 ) {
-       
-      SG_error("Volume name mismatch: '%s' != '%s'\n", conf->volume_name, volume_cert->name().c_str() );
-      return -EPERM;
-   }
-   
-   // extract volume info
-   if( conf->volume_name != NULL ) {
-       SG_safe_free( conf->volume_name );
-   }
-   
-   conf->volume_name = SG_strdup_or_null( volume_cert->name().c_str() );
-   if( conf->volume_name == NULL ) {
-      return -ENOMEM;
    }
 
-   conf->volume = volume_cert->volume_id();
-   conf->volume_version = volume_cert->volume_version();
-   conf->blocksize = volume_cert->blocksize();
-   
-   SG_debug("Load certificate bundle version for '%s'\n", conf->volume_name );
-   
-   // get the last known cert bundle version 
-   rc = md_cert_bundle_version_load( conf->volumes_path, conf->volume_name, &cert_bundle_version );
-   if( rc == -ENOENT ) {
-      
-      SG_warn("No cert bundle version on file for volume '%s'\n", conf->volume_name );
-      cert_bundle_version = 1;
-   }
-   
-   SG_debug("Get certificate bundle for '%s' (version %" PRId64 ")\n", conf->volume_name, cert_bundle_version );
-   
-   // get the cert bundle 
-   rc = md_get_cert_bundle( conf, volume_cert->volume_id(), cert_bundle_version, &cert_bundle );
-   if( rc < 0 ) {
-      
-      SG_error("md_get_cert_bundle('%s', %" PRIu64 ") rc = %d\n", conf->volume_name, cert_bundle_version, rc );
-      return rc;
-   }
-   
-   SG_debug("Verify cert bundle for '%s' was signed by '%s'\n", conf->volume_name, volume_owner_cert->email().c_str() );
-   
-   // verify that the volume owner put the cert bundle 
-   rc = md_verify_cert_bundle( volume_owner_cert, &cert_bundle );
-   if( rc < 0 ) {
-      
-      SG_error("md_verify_cert_bundle('%s', %" PRIu64 ") rc = %d\n", conf->volume_name, cert_bundle_version, rc );
-      return rc;
-   }
-   
-   // cert bundles can't go back in time 
-   if( conf->cert_bundle_version > 0 && conf->cert_bundle_version > cert_bundle.mtime_sec() ) {
-      
-      SG_error("Volume cert bundle version mismatch: %" PRIu64 " <= %" PRIu64 "\n", conf->cert_bundle_version, cert_bundle.mtime_sec() );
+   if( exit_status != 0 ) {
+      SG_error("Subprocess '%s' exit code %d\n", conf->certs_reload_helper, exit_status );
       return -EPERM;
    }
-   
-   conf->cert_bundle_version = cert_bundle.mtime_sec();
-   
-   SG_debug("Verify volume '%s' is in cert bundle\n", conf->volume_name );
-   
-   // verify that the volume is represented by the cert bundle 
-   rc = md_verify_volume_cert_in_bundle( &cert_bundle, volume_cert );
-   if( rc < 0 ) {
-      
-      SG_error("md_verify_volume_cert_in_bundle('%s', %" PRIu64 ") rc = %d\n", conf->volume_name, cert_bundle_version, rc );
+
+   // load syndicate public key 
+   rc = md_syndicate_name( conf, &syndicate_name );
+   if( rc != 0 ) {
+      SG_error("md_syndicate_name('%s') rc = %d\n", conf->metadata_url, rc );
       return rc;
    }
-   
-   SG_debug("Verify gateway '%s' is in cert bundle\n", conf->gateway_name );
-   
-   // verify that our gateway is represented in this cert bundle (i.e. the volume owner allows this gateway to exist with the cert-bundle-given capabilities)
-   rc = md_verify_gateway_cert_in_bundle( &cert_bundle, &gateway_cert );
-   if( rc < 0 ) {
-      
-      SG_error("md_verify_gateway_cert_in_bundle('%s', %" PRIu64 ", '%s') rc = %d\n", conf->volume_name, cert_bundle_version, conf->gateway_name, rc );
+
+   rc = md_syndicate_pubkey_load( conf->syndicate_path, syndicate_name, &syndicate_pubkey_pem, &syndicate_pubkey_pem_len );
+   if( rc != 0 ) {
+      SG_error("md_syndicate_pubkey_load('%s/%s') rc = %d\n", conf->syndicate_path, syndicate_name, rc );
+      SG_safe_free( syndicate_name );
       return rc;
    }
-   
-   // verify that we didn't move gateways (illegal)
-   if( conf->gateway > 0 && gateway_cert.gateway_id() != conf->gateway ) {
-      
-      SG_error("Gateway ID mismatch: %" PRIu64 " != %" PRIu64 "\n", gateway_cert.gateway_id(), conf->gateway );
-      return rc;
+   else {
+      SG_safe_free( syndicate_name );
    }
-   
-   // verify that we didn't move volumes (illegal) 
-   if( conf->volume > 0 && volume_cert->volume_id() != conf->volume ) {
-      
-      SG_error("Volume ID mismatch: %" PRIu64 " != %" PRIu64 "\n", volume_cert->volume_id(), conf->volume );
-      return rc;
+
+   rc = md_load_pubkey( syndicate_pubkey, syndicate_pubkey_pem, syndicate_pubkey_pem_len );
+   SG_safe_free( syndicate_pubkey_pem );
+
+   if( rc != 0 ) {
+      SG_error("%s", "Failed to parse Syndicate public key\n");
+      return -EPERM;
    }
-   
-   SG_debug("Revalidate all other gateway certs for '%s'\n", conf->volume_name );
-   
-   // revalidate the set of gateway certs:
-   // load locally-cached ones; invalidate stale ones; re-download missing ones; verify that each is represented in cert_bundle.
-   rc = md_gateway_certs_revalidate( conf, &cert_bundle, gateway_certs );
-   if( rc < 0 ) {
-      
-      SG_error("md_gateway_certs_revalidate('%s', %" PRIu64 ") rc = %d\n", conf->volume_name, cert_bundle_version, rc );
-      return rc;
+
+   // load our gateway cert
+   rc = md_gateway_cert_load( conf->certs_path, conf->gateway_name, &gateway_cert );
+   if( rc != 0 ) {
+      SG_error("%s", "Failed to load our gateway certificate\n");
+      return -EPERM;
    }
-   
-   SG_debug("Get all user certs for '%s'\n", conf->volume_name );
-   
-   // go get the set of user certs--the ones that correspond to users that signed the gateways 
-   // verify that each user signed its gateway's cert.
-   rc = md_gateway_certs_get_users( conf, gateway_certs, volume_owner_cert, user_cert );
-   if( rc < 0 ) {
-      
-      SG_error("md_gateway_certs_get_users('%s', %" PRIu64 ") rc = %d\n", conf->volume_name, cert_bundle_version, rc );
-      return rc;
+
+   conf->gateway = gateway_cert.gateway_id();
+
+   // load our volume cert 
+   rc = md_volume_cert_load( conf->certs_path, conf->volume_name, volume_cert );
+   if( rc != 0 ) {
+      SG_error("%s", "Failed to load our volume certificate\n");
+      return -EPERM;
    }
-   
-   SG_debug("Cache all certs for '%s'\n", conf->volume_name );
-   
-   // cache the valid user and gateway certs 
-   md_gateway_certs_cache_all( conf, gateway_certs );
-   
-   return rc;
+
+   // sanity checks... 
+   if( volume_cert->volume_id() != gateway_cert.volume_id() ) {
+      SG_error("Volume/gateway cert mismatch: volume ID %" PRIu64 " != %" PRIu64 "\n", volume_cert->volume_id(), gateway_cert.volume_id() );
+      return -EPERM; 
+   }
+
+   // load our volume owner cert 
+   rc = md_user_cert_load( conf->certs_path, volume_cert->owner_email().c_str(), volume_owner_cert );
+   if( rc != 0 ) {
+      SG_error("md_user_cert_load('%s', '%s') rc = %d\n", conf->certs_path, volume_cert->owner_email().c_str(), rc );
+      return -EPERM;
+   }
+
+   // sanity checks... 
+   if( volume_cert->owner_id() != volume_owner_cert->user_id() ) {
+      SG_error("Volume/owner cert mismatch: volume owner ID %" PRIu64 " != %" PRIu64 "\n", volume_cert->owner_id(), volume_owner_cert->user_id() );
+      return -EPERM;
+   }
+
+   // load our user cert 
+   rc = md_user_cert_load( conf->certs_path, conf->ms_username, user_cert );
+   if( rc != 0 ) {
+      SG_error("md_user_cert_load('%s', '%s') rc = %d\n", conf->certs_path, conf->ms_username, rc );
+      return -EPERM;
+   }
+
+   // propagate config info
+   conf->owner = gateway_cert.owner_id(); 
+   conf->volume = volume_cert->volume_id();
+   conf->gateway = gateway_cert.gateway_id();
+   conf->gateway_type = gateway_cert.gateway_type();
+   conf->volume_version = volume_cert->volume_version();
+   conf->gateway_version = gateway_cert.version();
+   conf->blocksize = volume_cert->blocksize();
+   conf->portnum = gateway_cert.port();
+
+   // load each gateway certificate
+   rc = md_gateway_certs_load( conf, gateway_certs );
+   if( rc != 0 ) {
+      SG_error("md_gateway_certs_load rc = %d\n", rc);
+      return -EPERM;
+   }
+
+   return 0;
 }
 
 
@@ -1778,27 +408,45 @@ int md_driver_reload( struct md_syndicate_conf* conf, struct ms_gateway_cert* ce
    int rc = 0;
    char* driver_text = NULL;
    size_t driver_text_len = 0;
+   int exit_status = 0;
+   char driver_hash_str[ 2*SHA256_DIGEST_LENGTH + 1 ];
    
-   rc = md_get_gateway_driver( conf, cert, &driver_text, &driver_text_len );
+   // get the hash 
+   sha256_printable_buf( cert->driver_hash, driver_hash_str );
+
+   // driver_reload args 
+   char* driver_reload_args[] = {
+      conf->driver_reload_helper,
+      conf->config_file_path,
+      conf->volume_name,
+      conf->gateway_name,
+      (char*)NULL
+   };
+
+   // go fetch 
+   rc = SG_proc_subprocess( conf->driver_reload_helper, driver_reload_args, conf->helper_env, NULL, 0, NULL, 0, 0, &exit_status );
    if( rc != 0 ) {
-      
-      if( rc == -ENOENT ) {
-         
-         SG_warn("No driver found for '%s'\n", ms_client_gateway_cert_name( cert ) );
-         ms_client_gateway_cert_set_driver( cert, NULL, 0 );
-      }
-      else {
-         
-         SG_error("md_get_gateway_driver('%s') rc = %d\n", ms_client_gateway_cert_name( cert ), rc );
-      }
+
+      SG_error("SG_proc_subprocess('%s') rc = %d\n", conf->driver_reload_helper, rc );
       return rc;
    }
-   else
-   
+
+   if( exit_status != 0 ) {
+      SG_error("Subprocess '%s' exit code %d\n", conf->driver_reload_helper, exit_status );
+      return -EPERM;
+   }
+
+   // load up
+   rc = md_driver_load( conf->certs_path, driver_hash_str, &driver_text, &driver_text_len );
+   if( rc != 0 ) {
+      SG_error("md_driver_load('%s', '%s') rc = %d\n", conf->certs_path, driver_hash_str, rc );
+      return rc; 
+   }
+
    ms_client_gateway_cert_set_driver( cert, driver_text, driver_text_len );
    return rc;
 }
-                      
+
 
 // initialize fields in the config that cannot be loaded from command line options alone.
 // (hence 'runtime_init' in the name).
@@ -1838,7 +486,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, EVP_PKEY** syndicate_pu
    rc = md_init_local_storage( c );
    if( rc != 0 ) {
       
-      SG_error("md_init_local_storage('%s') rc = %d\n", c->storage_root, rc );
+      SG_error("md_init_local_storage rc = %d\n", rc );
       return rc;
    }
    
@@ -1884,6 +532,8 @@ static int md_runtime_init( struct md_syndicate_conf* c, EVP_PKEY** syndicate_pu
    if( !c->is_client ) {
       
       // load gateway private key, if we need to 
+      SG_debug("Load private key for '%s' in '%s'\n", c->gateway_name, c->gateways_path );
+
       memset( &gateway_pkey, 0, sizeof(struct mlock_buf) );
       rc = md_gateway_private_key_load( c->gateways_path, c->gateway_name, &gateway_pkey );
       if( rc != 0 ) {
@@ -2024,6 +674,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       if( strcmp(key, SG_CONFIG_VOLUMES_PATH) == 0) {
          
          // path to volume information 
+         if( conf->volumes_path != NULL ) {
+             SG_safe_free( conf->volumes_path );
+         }
+
          conf->volumes_path = SG_strdup_or_null( value );
          if( conf->volumes_path == NULL ) {
             return -ENOMEM;
@@ -2033,6 +687,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       else if( strcmp( key, SG_CONFIG_GATEWAYS_PATH) == 0 ) {
          
          // path to gateway information 
+         if( conf->gateways_path != NULL ) {
+             SG_safe_free( conf->gateways_path );
+         }
+
          conf->gateways_path = SG_strdup_or_null( value );
          if( conf->gateways_path == NULL ) {
             return -ENOMEM;
@@ -2042,6 +700,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       else if( strcmp( key, SG_CONFIG_USERS_PATH) == 0 ) {
          
          // path to user information 
+         if( conf->users_path != NULL ) {
+             SG_safe_free( conf->users_path );
+         }
+
          conf->users_path = SG_strdup_or_null( value );
          if( conf->users_path == NULL ) {
             return -ENOMEM;
@@ -2051,6 +713,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       else if( strcmp( key, SG_CONFIG_DRIVERS_PATH) == 0 ) {
          
          // path to driver storage 
+         if( conf->drivers_path != NULL ) {
+             SG_safe_free( conf->drivers_path );
+         }
+
          conf->drivers_path = SG_strdup_or_null( value );
          if( conf->drivers_path == NULL ) {
             return -ENOMEM;
@@ -2060,50 +726,50 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       else if( strcmp( key, SG_CONFIG_SYNDICATE_PATH ) == 0 ) {
           
          // path to syndicate pubkeys 
+         if( conf->syndicate_path != NULL ) {
+             SG_safe_free( conf->syndicate_path );
+         }
+
          conf->syndicate_path = SG_strdup_or_null( value );
          if( conf->syndicate_path == NULL ) {
+            return -ENOMEM;
+         }
+      }
+
+      else if( strcmp( key, SG_CONFIG_CERTS_ROOT ) == 0 ) {
+
+         // path to certs cache root
+         if( conf->certs_root != NULL ) {
+             SG_safe_free( conf->certs_root );
+         }
+
+         conf->certs_root = SG_strdup_or_null( value );
+         if( conf->certs_root == NULL ) {
             return -ENOMEM;
          }
       }
       
       else if( strcmp( key, SG_CONFIG_MS_URL ) == 0 ) {
          // metadata publisher URL
+         if( conf->metadata_url != NULL ) {
+            SG_safe_free( conf->metadata_url );
+         }
+
          conf->metadata_url = SG_strdup_or_null( value );
          if( conf->metadata_url == NULL ) {
             return -ENOMEM;
          }
       }
-      
-      else if( strcmp( key, SG_CONFIG_STORAGE_ROOT ) == 0 ) {
-         // storage root
-         size_t len = strlen( value );
-         if( len == 0 ) {
-            return -EINVAL;
-         }
-         
-         if( value[len-1] != '/' ) {
-            // must end in /
-            conf->storage_root = SG_CALLOC( char, len+2 );
-            if( conf->storage_root == NULL ) {
-               return -ENOMEM;
-            }
-            
-            sprintf( conf->storage_root, "%s/", value );
-         }
-         else {
-            
-            conf->storage_root = SG_strdup_or_null( value );
-            if( conf->storage_root == NULL ) {
-               return -ENOMEM;
-            }
-         }
-      }
-      
+           
       else if( strcmp( key, SG_CONFIG_DATA_ROOT ) == 0 ) {
-         // data root 
+         // data root
          size_t len = strlen( value );
          if( len == 0 ) {
             return -EINVAL;
+         }
+
+         if( conf->data_root != NULL ) {
+            SG_safe_free( conf->data_root );
          }
          
          if( value[len-1] != '/' ) {
@@ -2126,6 +792,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       
       else if( strcmp( key, SG_CONFIG_LOGS_PATH ) == 0 ) {
          // logfile path
+         if( conf->logs_path != NULL ) {
+            SG_safe_free( conf->logs_path );
+         }
+
          conf->logs_path = SG_strdup_or_null( value );
          if( conf->logs_path == NULL ) {
             return -ENOMEM;
@@ -2134,6 +804,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
       
       else if( strcmp( key, SG_CONFIG_MS_USERNAME ) == 0 ) {
          // metadata server username
+         if( conf->ms_username != NULL ) {
+            SG_safe_free( conf->ms_username );
+         }
+
          conf->ms_username = SG_strdup_or_null( value );
          if( conf->ms_username == NULL ) {
             return -ENOMEM;
@@ -2191,124 +865,45 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
              conf->num_helper_envs++;
          }
       }
-      
-      else if( strcmp( key, SG_CONFIG_FETCH_SYNDICATE_PUBKEY ) == 0 ) {
-         
-         // syndicate pubkey 
-          conf->fetch_syndicate_pubkey = SG_strdup_or_null( value );
-          if( conf->fetch_syndicate_pubkey == NULL ) {
-             return -ENOMEM;
-          }
-          
-          rc = access( conf->fetch_syndicate_pubkey, X_OK );
-          if( rc < 0 ) {
-              
-             rc = -errno;
-             SG_error("Cannot access '%s' as an executable, rc = %d\n", conf->fetch_syndicate_pubkey, rc );
-             return rc;
-          }
-      }
-      
-      else if( strcmp( key, SG_CONFIG_FETCH_USER_CERT ) == 0 ) {
-         
-         // user cert
-         conf->fetch_user_cert = SG_strdup_or_null( value );
-         if( conf->fetch_user_cert == NULL ) {
+
+      else if( strcmp( key, SG_CONFIG_CERTS_RELOAD_HELPER ) == 0 ) {
+
+         if( conf->certs_reload_helper != NULL ) {
+            SG_safe_free( conf->certs_reload_helper );
+         }
+
+         conf->certs_reload_helper = SG_strdup_or_null( value );
+         if( conf->certs_reload_helper == NULL ) {
             return -ENOMEM;
          }
-         
-         rc = access( conf->fetch_user_cert, X_OK );
+
+         rc = access( conf->certs_reload_helper, X_OK );
          if( rc < 0 ) {
+
             rc = -errno;
-            SG_error("Cannot not access '%s' as an executable, rc = %d\n", conf->fetch_user_cert, rc );
-            return rc;
-         }
-      }
-      
-      else if( strcmp( key, SG_CONFIG_FETCH_VOLUME_CERT ) == 0 ) {
-         
-         // volume cert
-         conf->fetch_volume_cert = SG_strdup_or_null( value );
-         if( conf->fetch_volume_cert == NULL ) {
-            return -ENOMEM;
-         }
-         
-         rc = access( conf->fetch_volume_cert, X_OK );
-         if( rc < 0 ) {
-            rc = -errno;
-            SG_error("Cannot not access '%s' as an executable, rc = %d\n", conf->fetch_volume_cert, rc );
+            SG_error("Cannot access '%s' as an executable, rc = %d\n", conf->certs_reload_helper, rc );
             return rc;
          }
       }
 
-      else if( strcmp( key, SG_CONFIG_FETCH_GATEWAY_CERT ) == 0 ) {
-         
-         // gateway cert
-         conf->fetch_gateway_cert = SG_strdup_or_null( value );
-         if( conf->fetch_gateway_cert == NULL ) {
-            return -ENOMEM;
-         }
-         
-         rc = access( conf->fetch_gateway_cert, X_OK );
-         if( rc < 0 ) {
-            rc = -errno;
-            SG_error("Cannot not access '%s' as an executable, rc = %d\n", conf->fetch_gateway_cert, rc );
-            return rc;
-         }
-      }
+      else if( strcmp( key, SG_CONFIG_DRIVER_RELOAD_HELPER ) == 0 ) {
 
-      else if( strcmp( key, SG_CONFIG_FETCH_CERT_BUNDLE ) == 0 ) {
-         
-         // volume cert bundle
-         conf->fetch_cert_bundle = SG_strdup_or_null( value );
-         if( conf->fetch_cert_bundle == NULL ) {
+         if( conf->driver_reload_helper != NULL ) {
+            SG_safe_free( conf->driver_reload_helper );
+         }
+
+         conf->driver_reload_helper = SG_strdup_or_null( value );
+         if( conf->driver_reload_helper == NULL ) {
             return -ENOMEM;
          }
-         
-         rc = access( conf->fetch_cert_bundle, X_OK );
+
+         rc = access( conf->driver_reload_helper, X_OK );
          if( rc < 0 ) {
+
             rc = -errno;
-            SG_error("Cannot not access '%s' as an executable, rc = %d\n", conf->fetch_cert_bundle, rc );
+            SG_error("Cannot access '%s' as an executable, rc = %d\n", conf->driver_reload_helper, rc );
             return rc;
          }
-      }
-      
-      else if( strcmp( key, SG_CONFIG_FETCH_DRIVER ) == 0 ) {
-         
-         // driver 
-         conf->fetch_driver = SG_strdup_or_null( value );
-         if( conf->fetch_driver == NULL ) {
-            return -ENOMEM;
-         }
-         
-         rc = access( conf->fetch_driver, X_OK );
-         if( rc < 0 ) {
-            rc = -errno;
-            SG_error("Cannot access '%s' as an executable, rc = %d\n", conf->fetch_driver, rc );
-            return rc;
-         }
-      }
-         
-      else if( strcmp( key, SG_CONFIG_VALIDATE_USER_CERT ) == 0 ) {
-         
-         // validate user cert 
-         conf->validate_user_cert = SG_strdup_or_null( value );
-         if( conf->validate_user_cert == NULL ) {
-            return -ENOMEM;
-         }
-         
-         rc = access( conf->validate_user_cert, X_OK );
-         if( rc < 0 ) {
-            rc = -errno;
-            SG_error("Cannot access '%s' as an executable, rc = %d\n", conf->validate_user_cert, rc );
-            return rc;
-         }
-      }
-      
-      else {
-         
-         SG_error("Unrecognized option '%s' in section '%s'\n", key, section);
-         return 0;
       }
    }
    
@@ -2408,6 +1003,10 @@ static int md_conf_ini_parser( void* userdata, char const* section, char const* 
             return -EINVAL;
          }
          
+         if( conf->content_url != NULL ) {
+            SG_safe_free( conf->content_url );
+         }
+
          if( value[len-1] != '/' ) {
             // must end in /
             conf->content_url = SG_CALLOC( char, len+2 );
@@ -2551,7 +1150,9 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
        SG_error("md_expand_path('%s') rc = %d\n", conf_path, rc );
        return rc;
    } 
-    
+   
+   SG_debug("Read config from '%s'\n", expanded_path );
+
    FILE* f = fopen( expanded_path, "r" );
    if( f == NULL ) {
       
@@ -2599,21 +1200,17 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->logs_path,
       (void*)conf->content_url,
       (void*)conf->data_root,
+      (void*)conf->certs_root,
+      (void*)conf->certs_path,
       (void*)conf->syndicate_path,
       (void*)conf->ms_username,
-      (void*)conf->fetch_user_cert,
-      (void*)conf->fetch_volume_cert,
-      (void*)conf->fetch_gateway_cert,
-      (void*)conf->fetch_syndicate_pubkey,
-      (void*)conf->fetch_cert_bundle,
-      (void*)conf->fetch_driver,
-      (void*)conf->validate_user_cert,
+      (void*)conf->certs_reload_helper,
+      (void*)conf->driver_reload_helper,
       (void*)conf->user_pubkey_pem,
       (void*)conf->gateway_name,
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey_pem,
       (void*)conf->hostname,
-      (void*)conf->storage_root,
       (void*)conf->driver_exec_path,
       (void*)conf
    };
@@ -3156,7 +1753,10 @@ int md_parse_hostname_portnum( char const* url, char** hostname, int* portnum ) 
    }
    
    size_t hostname_len = ((uint64_t)(port_ptr) - (uint64_t)(host_ptr)) / sizeof(char);
-   
+   if( hostname_len > 0 ) {
+      // skip ':'
+      hostname_len--;
+   } 
    *hostname = SG_CALLOC( char, hostname_len + 1 );
    if( *hostname == NULL ) {
        return -ENOMEM;
@@ -3954,9 +2554,10 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
    char const* gateway_name = opts->gateway_name;
    char const* username = opts->username;
    char const* config_path = opts->config_file;
+   char* certs_path = NULL;
    char* expanded_path = NULL;
    size_t expanded_path_len = 0;
-   
+  
    if( config_path == NULL ) {
        
        config_path = conf->config_file_path;
@@ -4048,6 +2649,20 @@ static int md_init_common( struct md_syndicate_conf* conf, struct ms_client* cli
       return rc;
    }
 
+   certs_path = SG_CALLOC( char, strlen(conf->certs_root) + 1 + strlen(volume_name) + 1 + strlen(gateway_name) + 2 );
+   if( certs_path == NULL ) {
+      return -ENOMEM;
+   }
+
+   sprintf(certs_path, "%s/%s/%s", conf->certs_root, volume_name, gateway_name );
+   MD_SYNDICATE_CONF_OPT( *conf, certs_path, certs_path, rc );
+   SG_safe_free( certs_path );
+   if( rc != 0 ) {
+      return rc;
+   } 
+
+   SG_debug("Certs path: '%s'\n", conf->certs_path );
+
    // allocate certs...
    volume_cert = SG_safe_new( ms::ms_volume_metadata );
    if( volume_cert == NULL ) {
@@ -4133,11 +2748,54 @@ int md_init( struct md_syndicate_conf* conf, struct ms_client* client, struct md
 
 // default configuration
 // return 0 on success
-// return -ENOMEM on OOM
+// exit on error (will be due to memory exhaustion)
 int md_default_conf( struct md_syndicate_conf* conf ) {
 
+   size_t path_len = 0;
+   int rc = 0;
+
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
-   
+  
+   rc = md_expand_path( SG_DEFAULT_VOLUMES_PATH, &conf->volumes_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_GATEWAYS_PATH, &conf->gateways_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_USERS_PATH, &conf->users_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_LOGS_PATH, &conf->logs_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_DRIVERS_PATH, &conf->drivers_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_DATA_ROOT, &conf->data_root, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_SYNDICATE_PATH, &conf->syndicate_path, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
+   rc = md_expand_path( SG_DEFAULT_CERTS_ROOT, &conf->certs_root, &path_len );
+   if( rc != 0 ) {
+      exit(1);
+   }
+
    conf->default_read_freshness = 5000;
    conf->default_write_freshness = 0;
    conf->gather_stats = false;
@@ -4171,7 +2829,10 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    
    conf->cache_soft_limit = MD_CACHE_DEFAULT_SOFT_LIMIT;
    conf->cache_hard_limit = MD_CACHE_DEFAULT_HARD_LIMIT;
-   
+
+   conf->certs_reload_helper = SG_strdup_or_die( SG_DEFAULT_CERTS_RELOAD_HELPER );
+   conf->driver_reload_helper = SG_strdup_or_die( SG_DEFAULT_DRIVER_RELOAD_HELPER );
+
    return 0;
 }
 
@@ -4345,3 +3006,4 @@ int md_entry_to_string( struct md_entry* ent, char** data ) {
 char* md_conf_get_data_root( struct md_syndicate_conf* conf ) {
     return conf->data_root;
 }
+

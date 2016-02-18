@@ -159,8 +159,9 @@ struct md_syndicate_conf {
    char* drivers_path;                                // path to the directory containing drivers
    char* syndicate_path;                              // path to the directory containing Syndicate public keys
    char* logs_path;                                   // path to the logfile directory to store gateway logs
-   char* storage_root;                                // toplevel directory that stores local syndicate metadata (for users, gateways, volums)
    char* data_root;                                   // root of the path where we store local file blocks
+   char* certs_root;                                  // path to the *root* directory containing cached certs from other users, volumes, and gateways.
+   char* certs_path;                                  // path to the *gateway-specific* directory containing cached certs.  Derived from certs_root; set at runtime.
    
    // command-line options 
    char* volume_name;                                 // name of the volume we're connected to
@@ -184,13 +185,8 @@ struct md_syndicate_conf {
    uint64_t config_reload_freq;                       // how often do we check for a new configuration from the MS?
    
    // cert and key processors 
-   char* fetch_user_cert;                             // path to program that fetches a user cert 
-   char* fetch_volume_cert;                           // path to program that fetches a volume cert 
-   char* fetch_gateway_cert;                          // path to program that fetches a gateway cert 
-   char* fetch_cert_bundle;                           // path to program that fetches a cert bundle
-   char* fetch_driver;                                // path to program that fetches a driver, given its hash
-   char* fetch_syndicate_pubkey;                      // path to program that fetches the syndicate public key
-   char* validate_user_cert;                          // path to program that validates a user cert   
+   char* certs_reload_helper;                         // command to go reload and revalidate all certificates
+   char* driver_reload_helper;                        // command to go reload and revalidate the driver
    char** helper_env;                                 // environment variables to pass 
    size_t num_helper_envs;
    size_t max_helper_envs;
@@ -242,17 +238,12 @@ struct md_syndicate_conf {
 #define SG_CONFIG_USERS_PATH              "users"
 #define SG_CONFIG_LOGS_PATH               "logs"
 #define SG_CONFIG_DRIVERS_PATH            "drivers"
-#define SG_CONFIG_STORAGE_ROOT            "storage"
 #define SG_CONFIG_DATA_ROOT               "data"
 #define SG_CONFIG_SYNDICATE_PATH          "syndicate"
+#define SG_CONFIG_CERTS_ROOT              "certs"
 
-#define SG_CONFIG_FETCH_USER_CERT         "fetch_user_cert"
-#define SG_CONFIG_FETCH_GATEWAY_CERT      "fetch_gateway_cert"
-#define SG_CONFIG_FETCH_VOLUME_CERT       "fetch_volume_cert"
-#define SG_CONFIG_FETCH_CERT_BUNDLE       "fetch_cert_bundle"
-#define SG_CONFIG_FETCH_SYNDICATE_PUBKEY  "fetch_syndicate_pubkey"
-#define SG_CONFIG_FETCH_DRIVER            "fetch_driver"
-#define SG_CONFIG_VALIDATE_USER_CERT      "validate_user_cert"
+#define SG_CONFIG_CERTS_RELOAD_HELPER     "certs_reload"
+#define SG_CONFIG_DRIVER_RELOAD_HELPER    "driver_reload"
 #define SG_CONFIG_ENVAR                   "env"
 
 #define SG_CONFIG_DEFAULT_READ_FRESHNESS  "default_read_freshness"
@@ -274,6 +265,19 @@ struct md_syndicate_conf {
 #define SG_CONFIG_MAX_METADATA_READ_RETRY "max_metadata_read_retry"
 #define SG_CONFIG_MAX_METADATA_WRITE_RETRY "max_metadata_write_retry"
 
+
+// some default values
+#define SG_DEFAULT_VOLUMES_PATH     "~/.syndicate/volumes"
+#define SG_DEFAULT_GATEWAYS_PATH    "~/.syndicate/gateways"
+#define SG_DEFAULT_USERS_PATH       "~/.syndicate/users"
+#define SG_DEFAULT_LOGS_PATH        "~/.syndicate/logs"
+#define SG_DEFAULT_DRIVERS_PATH     "~/.syndicate/drivers"
+#define SG_DEFAULT_DATA_ROOT        "~/.syndicate/data"
+#define SG_DEFAULT_SYNDICATE_PATH   "~/.syndicate/syndicate"
+#define SG_DEFAULT_CERTS_ROOT       "~/.syndicate/certs"
+
+#define SG_DEFAULT_CERTS_RELOAD_HELPER     "/usr/local/lib/syndicate/certs_reload"
+#define SG_DEFAULT_DRIVER_RELOAD_HELPER    "/usr/local/lib/syndicate/driver_reload"
 
 // URL protocol prefix for local files
 #define SG_LOCAL_PROTO     "file://"
