@@ -69,6 +69,11 @@ using namespace std;
 #include "libsyndicate/libsyndicate.h"
 #include "microhttpd.h"
 
+// Support old versions of microhttpd (< 0.9.43)
+#if MHD_VERSION < 0x00094300
+#define MHD_create_response_from_fd_at_offset64         MHD_create_response_from_fd_at_offset
+#endif
+
 #define SG_HTTP_TMPFILE_FORMAT          "/tmp/.syndicate-upload.XXXXXX"
 
 // HTTP headers
