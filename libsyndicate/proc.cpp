@@ -1339,7 +1339,11 @@ int SG_proc_start( struct SG_proc* proc, char const* exec_path, char const* exec
 
       if( secrets == NULL ) {
          secrets = &empty_json;
-      } 
+      }
+
+      if( driver == NULL ) {
+         driver = &empty_json;
+      }
 
       // feed in the config 
       rc = SG_proc_write_chunk( proc->fd_in, config );

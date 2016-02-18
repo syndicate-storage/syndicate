@@ -79,6 +79,7 @@ int SG_proc_write_int64( int fd, int64_t value );
 int SG_proc_write_chunk( int out_fd, struct SG_chunk* chunk );
 int SG_proc_request_init( struct ms_client* ms, struct SG_request_data* reqdat, SG_messages::DriverRequest* dreq );
 int SG_proc_write_request( int fd, SG_messages::DriverRequest* dreq );
+bool SG_proc_is_dead( struct SG_proc* proc );
 
 // one-off subprocess in a subshell with bound output 
 int SG_proc_subprocess( char const* cmd_path, char* const argv[], char* const env[], char const* input, size_t input_len, char** output, size_t* output_len, size_t max_output, int* exit_status );
