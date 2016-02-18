@@ -111,7 +111,7 @@ def read_key( key_path, public=False ):
 def read_public_key( key_path ):
    """
    Read a PEM-encoded public key from key_path.
-   Return the PEM string on success 
+   Return the key on success 
    Return None on error 
    """
    return read_key( key_path, public=True )
@@ -120,7 +120,7 @@ def read_public_key( key_path ):
 def read_private_key( key_path ):
    """
    Read a PEM-encoded private key from key_path.
-   Return the PEM string on success 
+   Return the key on success
    Return None on error 
    """
    return read_key( key_path, public=False )
@@ -134,34 +134,29 @@ def write_key( path, key_data, overwrite=False ):
    Returns True on success 
    raises an exception on error
    """
-   umask_original = os.umask(0)
-   try:
-      handle = os.fdopen( os.open( path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0600 ), 'w' )
-      handle.write( key_data )
-      handle.close()
-      
-      os.umask( umask_original )
-      
-   except Exception, e:
-      os.umask( umask_original )
-      
-      # does this path exist?
-      if os.path.exists( path ):
-         if overwrite:
-            # overwrite!
-            try:
-               fd = open(path, "w" )
-               fd.write( key_data )
-               fd.close()
-            except Exception, e:
-               log.error("Failed to overwrite key at %s" % path )
-               raise e
 
-         else:
-            raise Exception("SECURITY ERROR: tried to overwrite key '%s' with new data!" % path )
-      else:
-         raise e
-   
+   try:
+       with os.fdopen( os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0600), 'w' ) as f:
+           f.write( key_data )
+           f.flush()
+
+   except (OSError, IOError), e:
+       log.error("Failed to write '%s': %s" % (path, e.strerror))
+       if os.path.exists( path ):
+           if overwrite:
+               try:
+                   with open(path, "w") as f:
+                       f.write( key_data )
+                       f.flush()
+               except (OSError, IOError), e:
+                    log.error("Failed to write '%s': %s" % (path, e.strerror))
+                    raise
+
+           else:
+               raise Exception("SECURITY ERROR: tried to overwrite key '%s' with new data!" % path)
+       else:
+           raise e
+
    return True
 
 
@@ -263,16 +258,19 @@ def store_public_key( config, key_type, object_id, key_data ):
    """
    Store a public key for a given object of a given type.
    """
+   key_data_pem = key_data.exportKey()
    key_path = conf.object_key_path( config, key_type, object_id, public=True )
-   return write_key( key_path, key_data )
+   return write_key( key_path, key_data_pem )
       
 
 def store_private_key( config, key_type, object_id, key_data ):
    """
    Store a private key for a given object of a given type.
    """
+   key_data_pem = key_data.exportKey()
+   assert key_data.has_private(), "Not a private key"
    key_path = conf.object_key_path( config, key_type, object_id, public=False )
-   return write_key( key_path, key_data )
+   return write_key( key_path, key_data_pem )
 
 
 def erase_key( config, key_type, object_id, public=False ):
