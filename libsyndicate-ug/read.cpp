@@ -25,9 +25,9 @@ typedef map< uint64_t, int > UG_block_gateway_map_t;
 
 // set up a manifest and dirty block map to receive a block into a particular buffer 
 // the block put into *blocks takes ownership of buf, so the caller must not free it
-// NOTE: buf must be at least the size of a volume block 
+// NOTE: buf must be at least the size of a volume block.  IT WILL BE MODIFIED. 
 // return 0 on success
-// return -ENOMEM on OOM 
+// return -ENOMEM on OOM
 // inode->entry must be read-locked
 int UG_read_setup_block_buffer( struct UG_inode* inode, uint64_t block_id, char* buf, uint64_t buf_len, UG_dirty_block_map_t* blocks ) {
    
@@ -35,13 +35,24 @@ int UG_read_setup_block_buffer( struct UG_inode* inode, uint64_t block_id, char*
 
    struct UG_dirty_block block_data;
    struct SG_manifest_block* block_info = NULL;
+   unsigned char empty_hash[SG_BLOCK_HASH_LEN];
    
    // look up this block's info from the manifest 
    block_info = SG_manifest_block_lookup( UG_inode_manifest( inode ), block_id );
    if( block_info == NULL ) {
       
-      SG_error("No manifest info for %" PRIX64 "[%" PRIu64 "]\n", UG_inode_file_id( inode ), block_id );
-      return -EINVAL;
+      SG_debug("Write hole: no manifest info for %" PRIX64 "[%" PRIu64 "]\n", UG_inode_file_id( inode ), block_id );
+      block_info = SG_manifest_block_alloc( 1 );
+      if( block_info == NULL ) {
+         return -ENOMEM;
+      }
+
+      // hash of zero's
+      memset( empty_hash, 0, SG_BLOCK_HASH_LEN );
+      memset( buf, 0, buf_len );
+      sha256_hash_buf( buf, buf_len, empty_hash );
+
+      SG_manifest_block_init( block_info, block_id, 0, empty_hash, SG_BLOCK_HASH_LEN );
    }
    
    // generate the dirty block 
@@ -68,6 +79,29 @@ int UG_read_setup_block_buffer( struct UG_inode* inode, uint64_t block_id, char*
    return rc;
 }
 
+
+// is there an unaligned head?
+static bool UG_read_has_unaligned_head( off_t offset, uint64_t block_size ) {
+
+   return (offset % block_size) != 0;
+}
+
+// is there an unaligned tail?
+static bool UG_read_has_unaligned_tail( off_t offset, size_t len, uint64_t inode_size, uint64_t block_size ) {
+
+   uint64_t first_block = 0;
+   uint64_t last_block = 0; 
+
+   if( offset + len > inode_size ) {
+      // will hit EOF, so think of the read as reading to the end but no further 
+      len = inode_size - offset;
+   }
+   
+   first_block = offset / block_size;
+   last_block = (offset + len) / block_size;
+
+   return ((offset + len) % block_size != 0 && (first_block != last_block || offset % block_size == 0));
+}
 
 // set up reads to unaligned blocks.  *dirty_blocks must NOT contain the unaligned block information yet.
 // return the number of bytes that will be read on success, and put the block structure into *dirty_blocks.
@@ -98,7 +132,8 @@ int UG_read_unaligned_setup( struct SG_gateway* gateway, char const* fs_path, st
    UG_dirty_block_map_t unaligned_blocks;
    
    // is the first block unaligned?
-   if( (offset % block_size) != 0 ) {
+   // if( (offset % block_size) != 0 ) {
+   if( UG_read_has_unaligned_head( offset, block_size ) ) {
       
       // head is unaligned 
       // make a head buffer 
@@ -135,9 +170,10 @@ int UG_read_unaligned_setup( struct SG_gateway* gateway, char const* fs_path, st
    // is the last block unaligned, and if so, is it either 
    // distinct from the first block, or if they're the same,
    // does the read start at a block boundary but not finish on one?
-   if( (offset + buf_len) % block_size != 0 && 
-       (first_block != last_block || 
-        offset % block_size == 0) ) {
+   // if( (offset + buf_len) % block_size != 0 && 
+   //    (first_block != last_block || 
+   //     offset % block_size == 0) ) {
+   if( UG_read_has_unaligned_tail( offset, buf_len, UG_inode_size( inode ), block_size ) ) {
       
       // tail unaligned 
       // make a tail buffer 
@@ -761,8 +797,11 @@ int UG_read_dirty_blocks( struct SG_gateway* gateway, struct UG_inode* inode, UG
 int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struct UG_inode* inode, UG_dirty_block_map_t* blocks, uint64_t offset, uint64_t len, struct SG_manifest* blocks_not_local ) {
    
    int rc = 0;
-   
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
    struct SG_manifest blocks_not_dirty;
+   uint64_t head_id = (offset / block_size);
+   uint64_t tail_id = ((offset + len) / block_size);
    
    rc = SG_manifest_init( &blocks_not_dirty, UG_inode_volume_id( inode ), UG_inode_coordinator_id( inode ), UG_inode_file_id( inode ), UG_inode_file_version( inode ) );
    if( rc != 0 ) {
@@ -795,7 +834,21 @@ int UG_read_blocks_local( struct SG_gateway* gateway, char const* fs_path, struc
       
       SG_error("UG_read_cached_blocks( %" PRIX64 ".%" PRId64 " ) rc = %d\n", UG_inode_file_id( inode ), UG_inode_file_version( inode ), rc );
    }
-   
+  
+   // if we have write-holes at the head or tail, remove them from blocks_not_local (they'bve already been satisfied) 
+   if( !SG_manifest_is_block_present( UG_inode_manifest( inode ), head_id ) && UG_read_has_unaligned_head( offset, block_size ) ) {
+
+      // already filled in 
+      SG_debug("Will not download unaligned head/write-hole %" PRIu64 "\n", head_id );
+      SG_manifest_delete_block( blocks_not_local, head_id );
+   }
+   if( !SG_manifest_is_block_present( UG_inode_manifest( inode ), tail_id ) && UG_read_has_unaligned_tail( offset, len, UG_inode_size( inode ), block_size ) ) {
+
+      // already filled in 
+      SG_debug("Will not download unaligned tail/write-hole %" PRIu64 "\n", tail_id );
+      SG_manifest_delete_block( blocks_not_local, tail_id );
+   }
+
    return rc;
 }
 
