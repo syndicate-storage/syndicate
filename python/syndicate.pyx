@@ -195,7 +195,7 @@ cdef char* string_or_null( s ):
    if s is None:
       return NULL
    else:
-      return str(s)
+      return PyString_AsString(s)
    
 # ------------------------------------------
 cdef size_t strlen_or_zero( s ):
@@ -397,7 +397,7 @@ cdef class Syndicate:
       '''
          Get the hostname the cert says we're supposed to listen on.
       '''
-      cdef char* hostname = NULL;
+      cdef char* hostname = NULL
       cdef md_syndicate_conf* conf = SG_gateway_conf( &self.gateway_inst )
       
       hostname = md_get_hostname( conf )
