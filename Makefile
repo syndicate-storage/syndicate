@@ -13,19 +13,19 @@ libsyndicate: protobufs
 	$(MAKE) -C libsyndicate
 
 .PHONY: libsyndicate-ug
-libsyndicate-ug: libsyndicate
+libsyndicate-ug: libsyndicate protobufs
 	$(MAKE) -C libsyndicate-ug
 
 .PHONY: gateways
-gateways: libsyndicate libsyndicate-ug
+gateways: libsyndicate libsyndicate-ug protobufs
 	$(MAKE) -C gateways
 
 .PHONY: ms
-ms: protobufs
+ms: protobufs 
 	$(MAKE) -C ms
 
 .PHONY: syndicate-python
-syndicate-python: protobufs ms libsyndicate-ug
+syndicate-python: protobufs ms libsyndicate-ug libsyndicate
 	$(MAKE) -C python
 
 .PHONY: clean

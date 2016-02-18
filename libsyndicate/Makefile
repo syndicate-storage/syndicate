@@ -6,7 +6,7 @@ LIB   	:= -lpthread -lcurl -lm -lrt -ldl -lmicrohttpd -lprotobuf -lcrypto -lssl 
 C_SRCS	:= $(wildcard *.c) \
             $(wildcard */*.c)
 
-PROTOBUF_OBJ  := $(wildcard $(BUILD_PROTOBUFS_CPP)/*.o)
+PROTOBUF_OBJ  := $(wildcard $(BUILD_PROTOBUFS_OBJ)/*.o)
 
 CXSRCS	:= $(wildcard *.cpp) \
 	         $(wildcard */*.cpp)

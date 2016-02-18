@@ -18,6 +18,7 @@ PKGCONFIGDIR   ?= $(PREFIX)/lib/pkgconfig
 
 # protobufs 
 BUILD_PROTOBUFS_CPP     := $(BUILD)/protobufs/cpp/
+BUILD_PROTOBUFS_OBJ     := $(BUILD)/protobufs/obj
 BUILD_PROTOBUFS_PYTHON  := $(BUILD)/protobufs/python/
 BUILD_PROTOBUFS_INCLUDEDIR := $(BUILD_INCLUDEDIR)/libsyndicate
 BUILD_PROTOBUFS_DIRS    := $(BUILD_PROTOBUFS_CPP) $(BUILD_PROTOBUFS_PYTHON)
@@ -64,6 +65,10 @@ BUILD_RG_DIRS     := $(BUILD_RG)
 # acquisition gateway
 BUILD_AG          := $(BUILD_BINDIR)
 BUILD_AG_DIRS     := $(BUILD_AG)
+
+# automount daemon 
+BUILD_AMD		  := $(BUILD_BINDIR)
+BUILD_AMD_DIRS    := $(BUILD_AMD)
 
 # python extension
 BUILD_PYTHON_SYNDICATE := $(BUILD)/python/
