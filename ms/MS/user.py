@@ -122,8 +122,16 @@ class SyndicateUser( storagetypes.Object ):
       "max_gateways",
       "is_admin"
    ]
-   
+  
    write_attrs = write_attrs_api_required + write_attrs_admin_required
+ 
+   # what fields in the cert can change?
+   modifiable_cert_fields = [
+      "public_key",
+      "max_volumes",
+      "max_gateways"
+   ]
+
    
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
@@ -167,16 +175,6 @@ class SyndicateUser( storagetypes.Object ):
       
       return attrs
 
-   """
-   def makeCert( self ):
-      ret = {}
-      ret['expires'] = self.public_key_expiration
-      ret['pubkey'] = self.public_key
-      ret['email'] = self.email
-      ret['openid_url'] = self.openid_url
-      
-      return ret
-   """
 
    @classmethod
    def Create( cls, user_cert ):
@@ -268,7 +266,7 @@ class SyndicateUser( storagetypes.Object ):
       except:
          email = email_or_owner_id
       
-      if owner_id != None:
+      if owner_id is not None:
          return cls.Read_ByOwnerID( owner_id, async=async )
       
       user_key_name = SyndicateUser.make_key_name( email=email)
@@ -338,102 +336,7 @@ class SyndicateUser( storagetypes.Object ):
          user = None 
          
       return user
-      
-   '''
-   @classmethod
-   def Update( cls, email, **fields ):
-      """
-      Update a SyndicateUser.
-      
-      TODO: finish
-      """
-      
-      def verify_auth_change( user, attrs ):
-         if not user.active:
-            raise Exception("Account for %s is not active.  Please activate it." % user.email )
-         
-         if attrs.has_key('allow_password_auth'):
-            # this can only be disabled
-            if attrs['allow_password_auth']:
-               raise Exception("For security reasons, re-enabling password authentication is forbidden.  Reset the account for %s instead." % user.email)
-            
-         if attrs.has_key('public_key'):
-            # can't unset this if password auth is disabled
-            if not user.allow_password_auth and not SyndicateUser.is_public_key_set( attrs['public_key'] ):
-               raise Exception("Cannot disable public-key authentication once password authentication is disabled.")
-            
-         return True
-         
-      def update_txn( email, attrs ):
-         user = SyndicateUser.Read(email)
-         if user is None:
-            raise Exception("No such user %s" % email)
-         
-         verify_auth_change( user, attrs )
-         
-         user_key_name = SyndicateUser.make_key_name( email=email)
-         storagetypes.memcache.delete( user_key_name )
-
-         for (k,v) in attrs.items():
-            setattr(user, k, v )
-         return user.put()
-      
-      # sanity check
-      invalid = SyndicateUser.validate_fields( fields )
-      if len(invalid) > 0:
-         raise Exception( "Invalid fields: %s" % (', '.join( invalid )) )
-      
-      invalid = SyndicateUser.validate_write( fields )
-      if len(invalid) > 0:
-         raise Exception( "Unwritable fields: %s" % (', '.join( invalid )) )
-      
-      return storagetypes.transaction( lambda: update_txn( email, fields ) )
-   '''
-   
-   '''
-   @classmethod
-   def is_public_key_set( cls, public_key ):
-      return public_key != 'unset'
-   '''
-
-   '''
-   @classmethod
-   def Register( cls, activate_password, user_cert ):
-      """
-      Activate an account, and use the given cert henceforth for this user.
-      
-      NOTE: the caller will need to have validated the cert beforehand.
-      """
-      import common.api as api 
-      
-      # can only activate once 
-      user = SyndicateUser.Read( user_cert.email )
-      if user is None:
-         raise Exception("No such user '%s'" % user_cert.email )
-      
-      if user.active:
-         # already activated 
-         raise Exception("User '%s' is already registered" % user_cert.email )
-      
-      # get the on-file cert
-      local_user_cert = ms_pb2.ms_user_cert.ParseFromString( user.user_cert_protobuf )
-      
-      # verify password against the on-file cert
-      rc = api.check_password( activate_password, local_user_cert.password_salt, local_user_cert.password_hash )
-      if not rc:
-         raise Exception("Invalid password")
-      
-      # good to go.  overwrite this user
-      user_attrs = cls.cert_to_dict( user_cert )
-      user_attrs['active'] = True 
-      
-      user_key_name = SyndicateUser.make_key_name( email=email )
-      user_key = SyndicateUser.put( user_key_name, **user_attrs )
-      
-      storagetypes.memcache.delete( user_key_name )
-      
-      return user_key.get()
-   '''
+    
 
    @classmethod
    def Reset( cls, user_cert ):
@@ -443,19 +346,53 @@ class SyndicateUser( storagetypes.Object ):
       NOTE: the caller will need to have validated the cert beforehand
       """
       
-      user = SyndicateUser.Read( user_cert.email )
-      if user is None:
-         raise Exception("No such user '%s'" % user_cert.email )
-      
-      # the cert will have the new hash and salt
       user_attrs = cls.cert_to_dict( user_cert )
+      for k in user_attrs.keys():
+          if k not in cls.modifiable_cert_fields:
+              del user_attrs[k]
       
-      user_key_name = SyndicateUser.make_key_name( email=email )
-      SyndicateUser.put( user_key_name, **user_attrs )
+      user_cert_protobuf = user_cert.SerializeToString()
+
+      def update_txn( fields ):
+         '''
+         Update the User transactionally.
+         '''
+         user = SyndicateUser.Read( user_cert.email )
+         if user is None:
+             raise Exception("No such user '%s'" % user_cert.email )
+
+         # key can't repeat 
+         if user_attrs['public_key'] == user.public_key:
+             raise Exception("Public key did not change")
+
+         # verify update
+         unwriteable = []
+         for (k, v) in fields.items():
+            if k not in cls.modifiable_cert_fields and getattr(user, k) != v:
+               unwriteable.append(k)
+               
+         if len(unwriteable) > 0:
+            raise Exception("Tried to modify read-only fields: %s" % ",".join(unwriteable))
+         
+         # apply update
+         for (k,v) in fields.items():
+            setattr( user, k, v )
+         
+         # store new cert 
+         user.user_cert_protobuf = user_cert_protobuf
+         ret = user.put()
+
+         user_key_name = SyndicateUser.make_key_name( email=user.email ) 
+         storagetypes.memcache.delete( user_key_name )
+         return ret
+ 
+      try:
+         user_key = storagetypes.transaction( lambda: update_txn( user_attrs ), xg=True )
+         return user_key 
+      except Exception, e:
+         logging.exception( e )
+         raise e
       
-      storagetypes.memcache.delete( user_key_name )
-      
-      return True 
    
       
    @classmethod
