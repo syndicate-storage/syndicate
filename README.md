@@ -1,28 +1,23 @@
 Syndicate
 =========
 
-Syndicate is an **Internet-scale software-defined storage system**.  Syndicate implements a scalable, programmable wide-area storage layer over commodity cloud storage providers, external public datasets, and CDNs.  Unlike traditional cloud storage, Syndicate volumes have *programable storage semantics*. This lets you deploy Syndicate to meet arbitrarily-specific storage needs with a minimal amount of effort.
+Syndicate is a **scalable software-defined storage system for wide-area networks**.   Syndicate creates global read/write storage volumes on top of existing systems, but while preserving end-to-end domain-specific storage invariants.  With less than 200 lines of Python, and without having to run any servers of your own, you use a Syndicate volume to do things like:
+* Scale up reads on a remote server with a CDN while guaranteeing that readers always see fresh data.
+* Turn a collection of URLs as a copy-on-write shared filesystem which preserves your and your peers' changes.
+* Implement end-to-end encryption on top of your Dropbox folder, while mirroring your files to Amazon S3 and Google Drive.
+* Publish your code for the world to download, while guaranteeing end-to-end authenticity and integrity.
 
-Networked applications that use Syndicate do not need to host user data.  Instead, users attach their volumes to the application, and the application reads and writes data to them instead.  This frees the application provider from liability and hosting burdens, and lets the user own the data he/she generates.
-
-Here is an incomplete summary of features Syndicate offers:
-* **Syndicate volumes scale up** in the number of readers, writers, and files.  Users attach commodity cloud storage and CDN capacity to increase storage and bandwidth.
-* Syndicate has a **fire-and-forget setup**.  Users do not need to provision and manage their own servers to get started.
-* Syndicate **seamlessly integrates existing data** by incorporating it into volumes in a zero-copy manner.
-* Syndicate leverages CDNs and Web caches whenever possible, providing **caching with guaranteed consistency** even when caches return stale data.
-* Syndicate works with more than just Web applications.  Syndicate volumes are **locally mountable as removable media**, so *any* application can use them.
-* Syndicate volumes have **programmable semantics**.  I/O operations have application-defined side-effects, such as automatic encryption, compression, deduplication, access logging, write-conflict resolution, customized authentication, and so on.  Moroever, the programming model (inspired by the UNIX pipeline) ensures that storage semantics are *composable*--if A(x) and B(x) are functions on I/O operation x, then A(B(x)) is as well.
-* Syndicate volumes have built-in access controls on a per-file, per-file-attribute, per-host, and per-user basis.  Users can extend them in a provider-agnostic way by changing how they are interpreted by add-on storage logic.
-
-What can I use Syndicate for?
------------------------------
+Examples
+--------
 
 Here are a few examples of how we are currently using Syndicate:
 
-* Augmenting scientific storage systems (like [iRODS](https://irods.org)) and public datasets (like [GenBank](https://www.ncbi.nlm.nih.gov/genbank/)) with ingress Web caches in order to automatically stage large-scale datasets for compute resources. 
+* Augmenting scientific storage systems (like [iRODS](https://irods.org)) and public datasets (like [GenBank](https://www.ncbi.nlm.nih.gov/genbank/)) with ingress Web caches in order to automatically stage large-scale datasets for local compute clusters to process. 
 * Creating a secure [DropBox](http://www.dropbox.com)-like "shared folder" system for [OpenCloud](http://www.opencloud.us) that augments VMs, external scientific datasets, and personal computers with a private CDN, allowing users to share large amounts of data with their VMs while minimizing redundant transfers.
 * Scalably packaging up and deploying applications across the Internet.
 * Creating webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to user-chosen storage service(s), so webmail providers like [Gmail](https://mail.google.com) can't snoop.  See the [SyndicateMail](https://github.com/jcnelson/syndicatemail) project for details.
+
+The "secret sauce" is a novel programming model that lets the application break down storage I/O logic into a set of small, mostly-orthogonal but composible I/O steps.  By combining these steps into a networked pipeline and controlling when and where each step can execute in the network, the application can preserve domain-specific invariants end-to-end without having to build a whole storage abstraction layer from scratch.
 
 Where can I learn more?
 -----------------------
@@ -34,11 +29,12 @@ Also, please see [our NSF grant](http://www.nsf.gov/awardsearch/showAward?AWD_ID
 Building
 --------
 
-This process is a bit involved, and will be automated for the first release.  You should be familiar with GNU make.
+To build, type:
+```
+    $ make MS_APP_ADMIN_EMAIL=(your admin account email)
+```
 
-**NOTE 1:**  Our build system currently honors `PREFIX` but not `DESTDIR`.  Let us know if you need the `DESTDIR` convention, and we'll add it.  `PREFIX` defaults to `/usr/local/`.
-
-**NOTE 2:**  At this time, there are no `install` targets for the executables (this will be added soon).  For now, executables are put into directories within `./build/out/bin`.
+**NOTE:**  At this time, there are no `install` targets for the executables (this will be added soon).  For now, executables are put into directories within `./build/out/bin`.
 
 To build Syndicate, you will need the following tools, libraries, and header files:
 * [libcurl](http://curl.haxx.se/libcurl/)
@@ -52,43 +48,36 @@ To build Syndicate, you will need the following tools, libraries, and header fil
 * [Cython](https://github.com/cython/cython)
 * [boto](https://github.com/boto/boto)
 
-Before doing anything else, you must first build and install Syndicate's protobuf definitions, followed by `libsyndicate` and its headers.  To do so, type:
 
-```
-    $ make -C protobufs
-    $ make -C libsyndicate
-    $ sudo make -C libsyndicate install 
-```
+Quick Setup
+-----------
 
-After this, you can build the Metadata Service.  First, edit the `./MS.mk` file and set the various fields to something other than the default values.  Then, you can build the MS with:
+Syndicate's end-point components (**gateways**) coordinate via an untrusted logically central **metadata service** (MS).  The MS implementation currently runs in Google AppEngine, or in [AppScale](https://github.com/AppScale/appscale).  You can test it locally with the [Python GAE development environment](https://cloud.google.com/appengine/downloads?hl=en).  Please see the relevant documentation for GAE, AppScale, and the development environment for deployment instructions.  You should be able to run the MS on the free tier in GAE.
 
+The MS code is built to `./build/out/ms`.  You can deploy it to GAE from there, or run it with the development environment with:
 ```
-    $ make -C ms
+    $ dev_appserver.py ./build/out/ms
 ```
 
-Then, you must build and install the user- and gateway-facing Syndicate library (`libsyndicate-ug`).  To do so, type:
-
+Now, you need to set up your `~/.syndicate` directory.  An admin account and keypair are automatically generated by the build process (in `./build/out/ms`).  To use them, type:
 ```
-    $ make -C libsyndicate-ug
-    $ sudo make -C libsyndicate-ug install
-```
-
-Finally, you can build the Syndicate gateways, tools, and Python package.  To do so, type:
-
-```
-   $ make -C gateways
-   $ make -C python
-   $ sudo make -C python install
+    $ cd ./build/out/bin/
+    $ ./syndicate setup $MS_APP_ADMIN_EMAIL ../ms/admin.pem http://localhost:8080
 ```
 
+Replace `$MS_APP_ADMIN_EMAIL` from the value you passed to `make` earlier, and replace `http://localhost:8080` with the URL to your MS deployment (if you're not running the `dev_appserver.py`).
 
-Setting it up
--------------
+First, you must create a volume.  Here's an example that will create a volume called `test-volume`, owned by the administrator, with a 64k block size:
 
-The Metadata Service runs in Google AppEngine, or [AppScale](https://github.com/AppScale/appscale) if you prefer to run the MS on your own infrastructure.  You can run it locally with the [Python GAE development environment](https://cloud.google.com/appengine/downloads?hl=en).  Please see the relevant documentation for GAE, AppScale, and the development environment for deployment instructions.  You should be able to run the MS on the free tier in GAE.
+```
+    $ ./syndicate create_volume name="test-volume" description="This is a description of the volume" blocksize=65536 email="$MS_APP_ADMIN_EMAIL"
+```
 
-Once you have an MS running somewhere, you'll need to make a Syndicate config file.  There is an example one [here](https://github.com/jcnelson/syndicate/tree/master/example/syndicate.conf).  You should change the various absolute paths to refer to your own build environment.  Please also consider setting the `verify_peer` field to `True` if you intend to do anything beyond testing.  You should place the configuration file into `~/.syndicate/syndicate.conf`.
+Now, you can create gateways for the volume--the network-addressed processes that bind existing storage systems together and overlay your application's domain-specific I/O coordination logic over them.  To create a **user gateway** that will allow you to interact with the `test-volume` volume's data via the admin account, type:
 
-The Syndicate administration tool (`/build/out/bin/syndicate`) allows you to manipulate users, volumes, and gateways.  Each method has built-in documentation that describes all required and optional positional and keyword arguments.  
+```
+    $ ./syndicate create_gateway email="$MS_APP_ADMIN_EMAIL" volume="test-volume" name="test-volume-UG-01" private_key=auto type=UG
+    $ ./syndicate update_gateway name="test-volume-UG-01" caps=ALL
+```
 
-This section will be fleshed out in the coming weeks.
+This will create a user gateway called `test-volume-UG-01`, generate and store a key pair for it automatically, and enable all capabilities for it.  Similarly, you can do so for **replica gateways** (using `type=RG`) and **acquisition gateways** (using `type=AG`).  Replica gateways take data from user gateways and forward it to persistent storage.  Acquisition gateways consume data from existing storage and make it available as files and directories in the volume.
