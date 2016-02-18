@@ -140,6 +140,40 @@ int UG_deferred_remove( struct UG_state* state, char const* child_path, struct f
 }
 
 
+// go fetch the latest version of an inode directly from the MS 
+// return 0 on success, and populate *ent 
+// return -ENOMEM on OOM
+// return -EACCES on permission error from the MS
+// return -ENOENT if the entry doesn't exist on the MS
+// return -EREMOTEIO if the MS's reply was invalid, or we failed to talk to it
+int UG_consistency_inode_download( struct SG_gateway* gateway, uint64_t file_id, struct md_entry* ent ) {
+
+   int rc = 0;
+   struct ms_path_ent req;
+   struct ms_client* ms = SG_gateway_ms(gateway);
+   uint64_t volume_id = ms_client_get_volume_id( ms );
+
+   rc = ms_client_getattr_request( &req, volume_id, file_id, 0, 0, NULL );
+   if( rc != 0 ) {
+      return rc;
+   }
+
+   rc = ms_client_getattr( ms, &req, ent );
+   if( rc != 0 ) {
+      SG_error("ms_client_getattr(%" PRIX64 ") rc = %d\n", file_id, rc );
+
+      if( rc != -EACCES && rc != -ENOENT ) {
+         rc = -EREMOTEIO;
+      }
+
+      goto UG_consistency_inode_download_out;
+   }
+
+UG_consistency_inode_download_out:
+   ms_client_free_path_ent( &req, NULL );
+   return rc;
+}
+
 
 // download a manifest, synchronously.  Try from each gateway in gateway_ids, in order.
 // return 0 on success, and populate *manifest 

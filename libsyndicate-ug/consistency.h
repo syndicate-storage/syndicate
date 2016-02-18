@@ -33,6 +33,9 @@
 
 extern "C" {
    
+// go fetch an inode directoy from the MS 
+int UG_consistency_inode_download( struct SG_gateway* gateway, uint64_t file_id, struct md_entry* ent );
+
 // get the manifest from one of a list of gateways
 int UG_consistency_manifest_download( struct SG_gateway* gateway, struct SG_request_data* reqdat, uint64_t* gateway_ids, size_t num_gateway_ids, struct SG_manifest* manifest );
 
