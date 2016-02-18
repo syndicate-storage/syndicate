@@ -225,7 +225,7 @@ class CreateAPIGuard:
 # ----------------------------------
 class ReadAPIGuard:
    # reading an object requires one of three things:  user is an admin, user owns the object, or the object is trying to read itself.
-   def __init__(self, object_cls, admin_only=False,  **kw ):
+   def __init__(self, object_cls, admin_only=False, **kw ):
       self.object_cls = object_cls
       self.admin_only = admin_only
    
