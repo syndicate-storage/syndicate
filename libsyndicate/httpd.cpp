@@ -1153,7 +1153,7 @@ static int md_HTTP_connection_setup( struct md_HTTP* http_ctx, struct md_HTTP_co
    con_data->content_length = content_length;
    con_data->connection = connection;
    con_data->suspended = false;
-   
+
    // split query string off of url_path
    if( con_data->query_string != NULL ) {
       char* p = con_data->query_string;
@@ -1471,6 +1471,7 @@ void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
    memset( con_data, 0, sizeof( struct md_HTTP_connection_data ) );
 }
 
+
 // default cleanup handler
 // calls user-supplied cleanup handler as well
 void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_cls, enum MHD_RequestTerminationCode term ) {
@@ -1497,6 +1498,7 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
       *con_cls = NULL;
    }
 }
+
 
 // set fields in an HTTP structure
 int md_HTTP_init( struct md_HTTP* http, int server_type, void* server_cls ) {
