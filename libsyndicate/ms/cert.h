@@ -63,6 +63,13 @@ ms::ms_gateway_cert* ms_client_gateway_cert_gateway( struct ms_gateway_cert* cer
 char const* ms_client_gateway_cert_name( struct ms_gateway_cert* cert );
 EVP_PKEY* ms_client_gateway_pubkey( struct ms_gateway_cert* cert );
 int ms_client_gateway_driver_hash_buf( struct ms_gateway_cert* cert, unsigned char* hash );
+char const* ms_client_gateway_cert_hostname( struct ms_gateway_cert* cert );
+int ms_client_gateway_cert_portnum( struct ms_gateway_cert* cert );
+
+uint64_t ms_client_gateway_cert_user_id( struct ms_gateway_cert* cert );
+uint64_t ms_client_gateway_cert_gateway_type( struct ms_gateway_cert* cert );
+uint64_t ms_client_gateway_cert_gateway_id( struct ms_gateway_cert* cert );
+uint64_t ms_client_gateway_cert_volume_id( struct ms_gateway_cert* cert );
 
 // setters 
 int ms_client_gateway_cert_set_user( struct ms_gateway_cert* cert, ms::ms_user_cert* user_pb );

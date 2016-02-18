@@ -180,6 +180,18 @@ int ms_client_gateway_driver_hash_buf( struct ms_gateway_cert* cert, unsigned ch
    return 0;
 }
 
+
+// get cert hostname
+char const* ms_client_gateway_cert_hostname( struct ms_gateway_cert* cert ) {
+   return cert->hostname;
+}
+
+// get cert portnum
+int ms_client_gateway_cert_portnum( struct ms_gateway_cert* cert ) {
+   return cert->portnum;
+}
+
+
 // add a user protobuf 
 // NOTE: no authenticity check will be performed; this just sets the field.
 // return 0 on success
@@ -233,3 +245,24 @@ int ms_client_cert_bundle_put( ms_cert_bundle* bundle, struct ms_gateway_cert* c
    
    return 0;
 }
+
+// get user id 
+uint64_t ms_client_gateway_cert_user_id( struct ms_gateway_cert* cert ) {
+   return cert->user_id;
+}
+
+// get gateway type 
+uint64_t ms_client_gateway_cert_gateway_type( struct ms_gateway_cert* cert ) {
+   return cert->gateway_type;
+}
+
+// get gateway id 
+uint64_t ms_client_gateway_cert_gateway_id( struct ms_gateway_cert* cert ) {
+   return cert->gateway_id;
+}
+
+// get volume id 
+uint64_t ms_client_gateway_cert_volume_id( struct ms_gateway_cert* cert ) {
+   return cert->volume_id;
+}
+
