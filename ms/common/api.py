@@ -194,7 +194,7 @@ def create_user( email, private_key, **attrs ):
          behalf of the owner of this user account. 
          Currently, this must be a 4096-bit RSA key.
          
-         Pass "AUTO" if you want Syndicate to automatically
+         Pass "auto" if you want Syndicate to automatically
          generate a key pair for you, in which case the private 
          key will be stored to your Syndicate key directory
          on successful return of this method.
@@ -306,19 +306,20 @@ def list_users( query_attrs ):
 
 @Authenticate()
 @UpdateAPIGuard( SyndicateUser, admin_only=True, target_object_name="email", parse_args=SyndicateUser.ParseArgs, caller_user="caller_user" )
-def reset_user( email, password, **kwargs ):
+def reset_user( email, public_key, **kwargs ):
    """
-   Reset a user's account credentials.  Set a new one-time-use registration key,
-   so the user can re-upload a public signing key.
-   
+   Reset a user: set a new certificate.
+
    Positional arguments:
       email (str):
          The email of the desired user. 
-      
-      registration_password (str):
-         A one-time-use password the user will use to 
-         register a new signing public key.
-         
+
+      public_key (str):
+         Path to the new public key for the user (PEM-encoded
+         4096-bit RSA key).  Pass 'auto' to automatically
+         generate a new key pair, and store the private key in
+         your Syndicate key directory.
+
    Returns:
       True on success, or an exception if the user does 
       not exist or the caller is not authorized to set 
@@ -328,10 +329,10 @@ def reset_user( email, password, **kwargs ):
       Only an administrator can call this method.
       
    Remarks:
-      Syndicate does not send a value for registration_password.
-      It instead sends 'user_cert_b64' as a keyword argument, which 
-      contains a serialized certificate signed by the admin that 
-      contains the email and registration password hash and salt.
+      Syndicate implicitly passes 'user_cert_b64' as a keyword argument,
+      which contains a serialized certificate signed by the admin that 
+      contains the email and new public key.  It must be signed by an
+      admin.
    """
    return storage.reset_user( email, **kwargs )
 
@@ -534,6 +535,9 @@ def list_volumes( query_attrs ):
    Authorization:
       Only an administrator may call this method.
    """
+
+   # don't show deleted volumes 
+   query_attrs["Volume.deleted =="] = False
    return storage.list_volumes( query_attrs )
 
 
@@ -690,7 +694,11 @@ def update_gateway( name, **attrs ):
          This is serialized JSON string that contains this gateway's 
          driver logic.  The contents are specific to the gateway 
          implementation. 
-      
+     
+      public_key=str:
+         This is a PEM-encoded public key for the gateway.  Pass "auto"
+         to generate one automatically.
+
       caps=str|int:
          This is the capabilities string (or value) for this gateway.
          Capabilities are a bit-field of the following:
@@ -786,6 +794,9 @@ def list_gateways( query_attrs ):
    Authorization:
       Only an administrator can call this method.
    """
+
+   # don't show deleted gateways
+   query_attrs["Gateway.deleted =="] = False
    return storage.list_gateways( query_attrs )
 
 

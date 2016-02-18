@@ -56,7 +56,7 @@ def get_uuids( uuids, namespace, use_memcache=True ):
 @ndb.tasklet
 def put_uuids_async( uuids, namespace ):
    """
-   Put UUIDs to a namespace 
+   Put UUIDs to a namespace, asynchronously
    """
    all_key_names = __uuid_key_names( uuids, namespace )
    all_keys = [ndb.Key( GeneralUUID, key_name ) for key_name in all_key_names]
@@ -66,3 +66,12 @@ def put_uuids_async( uuids, namespace ):
    put_keys = yield ndb.put_multi_async( uuid_data )
    
    raise ndb.Return( put_keys )
+
+
+def put_uuids( uuids, namespace ):
+   """
+   Put UUIDs to a namespace, synchronously
+   """
+   fut = put_uuids_async( uuids, namespace )
+   fut.wait()
+   return 

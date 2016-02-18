@@ -48,8 +48,8 @@ from common.msconfig import *
 import common.admin_info as admin_info
 
 # ----------------------------------
-def _read_user_and_volume( email, volume_name_or_id ):
-   user_fut = SyndicateUser.Read( email, async=True )
+def _read_user_and_volume( email_or_id, volume_name_or_id ):
+   user_fut = SyndicateUser.Read( email_or_id, async=True )
    volume_fut = Volume.Read( volume_name_or_id, async=True )
    
    storagetypes.wait_futures( [user_fut, volume_fut] )
@@ -209,13 +209,14 @@ def delete_user( email, **kw ):
    ret = SyndicateUser.Delete( email )
    return {'result': ret}
 
+
 # ----------------------------------
 def list_users( attrs=None, **q_opts ):
    return SyndicateUser.ListAll( attrs, **q_opts )
 
 
 # ----------------------------------
-def reset_user( email, **kwargs ):
+def reset_user( email, **fields ):
    
    if not fields.has_key('user_cert_b64'):
       raise Exception("Missing serialized user cert")
@@ -243,7 +244,10 @@ def reset_user( email, **kwargs ):
    
    # do the reset 
    user_key = SyndicateUser.Reset( user_cert )
-   return user_key.get()
+   if user_key is not None:
+       return {"result": True}
+   else:
+       return {"result": False}
 
 
 def validate_volume_cert( volume_cert, signing_user_id=None ):
@@ -685,11 +689,11 @@ def list_volumes( attrs=None, **q_opts ):
 
 # ----------------------------------
 def list_public_volumes( **q_opts ):
-   return list_volumes( {"Volume.private ==": False}, **q_opts )
+   return list_volumes( {"Volume.private ==": False, "Volume.deleted ==": False}, **q_opts )
 
 # ----------------------------------
 def list_archive_volumes( **q_opts ):
-   return list_volumes( {"Volume.archive ==": True, "Volume.private ==": False}, **q_opts )
+   return list_volumes( {"Volume.archive ==": True, "Volume.private ==": False, "Volume.deleted ==": False}, **q_opts )
 
 
 def validate_gateway_cert( gateway_cert, signing_user_id ):
@@ -707,6 +711,7 @@ def validate_gateway_cert( gateway_cert, signing_user_id ):
    
    # user and volume must both exist
    user, volume = _read_user_and_volume( gateway_cert.owner_id, gateway_cert.volume_id )
+   signing_user = None
    
    if user is None:
       raise Exception("No such user '%s'" % gateway_cert.owner_id)
@@ -714,6 +719,7 @@ def validate_gateway_cert( gateway_cert, signing_user_id ):
    if (volume is None or volume.deleted):
       raise Exception("No such volume '%s'" % gateway_cert.volume_id)
    
+   # signing_user_id, if given, must match the gateway's owner
    if signing_user_id is not None and user.owner_id != signing_user_id:
       raise Exception("User '%s' did not sign this gateway cert" % signing_user_id)
       
@@ -782,11 +788,20 @@ def create_gateway( **kw ):
    user = None 
    volume = None
    try:
-      user, volume = validate_gateway_cert( gateway_cert, caller_user.owner_id )
+      user, volume = validate_gateway_cert( gateway_cert, None )
    except Exception, e:
       log.error("Failed to find either the user or volume")
       raise e
-   
+  
+   # only the volume owner can call this method 
+   if volume.owner_id != caller_user.owner_id:
+      log.error("Volume '%s' not owned by '%s'" % (volume.name, user.email))
+      raise Exception("Volume '%s' not owned by '%s'" % (volume.name, user.email))
+
+   volume_owner = read_user( volume.owner_id )
+   if volume_owner is None:
+       raise Exception("BUG: No owner for volume '%s'" % volume.name)
+
    try:
       cert_bundle_bin = base64.b64decode( cert_bundle_b64 )
       cert_bundle = sg_pb2.Manifest()
@@ -795,7 +810,7 @@ def create_gateway( **kw ):
       log.error("Failed to deserialize certificate bundle version vector")
       raise e
    
-   rc = validate_cert_bundle( cert_bundle, user, volume.volume_id, volume.version, new_gateway_cert=gateway_cert )
+   rc = validate_cert_bundle( cert_bundle, volume_owner, volume.volume_id, volume.version, new_gateway_cert=gateway_cert )
    if not rc:
       raise Exception("Failed to validate cert bundle version vector")
    
@@ -905,11 +920,14 @@ def update_gateway( g_name_or_id, **kw ):
    caller_user = _check_authenticated( kw )
    
    # validate the gateway cert
-   user, volume = validate_gateway_cert( gateway_cert, caller_user.owner_id ) 
-   
-   # caller user must be the volume owner or the admin
-   if not caller_user.is_admin and caller_user.owner_id != volume.owner_id:
-      raise Exception("Only the volume owner or admin can update a Gateway")
+   user, volume = validate_gateway_cert( gateway_cert, gateway_cert.owner_id ) 
+   gateway = read_gateway( g_name_or_id )
+   if gateway is None:
+       raise Exception("No such gateway '%s'" % g_name_or_id)
+
+   # caller user must be the volume owner, the admin, or the gateway owner
+   if not caller_user.is_admin and caller_user.owner_id != volume.owner_id and caller_user.owner_id != gateway.owner_id:
+      raise Exception("Only the volume owner, gateway owner, or admin can update this gateway")
    
    cert_bundle = None
    cert_bundle_bin = None
@@ -927,8 +945,12 @@ def update_gateway( g_name_or_id, **kw ):
            log.error("Failed to deserialize certificate bundle")
            raise e
        
-       # validate the cert bundle 
-       rc = validate_cert_bundle( cert_bundle, user, volume.volume_id, volume.version )
+       # caller user must be the volume owner, or admin
+       if caller_user.owner_id != volume.owner_id:
+           raise Exception("Calling user is not the volume owner")
+
+       # validate the cert bundle
+       rc = validate_cert_bundle( cert_bundle, caller_user, volume.volume_id, volume.version )
        if not rc:
           raise Exception("Failed to validate cert bundle version vector")
       
@@ -954,10 +976,23 @@ def update_gateway( g_name_or_id, **kw ):
    if not present:
        raise Exception("Gateway '%s' is not in cert bundle for Volume '%s'" % (gateway.name, volume.name))
    
-   # caps can decrease, but not increase 
+   # caps can decrease, but not increase (unless we're the volume owner)
    if (caps | gateway_cert.caps) != caps:
-       raise Exception("Invalid capability bits %s (expected subset of %s)" % (hex(gateway_cert.caps), hex(caps)))
-   
+       if not caller_user.is_admin and caller_user.owner_id != gateway.owner_id:
+          raise Exception("Invalid capability bits %s (expected subset of %s)" % (hex(gateway_cert.caps), hex(caps)))
+
+       elif not kw.has_key( 'cert_bundle_b64' ):
+          # need a volume cert bundle to attest to the cap change 
+          raise Exception("CLIENT BUG: cannot change gateway cert caps without a cert bundle")
+  
+   # cert expiration time can decrease, but not increase 
+   if gateway_cert.cert_expires > gateway.cert_expires:
+       raise Exception("Gateway certificate expiration cannot increase (%s > %s)" % (gateway_cert.cert_expires, gateway.cert_expires))
+
+   # version must be newer
+   if gateway_cert.version < gateway.cert_version:
+       raise Exception("Stale cert version (%s < %s)" % (gateway_cert.cert_version, gateway.cert_version))
+
    # if given a new cert bundle, put it in place
    if new_cert_bundle:
        rc = VolumeCertBundle.Put( volume.volume_id, cert_bundle_bin )
@@ -991,12 +1026,12 @@ def list_gateways_by_volume( volume_name_or_id, **q_opts ):
    if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
       raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
    
-   return Gateway.ListAll( {"Gateway.volume_id ==" : volume.volume_id}, **q_opts )
+   return Gateway.ListAll( {"Gateway.volume_id ==" : volume.volume_id, "Gateway.deleted ==": False}, **q_opts )
 
 
 # ----------------------------------
 def list_gateways_by_host( hostname, **q_opts ):
-   return Gateway.ListAll( {"Gateway.host ==" : hostname}, **q_opts )
+   return Gateway.ListAll( {"Gateway.host ==" : hostname, "Gateway.deleted ==": False}, **q_opts )
 
 # ----------------------------------
 def list_gateways_by_user( email, **q_opts ):
@@ -1011,7 +1046,7 @@ def list_gateways_by_user( email, **q_opts ):
    if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
       raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
    
-   return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id}, **q_opts )
+   return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id, "Gateway.deleted ==": False}, **q_opts )
 
 # ----------------------------------
 def list_gateways_by_user_and_volume( email, volume_name_or_id, **q_opts ):
@@ -1030,7 +1065,7 @@ def list_gateways_by_user_and_volume( email, volume_name_or_id, **q_opts ):
    if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
       raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
    
-   return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id, "Gateway.volume_id ==": volume.volume_id}, **q_opts )
+   return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id, "Gateway.volume_id ==": volume.volume_id, "Gateway.deleted ==": False}, **q_opts )
 
 
 # ----------------------------------
@@ -1041,7 +1076,7 @@ def _remove_user_from_volume_helper( owner_id, volume_id ):
       Gateway.Delete( gw.g_id )
       return None
       
-   Gateway.ListAll( {"Gateway.owner_id ==": owner_id, "Gateway.volume_id ==": volume_id}, map_func=_remove_gateway, projection=['g_id'] )
+   Gateway.ListAll( {"Gateway.owner_id ==": owner_id, "Gateway.volume_id ==": volume_id, "Gateway.deleted ==": False}, map_func=_remove_gateway, projection=['g_id'] )
    
 
 # ----------------------------------
@@ -1067,9 +1102,8 @@ def remove_user_from_volume( email, volume_name_or_id ):
 
 # ----------------------------------
 def delete_gateway( g_id, **kw ):
-   # TODO: disable, don't delete, since there can still be files owned by the gateway 
    # TODO: garbage-collect gateways...
-   ret = Gateway.Delete( g_id, driver_hash=kw.get("driver_hash", None) )
+   ret = Gateway.Delete( g_id )
    return {'result': ret}
 
 

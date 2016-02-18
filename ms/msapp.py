@@ -41,7 +41,7 @@ handlers = [
                                                                                   # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
     (r'[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeCertRequestHandler),
     (r'[/]+USER[/]+([^/]+)[/]*', MSUserCertRequestHandler),
-    (r'[/]+CERTBUNDLE[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertBundleRequestHandler),
+    (r'[/]+CERTBUNDLE[/]+([^/]+)[/]+([0123456789]+)[/]*', MSCertBundleRequestHandler),
     (r'[/]+GATEWAY[/]+([^/]+)[/]*', MSGatewayCertRequestHandler),
     (r'[/]+DRIVER[/]+([0123456789ABCDEFabcdef]+)[/]*', MSDriverRequestHandler),
     (r'[/]+API[/]*', MSJSONRPCHandler),

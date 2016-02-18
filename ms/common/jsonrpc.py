@@ -172,15 +172,7 @@ class Server(object):
 
     def result(self, result, method=None, response=None):
        
-        # generate and return our response, as well as a hint 
-        # as to whether or not the method (if given) mutated 
-        # state (i.e. so the caller will know whether or not to 
-        # store the UUID of the request)
-        
-        mutable = None 
-        if method is not None and hasattr(method, "mutable"):
-           mutable = method.mutable 
-           
+        # generate and return our response
         if response is not None:
            self.response = response 
            
@@ -204,14 +196,14 @@ class Server(object):
             insert_syndicate_json( result, self.api_version, None, result_sig )
          
         if self.response is None:
-            return (result, mutable)
+            return result
         else:
             if hasattr(self.response, 'headers'):
                 self.response.headers['Content-Type'] = 'application/json'
             if hasattr(self.response, 'write'):
                 self.response.write(json.dumps(result))
         
-        return (result, mutable)
+        return result
      
     # get the list of RPC UUIDs from a result
     @classmethod
@@ -267,8 +259,7 @@ class Server(object):
         # return the result of the response, encoded as a json string 
         # if response is not None, write the response to it (i.e. response is 
         # the response object from the request handler).
-        # return (json text, mutable), where mutable is a hint as to whether or not 
-        # the called method (if invoked) mutated state.
+        # return (json text)
         
         self.response = response
 

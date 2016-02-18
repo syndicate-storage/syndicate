@@ -26,15 +26,6 @@ MS_FILES		:= $(MS_FILES) $(wildcard google/protobuf/compiler/*.py)
 # protobuf-generated files 
 MS_PROTOBUF_FILES	:= $(notdir $(wildcard $(BUILD_PROTOBUFS_PYTHON)/*.py))
 
-# openid files 
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/*.py)
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/server/*.py)
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/extensions/*.py)
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/extensions/draft/*.py)
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/store/*.py) 
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/consumer/*.py)
-# MS_FILES		:= $(MS_FILES) $(wildcard openid/yadis/*.py)
-
 # python templates 
 MS_FILES_IN := $(MS_FILES_IN) $(wildcard common/*.pyin)
 
