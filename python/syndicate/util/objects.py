@@ -166,7 +166,7 @@ def load_driver( driver_path, gateway_privkey_pem ):
       # serialize...
       datab64 = base64.b64encode( data )
       driver[ filename ] = datab64 
-   
+  
    return driver
    
    
@@ -191,126 +191,112 @@ def sign_data( privkey, data ):
    return signature 
 
 
-def load_id( config, object_type, object_name ):
+def verify_data( pubkey_str, data, signature ):
    """
-   Load a .id file to recover the numeric ID of the object on the MS.
-   Return the numeric ID on success.
-   Return None on error 
+   Given a public key, data, and a signature, 
+   verify that the private key signed it.
    """
-   
-   id_path = conf.object_file_path( config, object_type, object_name + ".id" )
-   
-   try:
-      with open( id_path, "r" ) as f:
-         numeric_id_str = f.read().strip()
-         numeric_id = int( numeric_id_str )
-         return numeric_id
-   
-   except Exception, e:
-      return None 
-   
 
-def store_id( config, object_type, object_name, numeric_id ):
-   """
-   Store a numeric ID to an object's .id file.
-   Return True on success 
-   Return False on error
-   """
-   
-   id_path = conf.object_file_path( config, object_type, object_name + ".id" )
-   
    try:
-      with open( id_path, "w") as f:
-         f.write( "%s\n" % str(numeric_id) )
-         return True 
-      
+      key = CryptoKey.importKey( pubkey_str )
    except Exception, e:
+      log.error("importKey %s" % traceback.format_exc() )
+      return False
+   
+   h = HashAlg.new( data )
+   verifier = CryptoSigner.new(key)
+   ret = verifier.verify( h, signature )
+   return ret
+
+
+def load_user_id( config, email ):
+    """
+    Get the user ID from a local cert
+    """
+    user_cert = load_user_cert( config, email )
+    if user_cert is None:
+        return None
+
+    return user_cert.user_id
+
+
+def load_volume_id( config, volume_name ):
+    """
+    Get the volume ID from a local cert
+    """
+    volume_cert = load_volume_cert( config, volume_name )
+    if volume_cert is None:
+        return None 
+
+    return volume_cert.volume_id
+
+
+def load_gateway_id( config, gateway_name ):
+    """
+    Get the gateway ID from a local cert
+    """
+    gateway_cert = load_gateway_cert( config, gateway_name )
+    if gateway_cert is None:
+        return None 
+
+    return gateway_cert.gateway_id
+ 
+
+def load_user_email( config, user_id ):
+    """
+    Get the user email from the ID
+    """
+    user_cert = load_user_cert( config, str(user_id))
+    if user_cert is None:
+        return None 
+
+    return user_cert.email
+
+
+def load_volume_name( config, volume_id ):
+    """
+    Get the volume name from the ID 
+    """
+    volume_cert = load_volume_cert( config, str(volume_id))
+    if volume_cert is None:
+        return None 
+
+    return volume_cert.name 
+
+
+def load_gateway_name( config, gateway_id ):
+    """
+    Get the gateway name from the ID
+    """
+    gateway_cert = load_gateway_cert( config, str(gateway_id))
+    if gateway_cert is None:
+        return None 
+
+    return gateway_cert.name
+
+    
+def link_id_cert( config, object_type, numeric_id, object_name, suffix=".cert" ):
+   """
+   create a hard link to an object's cert using its numeric ID.
+   The cert must already exist.
+   This method is idempotent.
+   Return True on success 
+   Return False if the cert path doesn't refer to a file on disk.
+   """
+   
+   id_path = conf.object_file_path( config, object_type, str(numeric_id) + suffix )
+   cert_path = conf.object_file_path( config, object_type, object_name + suffix )
+
+   if os.path.exists( id_path ):
+      log.debug("ID link exists: %s" % id_path )
+      return True
+ 
+   if not os.path.exists( cert_path ):
+      log.error("No such file or directory: %s" % cert_path)
       return False 
 
-
-def remove_id( config, object_type, object_name ):
-   """
-   Remove a numeric ID for an object.
-   """
-   
-   id_path = conf.object_file_path( config, object_type, object_name + ".id" )
-   
-   try:
-      os.unlink( id_path )
-   except Exception, e:
-      pass 
-  
-
-def find_by_id( config, object_type, owner_id ):
-   """
-   Find a named object, given its ID.
-   WARNING: Expensive; don't use unless you have to.
-   
-   Return the username on success 
-   Return None on error or not found
-   """
-   
-   id_dir = os.path.dirname( conf.object_file_path( config, object_type, "ignored" ) )
-   
-   for id_filename in os.listdir( id_dir ):
-      
-      id_path = os.path.join( id_dir, id_filename )
-      
-      # an id file?
-      if not id_path.endswith(".id"):
-         continue
-      
-      id_str = None
-      with open(id_path, "r") as f:
-         id_str = f.read()
-         
-      try:
-         if owner_id == int( id_str.strip() ):
-            
-            # filename encodes the name
-            return id_filename[:-3]
-      
-      except:
-         # could not parse 
-         pass
-      
-   return None
-   
-   
-def load_name( config, object_type, object_id ):
-   """
-   Load a .name file to recover the name of the object given on the MS.
-   Return the name on success.
-   Return None on error 
-   """
-   
-   id_path = conf.object_file_path( config, object_type, str(object_id) + ".name" )
-   
-   try:
-      with open( id_path, "r" ) as f:
-         name = f.read().strip()
-         return name
-   
-   except Exception, e:
-      return None 
-   
-
-def link_id_cert( config, object_type, numeric_id, object_name ):
-   """
-   create a hard link to an object's cert using its numeric ID
-   Return True on success 
-   Return False on error
-   """
-   
-   id_path = conf.object_file_path( config, object_type, str(numeric_id) + ".cert" )
-   cert_path = conf.object_file_path( config, object_type, object_name + ".cert" )
-   
-   try:
-      os.link( cert_path, id_path )
-      return True 
-  
-   except Exception, e:
-      return False 
+   os.link( cert_path, id_path )
+   return True 
 
 
 def unlink_id_cert( config, object_type, numeric_id ):
@@ -325,7 +311,9 @@ def unlink_id_cert( config, object_type, numeric_id ):
   
    except Exception, e:
       pass 
-  
+ 
+   return True
+
   
 def clock_gettime():
    """
@@ -358,7 +346,7 @@ def make_volume_root( volume_cert ):
    volume_cert.root.owner = volume_cert.owner_id 
    volume_cert.root.coordinator = 0
    volume_cert.root.volume = volume_cert.volume_id 
-   volume_cert.root.mode = 0700
+   volume_cert.root.mode = 0750
    volume_cert.root.size = 4096         # compatibility with most filesystem types 
    volume_cert.root.version = 1
    volume_cert.root.max_read_freshness = 5000           # 5 seconds 
@@ -375,19 +363,26 @@ def make_volume_root( volume_cert ):
    return
    
    
-def load_volume_cert( config, volume_name ):
+def load_volume_cert( config, volume_name_or_id, path=None ):
    """
-   Load a volume cert from disk, owned by the given user.
+   Load a volume cert from disk
    """
    
    volume_cert_pb = None 
-   volume_cert_path = conf.object_file_path( config, "volume", volume_name + ".cert" )
+   volume_cert_path = path 
+
+   if volume_cert_path is None:
+      volume_cert_path = conf.object_file_path( config, "volume", str(volume_name_or_id) + ".cert" )
    
    if not os.path.exists( volume_cert_path ):
       return None 
-   
-   with open(volume_cert_path, "r" ) as f:
-      volume_cert_pb = f.read()
+  
+   try:
+       with open(volume_cert_path, "r" ) as f:
+          volume_cert_pb = f.read()
+   except:
+       log.error("Failed to load volume cert for '%s' (%s)\n" % (str(volume_name_or_id), volume_cert_path))
+       return None
       
    try:
       volume_cert = ms_pb2.ms_volume_metadata() 
@@ -399,36 +394,68 @@ def load_volume_cert( config, volume_name ):
    return volume_cert
 
 
-def store_volume_cert( config, volume_cert ):
+def store_volume_cert( config, volume_cert, path=None ):
    """
    Given a deserialized volume cert, serialize and store it.
    Return True on success
    """
    
    volume_cert_pb = volume_cert.SerializeToString()
-   volume_cert_path = conf.object_file_path( config, "volume", volume_cert.name + ".cert" )
-   
-   with open(volume_cert_path, "w") as f:
-      f.write( volume_cert_pb )
-      f.flush()
-   
+   if path is None:
+       path = conf.object_file_path( config, "volume", volume_cert.name + ".cert" )
+
+   volume_cert_path = path
+  
+   log.debug("Store cert for %s to %s" % (volume_cert.name, volume_cert_path ) )
+   try:
+       with open(volume_cert_path, "w") as f:
+          f.write( volume_cert_pb )
+          f.flush()
+
+   except:
+       log.error("Failed to store volume cert for '%s'" % volume_cert.name )
+       return False
+    
+   try:
+       assert link_id_cert( config, "volume", volume_cert.volume_id, volume_cert.name ) 
+   except:
+       log.error("Failed to store volume cert for '%s'" % volume_cert.name )
+
+       if os.path.exists( volume_cert_path ):
+            os.unlink( volume_cert_path )
+        
+       return False 
+
    return True
 
 
 def remove_volume_cert( config, volume_name ):
    """
    Given the name of a volume, remove its cert.
+   Return True on success; False on failure
    """
-   
+  
+   volume_cert = load_volume_cert( config, volume_name )
+   if volume_cert is None:
+       log.error("Failed to look up ID for '%s'" % volume_name )
+       return False 
+
+   try:
+       assert unlink_id_cert( config, "volume", volume_cert.volume_id )
+   except:
+       log.error("Failed to unlink id for cert '%s' (%s)" % (volume_name, volume_cert.volume_id) )
+       return False
+
    volume_cert_path = conf.object_file_path( config, "volume", volume_name + ".cert" )
    
    try:
       os.unlink( volume_cert_path )
    except:
-      pass
+      log.error("Failed to unlink cert '%s' (%s)" % (volume_name, volume_cert_path))
+      return False
    
 
-def load_gateway_cert( config, gateway_name ):
+def load_gateway_cert( config, gateway_name_or_id, path=None ):
    """
    Given the config dict and the name of the gateway,
    go load its cert if it's on file.
@@ -438,13 +465,20 @@ def load_gateway_cert( config, gateway_name ):
    """
    
    gateway_cert_pb = None 
-   gateway_cert_path = conf.object_file_path( config, "gateway", gateway_name + ".cert" )
+   gateway_cert_path = path 
+
+   if path is None:
+      gateway_cert_path = conf.object_file_path( config, "gateway", str(gateway_name_or_id) + ".cert" )
    
    if not os.path.exists( gateway_cert_path ):
       return None 
-   
-   with open(gateway_cert_path, "r") as f:
-      gateway_cert_pb = f.read()
+  
+   try:
+       with open(gateway_cert_path, "r") as f:
+          gateway_cert_pb = f.read()
+   except:
+      log.error("Failed to read '%s'" % gateway_cert_path )
+      return None
    
    try:
       gateway_cert = ms_pb2.ms_gateway_cert()
@@ -456,19 +490,36 @@ def load_gateway_cert( config, gateway_name ):
    return gateway_cert
 
 
-def store_gateway_cert( config, gateway_cert ):
+def store_gateway_cert( config, gateway_cert, path=None ):
    """
    Given a gateway cert, store it to disk.
    
-   Return True on success 
+   Return True on success; False on failure
    """
    
    gateway_cert_pb = gateway_cert.SerializeToString()
-   gateway_cert_path = conf.object_file_path( config, "gateway", gateway_cert.name + ".cert" )
+
+   if path is None:
+       path = conf.object_file_path( config, "gateway", gateway_cert.name + ".cert" )
+    
+   gateway_cert_path = path
    
-   with open(gateway_cert_path, "w") as f:
-      f.write( gateway_cert_pb )
+   try:
+       with open(gateway_cert_path, "w") as f:
+          f.write( gateway_cert_pb )
+   except:
+       log.error("Failed to write '%s'" % gateway_cert_path )
+       return None
    
+   try:
+       assert link_id_cert( config, "gateway", gateway_cert.gateway_id, gateway_cert.name ) 
+   except:
+       log.error("Failed to write ID link for '%s'" % gateway_cert_path)
+       if os.path.exists( gateway_cert_path ):
+           os.unlink( gateway_cert_path )
+
+       return False 
+
    return True
    
    
@@ -477,6 +528,17 @@ def remove_gateway_cert( config, gateway_name ):
    Remove a gateway cert.
    """
    
+   gateway_cert = load_gateway_cert( config, gateway_name )
+   if gateway_cert is None:
+       log.error("Failed to look up ID for '%s'" % gateway_name )
+       return False 
+
+   try:
+       assert unlink_id_cert( config, "gateway", gateway_cert.gateway_id )
+   except:
+       log.error("Failed to unlink id for cert '%s' (%s)" % (gateway_name, gateway_cert.gateway_id) )
+       return False
+
    gateway_cert_path = conf.object_file_path( config, "gateway", gateway_name + ".cert" )
    
    try:
@@ -485,7 +547,7 @@ def remove_gateway_cert( config, gateway_name ):
       pass 
    
 
-def load_user_cert( config, email ):
+def load_user_cert( config, email_or_id, path=None ):
    """
    Given the config dict and email,
    go load the user's on-file cert.
@@ -495,15 +557,18 @@ def load_user_cert( config, email ):
    """
    
    user_cert_pb = None 
-   user_cert_path = conf.object_file_path( config, "user", email + ".cert" )
+   user_cert_path = path 
+
+   if path is None:
+      user_cert_path = conf.object_file_path( config, "user", str(email_or_id) + ".cert" )
    
    if not os.path.exists( user_cert_path ):
       return None 
    
-   with open(user_cert_path, "r") as f:
-      user_cert_pb = f.read()
-   
    try:
+      with open(user_cert_path, "r") as f:
+         user_cert_pb = f.read()
+   
       user_cert = ms_pb2.ms_user_cert()
       user_cert.ParseFromString( user_cert_pb )
    except Exception, e:
@@ -513,19 +578,34 @@ def load_user_cert( config, email ):
    return user_cert 
 
 
-def store_user_cert( config, user_cert ):
+def store_user_cert( config, user_cert, path=None ):
    """
    Given a user cert, store it to disk.
    
    Return True on success
+   Return False on error
    """
    
    user_cert_pb = user_cert.SerializeToString()
-   user_cert_path = conf.object_file_path( config, "user", user_cert.email + ".cert" )
+   if path is None:
+       path = conf.object_file_path( config, "user", user_cert.email + ".cert" )
+
+   user_cert_path = path
+  
+   try:
+       with open( user_cert_path, "w" ) as f:
+          f.write( user_cert_pb )
+   except:
+       log.error("Failed to store cert for '%s' (%s)" % (user_cert.email, user_cert_path))
+       return False
    
-   with open( user_cert_path, "w" ) as f:
-      f.write( user_cert_pb )
-   
+   try:
+       assert link_id_cert( config, "user", user_cert.user_id, user_cert.email ) 
+   except:
+       log.error("Failed to store ID cert for '%s' (%s)" % (user_cert.user_id, user_cert_path))
+       if os.path.exists( user_cert_path ):
+           os.unlink( user_cert_path )
+
    return True 
 
 
@@ -534,6 +614,17 @@ def remove_user_cert( config, email ):
    Remove a user cert 
    """
    
+   user_cert = load_user_cert( config, email )
+   if user_cert is None:
+       log.error("Failed to look up ID for '%s'" % email )
+       return False 
+
+   try:
+       assert unlink_id_cert( config, "user", user_cert.user_id )
+   except:
+       log.error("Failed to unlink id for cert '%s' (%s)" % (email, user_cert.user_id) )
+       return False
+
    user_cert_path = conf.object_file_path( config, "user", email + ".cert" )
    
    try:
@@ -571,13 +662,13 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
       log.error("Failed to load private key for '%s'" % volume_owner )
       return None 
    
-   owner_id = load_id( config, "user", volume_owner )
+   owner_id = load_user_id( config, volume_owner )
    if owner_id is None:
       log.error("Failed to load user ID for '%s'" % volume_owner )
       return None 
    
    if volume_id is None:
-      volume_id = load_id( config, "volume", volume_name )
+      volume_id = load_volume_id( config, volume_name )
       if volume_id is None:
          log.error("Failed to load ID for volume '%s'" % volume_name )
          return None 
@@ -601,6 +692,9 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    cert_manifest = sg_pb2.Manifest() 
    
    # duplicate information from the volume cert to the cert manifest header
+   # * volume's owner ID:  owner_id
+   # * volume's version:  file_version
+   # * cert bundle version:  mtime_sec
    cert_manifest.volume_id = volume_cert.volume_id
    cert_manifest.coordinator_id = 0
    cert_manifest.file_id = 0
@@ -615,15 +709,24 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    used_new_gateway_cert = False
    
    # find each gateway 
-   gateway_cert_dir = os.path.dirname( conf.object_file_path( config, "gateway", "ignored" ) )
+   gateway_cert_dir = os.path.dirname( conf.object_file_path( config, "gateway", "." ) )
    
    for gateway_cert_filename in os.listdir( gateway_cert_dir ):
       
       # gateway cert?
       if not gateway_cert_filename.endswith(".cert"):
          continue 
-      
+     
       gateway_name = gateway_cert_filename[:-5]
+      
+      # numerical hard-link?
+      try:
+         gateway_id = int(gateway_name)
+
+         # skip--want names only
+         continue
+      except:
+         pass
       
       # are we given this cert already?
       if new_gateway_cert is not None and new_gateway_cert.name == gateway_name:
@@ -648,7 +751,10 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    
    # add volume cert (as block 0)
    cert_block = cert_manifest.blocks.add()
-   
+  
+   # * volume ID: block_id
+   # * volume cert version:  block_version
+   # * volume owner ID: owner_id
    cert_block.block_id = volume_cert.volume_id 
    cert_block.block_version = volume_cert.volume_version
    cert_block.owner_id = volume_cert.owner_id
@@ -660,6 +766,10 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    
    # put the cert information into place...
    # gateways start at block 1
+   # * gateway ID: block_id
+   # * gateway cert version: block_version
+   # * gateway owner ID:  owner_id
+   # * gateway caps:  caps
    for gateway_id in block_order:
       
       gateway_cert = certs[gateway_id]
@@ -667,7 +777,7 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
       cert_block = cert_manifest.blocks.add()
       
       cert_block.block_id = gateway_id 
-      cert_block.block_version = 0
+      cert_block.block_version = gateway_cert.version
       cert_block.owner_id = gateway_cert.owner_id
       cert_block.caps = gateway_cert.caps
       
@@ -739,36 +849,62 @@ class StubObject( object ):
    def Sign( cls, *args, **kw ):
       raise Exception("Called stub Sign method!  Looks like you have an import error somewhere.")
    
+   
    @classmethod
-   def parse_or_generate_private_key( cls, pkey_str, pkey_generate_args, key_size ):
+   def parse_or_generate_private_key( cls, private_key, lib ):
       """
-      Check a private key (pkey_str) and verify that it has the appopriate security 
-      parameters.  If pkey_str is in pkey_generate_args (that is, pkey_str is a directive to generate a key pair),
-      then generate a public/private key pair.
-      Return the key pair.
+      Check a private key and verify that it has the appropriate security 
+      parameters.  Interpret AUTO as a command to generate and return one.
+      
+      private_key can be a literal PEM-encoded private key, the string "auto"
+      (interpreted to mean "generate one for me"), or a path to a private key.
+      
+      Set lib.private_key to be the PEM-encoded private key
+      
+      Return private key, extras.
       """
       import syndicate.ms.api as api
       
-      if pkey_str in pkey_generate_args:
-         # generate one
-         pubkey_str, pkey_str = api.generate_key_pair( key_size )
-         return pubkey_str, pkey_str
+      extra = {}
+      pubkey_pem = None 
       
+      if private_key is None or private_key == "" or private_key.upper() == "AUTO":
+         
+         # generate one
+         _, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
+
+         extra['private_key'] = privkey_pem
+         lib.private_key = privkey_pem
+
       else:
-         # validate a given one
+         
+         # is this a key literal?
          try:
-            pkey = CryptoKey.importKey( pkey_str )
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to parse private key")
+            privkey = CryptoKey.importKey( private_key )
+            if not privkey.has_private():
+                raise Exception("Not a private key")
+            
+            lib.private_key = private_key
+            return private_key, extra
          
-         # is it the right size?
-         if pkey.size() != key_size - 1:
-            raise Exception("Private key has %s bits; expected %s bits" % (pkey.size() + 1, key_size))
+         except:
+            # not a key literal
+            pass
          
-         return pkey.publickey().exportKey(), pkey_str
-   
-   
+         # is this a path?
+         try:
+            privkey = storagelib.read_private_key( private_key )
+         except:
+            raise Exception("Failed to load %s" % private_key )
+         
+         privkey_pem = privkey.exportKey()
+
+         extra['private_key'] = privkey_pem
+         lib.private_key = privkey_pem
+         
+      return privkey_pem, extra
+
+
    @classmethod
    def parse_gateway_caps( cls, caps_str, lib ):
       """
@@ -854,9 +990,6 @@ class StubObject( object ):
       
       parsed = []
       
-      #log.info("argspec: args=%s, defaults=%s" % (argspec.args, argspec.defaults))
-      #log.info("args = %s" % [str(s) for s in args])
-      
       # parse args in order
       for i in xrange(0, len(argspec.args)):
          argname = argspec.args[i]
@@ -891,7 +1024,7 @@ class StubObject( object ):
       Do processing on the parsed args, before calling the method.
       
       Return (args, keywords, extras)
-      
+
       Subclasses should override this.
       """
       
@@ -903,6 +1036,7 @@ class StubObject( object ):
       """
       Replace a single keyword argument.
       """
+
       ret = arg_value_func( cls, value, lib )
       if ret is None:
          raise Exception("Got None for parsing %s" % (arg_name))
@@ -1001,7 +1135,10 @@ class SyndicateUser( StubObject ):
       
       # required 
       "email": (lambda cls, arg, lib: cls.parse_email(arg, lib)),
-      
+     
+      # required for reset 
+      "public_key": (lambda cls, arg, lib: cls.parse_public_key(arg, lib)),
+
       # required for create
       "private_key": (lambda cls, arg, lib: cls.parse_or_generate_private_key(arg, lib)),
       
@@ -1016,69 +1153,37 @@ class SyndicateUser( StubObject ):
       
    }.items() )
    
-   
-   @classmethod
-   def parse_or_generate_private_key( cls, private_key, lib ):
-      """
-      Check a private key and verify that it has the appropriate security 
-      parameters.  Interpret AUTO as a command to generate and return one.
-      
-      private_key can be a literal PEM-encoded private key, the string "auto"
-      (interpreted to mean "generate one for me"), or a path to a private key.
-      
-      Set lib.public_key to be the PEM-encoded public key.
-      Set lib.private_key to be the PEM-encoded private key
-      
-      Return private key, extras.
-      """
-      import syndicate.ms.api as api
-      
-      extra = {}
-      pubkey_pem = None 
-      
-      if private_key is None or private_key == "" or private_key.upper() == "AUTO":
-          
-         pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
-         extra['public_key'] = pubkey_pem
-         extra['private_key'] = privkey_pem
-         
-         public_key = pubkey_pem
-         
-         lib.public_key = pubkey_pem
-         lib.private_key = privkey_pem
-      
-      else:
-         # is this a key literal?
-         try:
-            privkey = CryptoKey.importKey( private_key )
-            if not privkey.has_private():
-                raise Exception("Not a private key")
-            
-            extra['public_key'] = privkey.exportKey()
-            lib.private_key = private_key
-            lib.public_key = extra['public_key']
-            
-            return private_key, extra
-         
-         except:
-            # not a key literal
-            pass
-         
-         # is this a path?
-         try:
-            privkey = storagelib.read_private_key( private_key )
-         except:
-            raise Exception("Failed to load %s" % private_key )
-         
-         privkey_pem = privkey.exportKey()
-         pubkey_pem = privkey.public_key().exportKey()
-         extra['private_key'] = privkey_pem
-         extra['public_key'] = pubkey_pem
-         lib.private_key = privkey_pem
-         lib.public_key = pubkey_pem
-         
-      return privkey_pem, extra
 
+   @classmethod
+   def parse_public_key( cls, public_key, lib):
+       """
+       Load a public key from disk and verify that it has the
+       appropriate security parameters.
+
+       Set lib.public_key to be the PEM-encoded public key.
+
+       Return public_key, extras.
+       """
+
+       extra = {}
+       try:
+           # key literal?
+           pubkey = CryptoKey.importKey( public_key )
+           lib.public_key = pubkey.exportKey()
+           return lib.public_key, extra
+       except:
+           # not a key literal
+           # path to a key?
+           try:
+               pubkey = storagelib.read_public_key( public_key )
+           except:
+               raise Exception("Failed to load %s" % public_key )
+
+           lib.public_key = pubkey.exportKey()
+           extra['public_key'] = lib.public_key      # store this in a cert
+
+           return lib.public_key, extra 
+ 
    
    @classmethod 
    def parse_max_gateways( cls, max_gateways, lib ):
@@ -1169,7 +1274,7 @@ class SyndicateUser( StubObject ):
       if existing_user_cert is not None:
          
          # we can't change the public key once set; we can only reset 
-         if hasattr(lib, "public_key") and lib.public_key != existing_user_cert.public_key and existing_user_cert.public_key != "unset":
+         if extras.get('private_key', None) is not None and existing_user_cert.public_key != "unset":
             raise Exception("Cannot change public key once set.  Instead, reset the user account to do so.")
          
          admin_id = existing_user_cert.admin_id 
@@ -1186,7 +1291,6 @@ class SyndicateUser( StubObject ):
             
             owner_id = random.randint( 0, 2**63 - 1 )
             
-            public_key = getattr(lib, "public_key", None )
             private_key = getattr(lib, "private_key", None )
         
             if is_admin is None:
@@ -1197,18 +1301,24 @@ class SyndicateUser( StubObject ):
                
             if max_gateways is None:
                max_gateways = 10
-         
+
+            if private_key is not None:
+               private_key_struct = CryptoKey.importKey( private_key )
+               public_key = private_key_struct.publickey().exportKey()
+            else:
+               raise Exception("BUG: No private key given or generated")
+
          else:
             # need a cert for all other methods 
             raise Exception("No user cert on file for '%s'" % email)
       
       
-      if method_name in ["create_user", "reset_account_credentials", "delete_user"]:
+      if method_name in ["create_user", "reset_user", "delete_user"]:
          
          # get the admin's ID and private key
          admin_email = config['username']
          admin_privkey = storagelib.load_private_key( config, "user", admin_email )
-         admin_id = load_id( config, "user", admin_email )
+         admin_id = load_user_id( config, admin_email )
          
          if admin_privkey is None:
             raise Exception("No admin private key found for '%s'" % admin_email )
@@ -1218,7 +1328,13 @@ class SyndicateUser( StubObject ):
          
          # admin will be signing this request 
          cert_privkey = admin_privkey
-      
+
+         # new key?
+         if method_name == "reset_user":
+
+            public_key = getattr(lib, "public_key", None)
+            assert public_key is not None, "No new public key given"
+
       else:
          
          # user will be signing this request 
@@ -1284,7 +1400,7 @@ class SyndicateUser( StubObject ):
       
       super( SyndicateUser, cls ).PostProcessResult( extras, config, method_name, args, kw, result )
       
-      if method_name not in ["create_user", "delete_user", "reset_account_credentials"]:
+      if method_name not in ["create_user", "delete_user", "reset_user"]:
          # nothing to do 
          return 
       
@@ -1300,28 +1416,21 @@ class SyndicateUser( StubObject ):
          log.info("Erasing private key for %s" % extras['email'] )
             
          storagelib.erase_private_key( config, "user", extras['email'] )
-         storagelib.erase_public_key( config, "user", extras['email'] )
-         remove_id( config, "user", extras['email'] )
          remove_user_cert( config, extras['email'] )
       
-      elif method_name in ["create_user"]:
-         # created a user or activated an account.
-         # either way, we got back the user's numeric ID, which we should remember 
-         store_id( config, "user", extras['email'], result['owner_id'] )
-         
-         if extras["private_key"] is not None:
-            storagelib.store_private_key( config, "user", extras["email"], extras["private_key"] )           
+      elif method_name in ["create_user", "reset_user"]:
+         # created/regenerated a user
+         if method_name == "reset_user":
+            storagelib.erase_private_key( config, "user", extras['email'] )
+            remove_user_cert( config, extras['email'] )
+
+         if extras.get("private_key", None) is not None:
+            privkey = CryptoKey.importKey( extras['private_key'] )
+            storagelib.store_private_key( config, "user", extras["email"], privkey )           
             
          store_user_cert( config, extras['user_cert'] )
-         storagelib.store_public_key( config, "user", extras['email'], extras['public_key'])
           
-      elif method_name in ['reset_account_credentials']:
-          
-         # blow away old key
-         storagelib.erase_private_key( config, "user", extras['email'] )
-         store_user_cert( config, extras['user_cert'] )
-            
-            
+
 
 class Volume( StubObject ):
    
@@ -1461,7 +1570,7 @@ class Volume( StubObject ):
          
          if owner_username is None:
             owner_id = existing_volume_cert.owner_id
-            owner_username = find_by_id( config, "user", owner_id )
+            owner_username = load_user_email( config, owner_id )
             if owner_username is None:
                
                # no such user 
@@ -1485,7 +1594,7 @@ class Volume( StubObject ):
          volume_public_key = existing_volume_cert.volume_public_key
          
          if owner_id is None:
-            owner_id = load_id( config, "user", owner_username )
+            owner_id = load_user_id( config, owner_username )
          
       else:
          
@@ -1513,8 +1622,17 @@ class Volume( StubObject ):
          # load dependent values
          volume_id = random.randint( 0, 2**63 - 1 )
          volume_version = 0
-         volume_public_key = storagelib.load_public_key( config, "user", owner_username ).exportKey()
-         owner_id = load_id( config, "user", owner_username )
+
+         try:
+             volume_owner_cert = load_user_cert( config, owner_username )
+             assert volume_owner_cert is not None, "No user cert on file: %s" % owner_username 
+
+             volume_public_key = volume_owner_cert.public_key
+         except Exception, e:
+             log.exception(e)
+             raise Exception("Unable to load key for user '%s'" % owner_username)
+
+         owner_id = load_user_id( config, owner_username )
          
          if volume_public_key is None:
             raise Exception("No public key on file for user '%s'" % owner_username)
@@ -1591,14 +1709,14 @@ class Volume( StubObject ):
    
    @classmethod
    def PostProcessResult( cls, extras, config, method_name, args, kw, result ):
-      # process keys 
+      # process keys
       super( Volume, cls ).PostProcessResult( extras, config, method_name, args, kw, result )
-      
+
       if method_name not in ["create_volume", "update_volume", "delete_volume"]:
          # nothing to do 
          return 
       
-      if not result.has_key('error'):
+      if type(result) == bool or not result.has_key('error'):
          
          if method_name in ["create_volume", "update_volume"]:
             
@@ -1610,15 +1728,6 @@ class Volume( StubObject ):
             if not rc:
                raise Exception("Failed to store volume certificate for '%s'" % extras['volume_name'])
          
-            rc = store_id( config, "volume", extras['volume_name'], extras['volume_id'])
-            if not rc: 
-               raise Exception("Failed to store volume ID %s for '%s'" % (extras['volume_id'], extras['volume_name']))
-            
-            rc = link_id_cert( config, "volume", extras['volume_id'], extras['volume_name'])
-            if not rc:
-               raise Exception("Failed to link volume id %s to cert for '%s'" % (extras['volume_id'], extras['volume_name']))
-            
-               
          # delete public key?
          if method_name == "delete_volume":
             
@@ -1629,8 +1738,6 @@ class Volume( StubObject ):
             else:
                
                remove_volume_cert( config, volume_name )
-               remove_id( config, "volume", volume_name )
-               unlink_id_cert( config, "volume", extras['volume_id'] )
                
             
 
@@ -1667,7 +1774,7 @@ class Gateway( StubObject ):
       "expires":                (lambda cls, arg, lib: cls.parse_gateway_cert_expires( arg, lib )),
       
       # can be the string "auto", or a PEM-encoded 4096-bit RSA key
-      "public_key":             (lambda cls, arg, lib: cls.parse_or_generate_gateway_public_key(arg, lib)),
+      "private_key":             (lambda cls, arg, lib: cls.parse_or_generate_private_key(arg, lib)),
      
       # optional; used for development/debugging 
       "cert_version":           (lambda cls, arg, lib: cls.parse_gateway_cert_version( arg, lib ))
@@ -1775,49 +1882,7 @@ class Gateway( StubObject ):
       except Exception, e:
          raise Exception("Unable to parse '%s'.  Expect units of yr, d, h, m, or s")
       
-   
-   @classmethod
-   def parse_or_generate_gateway_public_key( cls, gateway_public_key, lib ):
-      """
-      Load or generate a gateway public key.  Preserve the private key 
-      as extra data if we generate one.
-      
-      Sets lib.gateway_public_key_str, lib.gateway_private_key_str if we generate.
-      Otherwise, sets only lib.gateway_public_key_str
-      
-      Return (public key string, dict with 'gateway_private_key' set to the private key)
-      """
-      
-      pubkey_str = ""
-      privkey_str = None
-      
-      if gateway_public_key.lower() == "auto":
-         # generate a key pair 
-         pubkey_str, privkey_str = cls.parse_or_generate_private_key( "auto", ["auto"], OBJECT_KEY_SIZE )
-         
-      else:
-         # validate a given one
-         try:
-            pubkey = CryptoKey.importKey( gateway_public_key )
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to load public key")
-         
-         # is it the right size?
-         if pubkey.size() != OBJECT_KEY_SIZE - 1:
-            raise Exception("Public key has %s bits; expected %s bits" % (pubkey.size() + 1, OBJECT_KEY_SIZE))
-         
-         pubkey_str = gateway_public_key
-      
-      if privkey_str is not None:
-         extra = {'gateway_private_key': privkey_str}      # pass along to store it on successful call
-         lib.gateway_private_key_str = privkey_str
-         
-      lib.gateway_public_key_str = pubkey_str
-      
-      return pubkey_str, extra
-   
-   
+     
    @classmethod 
    def parse_gateway_driver( cls, driver_path, lib ):
       """
@@ -1927,14 +1992,14 @@ class Gateway( StubObject ):
       elif existing_gateway_cert is not None:
          # get volume cert, and then volume name 
          volume_id = existing_gateway_cert.volume_id 
-         volume_name = find_by_id( config, "volume", volume_id )
+         volume_name = load_volume_name( config, volume_id )
          if volume_name is not None:
             existing_volume_cert = load_volume_cert( config, volume_name )
       
       # given volume?
       if existing_volume_cert is None and hasattr( lib, "volume_id" ):
          volume_id = lib.volume_id
-         volume_name = find_by_id( config, "volume", volume_id )
+         volume_name = load_volume_name( config, volume_id )
          if volume_name is not None:
             existing_volume_cert = load_volume_cert( config, volume_name )
       
@@ -1947,8 +2012,10 @@ class Gateway( StubObject ):
       gateway_name = getattr(lib, "name", None)
       host = getattr(lib, "host", None )
       port = getattr(lib, "port", None )
-      public_key = getattr(lib, "gateway_public_key_str", None)
-      private_key = getattr(lib, "gateway_private_key_str", None)
+      private_key = getattr(lib, "private_key", None)
+      public_key = None
+      if private_key is not None:
+          public_key = CryptoKey.importKey( private_key ).publickey().exportKey()
       cert_expires = getattr(lib, "cert_expires", None)
       caps = getattr(lib, "caps", None)
       driver_path = getattr(lib, "driver_path", None )
@@ -1981,14 +2048,14 @@ class Gateway( StubObject ):
       # sanity check...
       if method_name == "create_gateway":
           if private_key is None:
-              missing.append("gateway_private_key")
+              missing.append("private_key")
       
       if owner_username is None:
          if existing_gateway_cert is not None:
             owner_id = existing_gateway_cert.owner_id 
             
             # find the associated username, so we can get the public key
-            owner_username = find_by_id( config, "user", owner_id )
+            owner_username = load_user_email( config, owner_id )
             if owner_username is None:
                missing.append("email")
          
@@ -2008,7 +2075,7 @@ class Gateway( StubObject ):
          
          elif volume_name is not None:
             # load from the database, if we can 
-            volume_id = load_id( config, "volume", volume_name )
+            volume_id = load_volume_id( config, volume_name )
             if volume_id is None:
                missing.append("volume_name_or_id")
                
@@ -2018,7 +2085,7 @@ class Gateway( StubObject ):
       
       if volume_name is None:
          # we have the ID, so look up the name 
-         volume_name = find_by_id( config, "volume", volume_id )
+         volume_name = load_volume_name( config, volume_id )
          if volume_name is None:
             missing.append("volume_name_or_id")
             
@@ -2031,17 +2098,16 @@ class Gateway( StubObject ):
             port = GATEWAY_DEFAULT_PORT
          
       if len(missing) > 0:
-         raise Exception("Missing the following required keyword arguments: %s" % ", ".join(missing) )
+         raise Exception("%s: Missing the following required keyword arguments: %s" % (method_name, ", ".join(missing) ))
       
       
-      # find or create gateway ID
-   
+      # find or create gateway ID 
       if existing_gateway_cert is not None:
          gateway_id = existing_gateway_cert.gateway_id 
    
       else:
          # load from database, if we can 
-         gateway_id = load_id( config, "gateway", gateway_name )
+         gateway_id = load_gateway_id( config, gateway_name )
          
          if gateway_id is None:
             
@@ -2095,7 +2161,7 @@ class Gateway( StubObject ):
       
       # load user ID
       if owner_id is None:
-         owner_id = load_id( config, "user", owner_username )
+         owner_id = load_user_id( config, owner_username )
          if owner_id is None:
             raise Exception("Unable to determine user ID of '%s'" % owner_username)
       
@@ -2105,9 +2171,14 @@ class Gateway( StubObject ):
       if user_privkey is None:
          raise Exception("No private key found for user '%s'" % owner_username)
       
+      now_sec, _ = clock_gettime()
+
       # load cert expires (1 year default expiry)
       if cert_expires is None:
-         cert_expires = 60 * 60 * 24 * 365
+          if existing_gateway_cert is not None:
+              cert_expires = existing_gateway_cert.cert_expires
+          else:
+              cert_expires = now_sec + 60 * 60 * 24 * 365
       
       # cert version...
       if cert_version is None:
@@ -2119,8 +2190,6 @@ class Gateway( StubObject ):
              
              # first version of this gateway
              cert_version = 1
-         
-      now_sec, _ = clock_gettime()
       
       # generate a cert and sign it with the user's private key and the volume owner's private key
       gateway_cert = ms_pb2.ms_gateway_cert()
@@ -2133,7 +2202,7 @@ class Gateway( StubObject ):
       gateway_cert.port = port 
       gateway_cert.public_key = public_key 
       gateway_cert.version = cert_version
-      gateway_cert.cert_expires = cert_expires + now_sec
+      gateway_cert.cert_expires = cert_expires
       gateway_cert.caps = caps 
       gateway_cert.volume_id = volume_id
       gateway_cert.driver_hash = driver_hash 
@@ -2148,30 +2217,37 @@ class Gateway( StubObject ):
       
       volume_cert_bundle_str = None 
       need_volume_cert_bundle = False
-      
-      if method_name in ["update_gateway"] and (cur_caps | caps) != cur_caps:
-         # we will need a cert bundle if we're expanding the gateway's capabilities
-         # we don't need one otherwise (i.e. if we're changing the gateway's type, host:port, name, cert-expiry, or driver hash)
-         need_volume_cert_bundle = True
+     
+      if method_name in ["update_gateway"]:
+          assert existing_gateway_cert is not None, "Updating a gateway requires its existing certificate"
+
+          if (cur_caps | caps) != cur_caps:
+              # we will need a cert bundle if we're expanding the gateway's capabilities
+              # we don't need one otherwise (i.e. if we're changing the gateway's type, host:port, name, cert-expiry, or driver hash)
+              need_volume_cert_bundle = True
+
+          else:
+              for attrname in ['gateway_id', 'owner_id', 'volume_id']:
+                  assert getattr(gateway_cert, attrname) == getattr(existing_gateway_cert, attrname), "Cannot change field '%s'" % attrname
+
          
       elif method_name in ["create_gateway", "delete_gateway"]:
          need_volume_cert_bundle = True
-      
-      elif owner_id == existing_volume_cert.owner_id and existing_gateway_cert is not None and owner_id == existing_gateway_cert.owner_id:
-         # if the admin or volume owner is updating a gateway besides their own,
-         # then they need to update the bundle as well (so the remote gateway 
-         # will detect the change)
-         need_volume_cert_bundle = True
-      
+     
       # make cert bundle
       if need_volume_cert_bundle:
-         
-         # we must also be the volume owner.
-         if owner_id != existing_volume_cert.owner_id:
-             raise Exception("User '%s' does not own volume '%s'" % (owner_username, volume_name))
-         
+        
+         # load volume owner 
+         volume_cert = load_volume_cert( config, volume_name )
+         if volume_cert is None:
+             raise Exception("No volume certificate on file for '%s'" % volume_name)
+
+         volume_owner_cert = load_user_cert( config, volume_cert.owner_id )
+         if volume_owner_cert is None:
+             raise Exception("No volume owner certificate on file for user '%s'" % volume_cert.user_id)
+
          # generate a certificate bundle.
-         volume_cert_bundle_str = make_volume_cert_bundle( config, owner_username, volume_name, new_gateway_cert=gateway_cert )
+         volume_cert_bundle_str = make_volume_cert_bundle( config, volume_owner_cert.email, volume_name, new_gateway_cert=gateway_cert )
          if volume_cert_bundle_str is None:
              raise Exception("Failed to generate volume cert bundle for Volume '%s' (Gateway '%s')" % (volume_name, gateway_name))
       
@@ -2218,44 +2294,30 @@ class Gateway( StubObject ):
       
       if not result.has_key('error'):
          
-         # store private key key, if we have it
-         if method_name == "create_gateway":
-        
-            # remember our private key 
-            gateway_name = extras.get("name", None)
-            if gateway_name is None:
-                raise Exception("BUG: gateway name not stored")
-            
-            # store it
-            rc = storagelib.store_private_key( config, "gateway", gateway_name, extras['gateway_private_key'] )
-            if not rc:
-                raise Exception("Failed to store private key to for '%s'.  Text: '%s'" % (gateway_name, extras['gateway_private_key']))
-               
-               
+         # store private key and cert, if we have it
          if method_name in ["create_gateway", "update_gateway"]:
-        
-            # remember our cert 
-            gateway_name = extras.get("name", None)
-            if gateway_name is None:
-                raise Exception("BUG: gateway name not stored")
-            
+       
+            gateway_name = extras['name']
+
             gateway_cert = extras.get('gateway_cert', None)
             if gateway_cert is None:
                 raise Exception("BUG: gateway cert not stored")
             
-            gateway_id = extras.get('gateway_id', None)
-            if gateway_id is None:
-                raise Exception("BUG: gateway ID not stored")
-            
-            # store it 
+            # store cert
             store_gateway_cert( config, gateway_cert )
+             
+            # store private key
+            if extras['gateway_private_key'] is not None:
+                private_key = CryptoKey.importKey( extras['gateway_private_key'] )
             
-            # remember our ID 
-            store_id( config, "gateway", gateway_name, gateway_id )
-            
-         else:
-            raise Exception("BUG: gateway cert not stored")
-               
+                # if updating and changing the private key, remove the old private key 
+                if method_name == "update_gateway":
+                    storagelib.erase_private_key( config, "gateway", gateway_name )
+
+                rc = storagelib.store_private_key( config, "gateway", gateway_name, private_key)
+                if not rc:
+                    raise Exception("Failed to store private key to for '%s'.  Text: '%s'" % (gateway_name, extras['gateway_private_key']))
+
          
          # erase private key if deleted
          if method_name == "delete_gateway":
@@ -2266,7 +2328,6 @@ class Gateway( StubObject ):
             else:
                remove_gateway_cert( config, gateway_name )
                storagelib.erase_private_key( config, "gateway", gateway_name )
-               remove_id( config, "gateway", gateway_name )
 
 
 object_classes = [SyndicateUser, Volume, Gateway]
