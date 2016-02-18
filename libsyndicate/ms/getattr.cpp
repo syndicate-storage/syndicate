@@ -502,8 +502,11 @@ int ms_client_getattr_multi( struct ms_client* client, ms_path_t* path, struct m
 // * volume_id 
 // * version 
 // * write_nonce 
-// return 0 on success 
-// return negative on error
+// return 0 on success
+// return -ENODATA on failure to communicate with the MS
+// return -EACCES on permission error in the MS
+// return -ENOENT if the entry doesn't exist
+// return -EBADMSG if the MS replied invalid data
 int ms_client_getattr( struct ms_client* client, struct ms_path_ent* ms_ent, struct md_entry* ent_out ) {
    
    ms_path_t path;
