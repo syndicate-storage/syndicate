@@ -192,6 +192,7 @@ class Gateway( storagetypes.Object ):
    name = storagetypes.String()          # name of this gateway
    g_id = storagetypes.Integer()
    volume_id = storagetypes.Integer(default=-1)
+   deleted = storagetypes.Boolean(default=False)
 
    gateway_public_key = storagetypes.Text()             # PEM-encoded RSA public key to verify control-plane messages (metadata) sent from this gateway.
    
@@ -241,11 +242,11 @@ class Gateway( storagetypes.Object ):
       "gateway_type",
       "host",
       "port",
-      "name",
       "caps",
       "cert_expires",
       "cert_version",
-      "driver_hash"
+      "driver_hash",
+      "gateway_public_key"
    ]
    
    write_attrs_api_required = write_attrs
@@ -259,7 +260,9 @@ class Gateway( storagetypes.Object ):
    ]
    
    validators = {
-      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
+      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 \
+                                  and not is_int(value) \
+                                  and len(value) > 0 ),
       "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) )
    }
    
@@ -479,8 +482,21 @@ class Gateway( storagetypes.Object ):
       return g_key
 
    
+   @classmethod 
+   @storagetypes.concurrent
+   def Read_Async( cls, key, deleted=False ):
+       gw = yield key.get_async()
+       if gw is None:
+           storagetypes.concurrent_return(None)
+
+       if gw.deleted and not deleted:
+            storagetypes.concurrent_return(None)
+
+       storagetypes.concurrent_return(gw)
+
+
    @classmethod
-   def Read( cls, g_name_or_id, async=False, use_memcache=True ):
+   def Read( cls, g_name_or_id, async=False, use_memcache=True, deleted=False ):
       """
       Given a Gateway name or ID, read its record.  Optionally cache it.
       """
@@ -496,7 +512,6 @@ class Gateway( storagetypes.Object ):
          return cls.Read_ByName( gateway_name, async=async, use_memcache=use_memcache )
       
       key_name = Gateway.make_key_name( g_id=g_id )
-
       g = None
       
       if use_memcache:
@@ -506,7 +521,7 @@ class Gateway( storagetypes.Object ):
          g_key = storagetypes.make_key( cls, Gateway.make_key_name( g_id=g_id ) )
          
          if async:
-            g_fut = g_key.get_async( use_memcache=False )
+            g_fut = cls.Read_Async( g_key, deleted=deleted )
             return g_fut
          
          else:
@@ -518,9 +533,16 @@ class Gateway( storagetypes.Object ):
          elif use_memcache:
             storagetypes.memcache.set( key_name, g )
 
-      elif async:
-         g = storagetypes.FutureWrapper( g )
-         
+      else:
+         if async:
+             if g is None or (not deleted and g.deleted):
+                g = storagetypes.FutureWrapper( None )
+             else:
+                g = storagetypes.FutureWrapper( g )
+         else:
+             if g is not None and g.deleted:
+                g = None
+
       return g
 
 
@@ -528,7 +550,8 @@ class Gateway( storagetypes.Object ):
    def Read_ByName_name_cache_key( cls, gateway_name ):
       g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % gateway_name
       return g_name_to_id_cache_key
-   
+  
+
    @classmethod
    def Read_ByName( cls, gateway_name, async=False, use_memcache=True ):
       """
@@ -547,11 +570,11 @@ class Gateway( storagetypes.Object ):
       
       # no dice
       if async:
-         g_fut = cls.ListAll( {"Gateway.name ==": gateway_name}, async=async )
+         g_fut = cls.ListAll( {"Gateway.name ==": gateway_name, "Gateway.deleted ==": False}, async=async )
          return storagetypes.FutureQueryWrapper( g_fut )
       
       else:
-         g = cls.ListAll( {"Gateway.name ==": gateway_name}, async=async )
+         g = cls.ListAll( {"Gateway.name ==": gateway_name, "Gateway.deleted ==": False}, async=async )
          
          if len(g) > 1:
             raise Exception( "More than one Gateway named '%s'" % (gateway_name) )
@@ -571,6 +594,7 @@ class Gateway( storagetypes.Object ):
                storagetypes.memcache.set_multi( to_set )
             
          return g
+
 
    @classmethod 
    def ReadDriver( cls, driver_hash ):
@@ -621,17 +645,19 @@ class Gateway( storagetypes.Object ):
       """
       driver_key_name = GatewayDriver.make_key_name( driver_hash )
       storagetypes.memcache.delete(driver_key_name)
-   
+  
+
    @classmethod
    def Update( cls, gateway_cert, new_driver=None ):
       '''
       Update a gateway identified by ID with a new certificate.
+      Do not call this method directly.
       
       Return the gateway record's key on success
       Raise an exception on error.
       
       NOTE: the caller must verify the authenticity of the certificate.
-      Only the volume owner should be able to update a gateway cert.
+      Only the volume owner should be able to update a gateway cert's capabilities.
       '''
       
       fields = cls.cert_to_dict( gateway_cert )
@@ -640,11 +666,7 @@ class Gateway( storagetypes.Object ):
       # validate...
       invalid = cls.validate_fields( fields )
       if len(invalid) != 0:
-         
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-      
-      rename = False
-      gateway_nameholder_new_key = None
       
       new_driver_hash = None 
       old_driver_hash = None
@@ -654,21 +676,6 @@ class Gateway( storagetypes.Object ):
          new_driver_hash = GatewayDriver.hash_driver( new_driver )
          if binascii.hexlify( gateway_cert.driver_hash ) != new_driver_hash:
             raise Exception("Certificate driver hash mismatch: expected %s, got %s" % (binascii.hexlify( gateway_cert.driver_hash ), new_driver_hash))
-      
-      # do we intend to rename?  If so, reserve the name
-      if "name" in fields.keys() and fields['name'] != gateway_cert.name:
-         gateway_nameholder_new_fut = GatewayNameHolder.create_async( fields.get("name"), g_id )
-         
-         gateway_nameholder_new = gateway_nameholder_new_fut.get_result()
-         gateway_nameholder_new_key = gateway_nameholder_new.key
-         
-         if gateway_nameholder_new.g_id != g_id:
-            # name collision
-            raise Exception("Gateway '%s' already exists!" % (fields.get("name")) )
-         
-         else:
-            # reserved!
-            rename = True
       
       # drop cert; we'll store it separately 
       gateway_cert_bin = fields['gateway_cert']
@@ -684,14 +691,9 @@ class Gateway( storagetypes.Object ):
          gateway = cls.Read(g_id)
          if gateway is None:
             # gateway does not exist...
-            # if we were to rename it, then delete the new nameholder
-            if rename:
-               storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_new_key] )
-               
             raise Exception("No Gateway with the ID %d exists.", g_id)
          
          old_driver_hash = gateway.driver_hash
-         old_name = gateway.name 
          
          # verify update
          unwriteable = []
@@ -723,28 +725,17 @@ class Gateway( storagetypes.Object ):
          # purge from cache
          cls.FlushCache( g_id )
          
-         return gw_key, old_name
+         return gw_key
       
       
       gateway_key = None
-      old_name = None
       try:
-         gateway_key, old_name = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
+         gateway_key = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
          assert gateway_key is not None, "Transaction failed"
       except Exception, e:
          logging.exception( e )
          raise e
       
-      if rename:
-         # delete the old placeholder
-         gateway_nameholder_old_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( old_name ) )
-         storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_old_key] )
-         
-         # make sure Read_ByName uses the right name
-         g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( old_name )
-         storagetypes.memcache.delete( g_name_to_id_cache_key )
-         
-         
       # update the driver as well 
       if new_driver is not None:
           GatewayDriver.create_or_ref( new_driver )
@@ -756,6 +747,7 @@ class Gateway( storagetypes.Object ):
    def Delete( cls, g_name_or_id ):
       """
       Given a gateway ID, delete the corresponding gateway.
+      That is, set it's "deleted" flag so it no longer gets read.
       Unref the driver as well.
       """
       
@@ -767,14 +759,25 @@ class Gateway( storagetypes.Object ):
       
       key_name = Gateway.make_key_name( g_id=g_id )
       
-      g_key = storagetypes.make_key( cls, key_name )
+      def set_deleted():
+          # atomically set the gateway to deleted
+          g_key = storagetypes.make_key( cls, key_name )
+          gw = g_key.get()
+          if gw is None:
+              return None
+
+          gw.deleted = True
+          gw.put()
+          return gw.key 
+
+      storagetypes.transaction( lambda: set_deleted() )
+
       g_name_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( gateway.name ) )
       
-      g_delete_fut = g_key.delete_async()
       g_name_delete_fut = g_name_key.delete_async()
       driver_fut = GatewayDriver.unref_async( gateway.driver_hash )
       
-      storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut, driver_fut] )
+      storagetypes.wait_futures( [g_name_delete_fut, driver_fut] )
       
       Gateway.FlushCache( g_id )
       Gateway.FlushCacheDriver( gateway.driver_hash )
