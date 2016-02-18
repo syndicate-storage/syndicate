@@ -190,6 +190,7 @@ char* md_response_buffer_to_c_string( md_response_buffer_t* rb );
 void md_response_buffer_free( md_response_buffer_t* rb );
 off_t md_response_buffer_size( md_response_buffer_t* rb );
 void* md_memdup( void* buf, size_t len );
+char* SG_strdup_or_die( char const* str );
 
 // linux-specific...
 pid_t gettid(void);

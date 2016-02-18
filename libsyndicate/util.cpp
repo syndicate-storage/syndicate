@@ -1420,7 +1420,15 @@ void* md_memdup( void* buf, size_t len ) {
    memcpy( ret, buf, len );
    return ret;
 }
-   
+
+// duplicate a string, but doe on OOM
+char* SG_strdup_or_die( char const* str ) {
+   char* ret = SG_strdup_or_null( str );
+   if( ret == NULL && str != NULL ) {
+      exit(1);
+   }
+   return ret;
+}
 
 // get task ID (no glibc wrapper around this...)
 pid_t gettid(void) {
