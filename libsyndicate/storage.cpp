@@ -130,35 +130,9 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    memset(cwd, 0, PATH_MAX + 1 );
    
    int rc = 0;
-   
-   // if storage root is NULL, then it's the directory name of the config file 
-   if( c->storage_root == NULL ) {
-       
-       c->storage_root = md_dirname( c->config_file_path, NULL );
-       if( c->storage_root == NULL ) {
-           return -ENOMEM;
-       }
-   }
-   
-   // if data root is NULL, then it's "~/.syndicate/data"
-   if( c->data_root == NULL ) {
-       
-       char* config_dir = NULL;
-       size_t config_dir_len = 0;
-       
-       rc = md_expand_path( SG_DEFAULT_CONFIG_DIR, &config_dir, &config_dir_len );
-       if( rc != 0 ) {
-           return rc;
-       }
-       
-       c->data_root = md_fullpath( config_dir, "data", NULL );
-       if( c->data_root == NULL ) {
-           return -ENOMEM;
-       }
-   }
+   size_t tmp = 0;
    
    char** dirs[] = {
-      &c->storage_root,
       &c->data_root,
       &c->volumes_path,
       &c->gateways_path,
@@ -166,12 +140,12 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       &c->drivers_path,
       &c->logs_path,
       &c->syndicate_path,
+      &c->certs_root,
       (char**)NULL
    };
    
    // NOTE: matches names of dirs
    char const* dir_names[] = {
-      "storage",
       "data",
       "volumes",
       "gateways",
@@ -179,12 +153,18 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       "drivers",
       "logs",
       "syndicate",
+      "certs",
       (char const*)NULL
    };
-   
+
    // NOTE: must be an absolute path 
    md_dirname( c->config_file_path, cwd );
-   
+   if( cwd[0] != '/' ) {
+      SG_error("config file path '%s' is not absolute\n", c->config_file_path );
+      rc = -EINVAL;
+      return rc;
+   }
+
    // expand to full path, and make each directory 
    for( int i = 0; dirs[i] != NULL; i++ ) {
       
@@ -198,13 +178,13 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       
       if( **dirp != '/' ) {
          
+         // relative path
          md_fullpath( cwd, *dirp, path );
          
          SG_safe_free( *dirp );
-         *dirp = SG_strdup_or_null( path );
+         rc = md_expand_path( path, dirp, &tmp );
          
-         if( *dirp == NULL ) {
-            rc = -ENOMEM;
+         if( rc != 0 ) {
             break;
          }
       }
@@ -317,11 +297,11 @@ int md_rmdirs( char const* dirp ) {
    return rc;
 }
 
-// get the path to a certificate 
+// get the path to a cached certificate 
 // path must be long enough--PATH_MAX should be safe--but it will be truncated with '\0'
-void md_object_cert_path( char const* object_dir, char const* object_name, char* path, size_t path_len ) {
+void md_object_cert_path( char const* cert_path, char const* object_type, char const* object_name, char* path, size_t path_len ) {
    
-   snprintf( path, path_len-1, "%s/%s.cert", object_dir, object_name );
+   snprintf( path, path_len-1, "%s/%s-%s.cert", cert_path, object_type, object_name );
    path[ path_len-1 ] = '\0';
 }
 
@@ -350,36 +330,17 @@ int md_syndicate_pubkey_load( char const* syndicate_dir, char const* syndicate_n
 }
 
 
-// store a syndicate public key to disk 
-// return 0 on success 
-// return -errno on filesystem-related errors 
-int md_syndicate_pubkey_store( char const* syndicate_dir, char const* syndicate_name, char* syndicate_pubkey_pem, size_t syndicate_pubkey_pem_len ) {
-    
-    int rc = 0;
-    char path[PATH_MAX+1];
-    
-    snprintf( path, PATH_MAX-1, "%s/%s.pub", syndicate_dir, syndicate_name );
-    rc = md_write_file( path, syndicate_pubkey_pem, syndicate_pubkey_pem_len, 0644 );
-    if( rc < 0 ) {
-        
-        SG_error("md_write_file('%s') rc = %d\n", path, rc );
-        return rc;
-    }
-    
-    return 0;
-}
-
 // load a volume cert from disk 
 // return 0 on success, and populate *volume_cert 
 // return -errno on filesystem-related errors 
-int md_volume_cert_load( char const* volumes_dir, char const* volume_name, ms::ms_volume_metadata* volume_cert ) {
+int md_volume_cert_load( char const* cert_path, char const* volume_name, ms::ms_volume_metadata* volume_cert ) {
    
    int rc = 0;
    char path[ PATH_MAX+1 ];
    char* data = NULL;
    off_t data_len = 0;
    
-   md_object_cert_path( volumes_dir, volume_name, path, PATH_MAX );
+   md_object_cert_path( cert_path, "volume", volume_name, path, PATH_MAX );
    
    data = md_load_file( path, &data_len );
    if( data_len < 0 ) {
@@ -400,76 +361,20 @@ int md_volume_cert_load( char const* volumes_dir, char const* volume_name, ms::m
    return rc;
 }
 
-// store a volume cert from disk 
-// return 0 on success
-// return -errno on filesystem-related errors 
-int md_volume_cert_store( char const* volumes_dir, char const* volume_name, ms::ms_volume_metadata* volume_cert ) {
-   
-   int rc = 0;
-   char path[ PATH_MAX+1 ];
-   char* buf = NULL;
-   size_t buf_len = 0;
-   
-   md_object_cert_path( volumes_dir, volume_name, path, PATH_MAX );
-   
-   rc = md_serialize< ms::ms_volume_metadata >( volume_cert, &buf, &buf_len );
-   if( rc != 0 ) {
-      
-      SG_error("md_serialize rc = %d\n", rc );
-      return rc;
-   }
-   
-   rc = md_write_file( path, buf, buf_len, 0640 );
-   
-   SG_safe_free( buf );
-   
-   if( rc < 0 ) {
-      
-      SG_error("md_write_file('%s') rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   return 0;
-}
-
-
-// remove a volume cert from disk 
-// return 0 on success
-// return -errno on filesystem-related erorrs 
-int md_volume_cert_remove( char const* volumes_dir, char const* volume_name ) {
-   
-   int rc = 0;
-   char path[PATH_MAX+1];
-   
-   md_object_cert_path( volumes_dir, volume_name, path, PATH_MAX );
-   
-   rc = unlink( path );
-   if( rc != 0 ) {
-      
-      rc = -errno;
-      if( rc != -ENOENT ) {
-         
-         SG_error("unlink('%s') rc = %d\n", path, rc );
-      }
-   }
-   
-   return rc;
-}
-
 
 // get a cached gateway certificate 
 // return 0 on success, and populate *cert on success 
 // return -ENOMEM on OOM
 // return -ENOENT if not found
 // return other -errno related to filesystem errors 
-int md_gateway_cert_load( char const* gateways_root, char const* gateway_name, ms::ms_gateway_cert* cert ) {
+int md_gateway_cert_load( char const* cert_path, char const* gateway_name, ms::ms_gateway_cert* cert ) {
    
    int rc = 0;
    char path[ PATH_MAX+1 ];
    char* data = NULL;
    off_t data_len = 0;
    
-   md_object_cert_path( gateways_root, gateway_name, path, PATH_MAX );
+   md_object_cert_path( cert_path, "gateway", gateway_name, path, PATH_MAX );
    
    data = md_load_file( path, &data_len );
    if( data_len < 0 ) {
@@ -490,62 +395,6 @@ int md_gateway_cert_load( char const* gateways_root, char const* gateway_name, m
    return 0;
 }
 
-
-// store a gateway cert from disk
-// return 0 on success
-// return -errno on filesystem-related errors 
-int md_gateway_cert_store( char const* gateways_dir, char const* gateway_name, ms::ms_gateway_cert* gateway_cert ) {
-   
-   int rc = 0;
-   char path[ PATH_MAX+1 ];
-   char* buf = NULL;
-   size_t buf_len = 0;
-   
-   md_object_cert_path( gateways_dir, gateway_name, path, PATH_MAX );
-   
-   rc = md_serialize< ms::ms_gateway_cert >( gateway_cert, &buf, &buf_len );
-   if( rc != 0 ) {
-      
-      SG_error("md_serialize rc = %d\n", rc );
-      return rc;
-   }
-   
-   rc = md_write_file( path, buf, buf_len, 0640 );
-   
-   SG_safe_free( buf );
-   
-   if( rc < 0 ) {
-      
-      SG_error("md_write_file('%s') rc = %d\n", path, rc );
-      return rc;
-   }
-   
-   return 0;
-}
-
-
-// remove a gateway cert from disk 
-// return 0 on success
-// return -errno on filesystem-related erorrs 
-int md_gateway_cert_remove( char const* gateways_dir, char const* gateway_name ) {
-   
-   int rc = 0;
-   char path[PATH_MAX+1];
-   
-   md_object_cert_path( gateways_dir, gateway_name, path, PATH_MAX );
-   
-   rc = unlink( path );
-   if( rc != 0 ) {
-      
-      rc = -errno;
-      if( rc != -ENOENT ) {
-         
-         SG_error("unlink('%s') rc = %d\n", path, rc );
-      }
-   }
-   
-   return rc;
-}
 
 // get a gateway's private key from disk 
 // return 0 on success, and populate *private_key 
@@ -574,14 +423,14 @@ int md_gateway_private_key_load( char const* gateways_root, char const* gateway_
 // return 0 on success
 // return -ENOMEM on OOM 
 // return -errno on filesystem-related errors
-int md_user_cert_load( char const* users_root, char const* username, ms::ms_user_cert* user_cert ) {
+int md_user_cert_load( char const* certs_path, char const* username, ms::ms_user_cert* user_cert ) {
    
    int rc = 0;
    char* data = NULL;
    long data_len = 0;
    char path[ PATH_MAX+1 ];
    
-   md_object_cert_path( users_root, username, path, PATH_MAX );
+   md_object_cert_path( certs_path, "user", username, path, PATH_MAX );
    
    data = md_load_file( path, &data_len );
    if( data_len < 0 || data == NULL ) {
@@ -602,34 +451,31 @@ int md_user_cert_load( char const* users_root, char const* username, ms::ms_user
 }
 
 
-// store a user cert from disk 
+// load a cached cert bundle from disk 
 // return 0 on success
-// return -errno on filesystem-related errors 
-int md_user_cert_store( char const* users_dir, char const* username, ms::ms_user_cert* user_cert ) {
+// return -ENOMEM on OOM 
+// return -errno on filesystem-related errors
+int md_cert_bundle_load( char const* certs_path, char const* volume_name, SG_messages::Manifest* cert_bundle ) {
    
    int rc = 0;
+   char* data = NULL;
+   long data_len = 0;
    char path[ PATH_MAX+1 ];
-   char* buf = NULL;
-   size_t buf_len = 0;
    
-   md_object_cert_path( users_dir, username, path, PATH_MAX );
-
-   SG_debug("store user cert '%s'\n", path );
+   snprintf( path, PATH_MAX-1, "%s/%s.bundle", certs_path, volume_name );
    
-   rc = md_serialize< ms::ms_user_cert >( user_cert, &buf, &buf_len );
-   if( rc != 0 ) {
+   data = md_load_file( path, &data_len );
+   if( data_len < 0 || data == NULL ) {
       
-      SG_error("md_serialize rc = %d\n", rc );
-      return rc;
+      SG_error("md_load_file('%s') rc = %d\n", path, (int)data_len);
+      return (int)data_len;
    }
    
-   rc = md_write_file( path, buf, buf_len, 0640 );
+   rc = md_parse< SG_messages::Manifest >( cert_bundle, data, data_len );
+   SG_safe_free( data );
    
-   SG_safe_free( buf );
-   
-   if( rc < 0 ) {
-      
-      SG_error("md_write_file('%s') rc = %d\n", path, rc );
+   if( rc != 0 ) {
+      SG_error("Failed to load user cert '%s'\n", path );
       return rc;
    }
    
@@ -637,29 +483,30 @@ int md_user_cert_store( char const* users_dir, char const* username, ms::ms_user
 }
 
 
-// remove a user cert from disk 
+// load a cached driver from disk
 // return 0 on success
-// return -errno on filesystem-related erorrs 
-int md_user_cert_remove( char const* users_dir, char const* username ) {
-   
-   int rc = 0;
-   char path[PATH_MAX+1];
-   
-   md_object_cert_path( users_dir, username, path, PATH_MAX );
-   SG_debug("unlink user cert '%s'\n", path );
-   
-   rc = unlink( path );
-   if( rc != 0 ) {
-      
-      rc = -errno;
-      if( rc != -ENOENT ) {
-         
-         SG_error("unlink('%s') rc = %d\n", path, rc );
-      }
+// return -ENOMEM on OOM 
+// return -errno for filesystem-related errors 
+int md_driver_load( char const* certs_path, char const* hash, char** driver_text, size_t* driver_text_len ) {
+
+   char* data = NULL;
+   long data_len = 0;
+   char path[ PATH_MAX+1 ];
+
+   snprintf( path, PATH_MAX-1, "%s/driver-%s", certs_path, hash );
+
+   data = md_load_file( path, &data_len );
+   if( data_len < 0 || data == NULL ) {
+
+      SG_error("md_load_file('%s') rc = %d\n", path, (int)data_len );
+      return (int)data_len;
    }
-   
-   return rc;
+
+   *driver_text = data;
+   *driver_text_len = data_len;
+   return 0;
 }
+
 
 
 // load the cached cert bundle version 
@@ -667,7 +514,7 @@ int md_user_cert_remove( char const* users_dir, char const* username ) {
 // return -EPERM on failure
 // return -ENOMEM on OOM 
 // return -errno on filesystem-related error 
-int md_cert_bundle_version_load( char const* volumes_root, char const* volume_name, uint64_t* cert_bundle_version ) {
+int md_cert_bundle_version_load( char const* certs_path, char const* volume_name, uint64_t* cert_bundle_version ) {
    
    char path[ PATH_MAX+1 ];
    char* data = NULL;
@@ -675,7 +522,7 @@ int md_cert_bundle_version_load( char const* volumes_root, char const* volume_na
    uint64_t ret = 0;
    char* tmp = NULL;
    
-   snprintf( path, PATH_MAX-1, "%s/%s.version", volumes_root, volume_name );
+   snprintf( path, PATH_MAX-1, "%s/bundle.version", certs_path );
    path[ PATH_MAX ] = '\0';
    
    data = md_load_file( path, &data_len );
@@ -695,28 +542,4 @@ int md_cert_bundle_version_load( char const* volumes_root, char const* volume_na
    return 0;
 }
 
-
-// store the cert bundle version
-// return 0 on succes 
-// return -errno on filesystem-related error 
-int md_cert_bundle_version_store( char const* volumes_root, char const* volume_name, uint64_t cert_bundle_version ) {
-   
-   int rc = 0;
-   char path[ PATH_MAX+1 ];
-   char data_buf[50];
-   
-   snprintf( path, PATH_MAX-1, "%s/%s.version", volumes_root, volume_name );
-   path[ PATH_MAX ] = '\0';
-   
-   snprintf( data_buf, 49, "%" PRIu64, cert_bundle_version );
-   data_buf[49] = '\0';
-   
-   rc = md_write_file( path, data_buf, strlen(data_buf), 0640 );
-   if( rc < 0 ) {
-      
-      SG_error("md_write_file('%s') rc = %d\n", path, rc );
-   }
-   
-   return rc;
-}
 
