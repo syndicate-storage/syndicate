@@ -30,8 +30,17 @@ logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s
 
 log = logging.getLogger()
 
-CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
-CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
+CONFIG_DIR = "~/.syndicate"
+CONFIG_FILENAME = "~/.syndicate/syndicate.conf"
+
+def default_config_dir():
+    global CONFIG_DIR
+    return os.path.expanduser(CONFIG_DIR)
+
+def default_config_path():
+    global CONFIG_FILENAME
+    return os.path.expanduser(CONFIG_FILENAME)
+
 
 CONFIG_DESCRIPTION = "Syndicate Administration Tool"
 
@@ -39,13 +48,41 @@ OBJECT_DIR_NAMES = {
    "volume": "volumes",
    "user": "users",
    "gateway": "gateways",
-   "syndicate": "syndicate"
+   "syndicate": "syndicate",
+   "certs": "certs",
+   "data": "data",
+   "drivers": "drivers",
+   "logs": "logs"
 }
 
+CONFIG_SYNDICATE_KEYS = [
+   "MS_url",
+   "username",
+   "volumes",
+   "users",
+   "gateways",
+   "syndicate",
+   "drivers",
+   "logs",
+   "data",
+   "certs"
+]
+   
 CONFIG_DEFAULTS = {
    "MS_url": "http://127.0.0.1:8080",
    'trust_public_key': False,
-   'debug': False
+   'debug': False,
+   'helpers': {
+       'fetch_user_cert': "/usr/local/lib/syndicate/fetch_user_cert",
+       'fetch_gateway_cert': "/usr/local/lib/syndicate/fetch_gateway_cert",
+       'fetch_volume_cert': "/usr/local/lib/syndicate/fetch_volume_cert",
+       'fetch_cert_bundle': "/usr/local/lib/syndicate/fetch_cert_bundle",
+       'fetch_driver': "/usr/local/lib/syndicate/fetch_driver",
+       'fetch_syndicate_pubkey': "/usr/local/lib/syndicate/fetch_syndicate_pubkey",
+       'validate_user_cert': "/usr/local/lib/syndicate/validate_user_cert",
+       'certs_reload': "/usr/local/lib/syndicate/certs_reload",
+       'driver_reload': "/usr/local/lib/syndicate/driver_reload"
+    }
 }
 
 # 'syndicate' section of the config file
@@ -56,6 +93,7 @@ CONFIG_OPTIONS = {
    "gateway_keys":      ("-G", 1, "Path to the directory holding the Gateway private keys."),
    "user_keys":         ("-K", 1, "Path to the directory holding the User private keys."),
    "syndicate_keys":    ("-S", 1, "Path to the directory holding the Syndicate public keys."),
+   "certs_dir":         ("-C", 1, "Path to the directory to store remotely-fetched certificates."),
    "helpers":           ("-l", 1, "Path to the directory holding the Syndicate helper programs."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "debug":             ("-d", 0, "Verbose debugging output"),
@@ -72,7 +110,9 @@ HELPER_OPTIONS = {
    "fetch_cert_bundle":     (None, 0, "Program to fetch a volume's certificate bundle"),
    "fetch_driver":          (None, 0, "Program to fetch a gateway's driver"),
    "fetch_syndicate_pubkey":   (None, 0, "Program to fetch a Syndicate instance's signing key"),
-   "validate_user_cert":    (None, 0, "Program to validate and authenticate a user's certificate")
+   "validate_user_cert":    (None, 0, "Program to validate and authenticate a user's certificate"),
+   "certs_reload":          (None, 0, "Program to repopulate the certificate cache"),
+   "driver_reload":         (None, 0, "Program to repopulate the driver cache")
 }
 
 class ArgLib(object):
@@ -212,7 +252,7 @@ def object_file_path( config, object_type, object_id ):
    """
    dirname = config.get( OBJECT_DIR_NAMES.get( object_type, None ) )
    if dirname == None:
-      raise Exception("Could not get directory for type '%s'" % object_type)
+      raise Exception("Could not get directory for type '%s' (config = %s, object_dir_names = %s)" % (object_type, config, OBJECT_DIR_NAMES))
   
    return os.path.join( dirname, str(object_id) )
 
@@ -305,11 +345,11 @@ def fill_defaults( config ):
    """
    Fill a config dict with default values.
    """
-   global OBJECT_DIR_NAMES, CONFIG_DEFAULTS
+   global CONFIG_DEFAULTS
    
    config.update( CONFIG_DEFAULTS )
    
-   extend_key_paths( config, CONFIG_DIR )
+   extend_key_paths( config, default_config_path())
    config['_in_argv'] = []
    config['_in_config'] = []
    
