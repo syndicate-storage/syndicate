@@ -77,7 +77,17 @@ Now, you can create gateways for the volume--the network-addressed processes tha
 
 ```
     $ ./syndicate create_gateway email="$MS_APP_ADMIN_EMAIL" volume="test-volume" name="test-volume-UG-01" private_key=auto type=UG
-    $ ./syndicate update_gateway name="test-volume-UG-01" caps=ALL
+    $ ./syndicate update_gateway test-volume-UG-01 caps=ALL
 ```
 
 This will create a user gateway called `test-volume-UG-01`, generate and store a key pair for it automatically, and enable all capabilities for it.  Similarly, you can do so for **replica gateways** (using `type=RG`) and **acquisition gateways** (using `type=AG`).  Replica gateways take data from user gateways and forward it to persistent storage.  Acquisition gateways consume data from existing storage and make it available as files and directories in the volume.
+
+Gateways are dynamically programmable via drivers.  There are some sample drivers in `python/syndicate/drivers/ag/disk` (an AG driver that imports local files into a volume) and `python/syndicate/drivers/rg/s3` (an RG driver that replicates data to Amazon S3).  Drivers are specific to the type of gateway--you cannot use an RG driver for an AG, for example.
+
+To set a driver, you should use the `driver=` flag in the `update_gateway` directive.  For example:
+
+```
+    $ ./syndicate update_gateway sample-AG driver=../python/syndicate/drivers/ag/disk
+```
+
+The gateway should automatically fetch and instantiate the driver when it next reloads and revalidates its certificate bundle.
