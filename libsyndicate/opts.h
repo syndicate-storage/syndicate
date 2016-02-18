@@ -26,10 +26,6 @@
 #define _XOPEN_SOURCE 
 #endif 
 
-#include <wordexp.h>
-
-#define SYNDICATE_OPTS_STDIN_MAX 65536 
-
 // command-line options
 struct md_opts;
 
@@ -47,6 +43,7 @@ int md_opts_parse_long( int c, char* opt, long* result );
 bool md_opts_get_client( struct md_opts* opts );
 bool md_opts_get_ignore_driver( struct md_opts* opts );
 uint64_t md_opts_get_gateway_type( struct md_opts* opts );
+char const* md_opts_get_config_file( struct md_opts* opts );
 
 // setters (e.g. for python)
 void md_opts_set_client( struct md_opts* opts, bool client );

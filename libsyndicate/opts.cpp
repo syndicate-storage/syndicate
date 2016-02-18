@@ -48,6 +48,10 @@ uint64_t md_opts_get_gateway_type( struct md_opts* opts ) {
    return opts->gateway_type;
 }
 
+char const* md_opts_get_config_file( struct md_opts* opts ) {
+   return opts->config_file;
+}
+
 // set the "client" override 
 void md_opts_set_client( struct md_opts* opts, bool client ) {
    opts->client = client;
@@ -115,6 +119,7 @@ int md_opts_parse_long( int c, char* opt, long* result ) {
    return rc;
 }
 
+/*
 // read all of stdin 
 // return the number of bytes read on success
 // return -EOVERFLOW if we read more than SYNDICATE_OPTS_STDIN_MAX
@@ -195,6 +200,7 @@ int md_read_opts_from_stdin( int* argc, char*** argv ) {
       return 0;
    }
 }
+*/
 
 // free the opts structure 
 // always succeeds 
@@ -245,7 +251,7 @@ int md_load_mlock_buf( struct mlock_buf* buf, char* str ) {
 // return -EINVAL if there are duplicate short opt definitions
 // return -ENOMEM if out of memory
 // return 1 if the caller wanted help
-int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
+int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
@@ -515,8 +521,10 @@ int md_opts_parse_impl( struct md_opts* opts, int argc, char** argv, int* out_op
 
 // parse syndicate options
 int md_opts_parse( struct md_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
-   
-   int rc = md_opts_parse_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
+  
+   optind = 1;
+
+   int rc = md_opts_parse_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler );
    if( rc != 0 ) {
       return rc;
    }
