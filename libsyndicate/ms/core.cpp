@@ -819,6 +819,45 @@ struct ms_gateway_cert* ms_client_get_gateway_cert( struct ms_client* client, ui
    return cert;
 }
 
+
+// get the number of gateway certs
+uint64_t ms_client_get_num_gateways( struct ms_client* client ) {
+
+   uint64_t ret = 0;
+
+   ms_client_config_rlock( client );
+   ret = client->certs->size();
+   ms_client_config_unlock( client );
+
+   return ret;
+}
+
+
+// copy in the gateway IDs to the given id_buf
+// if the buf is too small, return -ERANGE
+// return the number copied otherwise.
+int ms_client_get_gateway_ids( struct ms_client* client, uint64_t* id_buf, size_t id_buf_len ) {
+
+   int num_copied = 0;
+
+   ms_client_config_rlock( client );
+
+   if( id_buf_len < client->certs->size() ) {
+      ms_client_config_unlock( client );
+      return -ERANGE;
+   }
+
+   for( ms_cert_bundle::iterator itr = client->certs->begin(); itr != client->certs->end(); itr++ ) {
+
+      id_buf[num_copied] = itr->first;
+      num_copied++; 
+   }
+
+   ms_client_config_unlock( client );
+   return num_copied;
+}
+
+
 // get a cert's capability bits
 // return the bitmask on success
 // return 0 if there is no such gateway (i.e. non-existent gateways have no capabilities)

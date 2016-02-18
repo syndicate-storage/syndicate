@@ -174,6 +174,8 @@ EVP_PKEY* ms_client_my_pubkey( struct ms_client* client );
 EVP_PKEY* ms_client_my_privkey( struct ms_client* client );
 
 struct ms_gateway_cert* ms_client_get_gateway_cert( struct ms_client* client, uint64_t gateway_id );
+uint64_t ms_client_get_num_gateways( struct ms_client* client );
+int ms_client_get_gateway_ids( struct ms_client* client, uint64_t* id_buf, size_t id_buf_len );
 uint64_t ms_client_get_gateway_caps( struct ms_client* client, uint64_t gateway_id );
 
 int ms_client_get_gateways_by_type( struct ms_client* client, uint64_t gateway_type, uint64_t** gateway_ids, size_t* num_gateway_ids );
