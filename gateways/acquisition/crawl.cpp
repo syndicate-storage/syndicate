@@ -246,6 +246,274 @@ static int AG_crawl_parse_stanza( char** lines, int* cmd, char** path, struct md
 }
 
 
+// set the version for a range of blocks
+// return 0 on success
+// return negative on error
+static int AG_crawl_blocks_reversion( struct UG_state* ug, UG_handle_t* h, uint64_t block_id_start, uint64_t block_id_end, int64_t version ) {
+
+   int rc = 0;
+
+   for( uint64_t i = block_id_start; i <= block_id_end; i++ ) {
+
+      rc = UG_putblockinfo( ug, i, version, NULL, h );
+      if( rc != 0 ) {
+         SG_error("UG_putblockinfo(%" PRIu64 ") rc = %d\n", i, rc );
+         break;
+      }
+   }
+
+   return rc;
+}
+
+// handle a 'create' command
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EPERM on failure to execute the operation
+// return -EACCES on permission error
+// return -EEXIST if the requested entry already exists
+// return -ENOENT if a parent directory does not exist
+// return -EREMOTEIO on all other errors
+static int AG_crawl_create( struct AG_state* core, char const* path, struct md_entry* ent ) {
+
+   int rc = 0;
+   struct SG_gateway* gateway = AG_state_gateway( core );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   struct UG_state* ug = AG_state_ug( core );
+   struct timespec now;
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
+   uint64_t num_blocks = 0;
+   int close_rc = 0;
+   UG_handle_t* h = NULL;
+
+   ent->file_id = ms_client_make_file_id();
+
+   // try to create or mkdir 
+   if( ent->type == MD_ENTRY_FILE ) {
+
+       clock_gettime( CLOCK_REALTIME, &now );
+
+       ent->manifest_mtime_sec = now.tv_sec;
+       ent->manifest_mtime_nsec = now.tv_nsec;
+       ent->mtime_sec = now.tv_sec;
+       ent->mtime_nsec = now.tv_nsec;
+       ent->ctime_sec = now.tv_sec;
+       ent->ctime_nsec = now.tv_nsec;
+
+       h = UG_publish( ug, path, ent, &rc );
+       if( h == NULL ) {
+
+          SG_error("UG_publish(%s) rc = %d\n", path, rc );
+          goto AG_crawl_create_out;
+       }
+
+       // fill in manifest block info: block id, block version (but not hash)
+       num_blocks = (ent->size / block_size) + 1;
+
+       rc = AG_crawl_blocks_reversion( ug, h, 0, num_blocks, 1 );
+       if( rc != 0 ) {
+          SG_error("AG_crawl_blocks_reversion(%s[%" PRIu64 "-%" PRIu64 "], %" PRId64 ") rc = %d\n",
+                path, (uint64_t)0, num_blocks, (uint64_t)1, rc );
+       }
+
+       close_rc = UG_close( ug, h );
+       if( close_rc != 0 ) {
+
+          SG_error("UG_close(%s) rc = %d\n", path, close_rc );
+       }
+       
+       h = NULL;
+   }
+
+   else {
+
+      rc = UG_mkdir( ug, path, ent->mode );
+      if( rc != 0 ) {
+         
+         SG_error("UG_mkdir(%s) rc = %d\n", path, rc );
+         goto AG_crawl_create_out;         
+      }
+   }
+
+AG_crawl_create_out:
+   
+   if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST && rc != -ENOENT ) {
+       rc = -EREMOTEIO;
+   }
+   return rc;
+}
+
+
+// handle an 'update' command
+// * reversion each block that already existed (i.e. on a size increase, reversion the blocks affecting bytes <= size)
+// * add blocks for new data (on size increase)
+// * if the size decreased, truncate the file
+// * post new metadata to the MS 
+// This method will go and fetch the previous inode's metadata.
+// return 0 on success
+// return -ENOENT if the entry does not exist on the MS
+// return -EACCES if we're not allowed to read it
+// return -EREMOTEIO on failure to communicate with the MS
+static int AG_crawl_update( struct AG_state* core, char const* path, struct md_entry* ent ) {
+
+   int rc = 0;
+   struct SG_gateway* gateway = AG_state_gateway( core );
+   struct ms_client* ms = SG_gateway_ms( gateway );
+   struct UG_state* ug = AG_state_ug( core );
+   struct timespec now;
+   struct SG_client_WRITE_data* update = NULL;
+   uint64_t block_size = ms_client_get_volume_blocksize( ms );
+   int close_rc = 0;
+   UG_handle_t* h = NULL;
+   struct md_entry prev_ent;
+   uint64_t new_block_id_start = 0;
+   uint64_t num_blocks = 0;
+   int64_t max_version = 0;
+   int64_t tmp_version = 0;
+
+   memset( &prev_ent, 0, sizeof(prev_ent) );
+
+   if( ent->file_id == MD_ENTRY_FILE ) {
+
+      // see how we differ 
+      h = UG_open( ug, path, O_RDONLY, &rc );
+      if( h == NULL ) {
+         SG_error("UG_open('%s') rc = %d\n", path, rc );
+         goto AG_crawl_update_out;
+      }
+
+      rc = UG_stat_raw( ug, path, &prev_ent );
+      if( rc != 0 ) {
+         SG_error("UG_stat_raw('%s') rc = %d\n", path, rc );
+         goto AG_crawl_update_out;
+      }
+
+      if( prev_ent.size < ent->size ) {
+
+         // got bigger
+         // make new blocks
+         new_block_id_start = prev_ent.size / block_size;
+         num_blocks = (ent->size / block_size) + 1;
+
+         // maximum block version so far... 
+         for( uint64_t i = new_block_id_start; i < num_blocks; i++ ) {
+
+            rc = UG_getblockinfo( ug, i, &tmp_version, NULL, h );
+            if( rc != 0 ) {
+               if( rc != -ENOENT ) {
+                  SG_error("UG_getblockinfo(%" PRIu64 ") rc = %d\n", i, rc );
+                  goto AG_crawl_update_out;
+               }
+            }
+            else {
+                if( tmp_version > max_version ) {
+                   max_version = tmp_version;
+                }
+            }
+         }
+
+         rc = AG_crawl_blocks_reversion( ug, h, new_block_id_start, num_blocks, max_version + 1 );
+         if( rc != 0 ) {
+            SG_error("AG_crawl_blocks_reversion(%s[%" PRIu64 "-%" PRIu64 "] %" PRId64 ") rc = %d\n", path, new_block_id_start, num_blocks, max_version + 1, rc );
+            goto AG_crawl_update_out;
+         }
+      }
+      else if( prev_ent.size > ent->size ) {
+
+         // shrank
+         // truncate 
+         rc = UG_truncate( ug, path, ent->size );
+         if( rc != 0 ) {
+            SG_error("UG_truncate('%s', %" PRIu64 ") rc = %d\n", path, ent->size, rc );
+            goto AG_crawl_update_out;
+         }
+
+         // already updated on the MS, so nothing more to do 
+         goto AG_crawl_update_out;
+      }
+   }
+
+   // generate the metadata update... 
+   update = SG_client_WRITE_data_new();
+   if( update == NULL ) {
+      rc = -ENOMEM;
+      goto AG_crawl_update_out;
+   }
+
+   clock_gettime( CLOCK_REALTIME, &now );
+
+   SG_client_WRITE_data_set_mtime( update, &now );
+   SG_client_WRITE_data_set_mode( update, ent->mode );
+   SG_client_WRITE_data_set_owner_id( update, ent->owner );
+
+   rc = UG_update( ug, path, update );
+
+   SG_safe_free( update );
+
+   if( rc != 0 ) {
+
+      SG_error("UG_update(%s) rc = %d\n", path, rc );
+      goto AG_crawl_update_out;
+   }
+
+AG_crawl_update_out:
+
+   if( rc != -EPERM && rc != -ENOMEM && rc != -ENOENT && rc != -EACCES ) {
+      rc = -EREMOTEIO;
+   }
+
+   if( h != NULL ) {
+      close_rc = UG_close( ug, h );
+      if( close_rc != 0 ) {
+         SG_error("UG_close('%s') rc = %d\n", path, close_rc );
+      }
+   }
+
+   return rc;
+}
+
+
+// handle a delete 
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EPERM if the operation could not be completed
+// return -EACCES if we don't have permission to delete this
+// return -ENOENT if the entry doesn't exist
+// return -EREMOTEIO on failure to communicate with the MS
+static int AG_crawl_delete( struct AG_state* core, char const* path, struct md_entry* ent ) {
+
+   int rc = 0;
+   struct UG_state* ug = AG_state_ug( core );
+
+   if( ent->type == MD_ENTRY_FILE ) {
+      
+      rc = UG_unlink( ug, path );
+      if( rc != 0 ) {
+
+         SG_error("UG_unlink(%s) rc = %d\n", path, rc );
+         goto AG_crawl_delete_out;
+      }
+   }
+   
+   else {
+
+      rc = UG_rmdir( ug, path );
+      if( rc != 0 ) {
+
+         SG_error("UG_rmdir(%s) rc = %d\n", path, rc );
+         goto AG_crawl_delete_out;
+      }
+   }
+
+AG_crawl_delete_out:
+
+   if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -ENOENT ) {
+      rc = -EREMOTEIO;
+   }
+
+   return rc;
+}
+
+
 // handle one crawl command
 // return 0 on success
 // return 1 if there are no more commands to be had
@@ -260,12 +528,6 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
    int rc = 0;
    struct SG_gateway* gateway = AG_state_gateway( core );
    struct ms_client* ms = SG_gateway_ms( gateway );
-   struct UG_state* ug = AG_state_ug( core );
-   struct timespec now;
-   struct SG_client_WRITE_data* update = NULL;
-   uint64_t block_size = ms_client_get_volume_blocksize( ms );
-   uint64_t num_blocks = 0;
-   UG_handle_t* h = NULL;
 
    // enforce these...
    ent->coordinator = SG_gateway_id( gateway );
@@ -274,125 +536,29 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
    switch( cmd ) {
       case AG_CRAWL_CMD_CREATE: {
 
-         ent->file_id = (uint64_t)md_random64();
-
-         // try to create or mkdir 
-         if( ent->type == MD_ENTRY_FILE ) {
-
-             clock_gettime( CLOCK_REALTIME, &now );
-
-             ent->manifest_mtime_sec = now.tv_sec;
-             ent->manifest_mtime_nsec = now.tv_nsec;
-             ent->mtime_sec = now.tv_sec;
-             ent->mtime_nsec = now.tv_nsec;
-             ent->ctime_sec = now.tv_sec;
-             ent->ctime_nsec = now.tv_nsec;
-
-             h = UG_publish( ug, path, ent, &rc );
-             if( h == NULL ) {
-
-                SG_error("UG_publish(%s) rc = %d\n", path, rc );
-                if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST && rc != -ENOENT ) {
-                    rc = -EREMOTEIO;
-                }
-                break;
-             }
-
-             // fill in manifest block info: block id, block version (but not hash)
-             num_blocks = (ent->size / block_size) + 1;
-             for( uint64_t i = 0; i < num_blocks; i++ ) {
-
-                rc = UG_putblockinfo( ug, i, 1, NULL, h );
-                if( rc != 0 ) {
-                   SG_error("UG_putblockinfo(%s[%" PRId64 "]) rc = %d\n", path, i, rc );
-                   break;
-                }
-             }
-
-             rc = UG_close( ug, h );
-             if( rc != 0 ) {
-
-                SG_error("UG_close(%s) rc = %d\n", path, rc );
-                break;
-             }
-
-             h = NULL;
-             break;
-         }
-
-         else {
-
-            rc = UG_mkdir( ug, path, ent->mode );
-            if( rc != 0 ) {
-               
-               SG_error("UG_mkdir(%s) rc = %d\n", path, rc );
-               if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST ) {
-                   rc = -EREMOTEIO;
-               }
-               break;
-            }
+         rc = AG_crawl_create( core, path, ent );
+         if( rc != 0 ) {
+            SG_error("AG_crawl_create(%s) rc = %d\n", path, rc );
          }
 
          break;
       }
    
       case AG_CRAWL_CMD_UPDATE: {
-      
-          update = SG_client_WRITE_data_new();
-          if( update == NULL ) {
-             rc = -ENOMEM;
-             break;
-          }
+     
+         rc = AG_crawl_update( core, path, ent );
+         if( rc != 0 ) {
+             SG_error("AG_crawl_update(%s) rc = %d\n", path, rc );
+         }
 
-
-          clock_gettime( CLOCK_REALTIME, &now );
-
-          SG_client_WRITE_data_set_mtime( update, &now );
-          SG_client_WRITE_data_set_mode( update, ent->mode );
-          SG_client_WRITE_data_set_owner_id( update, ent->owner );
-
-          rc = UG_update( ug, path, update );
-
-          SG_safe_free( update );
-
-          if( rc != 0 ) {
-
-             SG_error("UG_update(%s) rc = %d\n", path, rc );
-             if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -ENOENT ) {
-                rc = -EREMOTEIO;
-             }
-             break;
-          }
-
-          break;
+         break;
       }
    
       case AG_CRAWL_CMD_DELETE: {
-
-         if( ent->type == MD_ENTRY_FILE ) {
-            
-            rc = UG_unlink( ug, path );
-            if( rc != 0 ) {
-
-               SG_error("UG_unlink(%s) rc = %d\n", path, rc );
-               if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -ENOENT ) {
-                  rc = -EREMOTEIO;
-               }
-               break;
-            }
-         }
-         
-         else {
-
-            rc = UG_rmdir( ug, path );
-            if( rc != 0 ) {
-
-               SG_error("UG_rmdir(%s) rc = %d\n", path, rc );
-               if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -ENOENT ) {
-                  rc = -EREMOTEIO;
-               }
-               break;
-            }
+     
+         rc = AG_crawl_delete( core, path, ent );
+         if( rc != 0 ) {
+             SG_error("AG_crawl_delete(%s) rc = %d\n", path, rc );
          }
 
          break;

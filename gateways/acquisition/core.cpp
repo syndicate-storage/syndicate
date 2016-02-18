@@ -100,7 +100,7 @@ struct AG_state* AG_init( int argc, char** argv ) {
    }
 
    // add AG server-side behaviors
-   AG_server_install_methods( AG_state_gateway( ag ), ag ); 
+   AG_server_install_methods( AG_state_gateway( ag ) ); 
 
    return ag;
 }
