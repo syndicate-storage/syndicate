@@ -85,9 +85,9 @@ cdef extern from "libsyndicate/libsyndicate.h":
       int64_t capacity     # // maximum index number a child can have 
       uint64_t parent_id  # // id of this file's parent directory
       char* parent_name   # // name of this file's parent directory
-      unsigned char* xattr_hash;   # // hash over sorted (xattr name, xattr value) pairs
-      unsigned char* ent_sig;      # // signature over this entry from the coordinator
-      size_t ent_sig_len;
+      unsigned char* xattr_hash   # // hash over sorted (xattr name, xattr value) pairs
+      unsigned char* ent_sig      # // signature over this entry from the coordinator
+      size_t ent_sig_len
 
    cdef int MD_ENTRY_FILE 
    cdef int MD_ENTRY_DIR
