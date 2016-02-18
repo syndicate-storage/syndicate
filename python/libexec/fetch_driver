@@ -23,7 +23,8 @@ Will exit 2 if there is no driver to be had
 import os
 import sys 
 import requests 
-import traceback 
+import traceback
+import hashlib
 
 import syndicate.protobufs.ms_pb2 as ms_pb2
 import syndicate.protobufs.sg_pb2 as sg_pb2
@@ -73,10 +74,21 @@ if __name__ == "__main__":
    ms_url = None
    driver_hash = None
    path = None
-   
+
+   h = hashlib.sha256()
+   h.update("")
+   empty_driver_hash = h.hexdigest()
+
    ms_url = sys.argv[1]
    driver_hash = sys.argv[2]
-      
+
+   # hash of the empty string?
+   if driver_hash.lower() == empty_driver_hash:
+       # no driver
+       sys.stdout.write("{}")
+       sys.stdout.flush()
+       sys.exit(0)
+    
    if len(sys.argv) >= 4:
       path = sys.argv[3]
    
@@ -90,9 +102,12 @@ if __name__ == "__main__":
       if path is None:
          
          sys.stdout.write( driver_bin )
+         sys.stdout.flush()
+
       else:
          
          with open(path, "w") as f:
             f.write( driver_bin )
+            f.flush()
          
       sys.exit(0)

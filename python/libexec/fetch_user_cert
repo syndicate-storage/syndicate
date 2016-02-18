@@ -103,10 +103,12 @@ if __name__ == "__main__":
       if path is None:
          
          sys.stdout.write( cert_bundle_bin )
+         sys.stdout.flush()
          
       else:
          
          with open(path, "w") as f:
             f.write( cert_bundle_bin )
+            f.flush()
          
       sys.exit(0)

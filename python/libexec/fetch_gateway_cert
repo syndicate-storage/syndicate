@@ -47,7 +47,7 @@ def fetch_gateway_cert( ms_url, gateway_name ):
    if req.status_code != 200:
       
       req.close()
-      print_error("Failed to fetch gateway certificate for '%s' from '%s': status code %s" % (cert_url, gateway_name, req.status_code))
+      print_error("Failed to fetch gateway certificate for '%s' from '%s': status code %s" % (gateway_name, cert_url, req.status_code))
       return None 
    
    if int(req.headers['content-length']) > MAX_CERT_LEN:
@@ -103,9 +103,12 @@ if __name__ == "__main__":
       if path is None:
          
          sys.stdout.write( gateway_cert_bin )
+         sys.stdout.flush()
+
       else:
          
          with open(path, "w") as f:
             f.write( gateway_cert_bin )
+            f.flush()
          
       sys.exit(0)

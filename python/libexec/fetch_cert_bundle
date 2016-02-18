@@ -36,20 +36,20 @@ def print_error( s ):
    print >> sys.stderr, s
 
 
-def fetch_cert_bundle( ms_url, volume_id, cert_bundle_version ):
+def fetch_cert_bundle( ms_url, volume_name_or_id, cert_bundle_version ):
    """
    Go fetch a volume certificate bundle, and verify that it is said cert bundle
    Return the deserialized protobuf on success.
    Return None on error
    """
    
-   cert_bundle_url = ms_url + "/CERTBUNDLE/" + str(volume_id) + "/" + str(cert_bundle_version)
+   cert_bundle_url = ms_url + "/CERTBUNDLE/" + str(volume_name_or_id) + "/" + str(cert_bundle_version)
    
    req = requests.get( cert_bundle_url, stream=True )
    if req.status_code != 200:
       
       req.close()
-      print_error("Failed to fetch volume cert bundle for '%s' from '%s': status code %s" % (cert_bundle_url, volume_id, req.status_code))
+      print_error("Failed to fetch volume cert bundle for '%s' from '%s': status code %s" % (cert_bundle_url, volume_name_or_id, req.status_code))
       return None 
    
    if int(req.headers['content-length']) > MAX_CERT_LEN:
@@ -86,13 +86,13 @@ if __name__ == "__main__":
       sys.exit(1)
       
    ms_url = None
-   volume_id = 0
+   volume_name_or_id = None
    volume_cert_bundle_version = 0
    path = None
    
    try:
       ms_url = sys.argv[1]
-      volume_id = int(sys.argv[2])
+      volume_name_or_id = sys.argv[2]
       volume_cert_bundle_version = int(sys.argv[3])
    except:
       usage( sys.argv[0] )
@@ -101,7 +101,7 @@ if __name__ == "__main__":
    if len(sys.argv) >= 5:
       path = sys.argv[4]
       
-   cert_bundle = fetch_cert_bundle( ms_url, volume_id, volume_cert_bundle_version )
+   cert_bundle = fetch_cert_bundle( ms_url, volume_name_or_id, volume_cert_bundle_version )
    if cert_bundle is None:
       sys.exit(1)
    
@@ -112,10 +112,13 @@ if __name__ == "__main__":
       if path is None:
          
          sys.stdout.write( cert_bundle_bin )
+         sys.stdout.flush()
+
       else:
          
          with open(path, "w") as f:
             f.write( cert_bundle_bin )
+            f.flush()
          
       sys.exit(0)
       
