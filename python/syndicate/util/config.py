@@ -24,7 +24,8 @@ import sys
 import StringIO
 import traceback
 import argparse
-import logging 
+import logging
+import paths
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
@@ -73,15 +74,15 @@ CONFIG_DEFAULTS = {
    'trust_public_key': False,
    'debug': False,
    'helpers': {
-       'fetch_user_cert': "/usr/local/lib/syndicate/fetch_user_cert",
-       'fetch_gateway_cert': "/usr/local/lib/syndicate/fetch_gateway_cert",
-       'fetch_volume_cert': "/usr/local/lib/syndicate/fetch_volume_cert",
-       'fetch_cert_bundle': "/usr/local/lib/syndicate/fetch_cert_bundle",
-       'fetch_driver': "/usr/local/lib/syndicate/fetch_driver",
-       'fetch_syndicate_pubkey': "/usr/local/lib/syndicate/fetch_syndicate_pubkey",
-       'validate_user_cert': "/usr/local/lib/syndicate/validate_user_cert",
-       'certs_reload': "/usr/local/lib/syndicate/certs_reload",
-       'driver_reload': "/usr/local/lib/syndicate/driver_reload"
+       'fetch_user_cert': paths.fetch_user_cert,
+       'fetch_gateway_cert': paths.fetch_gateway_cert,
+       'fetch_volume_cert': paths.fetch_volume_cert,
+       'fetch_cert_bundle': paths.fetch_cert_bundle,
+       'fetch_driver': paths.fetch_driver,
+       'fetch_syndicate_pubkey': paths.fetch_syndicate_pubkey,
+       'validate_user_cert': paths.validate_user_cert,
+       'certs_reload': paths.certs_reload,
+       'driver_reload': paths.driver_reload
     }
 }
 

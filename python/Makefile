@@ -11,7 +11,8 @@ PYTHON_SYNDICATE_FILES := $(wildcard $(PYTHON_SYNDICATE_ROOT)/*.py) \
                           $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/*.py) \
 						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/config) \
 						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/secrets) \
-						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/driver)
+						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/driver) \
+						  $(PYTHON_SYNDICATE_ROOT)/util/paths.py
 
 PYTHON_BIN_FILES := $(wildcard $(PYTHON_BIN)/*)
 
@@ -48,7 +49,11 @@ all: $(PYTHON_BUILD) $(BUILD_PYTHON_SYNDICATE)/setup.py $(CYTHON_BUILD) $(MS_FIL
 $(BUILD_PYTHON_SYNDICATE)/setup.py: setup.py 
 	@cp "$<" "$@"
 
-$(PYTHON_SYNDICATE_PACKAGE)/%.py: $(PYTHON_SYNDICATE_ROOT)/%.py
+$(PYTHON_SYNDICATE_PACKAGE)/util/paths.py: $(PYTHON_SYNDICATE_ROOT)/util/paths.py.in
+	@mkdir -p "$(shell dirname "$@")"
+	@cat "$<" | sed -e 's~@PREFIX@~$(PREFIX)~g' > "$@"
+
+$(PYTHON_SYNDICATE_PACKAGE)/%.py: $(PYTHON_SYNDICATE_ROOT)/%.py $(PYTHON_SYNDICATE_PACKAGE)/util/paths.py
 	@mkdir -p "$(shell dirname "$@")"
 	@cat "$<" > "$@"
 
