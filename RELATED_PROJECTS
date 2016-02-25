@@ -4,9 +4,9 @@ SYNDICATE RELATED PROJECTS:
 Provides end-to-end email confidentiality, integrity, and authenticity checks with the semantics of webmail.
 https://github.com/jcnelson/syndicatemail
 
-- HSynth
-Provides an interface for Syndicate on Hadoop. Originally this project was in "UG-shared".
-https://github.com/iychoi/HSynth
+- H-Syndicate
+Allows accesses to Syndicate volumes from Hadoop computation frameworks such as MapReduce.
+https://github.com/iychoi/H-Syndicate
 
 - Syndicate Website
 Syndicate "about" landing page repository.

@@ -1,22 +1,25 @@
 To build and install Syndicate, you need to install your distro's versions of the following packages.
 
+#####################################################################
+# Common
+#####################################################################
+
+You will need a fskit installed to build the Syndicate.  You will be able to get the fskit at https://github.com/jcnelson/fskit.
+
+#####################################################################
+# For Fedora 12-17 users
+#####################################################################
+
 Fedora 12-17 (PlanetLab):
 yum install \
    gnutls-devel \
    openssl-devel \
-   boost-devel \
-   boost-system \
-   libxml2-devel \
-   libattr-devel \
    curl-devel \
-   fuse \
-   fuse-devel \
    libgcrypt-devel \
    protobuf \
    protobuf-devel \
    protobuf-compiler \
    protobuf-python \
-   xerces-c-devel \
    libmicrohttpd-devel \
    python-daemon \
    Cython \
@@ -30,56 +33,34 @@ yum install \
    python-setproctitle \
    python-psutil \
    valgrind-devel \
-   zlib
 
 Required versions of the above software:
    limicrohttpd-devel >= 0.9
    Cython >= 0.19 (you might have to build this from source)
-   thrift-compiler == 0.8 (you will have to build this from source)
+
+Fedora 12 users will additionally need the python bindings for libscrypt installed.  You can get it with "pip install scrypt" if its not available via your package manager.
+
+Fedora 12 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
+
+#####################################################################
+# For Ubuntu 14.04 users
+#####################################################################   
    
-   
-Ubuntu 12.04:
-aptitude install \
-   libgnutls-dev \
-   libssl-dev \
-   libboost-dev \
-   libboost-thread-dev \
-   libboost-system-dev \
-   libxml2-dev \
-   libattr1-dev \
-   libcurl4-gnutls-dev \
-   fuse \
-   libfuse-dev \
-   libgcrypt-dev \
-   libprotobuf-dev \
+Ubuntu 14.04:
+apt-get install \
    protobuf-compiler \
-   python-protobuf \
-   libxerces-c-dev \
+   libprotobuf-dev \
+   libcurl4-gnutls-dev \
    libmicrohttpd-dev \
-   python-daemon \
-   cython \
-   python-scrypt \
-   python-requests \
    libjson0-dev \
-   libjson0 \
-   lsb-core \
-   python-setproctitle \
-   python-psutil \
    valgrind \
-   zlib1g
+   cython \
+   python-protobuf
 
-Required versions of the above software:
-   libmicrohttpd-dev >= 0.9
-   thrift-compiler == 0.8 (you might have to build this from source)
-   libcurl4-gnutls-dev >= 7.22
 
-You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
-
-You will also need a recent version of libmicrohttpd.  At least version 0.9.x should work.
-
-You will additionally need the python bindings for libscrypt installed.  You can get it with "pip install scrypt" if its not available via your package manager.
-
-Fedora 12 and Ubuntu 12.04 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
+#####################################################################
+# Using pre-built packages
+#####################################################################
 
 We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS.  To use, do the following:
    $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate-nightly.repo > /etc/yum.repos.d/Syndicate.repo
