@@ -289,7 +289,6 @@ static int AG_crawl_create( struct AG_state* core, char const* path, struct md_e
 
    // try to create or mkdir 
    if( ent->type == MD_ENTRY_FILE ) {
-
        clock_gettime( CLOCK_REALTIME, &now );
 
        ent->manifest_mtime_sec = now.tv_sec;
@@ -301,7 +300,6 @@ static int AG_crawl_create( struct AG_state* core, char const* path, struct md_e
 
        h = UG_publish( ug, path, ent, &rc );
        if( h == NULL ) {
-
           SG_error("UG_publish(%s) rc = %d\n", path, rc );
           goto AG_crawl_create_out;
        }
@@ -317,18 +315,14 @@ static int AG_crawl_create( struct AG_state* core, char const* path, struct md_e
 
        close_rc = UG_close( ug, h );
        if( close_rc != 0 ) {
-
           SG_error("UG_close(%s) rc = %d\n", path, close_rc );
        }
        
        h = NULL;
    }
-
    else {
-
       rc = UG_mkdir( ug, path, ent->mode );
       if( rc != 0 ) {
-         
          SG_error("UG_mkdir(%s) rc = %d\n", path, rc );
          goto AG_crawl_create_out;         
       }
@@ -336,7 +330,7 @@ static int AG_crawl_create( struct AG_state* core, char const* path, struct md_e
 
 AG_crawl_create_out:
    
-   if( rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST && rc != -ENOENT ) {
+   if( rc != 0 && rc != -ENOMEM && rc != -EPERM && rc != -EACCES && rc != -EEXIST && rc != -ENOENT ) {
        rc = -EREMOTEIO;
    }
    return rc;
