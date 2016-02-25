@@ -2833,6 +2833,12 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->certs_reload_helper = SG_strdup_or_die( SG_DEFAULT_CERTS_RELOAD_HELPER );
    conf->driver_reload_helper = SG_strdup_or_die( SG_DEFAULT_DRIVER_RELOAD_HELPER );
 
+   // create a NULL terminated empty array (in length 1)
+   conf->helper_env = SG_CALLOC( char*, 1 );
+   if( conf->helper_env == NULL ) {
+      exit(1);
+   }
+
    return 0;
 }
 
