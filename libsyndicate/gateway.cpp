@@ -1025,6 +1025,7 @@ int SG_gateway_init_opts( struct SG_gateway* gateway, struct md_opts* opts ) {
    gateway->iowqs = iowqs;
    gateway->num_iowqs = max_num_iowqs;
    gateway->first_arg_optind = first_arg_optind;
+   gateway->foreground = opts->foreground;
    
    if( gateway->http != NULL ) {
       
@@ -1720,6 +1721,11 @@ EVP_PKEY* SG_gateway_public_key( struct SG_gateway* gateway ) {
 // get the first non-opt argument index
 int SG_gateway_first_arg_optind( struct SG_gateway* gateway ) {
    return gateway->first_arg_optind;
+}
+
+// running in the foreground?
+bool SG_gateway_foreground( struct SG_gateway* gateway ) {
+   return gateway->foreground;
 }
 
 // set up a chunk

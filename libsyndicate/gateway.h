@@ -105,6 +105,7 @@ struct SG_gateway {
    sem_t config_sem;                    // for signaling volume/cert reloads
    
    int first_arg_optind;                // index into argv of the first non-argument option
+   bool foreground;                     // whether or not we'll run in the foreground
     
    // gateway init/shutdown 
    int (*impl_setup)( struct SG_gateway*, void** );
@@ -242,6 +243,7 @@ uint64_t SG_gateway_user_id( struct SG_gateway* gateway );
 EVP_PKEY* SG_gateway_public_key( struct SG_gateway* gateway );
 EVP_PKEY* SG_gateway_private_key( struct SG_gateway* gateway );
 int SG_gateway_first_arg_optind( struct SG_gateway* gateway );
+bool SG_gateway_foreground( struct SG_gateway* gateway );
 
 // block memory management 
 void SG_chunk_init( struct SG_chunk* chunk, char* data, off_t len );
