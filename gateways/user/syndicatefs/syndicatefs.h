@@ -20,10 +20,9 @@
 #define _UG_SYNDICATEFS_H_
 
 #include <fskit/fskit.h>
-#include <fskit/fskit_fuse.h>
+#include <fskit/fuse/fskit_fuse.h>
 
-#include "libsyndicate/gateway.h"
-
-#include "core.h"
+#include <libsyndicate/gateway.h>
+#include <libsyndicate-ug/core.h>
 
 #endif
