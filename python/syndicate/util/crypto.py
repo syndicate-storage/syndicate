@@ -23,14 +23,67 @@ import errno
 import logging
 import base64 
 
+from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+from Crypto.Protocol.KDF import PBKDF2
+
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
 log = logging.getLogger()
 
+def sign_data( privkey, data ):
+   """
+   Given a loaded private key and a string of data,
+   generate and return a signature over it.
+   """
+   h = HashAlg.new( data )
+   signer = CryptoSigner.new(privkey)
+   signature = signer.sign( h )
+   return signature 
 
-import syndicate.ms.api as api
+
+def generate_key_pair( key_size ):
+   """
+   Make a key pair
+   """
+   rng = Random.new().read
+   key = CryptoKey.generate(key_size, rng)
+
+   private_key_pem = key.exportKey()
+   public_key_pem = key.publickey().exportKey()
+
+   return (public_key_pem, private_key_pem)
+
+
+def verify_data( pubkey_str, data, signature ):
+   """
+   Given a public key, data, and a signature, 
+   verify that the private key signed it.
+   """
+
+   try:
+      key = CryptoKey.importKey( pubkey_str )
+   except Exception, e:
+      log.error("importKey %s" % traceback.format_exc() )
+      return False
+   
+   h = HashAlg.new( data )
+   verifier = CryptoSigner.new(key)
+   ret = verifier.verify( h, signature )
+   return ret
+ 
+   
+def hash_data( data ):
+   """
+   Given a string of data, calculate 
+   the SHA256 over it
+   """
+   h = HashAlg.new()
+   h.update( data )
+   return h.digest()
 
 
 #-------------------------------
@@ -100,7 +153,7 @@ def verify_and_parse_json( public_key_pem, json_text ):
         return (-errno.EINVAL, None)
     
     # verify the signature 
-    rc = api.verify_data( public_key_pem, data, sig )
+    rc = verify_data( public_key_pem, data, sig )
     if not rc:
         log.error("Invalid signature")
         return (-errno.EINVAL, None)
@@ -119,7 +172,7 @@ def sign_and_serialize_json( private_key_pem, data ):
     Return None on error
     """
     
-    signature = api.sign_data( private_key_pem, data )
+    signature = sign_data( private_key_pem, data )
     if not signature:
        logger.error("Failed to sign data")
        return None

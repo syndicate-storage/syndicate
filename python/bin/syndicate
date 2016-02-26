@@ -34,6 +34,7 @@ import syndicate.util.storage as storage
 import syndicate.util.objects as object_stub
 import syndicate.util.client as client
 import syndicate.util.certs as certs
+import syndicate.util.crypto as crypto
 
 import syndicate.protobufs.ms_pb2 as ms_pb2
 
@@ -51,13 +52,6 @@ import getpass
 import logging
 
 log = conf.log
-
-
-def syndicate_object_name( config ):
-   """
-   Given the config, find the syndicate object name.
-   """
-   return config["syndicate_host"] + ":" + str(config["syndicate_port"])
 
 
 def fetch_syndicate_public_key( config ):
@@ -143,15 +137,13 @@ def verify_gateway_cert( pubkey_pem, gateway_cert ):
    Return False if not
    """
 
-   import syndicate.ms.api as api
-   
    sigb64 = gateway_cert.signature 
    sig = base64.b64decode( sigb64 )
    
    gateway_cert.signature = ""
    
    gateway_cert_bin = gateway_cert.SerializeToString()
-   rc = api.verify_data( pubkey_pem, gateway_cert_bin, sig )
+   rc = crypto.verify_data( pubkey_pem, gateway_cert_bin, sig )
    
    gateway_cert.signature = sigb64
    
@@ -392,22 +384,8 @@ def parse_argv( argv ):
    """
     
    parser = conf.build_parser( argv[0], conf.CONFIG_DESCRIPTION, conf.CONFIG_OPTIONS )
-   opts, _ = parser.parse_known_args( argv[1:] )
-   
-   # load everything into a dictionary and return it
-   config_str = None
-   config_file_path = None
-   
-   if hasattr( opts, "config" ) and opts.config != None:
-      config_file_path = opts.config[0]
-   else:
-      config_file_path = conf.default_config_path()
-   
-   config_str = storage.read_file( config_file_path )
-   
+   opts, _ = parser.parse_known_args( argv[1:] ) 
    method_name, args, kw = read_params( getattr(opts, 'params', [] ) )
-   
-   opts.config_file_path = config_file_path 
    
    return (opts, method_name, args, kw )
 
@@ -438,79 +416,29 @@ def install_syndicate_public_key( config ):
            return None
    
    # store it 
-   storage.store_public_key( config, "syndicate", syndicate_object_name( config ), syndicate_pubkey )
+   storage.store_public_key( config, "syndicate", conf.syndicate_object_name( config ), syndicate_pubkey )
        
    return syndicate_pubkey
 
 
 # -------------------
-def init_config( opts, method_name ):
+def init_config( argv, method_name ):
    """
    Given parsed options, load the config.
    Return a dict with our config options set on success.
    Return None on error
    """
-
-   config = {}
-
-   config_str = storage.read_file( opts.config_file_path )
-   if config_str is None:
-       log.error("Failed to read '%s'" % opts.config_file_path)
-       return None 
-  
-   conf.fill_defaults( config )
-
-   # get syndicate options...
-   syndicate_config = conf.load_config( opts.config_file_path, config_str, opts, "syndicate", conf.CONFIG_OPTIONS )
-   if config is None:
-       log.error("Failed to parse configuration section 'syndicate' from '%s'" % opts.config_file_path)
-       return None
-
-   config.update( syndicate_config )
-
-   # helpers..
-   helper_config = conf.load_config( opts.config_file_path, config_str, opts, "helpers", conf.HELPER_OPTIONS )
-   if helper_config is None:
-       log.error("Failed to parse configuration section 'helpers' from '%s'" % opts.config_file_path )
-       return None
-
-   config['helpers'].update( helper_config )
-   config['params'] = getattr( opts, 'params', [] )
-   
-   # generate syndicate_host and syndicate_port from URL, if needed
-   if config.get('MS_url', None) is not None:
-      # use https if no :// is given 
-      url = config['MS_url']
-      
-      host, port, no_tls = client.parse_url( url )
-      
-      config['syndicate_host'] = host 
-      config['syndicate_port'] = port
-      config['no_tls'] = no_tls
-      
-   # do we need the private key?
-   config['user_pkey'] = storage.load_private_key( config, "user", config['username'] )
-   if config['user_pkey'] is None:
-      log.error("Failed to load user private key for '%s'" % config['username'])
-      return None 
-   
-   # trust public key?
-   if opts.trust_public_key:
-       config['trust_public_key'] = True 
-   else:
-       config['trust_public_key'] = False
-
-   # obtain syndicate public key 
-   syndicate_pubkey = storage.load_public_key( config, "syndicate", syndicate_object_name( config ) )
-   if syndicate_pubkey is None:
+    
+   config = conf.get_config_from_argv( argv )
+   if config['syndicate_public_key'] is None:
       
        # go get it 
        syndicate_pubkey = install_syndicate_public_key( config )
        if syndicate_pubkey is None:
            return None 
        
-   config['syndicate_public_key'] = syndicate_pubkey
-   config['syndicate_public_key_pem'] = syndicate_pubkey.exportKey()
+       config['syndicate_public_key'] = syndicate_pubkey
+       config['syndicate_public_key_pem'] = syndicate_pubkey.exportKey()
 
    return config
 
@@ -551,7 +479,7 @@ def make_admin_cert( username, admin_privkey ):
     admin_cert.signature = ""
 
     admin_cert_str = admin_cert.SerializeToString()
-    admin_cert_sig = object_stub.sign_data( admin_privkey, admin_cert_str )
+    admin_cert_sig = crypto.sign_data( admin_privkey, admin_cert_str )
 
     admin_cert.signature = base64.b64encode( admin_cert_sig )
 
@@ -781,7 +709,7 @@ def main( argv ):
        do_setup( opts, args[0], args[1], args[2] )
        sys.exit(0)
 
-   CONFIG = init_config( opts, method_name )
+   CONFIG = init_config( argv, method_name )
    if CONFIG is None:
        return None
 

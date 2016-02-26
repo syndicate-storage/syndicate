@@ -25,6 +25,7 @@ import syndicate.protobufs.sg_pb2 as sg_pb2
 from syndicate.ms.jsonrpc import json_stable_serialize
 import syndicate.util.storage as storagelib
 import syndicate.util.config as conf
+import syndicate.util.crypto as crypto
 
 import binascii
 import inspect
@@ -47,7 +48,6 @@ from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 from Crypto.Protocol.KDF import PBKDF2
-
 
 log = conf.log
 
@@ -168,45 +168,6 @@ def load_driver( driver_path, gateway_privkey_pem ):
       driver[ filename ] = datab64 
   
    return driver
-   
-   
-def hash_data( data ):
-   """
-   Given a string of data, calculate 
-   the SHA256 over it
-   """
-   h = HashAlg.new()
-   h.update( data )
-   return h.digest()
-
-   
-def sign_data( privkey, data ):
-   """
-   Given a loaded private key and a string of data,
-   generate and return a signature over it.
-   """
-   h = HashAlg.new( data )
-   signer = CryptoSigner.new(privkey)
-   signature = signer.sign( h )
-   return signature 
-
-
-def verify_data( pubkey_str, data, signature ):
-   """
-   Given a public key, data, and a signature, 
-   verify that the private key signed it.
-   """
-
-   try:
-      key = CryptoKey.importKey( pubkey_str )
-   except Exception, e:
-      log.error("importKey %s" % traceback.format_exc() )
-      return False
-   
-   h = HashAlg.new( data )
-   verifier = CryptoSigner.new(key)
-   ret = verifier.verify( h, signature )
-   return ret
 
 
 def load_user_id( config, email ):
@@ -346,7 +307,7 @@ def make_volume_root( volume_cert ):
    volume_cert.root.owner = volume_cert.owner_id 
    volume_cert.root.coordinator = 0
    volume_cert.root.volume = volume_cert.volume_id 
-   volume_cert.root.mode = 0750
+   volume_cert.root.mode = 0770
    volume_cert.root.size = 4096         # compatibility with most filesystem types 
    volume_cert.root.version = 1
    volume_cert.root.max_read_freshness = 5000           # 5 seconds 
@@ -759,7 +720,7 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    cert_block.block_version = volume_cert.volume_version
    cert_block.owner_id = volume_cert.owner_id
    cert_block.caps = 0
-   cert_block.hash = hash_data( volume_cert.SerializeToString() )       # NOTE: covers volume signature as well
+   cert_block.hash = crypto.hash_data( volume_cert.SerializeToString() )       # NOTE: covers volume signature as well
    
    # put blocks in order by ID 
    block_order = sorted( certs.keys() )
@@ -785,7 +746,7 @@ def make_volume_cert_bundle( config, volume_owner, volume_name, volume_id=None, 
    cert_manifest.signature = ""
    
    manifest_str = cert_manifest.SerializeToString()
-   sig = sign_data( owner_privkey, manifest_str )
+   sig = crypto.sign_data( owner_privkey, manifest_str )
    
    cert_manifest.signature = base64.b64encode( sig )
    
@@ -863,7 +824,6 @@ class StubObject( object ):
       
       Return private key, extras.
       """
-      import syndicate.ms.api as api
       
       extra = {}
       pubkey_pem = None 
@@ -871,7 +831,7 @@ class StubObject( object ):
       if private_key is None or private_key == "" or private_key.upper() == "AUTO":
          
          # generate one
-         _, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
+         _, privkey_pem = crypto.generate_key_pair( OBJECT_KEY_SIZE )
 
          extra['private_key'] = privkey_pem
          lib.private_key = privkey_pem
@@ -1355,7 +1315,7 @@ class SyndicateUser( StubObject ):
       
       user_cert_nosig = user_cert.SerializeToString()
       
-      sig = sign_data( cert_privkey, user_cert_nosig )
+      sig = crypto.sign_data( cert_privkey, user_cert_nosig )
       
       user_cert.signature = base64.b64encode( sig )
       
@@ -1662,7 +1622,7 @@ class Volume( StubObject ):
       
       # sign the cert, but not the root inode.
       volume_cert_bin = volume_cert.SerializeToString()
-      volume_cert_sig = sign_data( owner_privkey, volume_cert_bin )
+      volume_cert_sig = crypto.sign_data( owner_privkey, volume_cert_bin )
       
       volume_cert.signature = base64.b64encode( volume_cert_sig )
       
@@ -1673,7 +1633,7 @@ class Volume( StubObject ):
          make_volume_root( volume_cert )
         
          root_str = volume_cert.root.SerializeToString()
-         root_sig = sign_data( owner_privkey, root_str )
+         root_sig = crypto.sign_data( owner_privkey, root_str )
         
          volume_cert.root.signature = base64.b64encode( root_sig )
          
@@ -2133,11 +2093,11 @@ class Gateway( StubObject ):
       # driver hash 
       driver_hash = None 
       if driver_json is not None:
-         driver_hash = hash_data( driver_json )
+         driver_hash = crypto.hash_data( driver_json )
       elif existing_gateway_cert is not None:
          driver_hash = existing_gateway_cert.driver_hash
       else:
-         driver_hash = hash_data( "" )
+         driver_hash = crypto.hash_data( "" )
       
       # load host
       if host is None:
@@ -2210,7 +2170,7 @@ class Gateway( StubObject ):
       
       # sign with user's private key 
       gateway_cert_str = gateway_cert.SerializeToString()
-      sig = sign_data( user_privkey, gateway_cert_str )
+      sig = crypto.sign_data( user_privkey, gateway_cert_str )
       
       gateway_cert.signature = base64.b64encode( sig )
       gateway_cert_str = gateway_cert.SerializeToString()

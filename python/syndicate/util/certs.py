@@ -31,6 +31,7 @@ from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import syndicate.util.objects as object_stub
+import syndicate.util.crypto as crypto
 import client
 import config as conf
 import syndicate.protobufs.ms_pb2 as ms_pb2
@@ -172,10 +173,11 @@ def volume_cert_fetch( ms_url, volume_name_or_id, downloader_path ):
         volume_cert = ms_pb2.ms_volume_metadata()
         volume_cert.ParseFromString( cert_out )
 
-        if hasattr(volume_cert, "root"):
-            del volume_cert.root
+        if volume_cert.HasField("root"):
+            volume_cert.ClearField("root")
 
     except Exception, e:
+        log.exception(e)
         log.error("Invalid volume certificate for %s (from %s)" % (str(volume_name_or_id), ms_url))
         return None 
 
@@ -454,7 +456,7 @@ def verify_user_signature( user_cert, object_cert ):
     data = object_cert.SerializeToString()
 
     try:
-        rc = object_stub.verify_data( user_cert.public_key, data, sig )
+        rc = crypto.verify_data( user_cert.public_key, data, sig )
     except ValueError, ve:
         log.error("Signature valuation failed; likely due to the wrong public key")
         rc = False
@@ -525,7 +527,7 @@ def is_volume_cert_in_bundle( cert_bundle, volume_cert ):
         log.error("Empty cert bundle")
         return False
 
-    cert_hash = object_stub.hash_data( volume_cert.SerializeToString() )
+    cert_hash = crypto.hash_data( volume_cert.SerializeToString() )
     if cert_bundle.blocks[0].hash != cert_hash:
         log.error("Volume block hash mismatch: %s != %s" % (cert_bundle.blocks[0].hash, cert_hash))
         return False 
@@ -608,6 +610,94 @@ def user_certs_load_cached( config, user_names_or_ids ):
         ret.append( user_cert )
 
     return ret
+
+
+def list_cert_paths( config, object_type ):
+    """
+    List all certs that we have generated ourselves, for a particular object type
+    """
+    cert_dir = conf.object_file_path( config, object_type, "" )
+    listing = os.listdir( cert_dir )
+    ret = []
+
+    for name in listing:
+        if name in [".", ".."]:
+            continue 
+
+        if not name.endswith(".cert"):
+            continue 
+
+        object_id_str = name[:-5]
+        try:
+            object_id = int(object_id_str)
+        except:
+            continue
+
+        ret.append( os.path.join(cert_dir, name ) )
+
+    return ret
+
+
+def list_pkey_paths( config, object_type ):
+    """
+    List all private keys that we have generated ourselves, for a particular object type
+    """
+    pkey_dir = conf.object_file_path( config, object_type, "" )
+    listing = os.listdir( pkey_dir )
+    ret = []
+
+    for name in listing:
+        if name in [".", ".."]:
+            continue 
+
+        if not name.endswith(".pkey"):
+            continue 
+
+        ret.append( os.path.join(pkey_dir, name))
+
+    return ret
+
+
+def list_gateway_cert_paths( config ):
+    """
+    List the paths to all locally-generated gateway certs
+    """
+    return list_cert_paths( config, "gateway" )
+
+
+def list_volume_cert_paths( config ):
+    """
+    List the paths to all locally-generated volume certs
+    """
+    return list_cert_paths( config, "volume" )
+
+
+def list_user_cert_paths( config ):
+    """
+    List the paths to all locally-generated user certs
+    """
+    return list_cert_paths( config, "user" )
+
+
+def list_gateway_pkey_paths( config ):
+    """
+    List the paths to all locally-generated gateway private keys
+    """
+    return list_pkey_paths( config, "gateway" )
+
+
+def list_volume_pkey_paths( config ):
+    """
+    List the paths to all locally-generated volume private keys
+    """
+    return list_pkey_paths( config, "volume" )
+
+
+def list_user_pkey_paths( config ):
+    """
+    List the paths to all locally-generated user private keys
+    """
+    return list_pkey_paths( config, "user" )
 
 
 def get_all_gateway_certs( config, cert_bundle, exclude=[] ):

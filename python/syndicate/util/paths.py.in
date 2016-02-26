@@ -26,3 +26,7 @@ validate_user_cert = "@PREFIX@/lib/syndicate/validate_user_cert"
 certs_reload = "@PREFIX@/lib/syndicate/certs_reload"
 driver_reload = "@PREFIX@/lib/syndicate/driver_reload"
 
+volume_amd = "@PREFIX@/bin/syndicate-volume-amd"
+poll_volumes = "@PREFIX@/lib/syndicate/poll-volumes"
+poll_host = "@PREFIX@/lib/syndicate/poll-host"
+list_hosts = "@PREFIX@/lib/syndicate/list-hosts"

@@ -17,6 +17,7 @@
 """
 
 import syndicate.util.config as conf
+import syndicate.util.crypto as crypto
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.msconfig as msconfig
 
@@ -182,6 +183,36 @@ def make_rpc_client( config ):
    verifier = lambda method_name, args, kw, data, syndicate_data, rpc_result: api_call_verifier( config, syndicate_public_key, method_name, data, syndicate_data, rpc_result )
    
    json_client = jsonrpc.Client( ms_url, jsonrpc.VERSION, signer=signer, verifier=verifier, username=username )
-      
+   json_client.config = config
+
    return json_client
+
+
+def json_stable_serialize( json_data ):
+   """
+   Convert a dict or list into json, ensuring that key-values are serialized in a stable order.
+   Lifted verbatum from the MS, to remove the dependency.
+   """
+   if isinstance( json_data, list ) or isinstance( json_data, tuple ):
+      json_serialized_list = []
+      for json_element in json_data:
+         json_serialized_list.append( json_stable_serialize( json_element ) )
+      
+      # json_serialized_list.sort()
+      return "[" + ", ".join( json_serialized_list ) + "]"
+   
+   elif isinstance( json_data, dict ):
+      json_serialized_dict = {}
+      for key in json_data.keys():
+         json_serialized_dict[key] = json_stable_serialize( json_data[key] )
+      
+      key_order = [k for k in json_serialized_dict.keys()]
+      key_order.sort()
+      
+      return "{" + ", ".join( ['"%s": %s' % (k, json_serialized_dict[k]) for k in key_order] ) + "}"
+   
+   elif isinstance( json_data, str ) or isinstance( json_data, unicode ):
+      return '"' + json_data + '"'
+   
+   return '"' + str(json_data) + '"'
 

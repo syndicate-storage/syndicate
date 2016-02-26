@@ -53,7 +53,8 @@ OBJECT_DIR_NAMES = {
    "certs": "certs",
    "data": "data",
    "drivers": "drivers",
-   "logs": "logs"
+   "logs": "logs",
+   "amd": "amd"
 }
 
 CONFIG_SYNDICATE_KEYS = [
@@ -361,6 +362,102 @@ def usage( progname ):
    """
    Print usage and exit.
    """
+   global CONFIG_DESCRIPTION 
+
    parser = build_parser( progname, CONFIG_DESCRIPTION )
    parser.print_help()
    sys.exit(1)
+
+
+def syndicate_object_name( config ):
+   """
+   Given the config, find the syndicate object name.
+   """
+   return config["syndicate_host"] + ":" + str(config["syndicate_port"])
+
+
+def get_config_from_argv( argv ):
+    """
+    Load up our configuration dict, using
+    either the default config file (if none is specified in argv),
+    or loading the config and any overrides from
+    command-line options.
+
+    Return a dict with the config information on success.
+    Return None on error.
+    """
+
+    global CONFIG_OPTIONS, HELPER_OPTIONS, CONFIG_DESCRIPTION
+
+    import syndicate.util.storage as storage
+    import syndicate.util.client as client
+
+    parser = build_parser( argv[0], CONFIG_DESCRIPTION, CONFIG_OPTIONS )
+    opts, _ = parser.parse_known_args( argv[1:] )
+   
+    # load everything into a dictionary and return it
+    config_str = None
+    config_file_path = None
+   
+    if hasattr( opts, "config" ) and opts.config != None:
+        config_file_path = opts.config[0]
+    else:
+        config_file_path = default_config_path()
+   
+    config_str = storage.read_file( config_file_path )
+   
+    # generate the actual config
+    config = {}
+    fill_defaults( config )
+
+    # get syndicate options...
+    syndicate_config = load_config( config_file_path, config_str, opts, "syndicate", CONFIG_OPTIONS )
+    if syndicate_config is None:
+        log.error("Failed to parse configuration section 'syndicate' from '%s'" % opts.config_file_path)
+        return None
+
+    config.update( syndicate_config )
+
+    # helpers..
+    helper_config = load_config( config_file_path, config_str, opts, "helpers", HELPER_OPTIONS )
+    if helper_config is None:
+        log.error("Failed to parse configuration section 'helpers' from '%s'" % opts.config_file_path )
+        return None
+
+    config['helpers'].update( helper_config )
+ 
+    # generate syndicate_host and syndicate_port from URL, if needed
+    if config.get('MS_url', None) is not None:
+        # use https if no :// is given 
+        url = config['MS_url']
+      
+        host, port, no_tls = client.parse_url( url )
+      
+        config['syndicate_host'] = host 
+        config['syndicate_port'] = port
+        config['no_tls'] = no_tls
+      
+    # do we need the private key?
+    config['user_pkey'] = storage.load_private_key( config, "user", config['username'] )
+    if config['user_pkey'] is None:
+        log.error("Failed to load user private key for '%s'" % config['username'])
+        return None 
+   
+    # trust public key?
+    if opts.trust_public_key:
+        config['trust_public_key'] = True 
+    else:
+        config['trust_public_key'] = False
+
+    # obtain syndicate public key, if on file
+    syndicate_pubkey = storage.load_public_key( config, "syndicate", syndicate_object_name( config ) )
+    if syndicate_pubkey is None:
+        config['syndicate_public_key'] = None 
+        config['syndicate_public_key_pem'] = None 
+
+    else:
+        config['syndicate_public_key'] = syndicate_pubkey
+        config['syndicate_public_key_pem'] = syndicate_pubkey.exportKey()
+
+    config['params'] = getattr( opts, "params", [] ) 
+    return config
