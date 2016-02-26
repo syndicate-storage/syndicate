@@ -703,7 +703,7 @@ def validate_gateway_cert( gateway_cert, signing_user_id ):
    * make sure the user in the cert signed it, or verify that the user identified by signing_user_id did 
      (e.g. signing_user_id might correspond to a volume owner or admin)
    
-   Return the user and volume on success 
+   Return the user, volume, and signing user (if found) on success 
    Raise an exception on error
    """
    
@@ -718,24 +718,35 @@ def validate_gateway_cert( gateway_cert, signing_user_id ):
    
    if (volume is None or volume.deleted):
       raise Exception("No such volume '%s'" % gateway_cert.volume_id)
+
+   pubkey = None
+   signer_email = None
+   signing_user = None
+
+   if signing_user_id is not None:
+       signing_user = SyndicateUser.Read( signing_user_id )
+       if signing_user is None:
+           raise Exception("No such signing user '%s'" % signing_user_id)
+
+       pubkey = signing_user.public_key
+       signer_email = signing_user.email
+
+   else:
+       pubkey = user.public_key
+       signer_email = user.email
    
-   # signing_user_id, if given, must match the gateway's owner
-   if signing_user_id is not None and user.owner_id != signing_user_id:
-      raise Exception("User '%s' did not sign this gateway cert" % signing_user_id)
-      
-   # verify that the user has signed the cert 
-   owner_pubkey = user.public_key 
+   # verify that the user (or signing user) has signed the cert 
    owner_sig = gateway_cert.signature 
    
    gateway_cert.signature = ""
    gateway_cert_nosigs = gateway_cert.SerializeToString()
    
-   rc = verify_data( owner_pubkey, gateway_cert_nosigs, base64.b64decode( owner_sig ) )
+   rc = verify_data( pubkey, gateway_cert_nosigs, base64.b64decode( owner_sig ) )
    
    gateway_cert.signature = owner_sig 
    
    if not rc:
-      raise Exception("Gateway certificate not signed by user '%s'" % gateway_cert.owner_id )
+      raise Exception("Gateway certificate not signed by user '%s'" % signer_email )
 
    return (user, volume)
    
@@ -746,9 +757,9 @@ def create_gateway( **kw ):
    * make sure the calling user exists 
    * make sure the owning user exists 
    * make sure the volume exists
-   * make sure the calling user has access rights to the volume 
+   * make sure the calling user has access rights to the volume
    * make sure we have the certificate and everything we need from it.
-   * if this gateway is going into an archive volume, make sure that it's the only writer.
+   * (DEPRECATED) if this gateway is going into an archive volume, make sure that it's the only writer.
    
    Expects 'gateway_cert_b64', 'cert_bundle_b64', 'driver_text', and 'caller_user' from kw.
    * gateway_cert_bin must be a protobuf'ed gateway certificate, signed by the user to own the gateway 
@@ -756,6 +767,8 @@ def create_gateway( **kw ):
    
    Return the gateway on success, and put the new cert bundle for all publicly-routable gateways
    Raise an exception on error.
+
+   TODO: allow multiple archive writers; deny coordinator changes in archives
    """
    
    gateway_cert_b64 = kw.get('gateway_cert_b64', None)
@@ -815,15 +828,7 @@ def create_gateway( **kw ):
       raise Exception("Failed to validate cert bundle version vector")
    
    # unpack certificate
-   cert_version = gateway_cert.version
    gateway_name = gateway_cert.name 
-   gateway_type = gateway_cert.gateway_type 
-   host = gateway_cert.host 
-   port = gateway_cert.port 
-   pubkey_pem = gateway_cert.public_key 
-   cert_expires = gateway_cert.cert_expires 
-   requested_caps = gateway_cert.caps 
-   driver_hash = gateway_cert.driver_hash 
    volume_id = gateway_cert.volume_id 
    
    # verify volume ID against the cert bundle 
@@ -851,7 +856,7 @@ def create_gateway( **kw ):
       if not caller_user.is_admin and caller_user.owner_id != volume.owner_id:
          raise Exception("User '%s' is not allowed to create gateways for '%s'" % (caller_user.email, volume.name))
    
-   # if this is an archive volume, then there can be no other writers 
+   # if this is an archive volume, then there can be no other writers (DEPRECATED)
    if volume.archive and (gateway_cert.caps & (GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA)):
       writer_gateways_qry = Gateway.ListAll( {"Gateway.need_cert ==": True}, keys_only=True, query_only=True )
       if writer_gateways_qry.count() > 0:
@@ -883,6 +888,7 @@ def create_gateway( **kw ):
 # ----------------------------------
 def read_gateway( g_name_or_id ):
    return Gateway.Read( g_name_or_id )
+
 
 # ----------------------------------
 def update_gateway( g_name_or_id, **kw ):
@@ -924,6 +930,10 @@ def update_gateway( g_name_or_id, **kw ):
    gateway = read_gateway( g_name_or_id )
    if gateway is None:
        raise Exception("No such gateway '%s'" % g_name_or_id)
+
+   # user must own this gateway 
+   if gateway.owner_id != user.owner_id:
+       raise Exception("User '%s' does not own gateway '%s'" % (user.email, gateway.name))
 
    # caller user must be the volume owner, the admin, or the gateway owner
    if not caller_user.is_admin and caller_user.owner_id != volume.owner_id and caller_user.owner_id != gateway.owner_id:
