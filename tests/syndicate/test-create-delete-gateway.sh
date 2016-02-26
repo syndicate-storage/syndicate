@@ -36,7 +36,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    GW_TYPE="$(echo "$NAME" | sed -r 's/(.*)-([URA]{1}G)$/\2/g')"
 
    # should succeed
-   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" private_key=auto type="$GW_TYPE"
    RC=$?
 
    if [ $RC -ne 0 ]; then 
@@ -44,7 +44,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    fi
 
    # should fail (duplicate)
-   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" private_key=auto type="$GW_TYPE"
    RC=$?
 
    if [ $RC -eq 0 ]; then 
@@ -52,7 +52,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    fi
 
    # should fail (invalid name)
-   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME" name="" private_key=auto type="$GW_TYPE"
    RC=$?
 
    if [ $RC -eq 0 ]; then 
@@ -60,7 +60,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    fi
 
    # should fail (user does not exist)
-   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="none@gmail.com" volume="$RANDOM_VOLUME_NAME" name="$NAME-02" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="none@gmail.com" volume="$RANDOM_VOLUME_NAME" name="$NAME-02" private_key=auto type="$GW_TYPE"
    RC=$?
 
    if [ $RC -eq 0 ]; then 
@@ -68,7 +68,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    fi
 
    # should fail (volume does not exist)
-   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME-2" name="$GW_NAME" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" create_gateway email="$SYNDICATE_ADMIN_EMAIL" volume="$RANDOM_VOLUME_NAME-2" name="$GW_NAME" private_key=auto type="$GW_TYPE"
    RC=$?
    
    if [ $RC -eq 0 ]; then 
@@ -76,7 +76,7 @@ for NAME in $RANDOM_UG_GATEWAY_NAME $RANDOM_RG_GATEWAY_NAME $RANDOM_AG_GATEWAY_N
    fi
 
    # should fail (user is not the volume owner)
-   $SYNDICATE -c "$CONFIG_PATH" -u "$RANDOM_USER_NAME" create_gateway email="$RANDOM_USER_NAME" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" public_key=auto type="$GW_TYPE"
+   $SYNDICATE -c "$CONFIG_PATH" -u "$RANDOM_USER_NAME" create_gateway email="$RANDOM_USER_NAME" volume="$RANDOM_VOLUME_NAME" name="$GW_NAME" private_key=auto type="$GW_TYPE"
    RC=$?
 
    if [ $RC -eq 0 ]; then
