@@ -34,6 +34,21 @@ void* UG_main( void* arg ) {
 }
 
 
+// fskit postmount callback: start the UG (or die trying)
+int UG_start_on_mount( struct fskit_fuse_state* fs_fuse, void* cls ) {
+
+   int rc = 0;
+   struct UG_state* ug = (struct UG_state*)cls;
+
+   rc = UG_start( ug );
+   if( rc != 0 ) {
+      SG_error("UG_start rc = %d\n", rc );
+      exit(1);
+   }
+
+   return rc;
+}
+
 // entry point 
 int main( int argc, char** argv ) {
    
@@ -95,12 +110,8 @@ int main( int argc, char** argv ) {
    // disable permissions checks--we enforce them ourselves 
    fskit_fuse_setting_enable( fs_fuse, FSKIT_FUSE_NO_PERMISSIONS );
 
-   // start the UG
-   rc = UG_start( ug );
-   if( rc != 0 ) {
-      SG_error("UG_start rc = %d\n", rc );
-      exit(2);
-   }
+   // start the UG on mount 
+   fskit_fuse_postmount_callback( fs_fuse, UG_start_on_mount, ug );
 
    // run the filesystem!
    rc = fskit_fuse_main( fs_fuse, fuse_argc, fuse_argv );
@@ -117,6 +128,7 @@ int main( int argc, char** argv ) {
    UG_shutdown( ug );
    fskit_fuse_detach_core( fs_fuse );        // because UG_shutdown destroyed it
    fskit_fuse_shutdown( fs_fuse, NULL );
+   SG_safe_free( fs_fuse );
 
    // success!
    return 0;
