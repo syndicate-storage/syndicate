@@ -233,30 +233,24 @@ static int ms_client_get_dir_metadata_end( struct ms_client* client, uint64_t pa
       
       if( dir_listing->count( file_id ) > 0 ) {
          
-         SG_error("Duplicate child %" PRIX64 "\n", file_id );
-         rc = -EBADMSG;
+         SG_warn("Duplicate child %" PRIX64 "\n", file_id );
+         md_entry_free( &children[i] );
+         continue;
       }
       
-      if( rc == 0 ) {
+      try {
          
-         try {
-            
-            (*dir_listing)[ file_id ] = children[i];
-         }
-         catch( bad_alloc& ba ) {
-            rc = -ENOMEM;
-            break;
-         }
-         
-         // generation?
-         if( children[i].generation > biggest_generation ) {
-            
-            biggest_generation = children[i].generation;
-         }
+         (*dir_listing)[ file_id ] = children[i];
       }
-      
-      if( rc != 0 ) {
+      catch( bad_alloc& ba ) {
+         rc = -ENOMEM;
          break;
+      }
+      
+      // generation?
+      if( children[i].generation > biggest_generation ) {
+         
+         biggest_generation = children[i].generation;
       }
    }
    
@@ -299,6 +293,8 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
    size_t num_children_fetched = 0;
    int64_t max_generation_fetched = 0;
    int query_count = 0;
+
+   int i = 0;
    
    struct md_entry* ents = NULL;
    
@@ -364,19 +360,21 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
             
             if( rc == -EAGAIN ) {
                // all downloads are running 
+               rc = 0; 
                break;
             }
             
             SG_error("md_download_loop_next rc = %d\n", rc );
             break;
          }
-         
-         // GOGOGO!
-         rc = ms_client_get_dir_metadata_begin( client, parent_id, least_unknown_generation, next_batch, dlloop, dlctx );
-         if( rc != 0 ) {
+         else { 
+             // GOGOGO!
+             rc = ms_client_get_dir_metadata_begin( client, parent_id, least_unknown_generation, next_batch, dlloop, dlctx );
+             if( rc != 0 ) {
             
-            SG_error("ms_client_get_dir_metadata_begin( LUG=%" PRId64 ", batch=%" PRId64 " ) rc = %d\n", least_unknown_generation, next_batch, rc );
-            break;
+                SG_error("ms_client_get_dir_metadata_begin( LUG=%" PRId64 ", batch=%" PRId64 " ) rc = %d\n", least_unknown_generation, next_batch, rc );
+                break;
+             }
          }
       }
       
@@ -401,7 +399,8 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
             
             // out of downloads?
             if( rc == -EAGAIN ) {
-               
+              
+               SG_debug("Out of downloads (rc = %d)\n", rc); 
                rc = 0;
                break;
             }
@@ -452,23 +451,22 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       
       // download stopped prematurely
       md_download_loop_abort( dlloop );
+   } 
+   
+   // free all ms_client_get_dir_download_state
+   i = 0;
+   for( dlctx = md_download_loop_next_initialized( dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( dlloop, &i ) ) {
       
-      int i = 0;
+      if( dlctx == NULL ) {
+         break;
+      }
       
-      // free all ms_client_get_dir_download_state
-      for( dlctx = md_download_loop_next_initialized( dlloop, &i ); dlctx != NULL; dlctx = md_download_loop_next_initialized( dlloop, &i ) ) {
-         
-         if( dlctx == NULL ) {
-            break;
-         }
-         
-         struct ms_client_get_dir_download_state* dlstate = (struct ms_client_get_dir_download_state*)md_download_context_get_cls( dlctx );
-         md_download_context_set_cls( dlctx, NULL );
-        
-         if( dlstate != NULL ) { 
-             ms_client_get_dir_download_state_free( dlstate );
-             dlstate = NULL;
-         }
+      struct ms_client_get_dir_download_state* dlstate = (struct ms_client_get_dir_download_state*)md_download_context_get_cls( dlctx );
+      md_download_context_set_cls( dlctx, NULL );
+     
+      if( dlstate != NULL ) { 
+          ms_client_get_dir_download_state_free( dlstate );
+          dlstate = NULL;
       }
    }
    
@@ -492,7 +490,7 @@ static int ms_client_get_dir_metadata( struct ms_client* client, uint64_t parent
       return rc;
    }
    
-   int i = 0;
+   i = 0;
    for( ms_client_dir_listing::iterator itr = children.begin(); itr != children.end(); itr++ ) {
       
       ents[i] = itr->second;
