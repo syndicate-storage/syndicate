@@ -331,21 +331,45 @@ static int UG_fs_close( struct fskit_core* fs, struct fskit_route_metadata* rout
 static int UG_fs_stat( struct fskit_core* fs, struct fskit_route_metadata* route_metadata, struct fskit_entry* fent, struct stat* sb ) {
    
    int rc = 0;
-   
-   struct UG_inode* inode = NULL;
-   
-   fskit_entry_rlock( fent );
-   
-   // check deleting...
-   inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
-   
-   if( UG_inode_deleting( inode ) ) {
+   struct SG_gateway* gateway = (struct SG_gateway*)fskit_core_get_user_data( fs );
+   struct UG_inode* inode = NULL; 
+   struct fskit_entry* new_fent = NULL;
+
+   // refresh path 
+   rc = UG_consistency_path_ensure_fresh( gateway, fskit_route_metadata_get_path( route_metadata ) );
+   if( rc != 0 ) {
       
-      rc = -ENOENT;
+      SG_error( "UG_consistency_path_ensure_fresh('%s') rc = %d\n", fskit_route_metadata_get_path( route_metadata ), rc );
+      return rc;
    }
    
-   fskit_entry_unlock( fent );
-   
+   if( fent != NULL ) {
+      
+      fskit_entry_rlock( fent );
+      
+      // check deleting...
+      inode = (struct UG_inode*)fskit_entry_get_user_data( fent );
+      
+      if( UG_inode_deleting( inode ) ) {
+         
+         rc = -ENOENT;
+      }
+      
+      fskit_entry_unlock( fent );
+   }
+   else {
+
+      // we just discovered this inode and grafted it into our tree.
+      // stat it 
+      new_fent = fskit_entry_resolve_path( fs, fskit_route_metadata_get_path( route_metadata ), 0, 0, false, &rc );
+      if( rc != 0 ) {
+         return rc;
+      }
+
+      rc = fskit_entry_fstat( new_fent, sb );
+      fskit_entry_unlock( new_fent );
+   }
+
    return rc;
 }
 
