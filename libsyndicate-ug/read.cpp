@@ -997,7 +997,14 @@ int UG_read_impl( struct fskit_core* core, struct fskit_route_metadata* route_me
    coordinator_id = UG_inode_coordinator_id( inode );
    write_nonce = UG_inode_write_nonce( inode );
    file_size = UG_inode_size( inode );
-   first_block = offset / file_size;
+
+   if( file_size > 0 ) {
+       first_block = offset / file_size;
+   }
+   else {
+       first_block = 0;
+   }
+
    last_block = MIN( file_size / block_size, (offset + buf_len) / block_size);
    
    if( rc != 0 ) {
