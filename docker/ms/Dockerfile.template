@@ -90,6 +90,7 @@ expose 8000
 ##############################################
 USER syndicate
 WORKDIR $HOME
+RUN mkdir /home/syndicate/datastore
 
-CMD ["/home/syndicate/google_appengine/dev_appserver.py", "--admin_host=0.0.0.0", "--host=0.0.0.0", "/home/syndicate/syndicate/build/out/ms"]
+CMD ["/home/syndicate/google_appengine/dev_appserver.py", "--admin_host=0.0.0.0", "--host=0.0.0.0", "--storage_path=/home/syndicate/datastore", "/home/syndicate/syndicate/build/out/ms"]
 
