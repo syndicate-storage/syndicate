@@ -69,7 +69,7 @@ RUN make install
 WORKDIR $HOME/syndicate/gateways/user
 RUN make install
 
-expose 31111
+expose $GATEWAY_PORT$
 
 USER syndicate
 WORKDIR $HOME
