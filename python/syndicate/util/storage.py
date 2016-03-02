@@ -263,14 +263,14 @@ def store_public_key( config, key_type, object_id, key_data ):
    return write_key( key_path, key_data_pem )
       
 
-def store_private_key( config, key_type, object_id, key_data ):
+def store_private_key( config, key_type, object_id, key_data, overwrite=False ):
    """
    Store a private key for a given object of a given type.
    """
    key_data_pem = key_data.exportKey()
    assert key_data.has_private(), "Not a private key"
    key_path = conf.object_key_path( config, key_type, object_id, public=False )
-   return write_key( key_path, key_data_pem )
+   return write_key( key_path, key_data_pem, overwrite=overwrite )
 
 
 def erase_key( config, key_type, object_id, public=False ):

@@ -93,10 +93,9 @@ CONFIG_OPTIONS = {
    "username":          ("-u", 1, "The ID of the Syndicate user to run as."),
    "volume_keys":       ("-V", 1, "Path to the directory holding the Volume public keys."),
    "gateway_keys":      ("-G", 1, "Path to the directory holding the Gateway private keys."),
-   "user_keys":         ("-K", 1, "Path to the directory holding the User private keys."),
+   "user_keys":         ("-U", 1, "Path to the directory holding the User private keys."),
    "syndicate_keys":    ("-S", 1, "Path to the directory holding the Syndicate public keys."),
    "certs_dir":         ("-C", 1, "Path to the directory to store remotely-fetched certificates."),
-   "helpers":           ("-l", 1, "Path to the directory holding the Syndicate helper programs."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "debug":             ("-d", 0, "Verbose debugging output"),
    "trust_public_key":  ("-t", 0, "If set, automatically trust the Syndicate public key if it is not yet trusted."),
@@ -176,6 +175,8 @@ def load_config( config_path, config_str, opts, config_header, config_options ):
    
    conf_dir = os.path.dirname( config_path )
    extend_key_paths( ret, conf_dir )
+
+   ret['config_dir'] = conf_dir
    return ret
 
 
@@ -257,6 +258,17 @@ def object_file_path( config, object_type, object_id ):
       raise Exception("Could not get directory for type '%s' (config = %s, object_dir_names = %s)" % (object_type, config, OBJECT_DIR_NAMES))
   
    return os.path.join( dirname, str(object_id) )
+
+
+def object_base_file_path( config, object_type, object_id ):
+   """
+   Get the path to an object's file, relative to the config directory
+   """
+   dirname = config.get( OBJECT_DIR_NAMES.get( object_type, None ) )
+   if dirname == None:
+      raise Exception("Could not get directory for type '%s' (config = %s, object_dir_names = %s)" % (object_type, config, OBJECT_DIR_NAMES))
+  
+   return os.path.join( os.path.basename(dirname), str(object_id) )
 
 
 def object_key_path( config, object_type, object_id, public=False, no_suffix=False ):
@@ -362,13 +374,21 @@ def usage( progname ):
    """
    Print usage and exit.
    """
-   global CONFIG_DESCRIPTION 
+   global CONFIG_DESCRIPTION, CONFIG_OPTIONS 
 
-   parser = build_parser( progname, CONFIG_DESCRIPTION )
+   parser = build_parser( progname, CONFIG_DESCRIPTION, CONFIG_OPTIONS )
    parser.print_help()
    sys.exit(1)
 
 
+def print_parser_help( progname, description, options ):
+   """
+   Print usage for a section
+   """
+   parser = build_parser( progname, description, options )
+   parser.print_help()
+
+   
 def syndicate_object_name( config ):
    """
    Given the config, find the syndicate object name.
@@ -461,3 +481,43 @@ def get_config_from_argv( argv ):
 
     config['params'] = getattr( opts, "params", [] ) 
     return config
+
+
+def get_extra_config( argv, section_name, section_options ):
+    """
+    Load extra configuration from argv 
+    and from the config file, under the header
+    'section_name'.
+
+    The returned dict will have the extra section information.
+
+    Return None if there were no options found for
+    this section.
+    """
+    
+    global CONFIG_DESCRIPTION, CONFIG_OPTIONS
+
+    import syndicate.util.storage as storage
+    import syndicate.util.client as client
+
+    parser = build_parser( argv[0], CONFIG_DESCRIPTION, CONFIG_OPTIONS )
+    opts, _ = parser.parse_known_args( argv[1:] )
+   
+    # load everything into a dictionary and return it
+    config_str = None
+    config_file_path = None
+   
+    if hasattr( opts, "config" ) and opts.config != None:
+        config_file_path = opts.config[0]
+    else:
+        config_file_path = default_config_path()
+   
+    config_str = storage.read_file( config_file_path )
+
+    # get the extra options 
+    extra_config = load_config( config_file_path, config_str, opts, section_name, section_options )
+    if extra_config is None:
+        log.error("No configuration for '%s'" % section_name )
+        return None 
+
+    return extra_config

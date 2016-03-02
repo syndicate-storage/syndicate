@@ -22,6 +22,7 @@ import subprocess
 
 import sys
 import tempfile
+import shutil
 import base64
 import stat
 import copy
@@ -376,6 +377,136 @@ def make_object_directories( config ):
    
    return True
 
+# -------------------
+def find_paired_cert( path ):
+    """
+    Given a path to a .cert file, find the other .cert file
+    that corresponds to it.
+
+    This is possible because each object has both a numeric .cert
+    file and a named .cert file.
+    """
+    object_file_inode = os.stat( path ).st_ino
+    object_dir = os.path.dirname(path)
+    for name in os.listdir(object_dir):
+        if name in [".", ".."]:
+            continue 
+
+        if "." not in name:
+            # no suffi
+            continue 
+
+        inode_no = os.stat( os.path.join(object_dir, name) ).st_ino
+        if inode_no == object_file_inode:
+            # is it *not* the same?
+            if not name.startswith( os.path.basename(path) ):
+                return os.path.join( object_dir, name )
+
+    return None
+
+
+# -------------------
+def export_object_files( config, object_type, object_name_or_id, dest_path ):
+    """
+    Export an object's relevant keys and certificates
+    """
+
+    if os.path.isdir(dest_path):
+        dest_path = os.path.join(dest_path, str(object_name_or_id))
+    
+    # find the relevant .cert and .pkey files 
+    cert_path = conf.object_file_path( config, object_type, str(object_name_or_id) + ".cert" )
+
+    # name or ID?
+    object_name = None 
+    object_id = None
+    try:
+        # ID given
+        object_id = int(object_name_or_id)
+        object_name_path = find_paired_cert( cert_path )
+        if object_name_path is None:
+            log.error("No paired certificate for '%s'" % cert_path)
+            return False
+
+        object_name = os.path.basename( object_name_path ).split(".")[0]
+
+    except:
+        # name given 
+        object_name = object_name_or_id 
+        object_id_path = find_paired_cert( cert_path )
+        if object_id_path is None:
+            log.error("No paired certificate for '%s'" % cert_path)
+            return False
+
+        object_id = int(os.path.basename(object_id_path).split(".")[0])
+
+    pkey_path = conf.object_base_file_path( config, object_type, object_name + ".pkey" )
+    name_cert_path = conf.object_base_file_path( config, object_type, object_name + ".cert" )
+    id_cert_path = conf.object_base_file_path( config, object_type, str(object_id) + ".cert" )
+
+    extant_paths = []
+    tar_args = []
+    for path in [pkey_path, name_cert_path, id_cert_path]:
+        if os.path.exists( os.path.join(config['config_dir'], path) ):
+            extant_paths.append(path)
+
+    cmd = ("cd \"%s\" && tar cf \"%s.tar\" " % (config['config_dir'], dest_path)) + (" ".join( ["\"%s\"" % p for p in extant_paths] )) + \
+          (" && bzip2 \"%s.tar\"" % dest_path) + (" && mv \"%s.tar.bz2\" \"%s\"" % (dest_path,dest_path)) 
+
+    rc = os.system(cmd)
+    if rc != 0:
+        log.error("Failed to export files.  Command: '%s'" % cmd)
+        return False
+
+    print "Exported '%s' (%s) to '%s'" % (object_name, str(object_id), dest_path)
+    return True
+
+# -------------------
+def import_object_files( config, object_type, src_path, force=False ):
+    """
+    Import an exported bundle of object files
+    """
+
+    tmpdir = tempfile.mkdtemp()
+    extract_cmd = "tar xvf \"%s\" -C \"%s\"" % (src_path, tmpdir)
+    rc = os.system( extract_cmd )
+    if rc != 0:
+        log.error("Failed to extract to '%s'" % tmpdir)
+        shutil.rmtree(tmpdir)
+        return False
+
+    srcdir = os.path.join(tmpdir, conf.object_base_file_path( config, object_type, "" ))
+    destdir = conf.object_file_path( config, object_type, "" )
+
+    # sanity check 
+    if not os.path.exists( srcdir ):
+        log.error("Not an exported '%s'" % object_type)
+        shutil.rmtree(tmpdir)
+
+    for name in os.listdir( srcdir ):
+
+        if name in [".", ".."]:
+            continue
+
+        dest_path = conf.object_file_path( config, object_type, name )
+        if os.path.exists(dest_path):
+            if not force:
+                log.error("File would be overwritten: %s" % dest_path)
+                return False 
+            else:
+                log.warn("File would be overwritten, but doing so anyway: %s" % dest_path)
+               
+    # use this command to preserve hard-links
+    cmd = "mkdir -p \"%s\" && cp -a \"%s\"/* \"%s\"" % (os.path.dirname(destdir), srcdir, destdir)
+    rc = os.system( cmd )
+    shutil.rmtree(srcdir)
+
+    if rc == 0:
+        return True 
+    else:
+        log.error("Failed to copy files. Command: '%s'" % cmd)
+        return False
+
 
 # -------------------
 def parse_argv( argv ):
@@ -443,6 +574,7 @@ def init_config( argv, method_name ):
    return config
 
 
+# -------------------
 def do_method_help( config, method_name ):
    """
    Print a method's documentation and exit, given the  
@@ -460,6 +592,7 @@ def do_method_help( config, method_name ):
    print "Help for '%s':\n%s" % (method_name, method_help)
 
 
+# -------------------
 def make_admin_cert( username, admin_privkey ):
     """
     Make a cert for the admin
@@ -486,7 +619,7 @@ def make_admin_cert( username, admin_privkey ):
     return admin_cert
 
 
-
+# -------------------
 def do_setup( opts, username, admin_privkey_path, MS_url ):
    """
    Do one-time initial setup:
@@ -599,6 +732,7 @@ def do_setup( opts, username, admin_privkey_path, MS_url ):
    sys.exit(0)
 
 
+# -------------------
 def client_call( CONFIG, method_name, *args, **kw ):
    """
    Call a method on the MS (method_name).
@@ -755,6 +889,127 @@ def main( argv ):
        except Exception, e:
            log.exception(e)
            print >> sys.stderr, "Failed to reload driver"
+           sys.exit(1)
+
+   elif method_name == "export_volume":
+       if len(args) != 2:
+           print >> sys.stderr, "Usage: %s export_volume VOLUME_NAME_OR_ID PATH" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = export_object_files( CONFIG, "volume", args[0], args[1] )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to export volume files"
+           sys.exit(1)
+
+
+   elif method_name == "export_gateway":
+       if len(args) != 2:
+           print >> sys.stderr, "Usage: %s export_gateway GATEWAY_NAME_OR_ID PATH" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = export_object_files( CONFIG, "gateway", args[0], args[1] )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to export gateway files"
+           sys.exit(1)
+
+
+   elif method_name == "export_user":
+       if len(args) != 2:
+           print >> sys.stderr, "Usage: %s export_user USER_EMAIL_OR_ID PATH" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = export_object_files( CONFIG, "user", args[0], args[1] )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to export user files"
+           sys.exit(1)
+
+   elif method_name == "import_volume":
+       if len(args) < 1:
+           print >> sys.stderr, "Usage: %s import_volume EXPORTED_VOLUME_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       force = False
+       if len(args) == 2 and args[1] == 'force':
+           force = True
+       else:
+           print >> sys.stderr, "Usage: %s import_volume EXPORTED_VOLUME_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = import_object_files( CONFIG, "volume", args[0], force=force )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to import volume files"
+           sys.exit(1)
+
+
+   elif method_name == "import_gateway":
+       if len(args) < 1:
+           print >> sys.stderr, "Usage: %s import_gateway EXPORTED_GATEWAY_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       force = False
+       if len(args) == 2 and args[1] == 'force':
+           force = True
+       else:
+           print >> sys.stderr, "Usage: %s import_gateway EXPORTED_GATEWAY_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = import_object_files( CONFIG, "gateway", args[0], force=force )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to import gateway files"
+           sys.exit(1)
+
+
+   elif method_name == "import_user":
+       if len(args) < 1:
+           print >> sys.stderr, "Usage: %s import_user EXPORTED_USER_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       force = False
+       if len(args) == 2 and args[1] == 'force':
+           force = True
+       else:
+           print >> sys.stderr, "Usage: %s import_user EXPORTED_USER_PATH [force]" % sys.argv[0]
+           sys.exit(1)
+
+       try:
+           rc = import_object_files( CONFIG, "user", args[0], force=force )
+           if not rc:
+               sys.exit(1)
+           else:
+               sys.exit(0)
+       except Exception, e:
+           log.exception(e)
+           print >> sys.stderr, "Failed to import user files"
            sys.exit(1)
 
 
