@@ -56,6 +56,10 @@ RUN wget -O syndicate.zip https://github.com/jcnelson/syndicate/archive/master.z
 RUN unzip syndicate.zip
 RUN mv syndicate-master syndicate
 WORKDIR "syndicate"
+
+# replace localhost to $MS_HOST$
+RUN sed -i 's/localhost/$MS_HOST$/g' ms/common/msconfig.py
+
 RUN make MS_APP_ADMIN_EMAIL=$MS_APP_ADMIN_EMAIL$
 RUN echo "======== SYNDICATE ADMIN INFO ========"
 RUN cat build/out/ms/common/admin_info.py
