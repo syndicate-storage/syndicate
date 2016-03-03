@@ -1,0 +1,21 @@
+{
+   "DATASET_DIR":       "/iplant/home/iychoi/syndicate-AG-dataset",
+   "EXEC_FMT":          "/usr/bin/python -m syndicate.ag.gateway",
+   "DRIVER":            "syndicate.ag.drivers.fs",
+   "DRIVER_FS_BACKEND": "iplant_datastore",
+   "DRIVER_FS_BACKEND_CONFIG": 
+      {
+         "irods":
+            {
+               "host":  "irods-2.iplantcollaborative.org",
+               "port":  1247,
+               "zone":  "iplant"
+            },
+         "bms":
+            {
+               "host":  "irods-2.iplantcollaborative.org",
+               "port":  31333,
+               "vhost": "/irods/useraccess"
+            }
+      }                     
+}
