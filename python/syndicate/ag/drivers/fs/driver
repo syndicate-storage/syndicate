@@ -27,6 +27,7 @@ import sys
 import errno
 import time
 import threading
+import json
 import syndicate.util.gateway as gateway
 
 from syndicate.ag.fs_driver_common.fs_backend_loader import fs_backend_loader
@@ -81,7 +82,12 @@ def driver_init( driver_config, driver_secrets ):
     dataset_dir = "/" + dataset_dir.strip("/")
 
     backend = driver_config['DRIVER_FS_BACKEND']
-    backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+
+    if isinstance(driver_config['DRIVER_FS_BACKEND_CONFIG'], dict):
+        backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+    elif isinstance(driver_config['DRIVER_FS_BACKEND_CONFIG'], basestring):
+        json_backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+        backend_config = json.loads(json_backend_config)
 
     backend_config["secrets"] = driver_secrets
     backend_config["dataset_root"] = dataset_dir
