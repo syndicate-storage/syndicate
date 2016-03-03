@@ -1,3 +1,0 @@
-- Need to load backend plugins from dist-packages. 
-  Currently, it finds its backend plugins from its subdirectory, fs_backends.
-  This is because, backend plugins cannot find the fs-driver from the dist-packages without installing them, so cannot find necessary classes.

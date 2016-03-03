@@ -88,6 +88,7 @@ setup(name='syndicate',
                   'syndicate.ag',
                   'syndicate.ag.curation',
                   'syndicate.ag.datasets',
+                  'syndicate.ag.fs_driver_common',
                   'syndicate.rg',
                   'syndicate.rg.drivers',
                   'syndicate.rg.drivers.s3',
@@ -104,7 +105,8 @@ setup(name='syndicate',
                   'syndicate.rg.drivers.disk': os.path.join(ext_source_root, build_dir, 'syndicate/rg/drivers/disk'),
                   'syndicate.ag': os.path.join(ext_source_root, build_dir, 'syndicate/ag'),
                   'syndicate.ag.datasets': os.path.join(ext_source_root, build_dir, 'syndicate/ag/datasets'),
-                  'syndicate.ag.curation': os.path.join(ext_source_root, build_dir, 'syndicate/ag/curation')
+                  'syndicate.ag.curation': os.path.join(ext_source_root, build_dir, 'syndicate/ag/curation'),
+                  'syndicate.ag.fs_driver_common': os.path.join(ext_source_root, build_dir, 'syndicate/ag/fs_driver_common')
       },
       cmdclass = {"build_ext": build_ext},
       zip_safe=False)

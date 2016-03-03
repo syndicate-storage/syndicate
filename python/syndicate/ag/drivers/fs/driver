@@ -29,7 +29,7 @@ import time
 import threading
 import syndicate.util.gateway as gateway
 
-from fs_backend_loader import fs_backend_loader
+from syndicate.ag.fs_driver_common.fs_backend_loader import fs_backend_loader
 
 dataset_dir = None
 path_queue = []

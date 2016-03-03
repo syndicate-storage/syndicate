@@ -24,8 +24,8 @@ import os
 import time
 import logging
 
-from syndicate.ag.drivers.fs import abstract_fs
-from syndicate.ag.drivers.fs import metadata
+from syndicate.ag.fs_driver_common.abstract_fs import abstract_fs
+from syndicate.ag.fs_driver_common.abstract_fs import metadata
 from . import bms_client
 from . import irods_client
 
