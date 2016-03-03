@@ -29,8 +29,10 @@ import time
 import threading
 import json
 import syndicate.util.gateway as gateway
+import syndicate.ag.fs_driver_common.abstract_fs as abstract_fs
 
 from syndicate.ag.fs_driver_common.fs_backend_loader import fs_backend_loader
+
 
 dataset_dir = None
 path_queue = []
@@ -104,6 +106,7 @@ def driver_init( driver_config, driver_secrets ):
         fs.connect()
     except Exception as e:
         gateway.log_error("Unable to initialize a driver")
+        gateway.log_error(str(e))
         return False
 
     if not fs.exists( dataset_dir ):
@@ -243,7 +246,12 @@ def read( request, chunk_fd, driver_config, driver_secrets ):
         sys.exit(1)
 
     backend = driver_config['DRIVER_FS_BACKEND']
-    backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+
+    if isinstance(driver_config['DRIVER_FS_BACKEND_CONFIG'], dict):
+        backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+    elif isinstance(driver_config['DRIVER_FS_BACKEND_CONFIG'], basestring):
+        json_backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+        backend_config = json.loads(json_backend_config)
 
     backend_config["secrets"] = driver_secrets
     backend_config["dataset_root"] = dataset_dir
@@ -259,6 +267,7 @@ def read( request, chunk_fd, driver_config, driver_secrets ):
         fs.connect()
     except Exception as e:
         gateway.log_error("Unable to initialize a driver")
+        gateway.log_error(str(e))
         sys.exit(1)
 
     if not fs.exists( file_path ):

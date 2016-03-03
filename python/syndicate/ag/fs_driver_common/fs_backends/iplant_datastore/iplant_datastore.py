@@ -23,11 +23,10 @@ iPlant Data Store Backend
 import os
 import time
 import logging
-
-from syndicate.ag.fs_driver_common.abstract_fs import abstract_fs
-from syndicate.ag.fs_driver_common.abstract_fs import metadata
-from . import bms_client
-from . import irods_client
+import syndicate.ag.fs_driver_common.abstract_fs as abstract_fs
+import syndicate.ag.fs_driver_common.metadata as metadata
+import syndicate.ag.fs_driver_common.fs_backends.iplant_datastore.bms_client as bms_client
+import syndicate.ag.fs_driver_common.fs_backends.iplant_datastore.irods_client as irods_client
 
 logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
