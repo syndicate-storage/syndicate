@@ -1,0 +1,270 @@
+#!/usr/bin/python
+
+"""
+   Copyright 2016 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+"""
+Filesystem driver.
+Serves files on a remote system through generic backend fs interface.
+"""
+
+import traceback
+import os
+import sys
+import errno
+import time
+import threading
+import syndicate.util.gateway as gateway
+
+from fs_backend_loader import fs_backend_loader
+
+dataset_dir = None
+path_queue = []
+fs = None
+
+ENTRY_UPDATED = 0
+ENTRY_ADDED = 1
+ENTRY_REMOVED = 2
+
+def datasets_update_cb(updated_entries, added_entries, removed_entries):
+    global path_queue
+
+    for u in updated_entries:
+        entry = {}
+        entry["flag"] = ENTRY_UPDATED
+        entry["stat"] = u
+        path_queue.append(u)
+    for a in added_entries:
+        entry = {}
+        entry["flag"] = ENTRY_ADDED
+        entry["stat"] = a
+    for r in removed_entries:
+        entry = {}
+        entry["flag"] = ENTRY_REMOVED
+        entry["stat"] = r
+
+
+def driver_init( driver_config, driver_secrets ):
+    """
+    Do the one-time driver setup.
+    """
+
+    global fs
+    global dataset_dir
+
+    if not driver_config.has_key('DRIVER_FS_BACKEND'):
+        gateway.log_error("No DRIVER_FS_BACKEND defined")
+        return False
+
+    if not driver_config.has_key('DRIVER_FS_BACKEND_CONFIG'):
+        gateway.log_error("No DRIVER_FS_BACKEND_CONFIG defined")
+        return False
+
+    if not driver_config.has_key('DATASET_DIR'):
+        gateway.log_error("No DATASET_DIR defined")
+        return False
+
+    dataset_dir = driver_config['DATASET_DIR']
+    dataset_dir = "/" + dataset_dir.strip("/")
+
+    backend = driver_config['DRIVER_FS_BACKEND']
+    backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+
+    backend_config["secrets"] = driver_secrets
+    backend_config["dataset_root"] = dataset_dir
+
+    try:
+        loader = fs_backend_loader(backend, backend_config)
+        fs = loader.load()
+
+        if not fs:
+            gateway.log_error("No such driver backend found: %s" % backend )
+            return False
+
+        fs.set_notification_cb(datasets_update_cb)
+        fs.connect()
+    except Exception as e:
+        gateway.log_error("Unable to initialize a driver")
+        return False
+
+    if not fs.exists( dataset_dir ):
+        gateway.log_error("No such file or directory: %s" % dataset_dir )
+        return False 
+
+    if not fs.is_dir( dataset_dir ):
+        gateway.log_error("Not a directory: %s" % dataset_dir )
+        return False
+
+    return True
+
+
+def driver_shutdown():
+    """
+    Do the one-time driver shutdown
+    """
+    global fs
+    if fs:
+        try:
+            fs.close()
+        except Exception as e:
+            pass
+    
+
+def next_dataset( driver_config, driver_secrets ):
+    """
+    Return the next dataset command for the AG to process.
+    Should block until there's data.
+
+    Must call gateway.crawl() to feed the data into the AG.
+    Return True if there are more datasets to process.
+    Return False if not.
+    """
+
+    global path_queue
+
+    next_stat = None
+
+    # find the next file or directory 
+    while True:
+
+        next_stat = None
+        if len(path_queue) > 0:
+            next_stat = path_queue[0]
+            path_queue.pop(0)
+
+        if next_stat is None:
+            # no more data
+            # stop calling this method
+            return False
+
+        flag = next_stat["flag"]
+        stat = next_stat["stat"]
+
+        if not stat.path.startswith(dataset_dir):
+            gateway.log_error("Not belong to a dataset: %s" % stat.path )
+            continue
+
+        publish_path = stat.path[len(dataset_dir):]
+        
+        cmd = None
+
+        if stat.directory:
+            # directory 
+            if flag == ENTRY_UPDATED:
+                cmd = gateway.make_metadata_command( "update", "directory", 0555, None, publish_path )
+            elif flag == ENTRY_ADDED:
+                cmd = gateway.make_metadata_command( "create", "directory", 0555, None, publish_path )
+            elif flag == ENTRY_REMOVED:
+                cmd = gateway.make_metadata_command( "remove", "directory", 0555, None, publish_path )
+
+        else:
+            # file 
+            if flag == ENTRY_UPDATED:
+                cmd = gateway.make_metadata_command( "update", "file", 0555, stat.size, publish_path )
+            elif flag == ENTRY_ADDED:
+                cmd = gateway.make_metadata_command( "create", "file", 0555, stat.size, publish_path )
+            elif flag == ENTRY_REMOVED:
+                cmd = gateway.make_metadata_command( "remove", "file", 0555, stat.size, publish_path )
+
+        if cmd is not None:
+            # have a command!
+            break
+
+        else:
+            # try next path 
+            continue
+
+    # send the command to the AG and get back the result
+    rc = gateway.crawl( cmd )
+    if rc != 0:
+        gateway.log_error( "Failed to crawl %s" % cmd['path'] )
+
+    # have more data
+    return True
+
+
+def read( request, chunk_fd, driver_config, driver_secrets ):
+    """
+    Read a chunk of data.
+    @request is a DriverRequest
+    @chunk_fd is a file descriptor to which to write the data.
+    @driver_config is a dict containing the driver's config
+    @driver_secrets is a dict containing the driver's unencrypted secrets
+    """
+ 
+    if not driver_config.has_key('DRIVER_FS_BACKEND'):
+        gateway.log_error("No DRIVER_FS_BACKEND defined")
+        sys.exit(1)
+
+    if not driver_config.has_key('DRIVER_FS_BACKEND_CONFIG'):
+        gateway.log_error("No DRIVER_FS_BACKEND_CONFIG defined")
+        sys.exit(1)
+
+    if not driver_config.has_key('DATASET_DIR'):
+        gateway.log_error("No DATASET_DIR defined")
+        sys.exit(1)
+
+    dataset_dir = driver_config['DATASET_DIR']
+    dataset_dir = "/" + dataset_dir.strip("/")
+
+    path = gateway.request_path( request )
+    file_path = gateway.path_join( dataset_dir, path )
+    byte_offset = gateway.request_byte_offset( request )
+    byte_len = gateway.request_byte_len( request )
+    buf = None
+
+    if byte_offset is None:
+        # this is a bug
+        gateway.log_error("BUG: byte offset of request on %s is not defined" % file_path )
+        sys.exit(1)
+
+    if byte_len is None:
+        # this is a bug
+        gateway.log_error("BUG: byte len of request on %s is not defined" % file_path )
+        sys.exit(1)
+
+    backend = driver_config['DRIVER_FS_BACKEND']
+    backend_config = driver_config['DRIVER_FS_BACKEND_CONFIG']
+
+    backend_config["secrets"] = driver_secrets
+    backend_config["dataset_root"] = dataset_dir
+
+    try:
+        loader = fs_backend_loader(backend, backend_config)
+        fs = loader.load()
+
+        if not fs:
+            gateway.log_error("No such driver backend found: %s" % backend )
+            sys.exit(1)
+
+        fs.connect()
+    except Exception as e:
+        gateway.log_error("Unable to initialize a driver")
+        sys.exit(1)
+
+    if not fs.exists( file_path ):
+        gateway.log_error("No such file or directory: %s" % file_path )
+        return -errno.ENOENT
+
+    try:
+        buf = fs.read( file_path, byte_offset, byte_len)
+    except Exception, e:
+        gateway.log_error("Failed to read %s: %s" % (file_path, e))
+        sys.exit(1)
+
+    # send it off
+    chunk_fd.write( buf )
+    return 0 
