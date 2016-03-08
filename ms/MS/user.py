@@ -99,7 +99,7 @@ class SyndicateUser( storagetypes.Object ):
 
    validators = {
       "email" : (lambda cls, value: valid_email(value)),
-      "public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
+      "public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE ) and cls.is_public_key( value ))
    }
    
    read_attrs_api_required = [
