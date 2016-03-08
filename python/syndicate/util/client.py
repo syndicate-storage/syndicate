@@ -18,6 +18,7 @@
 
 import syndicate.util.config as conf
 import syndicate.util.crypto as crypto
+import syndicate.util.objects as object_stub
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.msconfig as msconfig
 
@@ -159,7 +160,7 @@ def api_call_verifier( config, pubkey, method_name, data, syndicate_data, rpc_re
       raise Exception("No public key given.  Unable to verify result.")
 
 
-def make_rpc_client( config ):
+def make_rpc_client( config, caller_username=None ):
    """
    Create an RPC client for calling MS methods.
    Requires a config dictionary with:
@@ -170,20 +171,26 @@ def make_rpc_client( config ):
    * user_pkey
    """
    
+   import storage 
+
    ms_url = make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'] ) + "/API"
    
-   username = config['username']
-   user_private_key = config['user_pkey']
+   username = caller_username
+   if username is None:
+       username = config['username']
+
+   user_private_key = storage.load_private_key( config, "user", username )
    syndicate_public_key = config['syndicate_public_key']
    
    if not ms_url.lower().startswith("https://"):
-      log.warning("MS URL %s is NOT secure!" % ms_url )
+      log.warning("MS URL %s is NOT confidential!" % ms_url )
    
    signer = lambda method_name, data: api_call_signer( user_private_key, method_name, data )
    verifier = lambda method_name, args, kw, data, syndicate_data, rpc_result: api_call_verifier( config, syndicate_public_key, method_name, data, syndicate_data, rpc_result )
    
    json_client = jsonrpc.Client( ms_url, jsonrpc.VERSION, signer=signer, verifier=verifier, username=username )
    json_client.config = config
+   json_client.caller_username = username
 
    return json_client
 
@@ -215,4 +222,50 @@ def json_stable_serialize( json_data ):
       return '"' + json_data + '"'
    
    return '"' + str(json_data) + '"'
+
+
+
+def ms_rpc( proxy, method_name, *args, **kw ):
+   """
+   Call a method on the MS (method_name).
+   Take the argument vector *args and dictionary **kw (both taken from sys.argv),
+   look up the method's parser, parse the arguments, and then issue the 
+   RPC call.
+   """
+   
+   verify_reply = True
+   config = proxy.config 
+
+   if config.has_key('verify_reply'):
+      # do not verify the reply (i.e. we might not know the Syndicate public key)
+      verify_reply = config['verify_reply']
+   
+   # parse arguments.
+   # use lib to load and store temporary data for the argument parsers.
+   lib = conf.ArgLib()
+   lib.config = config
+   
+   try:
+       args, kw, extras = conf.parse_args( config, method_name, args, kw, lib )
+   except Exception, e:
+       log.error("Failed to parse arguments for '%s'" % method_name)
+       raise e
+   
+   # make sure we got the right number of arguments 
+   valid = conf.validate_args( method_name, args, kw )
+   if not valid:
+      raise Exception("Invalid arguments for %s" % method_name)
+  
+   method_callable = getattr( proxy, method_name )
+
+   # NOTE: might cause an exception
+   log.debug("As %s, call %s(%s %s)" % (proxy.caller_username, method_name, ", ".join([str(a) for a in args]), ", ".join( ["%s=%s" % (str(k), str(kw[k])) for k in kw.keys()] )))
+   ret = method_callable( *args, **kw )
+   
+   # process object-specific extra information, based on the returned value of this method.
+   for object_cls in object_stub.object_classes:
+      object_cls.PostProcessResult( extras, config, method_name, args, kw, ret )
+
+   return ret
+
 
