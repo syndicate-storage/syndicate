@@ -417,7 +417,7 @@ class Client(object):
         self.syndicate_data = None      # stores syndicate data from the last call
 
     def set_signer( self, signer ):
-      self.signer = signer
+       self.signer = signer
     
     def set_verifier( self, verifier ):
        self.verifier = verifier
@@ -483,7 +483,7 @@ class Client(object):
             result = json.loads(response)
         except:
             log.error("Invalid response: Body: '%s'" % (response))
-            return None
+            raise
         
         # check fields
         missing = []
@@ -493,13 +493,13 @@ class Client(object):
         
         if len(missing) > 0:
            log.error("Missing fields: %s" % (",".join(missing)))
-           return None
+           raise Exception("Missing fields: %s" % ",".join(missing))
 
         # process syndicate data
         syndicate_data = extract_syndicate_json( result, self.api_version )
         if syndicate_data == None:
            log.error("No Syndicate data returned")
-           return None
+           raise Exception("No Syndicate data returned")
         
         # check signature
         if self.verifier:
@@ -521,7 +521,7 @@ class Client(object):
                
                else:
                   log.error("Signature verification failure")
-                  return None
+                  raise Exception("Signature verification failure")
          
          
         if is_error_response( result ):   
@@ -538,6 +538,6 @@ class Client(object):
             self.syndicate_data = syndicate_data
             return result['result']
         else:
-            return None
+            raise Exception("MS sent an invalid reply")
          
          
