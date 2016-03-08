@@ -18,14 +18,8 @@
 
 import os
 import sys
-import logging
 import time
 import threading
-
-logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
 
 def get_current_time():
     return int(round(time.time() * 1000))
@@ -218,7 +212,6 @@ class dataset_tracker(object):
             return directory
 
     def _walk(self, directory):
-        log.info("_walk %s", directory)
         entries = []
         print directory
         if directory:
