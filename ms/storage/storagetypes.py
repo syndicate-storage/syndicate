@@ -619,7 +619,19 @@ class Object( Model ):
          return False
 
       return True
-   
+  
+
+   @classmethod 
+   def is_public_key( cls, key_str ):
+      """
+      Is this a public key?
+      """
+      try:
+          key = CryptoKey.importKey( key_str )
+          return not key.has_private()
+      except Exception, e:
+          logging.error("importKey %s" % traceback.format_exc() )
+          return False 
    
    @classmethod
    def auth_verify( cls, public_key_str, data, data_signature ):
