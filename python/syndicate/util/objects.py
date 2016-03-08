@@ -834,7 +834,8 @@ class StubObject( object ):
          _, privkey_pem = crypto.generate_key_pair( OBJECT_KEY_SIZE )
 
          extra['private_key'] = privkey_pem
-         lib.private_key = privkey_pem
+         if lib is not None:
+             lib.private_key = privkey_pem
 
       else:
          
@@ -844,7 +845,9 @@ class StubObject( object ):
             if not privkey.has_private():
                 raise Exception("Not a private key")
             
-            lib.private_key = private_key
+            if lib is not None:
+                lib.private_key = private_key
+
             return private_key, extra
          
          except:
@@ -860,7 +863,8 @@ class StubObject( object ):
          privkey_pem = privkey.exportKey()
 
          extra['private_key'] = privkey_pem
-         lib.private_key = privkey_pem
+         if lib is not None:
+             lib.private_key = privkey_pem
          
       return privkey_pem, extra
 
@@ -902,8 +906,10 @@ class StubObject( object ):
       
       else:
          raise Exception("Could not parse capabilities: '%s'" % caps_str )
-         
-      lib.caps = ret
+        
+      if lib is not None:
+          lib.caps = ret
+
       return ret, {}
    
    
@@ -931,7 +937,9 @@ class StubObject( object ):
       Consume volume name
       """
       
-      lib.volume_name = volume_name 
+      if lib is not None:
+          lib.volume_name = volume_name 
+
       return volume_name, {"volume_name": volume_name}
    
 
