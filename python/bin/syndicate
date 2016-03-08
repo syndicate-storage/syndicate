@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2016 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -101,142 +101,6 @@ def fetch_syndicate_public_key( config ):
    return pubkey.publickey().exportKey()
 
 
-def load_gateway_cert( config, gateway_name ):
-   """
-   Load a gateway certificate from a file.
-   Return the unprotobuf'ed certificate on success 
-   Return None on error, and log an exception.
-   """
-   gateway_cert_bin = None 
-   cert_path = None
-   
-   try:
-      cert_path = conf.object_file_path( config, "gateway", gateway_name )
-      gateway_cert_bin = storage.read_file( cert_path )
-   except Exception, e:
-      log.error("Unable to read %s" % cert_path)
-      return None 
-   
-   # should be a protobuf.  try to load it.
-   try:
-      gateway_cert = ms_pb2.ms_gateway_cert.ParseFromString( gateway_cert_bin )
-   except Exception, e:
-      log.exception(e)
-      return None 
-   
-   return gateway_cert 
-   
-
-def verify_gateway_cert( pubkey_pem, gateway_cert ):
-   """
-   Given an unprotobuf'ed gateway certificate, verify that 
-   the given user's public key (as a PEM-encoded string) signed it.
-   If the volume's public key is given as well, then verify that 
-   it signed off too.
-   
-   Return True if so
-   Return False if not
-   """
-
-   sigb64 = gateway_cert.signature 
-   sig = base64.b64decode( sigb64 )
-   
-   gateway_cert.signature = ""
-   
-   gateway_cert_bin = gateway_cert.SerializeToString()
-   rc = crypto.verify_data( pubkey_pem, gateway_cert_bin, sig )
-   
-   gateway_cert.signature = sigb64
-   
-   return rc
-   
-   
-# -------------------
-# TODO: use a helper program
-def download_gateway_cert( config, gateway_name ):
-   """
-   Go download a gateway's certificate from the MS.
-   Return the unprotobufed certificate on success 
-   Return None on error
-   """
-   
-   cert_url = client.make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'], urlpath="PUBKEY" )
-   
-   cert_req = requests.get( url, allow_redirects=True )
-   
-   if cert_req.status_code != 200:
-      log.error("Failed to get gateway certificate from %s, HTTP status %s" % (url, pubkey_req.status_code) )
-      return None
-   
-   cert = None
-   cert_bin = pubkey_req.content 
-   try:
-      cert = ms_pb2.ms_gateway_cert.ParseFromString( cert_bin )
-   except Exception, e:
-      log.error("Malformed certificate from %s" % url)
-      log.exception(e)
-      return None
-   
-   return cert 
-
-
-# -------------------
-def get_gateway_cert( config, volume_name, gateway_name, download=True ):
-   """
-   Top-level method for getting a gateway's certificate.
-   Try to load it from local disk first, and then try to download it.
-   NOTE: does *not* check version information--caller needs to do so against a cert bundle 
-   
-   Return the unprotobufed cert on success.
-   Return None on error.
-   """
-   
-   user_pubkey_pem = storage.load_public_key( config, "user", config['username'] )
-   if user_pubkey_pem is None:
-      log.error("Failed to load public key for '%s'" % config['username'] )
-      return None 
-   
-   volume_pubkey_pem = storage.load_public_key( config, "volume", volume_name )
-   if volume_pubkey_pem is None:
-      log.warning("Failed to load public key for '%s'" % volume_name )
-   
-   gateway_cert = load_gateway_cert( config, gateway_name )
-   
-   if gateway_cert is None and download:
-      
-      log.debug("Certificate for '%s' is not local; downloading..." % gateway_name )
-      
-      # try to download 
-      gateway_cert = download_gateway_cert( config, gateway_name )
-      if gateway_cert is None:
-         
-         log.error("Unable to obtain certificate for '%s'" % gateway_name)
-         return None
-      
-   # try to validate
-   rc = verify_gateway_cert( user_pubkey_pem, gateway_cert )
-   if not rc:
-      
-      print "\n\nFailed to verify user '%s''s signature on gateway certificate for '%s' (at %s)." % (config['username'], gateway_name, conf.object_file_path( config, 'gateway', gateway_name ))
-      print "If this is expected, then the certificate on file is stale and should be removed."
-      return None
-   
-   return gateway_cert
-
-
-# -------------------
-def save_gateway_cert( config, gateway_name, gateway_cert ):
-   """
-   Store the gateway certificate locally, given the unserialized cert.
-   Return True on success.
-   Return False on error.
-   """
-   
-   gateway_cert_bin = gateway_cert.SerializeToString()
-   gateway_cert_path = conf.object_file_path( config, 'gateway', gateway_name )
-   return storage.write_file( gateway_cert_path, gateway_cert_bin )
-
-
 # -------------------
 def prompt_trust_public_key( name, port, pubkey ):
    """
@@ -268,20 +132,9 @@ The public key is:
    if trust in ['Y', 'y']:
       return True 
    else:
-      return False
+      return False   
+   
 
-
-# -------------------
-def call_method( config, client, method_name, args, kw ):
-   # which key do we use?
-   # what object signing key are we working on?
-   log.debug("as %s: call %s( args=%s, kw=%s )" % (config['username'], method_name, args, kw) )
-   
-   method = getattr( client, method_name )
-   
-   return method( *args, **kw )
-   
-   
 # -------------------
 def serialize_positional_arg( value ):
    # try to cast value to something for a positional argument (not a keyword argument)
@@ -732,91 +585,6 @@ def do_setup( opts, username, admin_privkey_path, MS_url ):
    sys.exit(0)
 
 
-# -------------------
-def client_call( CONFIG, method_name, *args, **kw ):
-   """
-   Call a method on the MS (method_name).
-   Take the argument vector *args and dictionary **kw (both taken from sys.argv),
-   look up the method's parser, parse the arguments, and then issue the 
-   RPC call.
-   """
-   
-   called_from_main = False 
-   if CONFIG.has_key('__from_main__'):
-      # we were called from the main method (not from a client program).
-      # This should be remembered, since it determines whether or not we use
-      # the CONFIG-given username if no username can be found.
-      called_from_main = CONFIG['__from_main__']
-      
-   verify_reply = True
-   if CONFIG.has_key('verify_reply'):
-      # do not verify the reply (i.e. we might not know the Syndicate public key)
-      verify_reply = CONFIG['verify_reply']
-   
-   username = CONFIG.get('username', None)
-   if username is None:
-      raise Exception("Invalid config: no username")
-   
-   # parse arguments.
-   # use lib to load and store temporary data for the argument parsers.
-   lib = conf.ArgLib()
-   lib.config = CONFIG
-   lib.username = username
-   
-   try:
-       args, kw, extras = conf.parse_args( CONFIG, method_name, args, kw, lib )
-   except:
-       
-       if CONFIG["debug"]:
-           traceback.print_exc()
-       
-       do_method_help( CONFIG, method_name )
-       sys.exit(1)
-   
-   # make sure we got the right number of arguments 
-   valid = conf.validate_args( method_name, args, kw )
-   if not valid:
-      raise Exception("Invalid arguments for %s" % method_name)
-   
-   # determine the username
-   force_user_name = None 
-   
-   if "username" in CONFIG['_in_argv']:
-      # override username with argv
-      force_user_name = username
-   
-   if CONFIG.has_key('force_user_name'):
-      # override username 
-      force_user_name = CONFIG['force_user_name']
-      
-   if called_from_main and force_user_name is None:
-      # use CONFIG-given username if called from the command-line (main()), but we don't yet know the username from above.
-      force_user_name = username
-      
-      
-   # attempt to read the public key from disk   
-   syndicate_public_key = CONFIG.get("syndicate_public_key", None)
-   
-   # will we trust a downloaded public key automatically, if one is not known?  Default no.
-   trust_public_key = CONFIG.get('trust_public_key', False)
-   
-   # create the RPC client
-   proxy = client.make_rpc_client( CONFIG )
-   
-   # call the method
-   ret = call_method( CONFIG, proxy, method_name, args, kw ) 
-   
-   # failure? 
-   if ret is None:
-      raise Exception("No data returned from server")
-   
-   # process object-specific extra information, based on the returned value of this method.
-   for object_cls in object_stub.object_classes:
-      object_cls.PostProcessResult( extras, CONFIG, method_name, args, kw, ret )
-
-   return ret
-
-
 # -------------------   
 def main( argv ):
    """
@@ -832,9 +600,6 @@ def main( argv ):
    
    # get opts, methodname, args 
    opts, method_name, args, kw = parse_argv( argv )
-   if opts.debug:
-       log.setLevel(logging.DEBUG)
-
    if method_name == "setup":
        if len(args) != 3:
            print >> sys.stderr, "Usage: %s setup USERNAME /path/to/private/key MS_URL" % sys.argv[0]
@@ -1023,7 +788,14 @@ def main( argv ):
       conf.usage( argv[0] )
       
    # do the call
-   return client_call( CONFIG, method_name, *args, **kw )
+   rpc_client = client.make_rpc_client( CONFIG )
+   try:
+       result = client.ms_rpc( rpc_client, method_name, *args, **kw )
+       return result
+   except Exception, e:
+       log.exception(e)
+       do_method_help( CONFIG, method_name )
+       sys.exit(1)
 
 
 if __name__ == "__main__":
