@@ -9,6 +9,7 @@ PYTHON_SYNDICATE_FILES := $(wildcard $(PYTHON_SYNDICATE_ROOT)/*.py) \
                           $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*.py) \
                           $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*.py) \
                           $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/*.py) \
+                          $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/*/*.py) \
 						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/config) \
 						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/secrets) \
 						  $(wildcard $(PYTHON_SYNDICATE_ROOT)/*/*/*/driver) \
