@@ -29,9 +29,11 @@ driver_reload = "@PREFIX@/lib/syndicate/driver_reload"
 # automount service
 volume_amd = "@PREFIX@/bin/syndicate-volume-amd"
 poll_volumes = "@PREFIX@/lib/syndicate/poll-volumes"
+list_volumes = "@PREFIX@/lib/syndicate/list-volumes"
 poll_host = "@PREFIX@/lib/syndicate/poll-host"
 list_hosts = "@PREFIX@/lib/syndicate/list-hosts"
 poll_server_pubkey = "@PREFIX@/lib/syndicate/poll-server-pubkey"
+
 replica_gateway = "@PREFIX@/bin/syndicate-rg"
 acquisition_gateway = "@PREFIX@/bin/syndicate-ag"
 user_gateway_coordinator = "@PREFIX@/bin/syndicate-ug"
