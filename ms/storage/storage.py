@@ -270,7 +270,7 @@ def validate_volume_cert( volume_cert, signing_user_id=None ):
       raise Exception("No such user '%s'" % volume_cert.owner_id)
    
    if signing_user_id is not None and user.owner_id != signing_user_id:
-      raise Exception("User '%s' did not sign this volume cert" % signing_user_id)
+      raise Exception("User '%s' did not sign this volume cert (got '%s' instead)" % (signing_user_id, user.owner_id))
       
    # verify that the user has signed the cert 
    owner_pubkey = user.public_key 
@@ -808,8 +808,8 @@ def create_gateway( **kw ):
   
    # only the volume owner can call this method 
    if volume.owner_id != caller_user.owner_id:
-      log.error("Volume '%s' not owned by '%s'" % (volume.name, user.email))
-      raise Exception("Volume '%s' not owned by '%s'" % (volume.name, user.email))
+      log.error("Caller user '%s' is not the volume owner (%s)" % (caller_user.email, volume.owner_id))
+      raise Exception("Caller user '%s' is not the volume owner (%s)" % (caller_user.email, volume.owner_id))
 
    volume_owner = read_user( volume.owner_id )
    if volume_owner is None:
