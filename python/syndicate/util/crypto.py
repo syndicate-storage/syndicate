@@ -21,7 +21,8 @@
 import json
 import errno 
 import logging
-import base64 
+import base64
+import traceback
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -64,12 +65,7 @@ def verify_data( pubkey_str, data, signature ):
    verify that the private key signed it.
    """
 
-   try:
-      key = CryptoKey.importKey( pubkey_str )
-   except Exception, e:
-      log.error("importKey %s" % traceback.format_exc() )
-      return False
-   
+   key = CryptoKey.importKey( pubkey_str )
    h = HashAlg.new( data )
    verifier = CryptoSigner.new(key)
    ret = verifier.verify( h, signature )
@@ -153,26 +149,30 @@ def verify_and_parse_json( public_key_pem, json_text ):
         return (-errno.EINVAL, None)
     
     # verify the signature 
-    rc = verify_data( public_key_pem, data, sig )
-    if not rc:
-        log.error("Invalid signature")
+    try:
+        rc = verify_data( public_key_pem, data, sig )
+        return (0, data)
+    except Exception, e:
+        log.exception(e)
+        log.error("Failed to verify data")
         return (-errno.EINVAL, None)
-    
-    return (0, data)
+        
  
  
 #-------------------------------
-def sign_and_serialize_json( private_key_pem, data ):
+def sign_and_serialize_json( private_key, data, toplevel_fields={} ):
     """
     Sign and serialize data.  Put it into a JSON object with:
        data (str): base64-encoded data 
        sig (str): base64-encoded signature, with the given private key.
        
+    Any toplevel fields will also be added, but they will not be signed.
+
     Return the serialized JSON on success.
     Return None on error
     """
     
-    signature = sign_data( private_key_pem, data )
+    signature = sign_data( private_key, data )
     if not signature:
        logger.error("Failed to sign data")
        return None
@@ -182,5 +182,6 @@ def sign_and_serialize_json( private_key_pem, data ):
        "data":  base64.b64encode( data ),
        "sig":   base64.b64encode( signature )
     }
+    msg.update( toplevel_fields )
 
     return json.dumps( msg )
