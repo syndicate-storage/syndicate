@@ -558,8 +558,12 @@ class MSJSONRPCHandler(webapp2.RequestHandler):
          response_user_error( self, 400 )
          return 
       
-      username = syndicate_data['username']
+      if 'username' not in syndicate_data:
+         logging.debug("Missing 'username' from syndicate JSONRPC data")
+         response_user_error( self, 400 )
+         return 
       
+      username = syndicate_data['username']
       server = jsonrpc.Server( api.API(), jsonrpc.VERSION, signer=api.API.signer, verifier=api.API.pubkey_verifier )
       
       caller_uuids = server.get_call_uuids( json_text )
