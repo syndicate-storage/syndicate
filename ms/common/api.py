@@ -601,8 +601,8 @@ def create_gateway( **kw ):
       name=str:
          Name of the Gateway.  Must be unique for this Volume.
          
-      public_key=str:
-         PEM-encoded RSA 4096-bit public ke for this Gateway.
+      private_key=str:
+         PEM-encoded RSA 4096-bit private key for this gateway.
          Pass "auto" to have Syndicate generate one and store 
          the corresponding private key locally.
       
@@ -695,8 +695,8 @@ def update_gateway( name, **attrs ):
          driver logic.  The contents are specific to the gateway 
          implementation. 
      
-      public_key=str:
-         This is a PEM-encoded public key for the gateway.  Pass "auto"
+      private_key=str:
+         This is a PEM-encoded private key for the gateway.  Pass "auto"
          to generate one automatically.
 
       caps=str|int:
