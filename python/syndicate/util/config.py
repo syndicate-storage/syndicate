@@ -99,7 +99,7 @@ CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "debug":             ("-d", 0, "Verbose debugging output"),
    "trust_public_key":  ("-t", 0, "If set, automatically trust the Syndicate public key if it is not yet trusted."),
-   "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
+   "params":            (None, "*", "Method name, followed by parameters (positional and keyword supported)."),
 }
 
 
@@ -142,7 +142,7 @@ def load_config( config_path, config_str, opts, config_header, config_options ):
    
    config = None 
    
-   if config_str:
+   if config_str is not None:
       config = ConfigParser.SafeConfigParser()
       config_fd = StringIO.StringIO( config_str )
       config_fd.seek( 0 )
@@ -156,7 +156,7 @@ def load_config( config_path, config_str, opts, config_header, config_options ):
    ret = {}
    ret["_in_argv"] = []
    ret["_in_config"] = []
-   
+  
    # convert to dictionary, merging in argv opts
    for arg_opt in config_options.keys():
       if hasattr(opts, arg_opt) and getattr(opts, arg_opt) != None:
@@ -177,6 +177,7 @@ def load_config( config_path, config_str, opts, config_header, config_options ):
    extend_key_paths( ret, conf_dir )
 
    ret['config_dir'] = conf_dir
+   ret['config_path'] = config_path
    return ret
 
 
@@ -414,6 +415,8 @@ def get_config_from_argv( argv ):
 
     parser = build_parser( argv[0], CONFIG_DESCRIPTION, CONFIG_OPTIONS )
     opts, _ = parser.parse_known_args( argv[1:] )
+    if opts.debug:
+        log.setLevel(logging.DEBUG)
    
     # load everything into a dictionary and return it
     config_str = None
@@ -457,12 +460,6 @@ def get_config_from_argv( argv ):
         config['syndicate_port'] = port
         config['no_tls'] = no_tls
       
-    # do we need the private key?
-    config['user_pkey'] = storage.load_private_key( config, "user", config['username'] )
-    if config['user_pkey'] is None:
-        log.error("Failed to load user private key for '%s'" % config['username'])
-        return None 
-   
     # trust public key?
     if opts.trust_public_key:
         config['trust_public_key'] = True 
@@ -497,8 +494,8 @@ def get_extra_config( argv, section_name, section_options ):
     
     global CONFIG_DESCRIPTION, CONFIG_OPTIONS
 
-    import syndicate.util.storage as storage
-    import syndicate.util.client as client
+    import storage
+    import client
 
     parser = build_parser( argv[0], CONFIG_DESCRIPTION, CONFIG_OPTIONS )
     opts, _ = parser.parse_known_args( argv[1:] )
@@ -511,7 +508,15 @@ def get_extra_config( argv, section_name, section_options ):
         config_file_path = opts.config[0]
     else:
         config_file_path = default_config_path()
-   
+
+    if not os.path.exists(config_file_path):
+        log.error("No config file at '%s'" % config_file_path)
+        return None 
+
+    if not os.path.isfile(config_file_path):
+        log.error("Not a file: '%s'" % config_file_path)
+        return None 
+
     config_str = storage.read_file( config_file_path )
 
     # get the extra options 
