@@ -34,6 +34,7 @@ import syndicate
 import syndicate.util.certs as certs
 import syndicate.util.crypto as crypto
 import syndicate.util.objects as object_stub
+import syndicate.util.client as rpc
 
 import syndicate.syndicate as c_syndicate
 
@@ -65,9 +66,9 @@ def gateway_default_caps( type_str ):
     elif type_str == "AG":
         return "ALL"
     elif type_str == "RG":
-        return "0"
+        return "NONE"
     else:
-        return "0"
+        return "NONE"
 
 
 #-------------------------------
@@ -81,13 +82,10 @@ def gateway_check_consistent( config, gateway, gateway_type, user_email, volume_
     """
 
     # sanity check 
-    missing = []
+    ignore = []
     for key in attrs.keys():
         if key not in gateway.keys():
-            missing.append(key)
-
-    if len(missing) > 0:
-        raise Exception("Missing gateway fields: %s" % ", ".join(missing))
+            ignore.append(key)
 
     user_cert = certs.get_user_cert( config, user_email )
     if user_cert is None:
@@ -97,7 +95,7 @@ def gateway_check_consistent( config, gateway, gateway_type, user_email, volume_
     if volume_cert is None:
         raise Exception("No certificate found for volume '%s'" % volume_name )
 
-    type_aliases = object_stub.load_gateway_type_aliases( client.config )
+    type_aliases = object_stub.load_gateway_type_aliases( config )
     type_id = type_aliases.get( gateway_type, None )
 
     if type_id is None:
@@ -110,13 +108,21 @@ def gateway_check_consistent( config, gateway, gateway_type, user_email, volume_
         log.debug("Gateway mismatch: does not match volume")
         inconsistent['volume_id'] = volume_cert.volume_id
 
-    if gateway['owner_id'] != user_cert.owner_id:
+    if gateway['owner_id'] != user_cert.user_id:
         log.debug("Gateway mismatch: does not match user")
-        inconsistent['owner_id'] = user_cert.owner_id
+        inconsistent['owner_id'] = user_cert.user_id
 
     for key in attrs.keys():
+        if key in ignore:
+            continue 
+
         if gateway[key] != attrs[key]:
-            log.debug("Gateway mismatch: does not match '%s'" % key)
+            # special case: caps
+            if key == "caps":
+                if object_stub.Gateway.parse_gateway_caps(attrs[key], None)[0] == gateway[key]:
+                    # not inconsistent 
+                    continue 
+            
             inconsistent[key] = attrs[key] 
 
     return inconsistent
@@ -153,6 +159,8 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
         inconsistent = gateway_check_consistent( client.config, gateway, gateway_type, user_email, volume_name, gateway_name=gateway_name, host=host, port=port, **gateway_kw )
         if len(inconsistent.keys()) > 0:
 
+            log.debug("Inconsistent: %s" % ",".join(inconsistent.keys()))
+
             # update the gateway to be consistent, if possible 
             if 'volume_id' in inconsistent.keys() or 'owner_id' in inconsistent.keys():
                 # can't do much about this
@@ -173,7 +181,7 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
         
         # create the gateway 
         try:
-            gateway = client.create_gateway( volume=volume_name, email=user_email, type=gateway_type, name=gateway_name, host=host, port=port, **gateway_kw )
+            gateway = rpc.ms_rpc( client, "create_gateway", volume=volume_name, email=user_email, type=gateway_type, name=gateway_name, host=host, port=port, **gateway_kw )
             created = True
         except Exception, e:
             # transport, collision, or missing Volume or user
@@ -192,8 +200,8 @@ def ensure_gateway_absent( client, gateway_name ):
     raise exception on error.
     """
     
-    client.delete_gateway( gateway_name )
-    return True
+    rc = rpc.ms_rpc( client, "delete_gateway", gateway_name )
+    return rc
 
 
 #-------------------------------
@@ -220,21 +228,20 @@ def user_check_consistent( config, user, user_email, public_key, **attrs ):
 
     # check consistency
     inconsistent = {}
-    if user['public_key'] != public_key:
-        log.debug("User mismatch: public key")
+    if user['public_key'].strip() != public_key.strip():
+        log.debug("User public key mismatch")
         inconsistent['public_key'] = public_key
 
     match = True
     for key in attrs.keys():
         if user[key] != attrs[key]:
-            log.debug("User mismatch: %s" % key)
             inconsistent[key] = attrs[key]
 
     return inconsistent
 
 
 #-------------------------------
-def ensure_user_exists( client, user_email, public_key, **user_kw ):
+def ensure_user_exists( client, user_email, private_key, **user_kw ):
     """
     Given a user email, ensure that the corresponding
     Syndicate user exists with the given fields.
@@ -243,7 +250,7 @@ def ensure_user_exists( client, user_email, public_key, **user_kw ):
 
     This method can only be called by an admin user.
 
-    @public_key must be a PEM-encoded 4096-bit RSA private key
+    @private_key must be a PEM-encoded 4096-bit RSA private key
     
     Return the (created, updated, user), where created==True if the user 
     was created and created==False if the user was read.
@@ -253,14 +260,16 @@ def ensure_user_exists( client, user_email, public_key, **user_kw ):
     created = False
     updated = False 
 
+    private_key = private_key.strip()
     try:
-        public_key = CryptoKey.importKey( private_key ).exportKey()
+        private_key = CryptoKey.importKey( private_key ).exportKey()
+        public_key = CryptoKey.importKey( private_key ).publickey().exportKey()
     except:
-        log.error("Could not import public key")
-        raise Exception("Could not import public key")
+        log.error("Could not import private key")
+        raise Exception("Could not import private key")
 
     try:
-        user = client.read_user( user_email )    
+        user = rpc.ms_rpc( client, "read_user", user_email )
     except Exception, e:
         # transport error
         log.exception(e)
@@ -271,8 +280,11 @@ def ensure_user_exists( client, user_email, public_key, **user_kw ):
         if len(inconsistent) > 0:
             # the only field we can change is the public key 
             if len(inconsistent) == 1 and inconsistent.has_key('public_key'):
+
+                log.debug("Inconsistent: %s" % ",".join(inconsistent.keys()))
+
                 try:
-                    rc = client.reset_user( client.config, user_email, public_key )
+                    rc = rpc.ms_rpc( client, "reset_user", user_email, public_key )
                 except Exception, e:
                     log.exception(e)
                     raise Exception("Failed to read '%s'" % user_email)
@@ -287,7 +299,9 @@ def ensure_user_exists( client, user_email, public_key, **user_kw ):
     if user is None:
         # the user does not exist; try to create it
         try:
-            user = client.create_user( user_email, public_key, **user_kw )
+            assert 'private_key' not in user_kw.keys(), "Two private keys given"
+            assert 'public_key' not in user_kw.keys(), "Public and private key given"
+            user = rpc.ms_rpc( client, "create_user", user_email, private_key=private_key, **user_kw )
             created = True
         except Exception, e:
             log.exception(e)
@@ -308,7 +322,7 @@ def ensure_user_absent( client, user_email ):
     Raises an exception on error
     """
 
-    return client.delete_user( user_email )
+    return rpc.ms_rpc( client, "delete_user", user_email )
 
 
 #-------------------------------
@@ -357,14 +371,13 @@ def volume_check_consistent( config, volume, volume_name, description, blocksize
         log.debug("Volume mismatch: blocksize")
         inconsistent['blocksize'] = blocksize
 
-    if volume['owner_id'] != user_cert.owner_id:
+    if volume['owner_id'] != user_cert.user_id:
         log.debug("Volume mismatch: owner ID")
         inconsistent['owner_id'] = user_cert.owner_id
 
     match = True
     for key in attrs.keys():
         if volume[key] != attrs[key]:
-            log.debug("Volume mismatch: %s" % key)
             inconsistent[key] = attrs[key]
 
     return inconsistent
@@ -386,7 +399,7 @@ def ensure_volume_exists( client, volume_name, description, blocksize, user_emai
     updated = False
 
     try:
-        volume = client.read_volume( volume_name )
+        volume = rpc.ms_rpc( client, "read_volume", volume_name )
     except Exception, e:
         # transport error 
         log.exception(e)
@@ -395,8 +408,10 @@ def ensure_volume_exists( client, volume_name, description, blocksize, user_emai
     # is it the right volume?
     if volume is not None:
 
-        inconsistent = volume_check_consistent( client.config, volume, volume_name, description, blocksize, email, **attrs )
+        inconsistent = volume_check_consistent( client.config, volume, volume_name, description, blocksize, user_email, **attrs )
         if len(inconsistent.keys()) > 0:
+
+            log.debug("Inconsistent: %s" % ",".join(inconsistent.keys()))
 
             # update the volume to be consistent, if possible
             if 'volume_id' in inconsistent.keys() or 'owner_id' in inconsistent.keys() or 'blocksize' in inconsistent.keys():
@@ -406,7 +421,7 @@ def ensure_volume_exists( client, volume_name, description, blocksize, user_emai
             else:
                 # update it 
                 try:
-                    rc = client.update_volume( volume_name, **inconsistent )
+                    rc = rpc.ms_rpc( client, "update_volume", volume_name, **inconsistent )
                 except Exception, e:
                     log.exception(e)
                     raise Exception("Failed to update '%s'" % volume_name)
@@ -418,7 +433,7 @@ def ensure_volume_exists( client, volume_name, description, blocksize, user_emai
         
         # create the volume
         try:
-            volume = client.create_volume( name=volume_name, email=user_email, description=description, blocksize=blocksize, **attrs_kw )
+            volume = rpc.ms_rpc( client, "create_volume", name=volume_name, email=user_email, description=description, blocksize=blocksize, **attrs )
             created = True
         except Exception, e:
             # transport, collision, or missing user
@@ -439,7 +454,9 @@ def ensure_volume_absent( client, volume_name ):
     Return True on success
     Raise exception on error
     """
-    return client.delete_volume( volume_name )
+
+    rc = rpc.ms_rpc( client, "delete_volume", volume_name )
+    return rc
 
 
 #-------------------------------
