@@ -516,8 +516,11 @@ class Gateway( storagetypes.Object ):
       
       if use_memcache:
          g = storagetypes.memcache.get( key_name )
+         if g is not None and not deleted and g.deleted:
+             storagetypes.memcache.delete( key_name )
+             g = None
          
-      if g == None:
+      if g is None:
          g_key = storagetypes.make_key( cls, Gateway.make_key_name( g_id=g_id ) )
          
          if async:
@@ -527,13 +530,20 @@ class Gateway( storagetypes.Object ):
          else:
             g = g_key.get( use_memcache=False )
             
-         if not g:
+         if g is None:
             logging.error("Gateway %s not found at all!" % g_id)
             
-         elif use_memcache:
+         if g.deleted:
+            g = None
+
+         elif use_memcache and g is not None:
             storagetypes.memcache.set( key_name, g )
 
       else:
+         if g is not None and not deleted and g.deleted:
+             storagetypes.memcache.delete( key_name )
+             g = None 
+
          if async:
              if g is None or (not deleted and g.deleted):
                 g = storagetypes.FutureWrapper( None )
