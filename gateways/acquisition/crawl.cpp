@@ -41,6 +41,7 @@
 #include "core.h"
 
 #define AG_CRAWL_CMD_CREATE  'C'
+#define AG_CRAWL_CMD_PUT     'P'  // create-or-update
 #define AG_CRAWL_CMD_UPDATE  'U'
 #define AG_CRAWL_CMD_DELETE  'D'
 #define AG_CRAWL_CMD_FINISH  'F'        // indicates that there are no more datasets to crawl
@@ -466,6 +467,36 @@ AG_crawl_update_out:
 }
 
 
+// handle a put (a create-or-update)
+// try to create, and if it fails with EEXIST, then send as an update instead.
+// return 0 on success
+// return -ENOMEM on OOM
+// return -EPERM if the operation could not be completed
+// return -EACCES if we don't have permission to create or update
+// return -ENOENT if the parent directory doesn't exist
+// return -EREMOTEIO on failure to communicate with the MS
+static int AG_crawl_put( struct AG_state* core, char const* path, struct md_entry* ent ) {
+    
+   int rc = 0;
+   rc = AG_crawl_create( core, path, ent );
+   if( rc == 0 ) {
+      return 0;
+   }
+   else if( rc == -ENOENT ) {
+      // try to update 
+      rc = AG_crawl_update( core, path, ent );
+      if( rc != 0 ) {
+         SG_error("AG_crawl_update('%s') rc = %d\n", path, rc );
+      }
+   }
+   else {
+     SG_error("AG_crawl_create('%s') rc = %d\n", path, rc );
+   } 
+
+   return rc;
+}
+
+
 // handle a delete 
 // return 0 on success
 // return -ENOMEM on OOM
@@ -547,7 +578,17 @@ int AG_crawl_process( struct AG_state* core, int cmd, char const* path, struct m
 
          break;
       }
-   
+  
+      case AG_CRAWL_CMD_PUT: {
+
+         rc = AG_crawl_put( core, path, ent );
+         if( rc  != 0 ) {
+             SG_error("AG_crawl_put(%s) rc = %d\n", path, rc );
+         }
+         
+         break;
+      }
+
       case AG_CRAWL_CMD_DELETE: {
      
          rc = AG_crawl_delete( core, path, ent );
