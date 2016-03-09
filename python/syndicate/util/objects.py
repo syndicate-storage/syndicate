@@ -59,6 +59,14 @@ email_regex_str = r"^(?=^.{1,256}$)(?=.{1,64}@)(?:[^\x00-\x20\x22\x28\x29\x2c\x2
 
 email_regex = re.compile( email_regex_str )
 
+class MissingCertException( Exception ):
+    pass
+
+class MissingKeyException( Exception ):
+    pass 
+
+class CertExistsException( Exception ):
+    pass 
 
 def encrypt_secrets_dict( gateway_privkey_pem, secrets_dict ):
    """
@@ -1278,7 +1286,7 @@ class SyndicateUser( StubObject ):
 
          else:
             # need a cert for all other methods 
-            raise Exception("No user cert on file for '%s'" % email)
+            raise MissingCertException("No user cert on file for '%s'" % email)
       
       
       if method_name in ["create_user", "reset_user", "delete_user"]:
@@ -1289,7 +1297,7 @@ class SyndicateUser( StubObject ):
          admin_id = load_user_id( config, admin_email )
          
          if admin_privkey is None:
-            raise Exception("No admin private key found for '%s'" % admin_email )
+            raise MissingKeyException("No admin private key found for '%s'" % admin_email )
          
          if admin_id is None:
             raise Exception("No admin ID found for '%s'" % admin_email )
@@ -1514,7 +1522,7 @@ class Volume( StubObject ):
           
          # we need this, unless we're creating
          if method_name != "create_volume":
-            raise Exception("No volume cert on file for '%s'" % volume_name )
+            raise MissingCertException("No volume cert on file for '%s'" % volume_name )
          
       # to be looked up...
       owner_id = None 
@@ -1542,7 +1550,7 @@ class Volume( StubObject ):
             if owner_username is None:
                
                # no such user 
-               raise Exception("No user identified as the volume owner (cert indicates ID %s)" % owner_id)
+               raise MissingCertException("No user identified as the volume owner (cert indicates ID %s)" % owner_id)
             
          if description is None:
             description = existing_volume_cert.description 
@@ -1598,12 +1606,12 @@ class Volume( StubObject ):
              volume_public_key = volume_owner_cert.public_key
          except Exception, e:
              log.exception(e)
-             raise Exception("Unable to load key for user '%s'" % owner_username)
+             raise MissingCertException("Unable to load key for user '%s'" % owner_username)
 
          owner_id = load_user_id( config, owner_username )
          
          if volume_public_key is None:
-            raise Exception("No public key on file for user '%s'" % owner_username)
+            raise MissingCertException("No public key on file for user '%s'" % owner_username)
          
          if owner_id is None:
             raise Exception("No ID found for user '%s'" % owner_username)
@@ -1611,7 +1619,7 @@ class Volume( StubObject ):
          
       owner_privkey = storagelib.load_private_key( config, "user", owner_username )
       if owner_privkey is None:
-         raise Exception("No private key found for user '%s'" % owner_username)
+         raise MissingKeyException("No private key found for user '%s'" % owner_username)
       
       volume_cert = ms_pb2.ms_volume_metadata()
       volume_cert.owner_id = owner_id 
@@ -1940,10 +1948,10 @@ class Gateway( StubObject ):
       
       # sanity check
       if existing_gateway_cert is not None and method_name == "create_gateway":
-         raise Exception("Certificate already exists for '%s'.  If this is an error, remove it from '%s'" % (gateway_name, conf.object_file_path(config, "gateway", gateway_name) + ".cert"))
+         raise CertExistsException("Certificate already exists for '%s'.  If this is an error, remove it from '%s'" % (gateway_name, conf.object_file_path(config, "gateway", gateway_name) + ".cert"))
       
       elif existing_gateway_cert is None and method_name == "update_gateway":
-         raise Exception("No certificate on file for '%s'." % (gateway_name))
+         raise MissingCertException("No certificate on file for '%s'." % (gateway_name))
      
       # see if we own the volume in question.
       # the volume needs to exist either way.
@@ -1972,7 +1980,7 @@ class Gateway( StubObject ):
             existing_volume_cert = load_volume_cert( config, volume_name )
       
       if existing_volume_cert is None:
-         raise Exception("No volume cert on file for '%s (%s)'.  This volume must exist before you can create a gateway in it." % (volume_name, volume_id))
+         raise MissingCertException("No volume cert on file for '%s (%s)'" % (volume_name, volume_id))
       
       gateway_name = lib.name
       gateway_type = getattr(lib, "gateway_type", None)
@@ -2025,10 +2033,10 @@ class Gateway( StubObject ):
             # find the associated username, so we can get the public key
             owner_username = load_user_email( config, owner_id )
             if owner_username is None:
-               missing.append("email")
-         
+                raise MissingCertException("Missing cert information on user %s" % owner_id)
+
          else:
-            missing.append("email")
+             raise MissingCertException("Missing cert information on user %s" % owner_id)
       
       if public_key is None:
          if existing_gateway_cert is not None:
@@ -2208,11 +2216,11 @@ class Gateway( StubObject ):
          # load volume owner 
          volume_cert = load_volume_cert( config, volume_name )
          if volume_cert is None:
-             raise Exception("No volume certificate on file for '%s'" % volume_name)
+             raise MissingCertException("No volume certificate on file for '%s'" % volume_name)
 
          volume_owner_cert = load_user_cert( config, volume_cert.owner_id )
          if volume_owner_cert is None:
-             raise Exception("No volume owner certificate on file for user '%s'" % volume_cert.user_id)
+             raise MissingCertException("No volume owner certificate on file for user '%s'" % volume_cert.user_id)
 
          # generate a certificate bundle.
          volume_cert_bundle_str = make_volume_cert_bundle( config, volume_owner_cert.email, volume_name, new_gateway_cert=gateway_cert )
