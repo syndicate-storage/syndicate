@@ -264,6 +264,7 @@ def make_metadata_command( cmd, ftype, mode, size, path ):
 
    cmd_table = {
       "create": "C",
+      "put":    "P",
       "update": "U",
       "delete": "D",
       "finish": "F",
