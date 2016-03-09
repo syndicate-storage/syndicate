@@ -22,16 +22,10 @@ iPlant Data Store Backend
 
 import os
 import time
-import logging
 import syndicate.ag.fs_driver_common.abstract_fs as abstract_fs
 import syndicate.ag.fs_driver_common.metadata as metadata
 import syndicate.ag.fs_driver_common.fs_backends.iplant_datastore.bms_client as bms_client
 import syndicate.ag.fs_driver_common.fs_backends.iplant_datastore.irods_client as irods_client
-
-logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
 
 class backend_impl(abstract_fs.fs_base):
     def __init__(self, config):
@@ -41,6 +35,8 @@ class backend_impl(abstract_fs.fs_base):
         dataset_root = config.get("dataset_root")
         if not dataset_root:
             raise ValueError("dataset_root configuration is not given correctly")
+        # config can have unicode strings
+        dataset_root = dataset_root.encode('ascii','ignore')
         dataset_root = dataset_root.rstrip("/")
 
         secrets = config.get("secrets")
@@ -48,10 +44,12 @@ class backend_impl(abstract_fs.fs_base):
             raise ValueError("secrets are not given correctly")
 
         user = secrets.get("user")
+        user = user.encode('ascii','ignore')
         if not user:
             raise ValueError("user is not given correctly")
 
         password = secrets.get("password")
+        password = password.encode('ascii','ignore')
         if not password:
             raise ValueError("password is not given correctly")
 
@@ -67,11 +65,17 @@ class backend_impl(abstract_fs.fs_base):
         self.bms_config = bms_config
 
         # init irods client
-        self.irods = irods_client.irods_client(host=self.irods_config["host"], 
+        # we convert unicode (maybe) strings to ascii since python-irodsclient cannot accept unicode strings
+        irods_host = self.irods_config["host"]
+        irods_host = irods_host.encode('ascii','ignore')
+        irods_zone = self.irods_config["zone"]
+        irods_zone = irods_zone.encode('ascii','ignore')
+        
+        self.irods = irods_client.irods_client(host=irods_host, 
                                                port=self.irods_config["port"], 
                                                user=user, 
                                                password=password, 
-                                               zone=self.irods_config["zone"])
+                                               zone=irods_zone)
         # init bms client
         path_filter = dataset_root.rstrip("/") + "/*"
 
@@ -95,8 +99,6 @@ class backend_impl(abstract_fs.fs_base):
         self.notification_cb = None
 
     def _on_bms_message_receive(self, message):
-        log.info("_on_bms_message_received - %s", message)
-
         # parse message and update directory
         if not message or len(message) <= 0:
             return
@@ -181,6 +183,7 @@ class backend_impl(abstract_fs.fs_base):
         # add initial dataset
         dataset_root = self.dataset_tracker.getRootPath()
         entries = self.irods.listStats(dataset_root)
+        stats = []
         for entry in entries:
             stat = abstract_fs.fs_stat(directory=entry.directory, 
                                        path=entry.path,
@@ -197,16 +200,20 @@ class backend_impl(abstract_fs.fs_base):
         self.irods.close()
 
     def exists(self, path):
-        return self.irods.exists(path)
+        ascii_path = path.encode('ascii','ignore')
+        return self.irods.exists(ascii_path)
 
     def list_dir(self, dirpath):
-        return self.irods.list(dirpath)
+        ascii_path = dirpath.encode('ascii','ignore')
+        return self.irods.list(ascii_path)
 
     def is_dir(self, dirpath):
-        return self.irods.isDir(dirpath)
+        ascii_path = dirpath.encode('ascii','ignore')
+        return self.irods.isDir(ascii_path)
 
     def read(self, filepath, offset, size):
-        return self.irods.read(filepath, offset, size)
+        ascii_path = filepath.encode('ascii','ignore')
+        return self.irods.read(ascii_path, offset, size)
 
     def backend(self):
         return self.__class__

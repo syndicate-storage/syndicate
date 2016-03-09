@@ -28,10 +28,22 @@ import errno
 import time
 import threading
 import json
+import logging
 import syndicate.util.gateway as gateway
 import syndicate.ag.fs_driver_common.abstract_fs as abstract_fs
 
 from syndicate.ag.fs_driver_common.fs_backend_loader import fs_backend_loader
+
+logger = logging.getLogger('fs_driver')
+logger.setLevel(logging.DEBUG)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('fs_driver.log')
+fh.setLevel(logging.DEBUG)
+# create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+# add the handlers to the logger
+logger.addHandler(fh)
 
 
 dataset_dir = None
@@ -49,15 +61,19 @@ def datasets_update_cb(updated_entries, added_entries, removed_entries):
         entry = {}
         entry["flag"] = ENTRY_UPDATED
         entry["stat"] = u
-        path_queue.append(u)
+        path_queue.append(entry)
+
     for a in added_entries:
         entry = {}
         entry["flag"] = ENTRY_ADDED
         entry["stat"] = a
+        path_queue.append(entry)
+
     for r in removed_entries:
         entry = {}
         entry["flag"] = ENTRY_REMOVED
         entry["stat"] = r
+        path_queue.append(entry)
 
 
 def driver_init( driver_config, driver_secrets ):
@@ -107,6 +123,7 @@ def driver_init( driver_config, driver_secrets ):
     except Exception as e:
         gateway.log_error("Unable to initialize a driver")
         gateway.log_error(str(e))
+        traceback.print_exc()
         return False
 
     if not fs.exists( dataset_dir ):
@@ -268,6 +285,7 @@ def read( request, chunk_fd, driver_config, driver_secrets ):
     except Exception as e:
         gateway.log_error("Unable to initialize a driver")
         gateway.log_error(str(e))
+        traceback.print_exc()
         sys.exit(1)
 
     if not fs.exists( file_path ):

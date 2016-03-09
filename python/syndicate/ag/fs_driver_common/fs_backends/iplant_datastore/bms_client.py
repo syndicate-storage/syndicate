@@ -17,17 +17,11 @@
 """
 
 import os
-import logging
 import pika
 import json
 import string
 import random
 import threading
-
-logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
 
 BMS_REGISTRATION_EXCHANGE = 'bms_registrations'
 BMS_REGISTRATION_QUEUE = 'bms_registrations'
@@ -153,12 +147,9 @@ class bms_client(object):
         return self._generateId()
 
     def _consumerThreadTask(self):
-        log.info('start consumer thread task')
         self.connection.ioloop.start()
-        log.info('stop consumer thread task')
 
     def connect(self):
-        log.info('connect to %s', self.host)
         credentials = pika.PlainCredentials(self.user, 
                                             self.password)
         parameters = pika.ConnectionParameters(self.host, 
@@ -168,31 +159,25 @@ class bms_client(object):
         self.connection = pika.SelectConnection(parameters,
                                                 self._onConnectionOpen,
                                                 stop_ioloop_on_close=False)
-        log.info('start consuming messages')
         self.consumer_thread = threading.Thread(target=self._consumerThreadTask)
         self.consumer_thread.start()
 
     def _onConnectionOpen(self, connection):
-        log.info('connected')
         self.connection.add_on_close_callback(self._onConnectionClosed)
         # open a channel
         self.connection.channel(on_open_callback=self._onChannelOpen)
 
     def _onConnectionClosed(self, connection, reply_code, reply_text):
-        log.info('connection closed')
         self.channel = None
         if self.closing:
             self.connection.ioloop.stop()
         else:
-            log.info('reconnect')
             self.connection.add_timeout(5, self.reconnect)
 
     def _onChannelOpen(self, channel):
-        log.info('open a channel')
         self.channel = channel
         self.channel.add_on_close_callback(self._onChannelClosed)
 
-        log.info('declare a queue %s/%s', self.user, self.appid)
         # declare a queue
         self.queue = self.user + "/" + self.appid
         self.channel.queue_declare(self._onQueueDeclareok, 
@@ -202,7 +187,6 @@ class bms_client(object):
                                    auto_delete=True)
 
     def _onQueueDeclareok(self, mothod_frame):
-        log.info('declared a queue %s/%s', self.user, self.appid)
         # set consumer
         self.channel.add_on_cancel_callback(self._onConsumerCancelled)
         self.consumer_tag = self.channel.basic_consume(self._onMessage, 
@@ -219,21 +203,16 @@ class bms_client(object):
                 self.register(self.acceptors)
 
     def _onChannelClosed(self, channel, reply_code, reply_text):
-        log.info('channel closed')
         if self.registration_timer:
             self.registration_timer.cancel()
             self.registration_timer = None
         self.connection.close()
 
     def _onConsumerCancelled(self, method_frame):
-        log.info('consumer cancelled')
         if self.channel:
             self.channel.close()
 
     def _onMessage(self, channel, method, properties, body):
-        log.info('Received message # %s from %s: %s',
-                    method.delivery_tag, properties.app_id, body)
-
         # acknowledge
         self.channel.basic_ack(method.delivery_tag)
 
@@ -253,7 +232,6 @@ class bms_client(object):
             self.connection = self.connect()
 
     def close(self):
-        log.info('stopping')
         self.closing = True
 
         if self.channel:
@@ -269,7 +247,6 @@ class bms_client(object):
 
     def reRegister(self):
         if self.channel:
-            log.info('re-register')
             if self.registration_msg:
                 self._registerByString(self.registration_msg)
 
@@ -292,7 +269,6 @@ class bms_client(object):
             self.registration_timer.start()
 
     def register(self, acceptors):
-        log.info('register')
         # make a registration message
         """
         reg_msg = {"request": "lease", 
