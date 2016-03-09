@@ -25,6 +25,7 @@ import random
 import logging
 import base64
 import binascii
+import json
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
@@ -35,6 +36,8 @@ import syndicate.util.certs as certs
 import syndicate.util.crypto as crypto
 import syndicate.util.objects as object_stub
 import syndicate.util.client as rpc
+
+from syndicate.util.objects import MissingKeyException, MissingCertException, CertExistsException 
 
 import syndicate.syndicate as c_syndicate
 
@@ -103,6 +106,12 @@ def gateway_check_consistent( config, gateway, gateway_type, user_email, volume_
 
     inconsistent = {}
 
+    if not gateway.has_key('volume_id'):
+        raise Exception("Missing volume_id:\n%s" % json.dumps(gateway,indent=4,sort_keys=True))
+
+    if not gateway.has_key('owner_id'):
+        raise Exception("Missing owner_id:\n%s" % json.dumps(gateway,indent=4,sort_keys=True))
+
     # validate
     if gateway['volume_id'] != volume_cert.volume_id:
         log.debug("Gateway mismatch: does not match volume")
@@ -155,7 +164,7 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
 
     # is it the right gateway?
     if gateway is not None:
-
+        
         inconsistent = gateway_check_consistent( client.config, gateway, gateway_type, user_email, volume_name, gateway_name=gateway_name, host=host, port=port, **gateway_kw )
         if len(inconsistent.keys()) > 0:
 
@@ -178,7 +187,7 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
                 updated = True
        
     if gateway is None:
-        
+       
         # create the gateway 
         try:
             gateway = rpc.ms_rpc( client, "create_gateway", volume=volume_name, email=user_email, type=gateway_type, name=gateway_name, host=host, port=port, **gateway_kw )
@@ -200,8 +209,12 @@ def ensure_gateway_absent( client, gateway_name ):
     raise exception on error.
     """
     
-    rc = rpc.ms_rpc( client, "delete_gateway", gateway_name )
-    return rc
+    try:
+        rc = rpc.ms_rpc( client, "delete_gateway", gateway_name )
+        return rc
+    except MissingCertException, MissingKeyException:
+        log.debug("Missing cert or key; assuming deleted")
+        return True
 
 
 #-------------------------------
@@ -322,7 +335,12 @@ def ensure_user_absent( client, user_email ):
     Raises an exception on error
     """
 
-    return rpc.ms_rpc( client, "delete_user", user_email )
+    try:
+        rc = rpc.ms_rpc( client, "delete_user", user_email )
+        return rc
+    except MissingCertException, MissingKeyException:
+        log.debug("Missing cert or private key; assuming deleted")
+        return True
 
 
 #-------------------------------
@@ -339,7 +357,7 @@ def volume_check_consistent( config, volume, volume_name, description, blocksize
             missing.append(key)
 
     if len(missing) > 0:
-        raise Exception("Missing user fields: %s" % ", ".join(missing))
+        raise Exception("Missing volume fields: %s\n%s" % (", ".join(missing), json.dumps(volume,indent=4,sort_keys=True)))
 
     volume_cert = certs.get_volume_cert( config, volume_name )
     if volume_cert is None:
@@ -455,8 +473,12 @@ def ensure_volume_absent( client, volume_name ):
     Raise exception on error
     """
 
-    rc = rpc.ms_rpc( client, "delete_volume", volume_name )
-    return rc
+    try:
+        rc = rpc.ms_rpc( client, "delete_volume", volume_name )
+        return rc
+    except MissingCertException, MissingKeyException:
+        log.debug("Missing cert or private key; assuming deleted")
+        return True
 
 
 #-------------------------------
