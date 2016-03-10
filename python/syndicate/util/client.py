@@ -22,6 +22,8 @@ import syndicate.util.objects as object_stub
 import syndicate.ms.jsonrpc as jsonrpc
 import syndicate.ms.msconfig as msconfig
 
+from syndicate.util.objects import MissingKeyException 
+
 import os 
 import urlparse
 
@@ -180,6 +182,9 @@ def make_rpc_client( config, caller_username=None ):
        username = config['username']
 
    user_private_key = storage.load_private_key( config, "user", username )
+   if user_private_key is None:
+       raise MissingKeyException("No private key for '%s'" % username)
+
    syndicate_public_key = config['syndicate_public_key']
    
    if not ms_url.lower().startswith("https://"):
