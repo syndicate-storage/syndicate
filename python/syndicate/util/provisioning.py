@@ -48,11 +48,11 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 
 #-------------------------------
-def make_gateway_name( namespace, gateway_type, volume_name, host ):
+def make_gateway_name( gateway_type, volume_name, host ):
     """
     Generate a name for a gateway
     """
-    return "%s-%s-%s-%s" % (namespace, volume_name, gateway_type, host)    
+    return "%s-%s-%s" % (volume_name, gateway_type, host)    
 
 
 #-------------------------------
@@ -386,12 +386,12 @@ def volume_check_consistent( config, volume, volume_name, description, blocksize
         inconsistent['description'] = description 
 
     if volume['blocksize'] != blocksize:
-        log.debug("Volume mismatch: blocksize")
+        log.debug("Volume mismatch: blocksize (%s != %s)" % (volume['blocksize'], blocksize))
         inconsistent['blocksize'] = blocksize
 
     if volume['owner_id'] != user_cert.user_id:
-        log.debug("Volume mismatch: owner ID")
-        inconsistent['owner_id'] = user_cert.owner_id
+        log.debug("Volume mismatch: owner ID (%s != %s)" % (volume['owner_id'], user_cert.user_id))
+        inconsistent['owner_id'] = user_cert.user_id
 
     match = True
     for key in attrs.keys():
