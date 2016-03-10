@@ -17,8 +17,8 @@
 """
 
 import os
-import logging
 import irods
+import logging
 
 from os import O_RDONLY
 from io import RawIOBase, BufferedRandom
@@ -27,9 +27,17 @@ from irods.data_object import iRODSDataObject, iRODSDataObjectFileRaw
 from retrying import retry
 from timeout_decorator import timeout
 
-logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger('irods_client')
+logger.setLevel(logging.DEBUG)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('irods_client.log')
+fh.setLevel(logging.DEBUG)
+# create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+# add the handlers to the logger
+logger.addHandler(fh)
 
-log = logging.getLogger(__name__)
 
 MAX_ATTEMPT = 3         # 3 retries
 ATTEMPT_INTERVAL = 5000 # 5 sec
@@ -129,7 +137,7 @@ class irods_client(object):
     """
     Returns directory entries in string
     """
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def list(self, path):
         coll = _getCollection(self.session, path)
         entries = []
@@ -138,11 +146,12 @@ class irods_client(object):
 
         for obj in coll.data_objects:
             entries.append(obj.name)
+        return entries
 
     """
     Returns directory entries with status
     """
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def listStats(self, path):
         coll = _getCollection(self.session, path)
         stats = []
@@ -151,8 +160,9 @@ class irods_client(object):
 
         for obj in coll.data_objects:
             stats.append(irods_status.fromDataObject(obj))
+        return stats
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def isDir(self, path):
         parent = os.path.dirname(path)
         coll = _getCollection(self.session, parent)
@@ -161,7 +171,7 @@ class irods_client(object):
                 return True
         return False
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def isFile(self, path):
         parent = os.path.dirname(path)
         coll = _getCollection(self.session, parent)
@@ -170,16 +180,14 @@ class irods_client(object):
                 return True
         return False
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def exists(self, path):
-        parent = os.path.dirname(path)
-        entries = self.list(parent)
-        for entry in entries:
-            if entry == path:
-                return True
+        stat = self.getStat(path)
+        if stat:
+            return True
         return False
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def getStat(self, path):
         parent = os.path.dirname(path)
         coll = _getCollection(self.session, parent)
@@ -193,7 +201,7 @@ class irods_client(object):
 
         return None
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def read(self, path, offset, size):
         buf = None
         br = None
@@ -214,10 +222,8 @@ class irods_client(object):
 
         return buf
 
-    @retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
+    #@retry(stop_max_attempt_number=MAX_ATTEMPT, wait_fixed=ATTEMPT_INTERVAL, wrap_exception=True)
     def download(self, path, to):
-        log.info("Starting a download of %s" % path)
-
         conn, desc = self.session.data_objects.open(path, O_RDONLY)
         raw = iRODSDataObjectFileRaw(conn, desc)
         br = BufferedRandom(raw)

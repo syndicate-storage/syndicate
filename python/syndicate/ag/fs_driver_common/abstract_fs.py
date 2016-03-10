@@ -51,10 +51,12 @@ class fs_stat(object):
 class fs_base(object):
     __metaclass__ = ABCMeta
 
+    # connect to remote system if necessary
     @abstractmethod
     def connect(self):
         pass
 
+    # disconnect and finalize
     @abstractmethod
     def close(self):
         pass
@@ -66,22 +68,27 @@ class fs_base(object):
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
+    # check existence of path (a file or a directory) and return True/False
     @abstractmethod
     def exists(self, path):
         pass
 
+    # list directory entries (files and sub-directories) and return names of found items
     @abstractmethod
     def list_dir(self, dirpath):
         pass
 
+    # check if given path is a directory and return True/False
     @abstractmethod
     def is_dir(self, dirpath):
         pass
 
+    # read bytes at given offset in given size from given path and return byte[]
     @abstractmethod
     def read(self, filepath, offset, size):
         pass
 
+    # return a class of backend plugin
     @abstractmethod
     def backend(self):
         pass

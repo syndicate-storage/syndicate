@@ -18,12 +18,7 @@
 
 import os
 import imp
-import logging
-
-logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+import syndicate.util.gateway as gateway
 
 """
 Find backends and create an instance
@@ -42,16 +37,15 @@ class fs_backend_loader(object):
     def load(self):
         if self.backend_name:
             module_path = self.getModulePath()
-            log.info("load a backend module from %s", module_path)
             backend = imp.load_source(self.backend_name, 
                                       module_path)
             if backend:
                 return backend.backend_impl(self.backend_config)
             else:
-                log.error("unable to find a backend module for %s", self.backend_name)
+                gateway.log_error("unable to find a backend module for %s" % self.backend_name)
                 return None
         else:
-            log.error("a backend module name is not given")
+            gateway.log_error("a backend module name is not given")
             return None
 
 
