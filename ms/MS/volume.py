@@ -284,10 +284,7 @@ class Volume( storagetypes.Object ):
    }
    
    read_attrs_api_required = [
-      "blocksize",
       "version",
-      "private",
-      "archive",
       "allow_anon",
       "file_quota"
    ]
@@ -298,6 +295,9 @@ class Volume( storagetypes.Object ):
       "owner_id",
       "volume_id",
       "metadata_public_key",
+      "private",
+      "archive",
+      "blocksize"
    ] + read_attrs_api_required
    
    # fields an API call can set
