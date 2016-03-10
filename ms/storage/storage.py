@@ -203,6 +203,9 @@ def delete_user( email, **kw ):
    if user is None:
       raise Exception("No such user")
    
+   if not caller_user.is_admin:
+      raise Exception("Caller is not an admin")
+
    if user.admin_id != caller_user.owner_id:
       raise Exception("Admin '%s' did not create user '%s'" % (caller_user.email, email))
   
@@ -420,7 +423,7 @@ def validate_cert_bundle( cert_bundle, user, volume_id, volume_version, new_gate
          if gateway is None:
             
             # requested a gateway that didn't exist 
-            raise Exception("Cert bundle identifies non-existant gateway")
+            raise Exception("Cert bundle identifies non-existant gateway %s" % gateway_id)
          
          if gateway.g_id != gateway_id:
             
@@ -635,7 +638,7 @@ def update_volume( volume_name_or_id, **attrs ):
    
    # a user can only update volumes she owns (admin can for anyone)
    if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
-      raise Exception("Caller cannot update Volume for user %s" % user.owner_id)
+      raise Exception("Caller cannot update volume for user %s" % user.owner_id)
    
    # finally, verify that the name is *not* numeric 
    tmp = None 
@@ -658,6 +661,7 @@ def update_volume( volume_name_or_id, **attrs ):
    return {"result": True}
 
 
+# ----------------------------------
 def delete_volume( volume_name_or_id, **attrs ):
    """
    Delete a volume, given its name or ID
@@ -665,8 +669,11 @@ def delete_volume( volume_name_or_id, **attrs ):
    caller_user = _check_authenticated( attrs )
    
    volume = Volume.Read( volume_name_or_id )
-   if volume is None:
+   if volume is None or volume.deleted:
       return {"result": True}
+
+   if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("Caller cannot delete volume")
    
    ret = Volume.Delete( volume.volume_id )
    if ret:
@@ -1112,7 +1119,7 @@ def remove_user_from_volume( email, volume_name_or_id ):
 
 # ----------------------------------
 def delete_gateway( g_id, **kw ):
-   # TODO: garbage-collect gateways...
+   # TODO: garbage-collect gateways... 
    ret = Gateway.Delete( g_id )
    return {'result': ret}
 
