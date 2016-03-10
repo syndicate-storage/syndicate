@@ -1415,7 +1415,7 @@ class Volume( StubObject ):
       # required
       "name":                   (lambda cls, arg, lib: cls.parse_volume_name(arg, lib)),
       
-      # required on create
+      # required on create/delete
       "email":                  (lambda cls, arg, lib: cls.parse_email(arg, lib)),
                                     
       # required on create
@@ -1510,6 +1510,22 @@ class Volume( StubObject ):
          # nothing to do 
          return args, kw, extras
       
+      if method_name in ["delete_volume"]:
+         # need either owner's key or admin's key 
+         owner_username = getattr(lib, "email", None)
+         if owner_username is not None:
+             owner_privkey = storagelib.load_private_key( config, "user", owner_username )
+             if owner_privkey is None:
+                 raise MissingKeyException("Missing private key for '%s'" % owner_username)
+
+         args = [lib.volume_name]
+         kwargs = {}
+         extras = {
+            "volume_name": lib.volume_name
+         }
+         return args, kw, extras
+
+
       # otherwise, we're creating/updating/deleting.
       # we'll need the volume name
       if not hasattr(lib, "volume_name"):
@@ -1936,7 +1952,23 @@ class Gateway( StubObject ):
                 raise Exception("Invalid query arguments '%s': not a dict" % args)
              
          return args, kw, extras
-      
+     
+      if method_name in ["delete_gateway"]:
+         # need either owner's key or admin's key 
+         owner_username = getattr(lib, "email", None)
+         if owner_username is not None:
+             owner_privkey = storagelib.load_private_key( config, "user", owner_username )
+             if owner_privkey is None:
+                 raise MissingKeyException("Missing private key for '%s'" % owner_username)
+
+         args = [lib.name]
+         kwargs = {}
+         extras = {
+             "name": lib.name
+         }
+         return args, kw, extras
+
+
       # otherwise, we're creating/updating/deleting
       if not hasattr(lib, "name"):
          raise Exception("Missing gateway name")
@@ -2268,7 +2300,7 @@ class Gateway( StubObject ):
           # nothing to store
           return 
       
-      if not result.has_key('error'):
+      if type(result) == bool or not result.has_key('error'):
          
          # store private key and cert, if we have it
          if method_name in ["create_gateway", "update_gateway"]:
